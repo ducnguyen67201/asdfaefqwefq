@@ -19,4 +19,7 @@ npm run check
 npm run package
 ```
 
+For changes to Rust code, Cargo manifests, Bazel configuration, or Rust CI, also
+run `npm run bazel:check`.
+
 Add or update tests whenever goal routing, lifecycle transitions, policy decisions, or IPC contracts change.

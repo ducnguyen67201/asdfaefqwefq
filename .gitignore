@@ -93,6 +93,10 @@ typings/
 # Electron-Forge
 out/
 
+# Bazel and Cargo outputs
+/bazel-*
+/target/
+
 # Generated native desktop helpers
 .generated-native/
 
