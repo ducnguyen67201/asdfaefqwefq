@@ -161,9 +161,14 @@ export const SubmitAgentRunSchema = z.object({
   autonomyMode: z.enum(['balanced', 'strict']).default('balanced'),
   executionProfile: z.enum(['everyday', 'workspace']).default('everyday'),
   workspaceSelectionId: z.string().uuid().nullable().default(null),
+  activityAttemptId: z.string().uuid().nullable().default(null),
+  activityIntent: z.enum(['work', 'help', 'check']).default('work'),
 }).strict().superRefine((value, context) => {
   if ((value.executionProfile === 'workspace') !== Boolean(value.workspaceSelectionId)) {
     context.addIssue({ code: 'custom', message: 'Workspace runs require a selection ID.', path: ['workspaceSelectionId'] });
+  }
+  if (!value.activityAttemptId && value.activityIntent !== 'work') {
+    context.addIssue({ code: 'custom', message: 'Help and Check require an active Activity Attempt.', path: ['activityAttemptId'] });
   }
 });
 

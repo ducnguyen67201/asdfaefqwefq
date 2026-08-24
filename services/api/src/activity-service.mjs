@@ -1,4 +1,4 @@
-import { assertTransition, isRunOpen } from './activity-lifecycle.mjs';
+import { assertTransition, canWorkOnAttempt, isRunOpen } from './activity-lifecycle.mjs';
 import { canRecordEvidence } from './knowledge-space-policy.mjs';
 
 export class ActivityService {
@@ -25,7 +25,7 @@ export class ActivityService {
       }
       const assignmentCount = input.target.kind === 'group'
         ? await this.activityRepository.groupSize(input.target.groupId, spaceId)
-        : new Set(input.target.userIds).size;
+        : input.target.kind === 'participants' ? new Set(input.target.userIds).size : 0;
       if (assignmentCount > limits.groupParticipants) {
         const error = new Error('This Run has too many participants for the current plan.');
         error.status = 409; error.code = 'participant_quota'; throw error;
@@ -59,6 +59,10 @@ export class ActivityService {
   async initiateSubmission(userId, attemptId, input, limits = null) {
     const context = await this.attempt(userId, attemptId);
     if (!context) return null;
+    if (!canWorkOnAttempt(context.state)) {
+      const error = new Error('This Attempt is waiting for review or no longer active.');
+      error.status = 409; error.code = 'attempt_not_active'; throw error;
+    }
     if (limits) {
       if (input.files.length > limits.uploadFilesPerBatch) {
         const error = new Error('This upload has too many files for the current plan.');
@@ -89,6 +93,16 @@ export class ActivityService {
     return this.activityRepository.commitSubmission(attemptId, userId);
   }
   async requestHelp(userId, attemptId, clientId) {
+    const context = await this.attempt(userId, attemptId);
+    if (!context) return null;
+    if (!isRunOpen(context.run)) {
+      const error = new Error('This Run is not open.');
+      error.status = 409; error.code = 'run_not_open'; throw error;
+    }
+    if (!canWorkOnAttempt(context.state)) {
+      const error = new Error('This Attempt is waiting for review or no longer active.');
+      error.status = 409; error.code = 'attempt_not_active'; throw error;
+    }
     return this.activityRepository.requestHelp(attemptId, userId, clientId);
   }
   async acknowledge(userId, attemptId, policyVersion) {
@@ -98,7 +112,15 @@ export class ActivityService {
     const context = await this.attempt(userId, attemptId);
     if (!context) return null;
     if (!isRunOpen(context.run)) { const error = new Error('This Run is not open.'); error.status = 409; error.code = 'run_not_open'; throw error; }
+    if (!canWorkOnAttempt(context.state)) { const error = new Error('This Attempt is waiting for review or no longer active.'); error.status = 409; error.code = 'attempt_not_active'; throw error; }
     if (context.definition.launchTarget !== input.launchKind) { const error = new Error('Launch selection does not match the published Activity.'); error.status = 409; error.code = 'launch_target_mismatch'; throw error; }
+    if (input.purpose === 'help') {
+      await this.activityRepository.requestHelp(
+        attemptId,
+        userId,
+        input.clientId,
+      );
+    }
     return this.activityRepository.createWorkSession({ ...input, attemptId, userId });
   }
   updateWorkSession(userId, workSessionId, input) {

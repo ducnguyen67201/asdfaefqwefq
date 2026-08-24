@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+import {
+  isPublicClassroomHostname,
+  validateClassroomUrl,
+} from './classroom-url-policy';
+
 export const DomainSchema = z.enum([
   'education',
   'productivity',
@@ -402,6 +407,62 @@ export const ActivityCriterionSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(80)).max(20),
 });
 
+const ClassroomOriginSchema = z.string().trim().url().max(2_000).superRefine(
+  (value, context) => {
+    try {
+      const url = new URL(value);
+      if (
+        url.protocol !== 'https:' ||
+        url.username ||
+        url.password ||
+        !isPublicClassroomHostname(url.hostname) ||
+        url.origin !== value
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Use an exact HTTPS origin without credentials or a path.',
+        });
+      }
+    } catch {
+      context.addIssue({ code: 'custom', message: 'Use a valid HTTPS origin.' });
+    }
+  },
+);
+
+const ClassroomPublicUrlSchema = z.string().trim().url().max(2_000).superRefine(
+  (value, context) => {
+    if (!validateClassroomUrl(value)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Use a public HTTPS URL without credentials.',
+      });
+    }
+  },
+);
+
+export const ClassroomDirectiveSchema = z.discriminatedUnion('kind', [
+  z.object({
+    id: z.string().uuid(),
+    sequence: z.number().int().nonnegative(),
+    kind: z.literal('exercise'),
+    delivery: z.literal('manual_only'),
+    instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+    createdAt: z.string().datetime(),
+  }),
+  z.object({
+    id: z.string().uuid(),
+    sequence: z.number().int().nonnegative(),
+    kind: z.literal('open_url'),
+    delivery: z.enum(['auto_eligible', 'manual_only']),
+    instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+    url: ClassroomPublicUrlSchema,
+    origin: ClassroomOriginSchema,
+    createdAt: z.string().datetime(),
+  }),
+]);
+
 export const ActivityContextSchema = z.object({
   attemptId: z.string().uuid(),
   workSessionId: z.string().uuid(),
@@ -422,7 +483,13 @@ export const ActivityContextSchema = z.object({
       requiresSubmission: z.boolean(),
       requiresFacilitatorConfirmation: z.boolean(),
     }),
+    sessionPolicy: z.object({
+      allowedOrigins: z.array(ClassroomOriginSchema).max(20),
+      allowRoomJoin: z.boolean(),
+    }).default({ allowedOrigins: [], allowRoomJoin: false }),
   }),
+  purpose: z.enum(['work', 'help', 'check']).default('work'),
+  currentDirective: ClassroomDirectiveSchema.nullable().default(null),
   insightPolicy: z.enum(['explicit_and_operational', 'evidence_candidates']),
   insightPolicyVersion: z.string().trim().min(1).max(64),
   policyAcknowledged: z.boolean(),
@@ -1085,6 +1152,7 @@ export const SubmitTaskRequestSchema = z.object({
   executionProfile: ExecutionProfileSchema.default('everyday'),
   workspaceSelectionId: z.string().uuid().nullable().default(null),
   activityAttemptId: z.string().uuid().nullable().default(null),
+  activityIntent: z.enum(['work', 'help', 'check']).default('work'),
 }).superRefine((request, context) => {
   if (
     (request.executionProfile === 'workspace') !==
@@ -1221,6 +1289,10 @@ export const SaveKnowledgeActivityRequestSchema = z.object({
     guidancePolicy: ActivityGuidancePolicySchema,
     criteria: z.array(ActivityCriterionSchema).max(40),
     completionPolicy: z.object({ requiresSubmission: z.boolean(), requiresFacilitatorConfirmation: z.boolean() }),
+    sessionPolicy: z.object({
+      allowedOrigins: z.array(ClassroomOriginSchema).max(20),
+      allowRoomJoin: z.boolean(),
+    }).default({ allowedOrigins: [], allowRoomJoin: false }),
   }),
   sourceVersionIds: z.array(z.string().uuid()).max(200),
 });
@@ -1241,14 +1313,23 @@ export const CreateKnowledgeRunRequestSchema = z.object({
   target: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('group'), groupId: z.string().uuid() }),
     z.object({ kind: z.literal('participants'), userIds: z.array(z.string().trim().min(1).max(255)).min(1).max(2_000) }),
+    z.object({ kind: z.literal('room') }),
   ]),
   insightPolicy: z.enum(['explicit_and_operational', 'evidence_candidates']),
+}).superRefine((run, context) => {
+  if (run.target.kind === 'room' && run.mode === 'async') {
+    context.addIssue({
+      code: 'custom',
+      message: 'Room Runs must use live or hybrid mode.',
+      path: ['mode'],
+    });
+  }
 });
 export const KnowledgeRunSchema = z.object({
   id: z.string().uuid(), state: z.enum(['draft', 'open', 'closed', 'archived']), assignmentCount: z.number().int().nonnegative().optional(), newlyCreated: z.boolean().optional(),
 });
 export const AssignedActivitySchema = z.object({
-  attemptId: z.string().uuid(), state: z.enum(['assigned', 'in_progress', 'blocked', 'submitted', 'completed', 'withdrawn']), updatedAt: z.string().datetime(),
+  attemptId: z.string().uuid(), state: z.enum(['assigned', 'in_progress', 'blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']), updatedAt: z.string().datetime(),
   run: z.object({ id: z.string().uuid(), mode: z.enum(['live', 'async', 'hybrid']), opensAt: z.string().datetime().nullable(), closesAt: z.string().datetime().nullable() }),
   activity: z.object({ title: z.string().max(240), objective: z.string().max(4_000) }),
   space: z.object({ id: z.string().uuid(), name: z.string().max(240) }),
@@ -1256,7 +1337,7 @@ export const AssignedActivitySchema = z.object({
 export const AssignedActivityListSchema = z.object({ items: z.array(AssignedActivitySchema).max(500) });
 export const HostedAttemptContextSchema = z.object({
   attemptId: z.string().uuid(), userId: z.string().min(1).max(255),
-  state: z.enum(['assigned', 'in_progress', 'blocked', 'submitted', 'completed', 'withdrawn']), acknowledgedPolicyVersion: z.string().max(64).nullable(),
+  state: z.enum(['assigned', 'in_progress', 'blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']), acknowledgedPolicyVersion: z.string().max(64).nullable(),
   run: z.object({ id: z.string().uuid(), state: z.enum(['draft', 'open', 'closed', 'archived']), mode: z.enum(['live', 'async', 'hybrid']), opensAt: z.string().datetime().nullable(), closesAt: z.string().datetime().nullable(), insightPolicy: z.enum(['explicit_and_operational', 'evidence_candidates']), insightPolicyVersion: z.string().max(64) }),
   space: z.object({ id: z.string().uuid(), name: z.string().max(240) }), activityVersionId: z.string().uuid(),
   definition: SaveKnowledgeActivityRequestSchema.shape.definition,
@@ -1276,11 +1357,22 @@ export const PrepareActivityStarterRequestSchema = z.object({
 });
 export const KnowledgeDashboardSchema = z.object({
   kind: z.enum(['snapshot', 'delta']), maxSequence: z.number().int().nonnegative(),
-  participants: z.array(z.object({ id: z.string().max(255), attemptId: z.string().uuid(), state: z.string().max(40), updatedAt: z.string().datetime(), sessionCount: z.number().int().nonnegative(), evidenceCount: z.number().int().nonnegative(), helpRequestedAt: z.string().datetime().nullable() })).max(500).optional(),
-  events: z.array(z.object({ sequence: z.number().int().nonnegative(), type: z.string().max(80), payload: z.record(z.string(), z.unknown()), createdAt: z.string().datetime() })).max(1_000).optional(),
+  runState: z.enum(['draft', 'open', 'closed', 'archived']),
+  participants: z.array(z.object({
+    id: z.string().max(255), attemptId: z.string().uuid(), state: z.string().max(40),
+    status: z.enum(['not_joined', 'lobby', 'working', 'needs_help', 'ready', 'submitted', 'completed', 'withdrawn', 'left', 'launch_failed']).optional().default('working'),
+    joinedAt: z.string().datetime().nullable().optional().default(null),
+    leftAt: z.string().datetime().nullable().optional().default(null),
+    updatedAt: z.string().datetime(), sessionCount: z.number().int().nonnegative(),
+    evidenceCount: z.number().int().nonnegative(), helpRequestedAt: z.string().datetime().nullable(),
+  })).max(500).optional(),
+  events: z.array(z.object({ sequence: z.number().int().nonnegative(), attemptId: z.string().uuid().nullable().optional().default(null), type: z.string().max(80), payload: z.record(z.string(), z.unknown()), createdAt: z.string().datetime() })).max(1_000).optional(),
   counts: z.record(z.string(), z.number().int().nonnegative()).optional(),
   helpQueue: z.array(z.object({
     id: z.string().max(255), attemptId: z.string().uuid(), state: z.string().max(40),
+    status: z.enum(['not_joined', 'lobby', 'working', 'needs_help', 'ready', 'submitted', 'completed', 'withdrawn', 'left', 'launch_failed']).optional().default('needs_help'),
+    joinedAt: z.string().datetime().nullable().optional().default(null),
+    leftAt: z.string().datetime().nullable().optional().default(null),
     updatedAt: z.string().datetime(), sessionCount: z.number().int().nonnegative(),
     evidenceCount: z.number().int().nonnegative(), helpRequestedAt: z.string().datetime().nullable(),
   })).max(500).optional(),
@@ -1289,7 +1381,7 @@ export const KnowledgeDashboardSchema = z.object({
     corroboratedCount: z.number().int().nonnegative(), agentCandidateCount: z.number().int().nonnegative(),
   })).max(100).optional(),
   suggestions: z.array(z.union([
-    z.object({ kind: z.literal('individual_follow_up'), participantId: z.string().max(255), reason: z.enum(['explicit_help_request', 'repeated_blocked_sessions']) }),
+    z.object({ kind: z.literal('individual_follow_up'), participantId: z.string().max(255), reason: z.literal('explicit_help_request') }),
     z.object({ kind: z.literal('group_clarification'), criterionId: z.string().max(80), participantCount: z.number().int().nonnegative(), activeParticipants: z.number().int().nonnegative(), confidence: z.enum(['moderate', 'high']) }),
     z.object({ kind: z.literal('review_evidence'), criterionId: z.string().max(80) }),
   ])).max(500).optional(),
@@ -1313,6 +1405,89 @@ export const GetKnowledgeDashboardRequestSchema = z.object({
   spaceId: z.string().uuid(),
   runId: z.string().uuid(),
   sinceSequence: z.number().int().nonnegative().optional(),
+});
+
+export const CreateKnowledgeRoomCodeRequestSchema = z.object({
+  spaceId: z.string().uuid(), runId: z.string().uuid(), clientId: z.string().uuid(),
+  expiresAt: z.string().datetime().nullable().default(null),
+  maxUses: z.number().int().min(1).max(2_000).default(200),
+});
+export const KnowledgeRoomCodeSchema = z.object({
+  id: z.string().uuid(), code: z.string().trim().min(8).max(32),
+  maxUses: z.number().int().min(1).max(2_000), usedCount: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime(), revokedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(), newlyCreated: z.boolean(),
+});
+export const RevokeKnowledgeRoomCodeRequestSchema = z.object({ spaceId: z.string().uuid(), runId: z.string().uuid() });
+export const KnowledgeRoomRevocationSchema = z.object({ revoked: z.boolean(), revokedAt: z.string().datetime().nullable() });
+export const JoinKnowledgeRoomRequestSchema = z.object({ clientId: z.string().uuid(), code: z.string().trim().min(8).max(32) });
+export const KnowledgeClassroomSessionSchema = z.object({
+  attemptId: z.string().uuid(),
+  attemptState: z.enum(['assigned', 'in_progress', 'blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']),
+  run: z.object({
+    id: z.string().uuid(), state: z.enum(['draft', 'open', 'closed', 'archived']),
+    mode: z.enum(['live', 'async', 'hybrid']), status: z.enum(['lobby', 'live', 'ended']),
+  }),
+  space: z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240) }),
+  activityVersionId: z.string().uuid(),
+  activity: z.object({
+    title: z.string().trim().min(1).max(240),
+    objective: z.string().trim().min(1).max(4_000),
+    requiresSubmission: z.boolean(),
+  }),
+  currentDirective: ClassroomDirectiveSchema.nullable(), joinedAt: z.string().datetime(),
+  leftAt: z.string().datetime().nullable().optional().default(null),
+});
+export const ClassroomSessionProjectionSchema = KnowledgeClassroomSessionSchema.extend({
+  role: z.literal('student').default('student'), autoOpenConsent: z.boolean(),
+});
+export const ClassroomDirectiveNoticeSchema = z.object({
+  directive: ClassroomDirectiveSchema,
+  status: z.enum(['received', 'opened', 'dismissed', 'open_failed']),
+});
+export const KnowledgeAttemptMutationRequestSchema = z.object({ attemptId: z.string().uuid(), clientId: z.string().uuid() });
+export const LeaveKnowledgeClassroomResponseSchema = z.object({ attemptId: z.string().uuid(), leftAt: z.string().datetime() });
+export const ClassroomDirectiveDraftSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('exercise'), instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+  }),
+  z.object({
+    kind: z.literal('open_url'), instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+    url: z.string().trim().url().max(2_000),
+  }),
+]);
+export const CreateClassroomDirectiveRequestSchema = z.object({
+  spaceId: z.string().uuid(), runId: z.string().uuid(), clientId: z.string().uuid(), directive: ClassroomDirectiveDraftSchema,
+});
+export const ClassroomDirectiveListSchema = z.object({
+  attemptState: KnowledgeClassroomSessionSchema.shape.attemptState,
+  runState: z.enum(['draft', 'open', 'closed', 'archived']),
+  items: z.array(ClassroomDirectiveSchema).max(100), maxSequence: z.number().int().nonnegative(),
+});
+export const ClaimClassroomDirectiveRequestSchema = z.object({
+  attemptId: z.string().uuid(), directiveId: z.string().uuid(), clientId: z.string().uuid(),
+});
+export const ClassroomDirectiveClaimSchema = z.union([
+  z.object({ execute: z.literal(false) }),
+  z.object({ execute: z.literal(true), url: ClassroomPublicUrlSchema, origin: ClassroomOriginSchema, claimedAt: z.string().datetime() }),
+]);
+export const SetClassroomLinkConsentRequestSchema = z.object({ consent: z.boolean() });
+export const OpenClassroomDirectiveRequestSchema = z.object({ directive: ClassroomDirectiveSchema });
+export const DismissClassroomDirectiveRequestSchema = z.object({ directiveId: z.string().uuid() });
+export const ReviewKnowledgeAttemptRequestSchema = z.object({
+  spaceId: z.string().uuid(), runId: z.string().uuid(), attemptId: z.string().uuid(),
+  clientId: z.string().uuid(), action: z.enum(['complete', 'return']),
+});
+export const ResolveKnowledgeAttemptHelpRequestSchema = z.object({
+  spaceId: z.string().uuid(), runId: z.string().uuid(), attemptId: z.string().uuid(), clientId: z.string().uuid(),
+});
+export const KnowledgeAttemptTransitionSchema = z.object({
+  attemptId: z.string().uuid(), state: z.enum(['assigned', 'in_progress', 'blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']),
+  action: z.enum(['complete', 'return']).optional(), readyAt: z.string().datetime().optional(),
+  reviewedAt: z.string().datetime().optional(), newlyCreated: z.boolean().optional(),
+  resolved: z.boolean().optional(), resolvedAt: z.string().datetime().nullable().optional(),
 });
 
 export const WorkspaceRuntimeAvailabilitySchema = z.object({
@@ -1443,6 +1618,7 @@ export const HostedTaskRecordSchema = z.object({
   autonomyMode: AutonomyModeSchema.optional(),
   outcomeContract: OutcomeContractSchema.optional(),
   intentAuthorization: IntentAuthorizationContractSchema.optional(),
+  activity: ActivityContextSchema.nullable().optional(),
   publicSummary: z.string().max(1_000),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -2047,6 +2223,10 @@ export type ExecutableAgentTaskContract =
   | z.infer<typeof AgentTaskContractV7Schema>
   | AgentTaskContract;
 export type ActivityContext = z.infer<typeof ActivityContextSchema>;
+export type ClassroomDirective = z.infer<typeof ClassroomDirectiveSchema>;
+export type ClassroomDirectiveDraft = z.infer<typeof ClassroomDirectiveDraftSchema>;
+export type ClassroomSessionProjection = z.infer<typeof ClassroomSessionProjectionSchema>;
+export type ClassroomDirectiveNotice = z.infer<typeof ClassroomDirectiveNoticeSchema>;
 export type AgentRuntimeKind = z.infer<typeof AgentRuntimeKindSchema>;
 export type ExecutionProfile = z.infer<typeof ExecutionProfileSchema>;
 export type InteractionMode = z.infer<typeof InteractionModeSchema>;
@@ -2145,6 +2325,24 @@ export type GetKnowledgeDashboardRequest = z.infer<typeof GetKnowledgeDashboardR
 export type PrepareActivityStarterRequest = z.infer<typeof PrepareActivityStarterRequestSchema>;
 export type SubmitKnowledgeSelectionRequest = z.infer<typeof SubmitKnowledgeSelectionRequestSchema>;
 export type RequestKnowledgeAttemptHelp = z.infer<typeof RequestKnowledgeAttemptHelpSchema>;
+export type CreateKnowledgeRoomCodeRequest = z.infer<typeof CreateKnowledgeRoomCodeRequestSchema>;
+export type KnowledgeRoomCode = z.infer<typeof KnowledgeRoomCodeSchema>;
+export type RevokeKnowledgeRoomCodeRequest = z.infer<typeof RevokeKnowledgeRoomCodeRequestSchema>;
+export type KnowledgeRoomRevocation = z.infer<typeof KnowledgeRoomRevocationSchema>;
+export type JoinKnowledgeRoomRequest = z.infer<typeof JoinKnowledgeRoomRequestSchema>;
+export type KnowledgeClassroomSession = z.infer<typeof KnowledgeClassroomSessionSchema>;
+export type KnowledgeAttemptMutationRequest = z.infer<typeof KnowledgeAttemptMutationRequestSchema>;
+export type LeaveKnowledgeClassroomResponse = z.infer<typeof LeaveKnowledgeClassroomResponseSchema>;
+export type CreateClassroomDirectiveRequest = z.infer<typeof CreateClassroomDirectiveRequestSchema>;
+export type ClassroomDirectiveList = z.infer<typeof ClassroomDirectiveListSchema>;
+export type ClaimClassroomDirectiveRequest = z.infer<typeof ClaimClassroomDirectiveRequestSchema>;
+export type ClassroomDirectiveClaim = z.infer<typeof ClassroomDirectiveClaimSchema>;
+export type SetClassroomLinkConsentRequest = z.infer<typeof SetClassroomLinkConsentRequestSchema>;
+export type OpenClassroomDirectiveRequest = z.infer<typeof OpenClassroomDirectiveRequestSchema>;
+export type DismissClassroomDirectiveRequest = z.infer<typeof DismissClassroomDirectiveRequestSchema>;
+export type ReviewKnowledgeAttemptRequest = z.infer<typeof ReviewKnowledgeAttemptRequestSchema>;
+export type ResolveKnowledgeAttemptHelpRequest = z.infer<typeof ResolveKnowledgeAttemptHelpRequestSchema>;
+export type KnowledgeAttemptTransition = z.infer<typeof KnowledgeAttemptTransitionSchema>;
 export type VoiceSegmentTranscription = z.infer<
   typeof VoiceSegmentTranscriptionSchema
 >;

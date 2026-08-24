@@ -13,6 +13,17 @@ export class ActivityProgressReporter {
     this.sessions.set(taskId, { workSessionId, lastSentAt: 0 });
   }
 
+  async fail(taskId: string): Promise<void> {
+    const session = this.sessions.get(taskId);
+    if (!session) return;
+    this.sessions.delete(taskId);
+    try {
+      await this.client.updateWorkSession(session.workSessionId, { state: 'failed' });
+    } catch {
+      // Task creation already failed; delayed hosted state is safer than masking it.
+    }
+  }
+
   clear(): void { this.sessions.clear(); }
 
   async report(update: TaskUpdate): Promise<void> {
@@ -26,9 +37,11 @@ export class ActivityProgressReporter {
       ? 'completed'
       : update.snapshot.phase === 'cancelled'
         ? 'cancelled'
-        : update.snapshot.phase === 'failed' || update.snapshot.phase === 'blocked'
+        : update.snapshot.phase === 'failed'
           ? 'failed'
-          : 'active';
+          : update.snapshot.phase === 'blocked'
+            ? 'paused'
+            : 'active';
     try {
       await this.client.updateWorkSession(session.workSessionId, { state });
       if (terminal) this.sessions.delete(update.snapshot.taskId);

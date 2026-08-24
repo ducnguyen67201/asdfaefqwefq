@@ -44,6 +44,8 @@ import { AgentModelPolicy, ProviderCircuitBreaker } from './agent-model-policy.m
 import { AgentRunWorker } from './agent-run-worker.mjs';
 import { AgentVisualSidecar } from './agent-visual-sidecar.mjs';
 import { AgentRolloutPolicy } from './agent-rollout-policy.mjs';
+import { PostgresLiveClassroomRepository } from './live-classroom-repository.mjs';
+import { LiveClassroomService } from './live-classroom-service.mjs';
 
 const config = loadConfig();
 const pool = new pg.Pool({
@@ -96,6 +98,7 @@ const transcriptionService = new OpenAiTranscriptionService({
 const spaceRepository = new PostgresKnowledgeSpaceRepository(pool);
 const sourceRepository = new PostgresKnowledgeSourceRepository(pool);
 const activityRepository = new PostgresActivityRepository(pool);
+const liveClassroomRepository = new PostgresLiveClassroomRepository(pool);
 const objectStore = config.knowledgeSpaces.enabled
   ? new S3ObjectStore(config.knowledgeSpaces.objectStore)
   : null;
@@ -113,6 +116,13 @@ const spaceService = uploadService
 const activityService = spaceService
   ? new ActivityService({ activityRepository, objectStore, spaceService, uploadService })
   : null;
+const liveClassroomService = spaceService
+  ? new LiveClassroomService({
+      hmacKey: config.sessionTokenHmacKey,
+      repository: liveClassroomRepository,
+      spaceService,
+    })
+  : null;
 const knowledgeController = new KnowledgeSpaceHttpController({
   accessCodeRepository,
   activityService,
@@ -120,6 +130,7 @@ const knowledgeController = new KnowledgeSpaceHttpController({
   insightService: activityService
     ? new InsightService({ activityRepository, spaceService })
     : null,
+  liveClassroomService,
   rateLimiter,
   searchService: config.knowledgeSpaces.enabled
     ? new KnowledgeSearchService(pool)
@@ -160,11 +171,13 @@ if (config.agentRuntime.encryptionKeys) {
   const outcomeCompiler = new OutcomeCompiler();
   const agentRunService = new AgentRunService({
     agentTurnService,
+    activityRepository,
     crypto: stateCrypto,
     outcomeCompiler,
     maxActiveRunsPerUser: config.agentRuntime.maxActiveRunsPerUser,
     maxQueueDepth: config.agentRuntime.maxQueueDepth,
     intentAuthorizationPolicy,
+    liveClassroomRepository,
     payloadTtlMs: config.agentRuntime.payloadTtlMs,
     repository: agentRunRepository,
   });

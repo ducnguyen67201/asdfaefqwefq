@@ -49,6 +49,11 @@ The optional Activity field is host-resolved from a private Attempt and pins an
 immutable definition, evidence policy, compact source catalog, and bounded prior
 progress. Normal tasks carry `activity: null` and receive no knowledge/evidence
 tools. See [Knowledge Spaces](knowledge-spaces.md).
+For a joined classroom, Electron main—not the renderer—owns the active Attempt,
+latest ordered directive, and local safe-link consent. Help and Check create
+purpose-specific Work Sessions, while the API re-resolves the Attempt and Run
+before adding Activity context to a hosted v8 contract. Closing the Run removes
+sticky task inheritance without restricting unrelated Tro tasks.
 Workspace additionally receives local tools only after the main-process
 directory picker canonicalizes and records the selected root. Patch operations
 are root-confined; the explicitly approved local shell starts at that root but

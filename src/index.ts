@@ -94,6 +94,8 @@ import { ActivityContextService } from './main/knowledge/activity-context-servic
 import { ActivityProgressReporter } from './main/knowledge/activity-progress-reporter';
 import { createActivityToolAdapters } from './main/knowledge/activity-tool-adapters';
 import { ActivityWorkspacePreparationService } from './main/knowledge/activity-workspace-preparation-service';
+import { ClassroomDirectiveService } from './main/knowledge/classroom-directive-service';
+import { ClassroomSessionService } from './main/knowledge/classroom-session-service';
 import { FileSelectionService } from './main/knowledge/file-selection-service';
 import { KnowledgeSpaceClient } from './main/knowledge/knowledge-space-client';
 import { KnowledgeUploadOrchestrator } from './main/knowledge/knowledge-upload-service';
@@ -256,6 +258,13 @@ const knowledgeSpaceClient = new KnowledgeSpaceClient(
 );
 const activityContextService = new ActivityContextService(knowledgeSpaceClient);
 const activityProgressReporter = new ActivityProgressReporter(knowledgeSpaceClient);
+const classroomSessionService = new ClassroomSessionService(knowledgeSpaceClient);
+const classroomDirectiveService = new ClassroomDirectiveService({
+  client: knowledgeSpaceClient,
+  sessionService: classroomSessionService,
+  openExternal: async (url) => shell.openExternal(url, { activate: true }),
+});
+classroomDirectiveService.start();
 const reportActivityProgress = (value: unknown): void => {
   void activityProgressReporter.report(TaskUpdateSchema.parse(value));
 };
@@ -459,6 +468,7 @@ const taskApplicationService = new TaskApplicationService(
   {
     activityContextService,
     activityProgressReporter,
+    classroomSessionService,
     appPreferencesService,
     hostedTaskClient,
     onHostedTerminal: (taskId) => executionCoordinator.endHostedTask(taskId),
@@ -1550,6 +1560,8 @@ function prepareApplicationShutdown(): Promise<void> {
   taskRuntime.off('task-update', reportActivityProgress);
   fileSelectionService.clear();
   activityProgressReporter.clear();
+  classroomDirectiveService.stop();
+  classroomSessionService.clear();
 
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   if (companionWindow && !companionWindow.isDestroyed()) companionWindow.hide();
@@ -2165,6 +2177,8 @@ const createWindow = (): void => {
     appUpdateService,
     authService,
     cuaService,
+    classroomDirectiveService,
+    classroomSessionService,
     executionCoordinator,
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,

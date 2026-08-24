@@ -23,6 +23,13 @@ Implemented:
   and evidence-based facilitator dashboards. PostgreSQL is authoritative; no
   manifest or Firebase is required.
 
+- Live classroom rooms built on the same Run and Attempt model: teacher-only
+  material publishing, short-lived room admission, lobby/start/end lifecycle,
+  typed exercise and safe-link broadcasts, sticky student Activity context,
+  explicit Help/Check/Ready/Submit actions, and teacher Complete/Return review.
+  This release records lifecycle facts only—no cursor, typing, or continuous
+  screen observation.
+
 - Secure Electron main/preload/renderer separation.
 - One persistent OpenAI Agents SDK loop for multilingual reasoning, writing,
   desktop work, and installed tools, with incremental Responses SSE.

@@ -18,8 +18,11 @@ import {
   SubmitTaskRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionSpeechSchema,
+  ClassroomDirectiveSchema,
+  CreateKnowledgeRunRequestSchema,
   MembershipStatusSchema,
   PlanIdSchema,
+  SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
   TaskComposerFocusRequestSchema,
   TaskHistorySchema,
@@ -161,6 +164,104 @@ describe('shared task contracts', () => {
       limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
     });
     expect(contract.activity).toBeNull();
+  });
+
+  it('defaults legacy Activity drafts safely and accepts explicit room Runs', () => {
+    const definition = {
+      title: 'Python loops',
+      objective: 'Practice bounded loops.',
+      instructions: 'Complete the exercise and ask for Help if needed.',
+      launchTarget: 'current_surface',
+      guidancePolicy: {
+        answerReveal: 'after_attempt',
+        hintMode: 'guided',
+        maxHintLevel: 2,
+      },
+      criteria: [],
+      completionPolicy: {
+        requiresSubmission: true,
+        requiresFacilitatorConfirmation: true,
+      },
+    } as const;
+    const saved = SaveKnowledgeActivityRequestSchema.parse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition,
+      sourceVersionIds: [],
+    });
+    expect(saved.definition.sessionPolicy).toEqual({
+      allowedOrigins: [],
+      allowRoomJoin: false,
+    });
+    expect(SaveKnowledgeActivityRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition: {
+        ...definition,
+        sessionPolicy: {
+          allowedOrigins: ['https://class.example/exercise'],
+          allowRoomJoin: true,
+        },
+      },
+      sourceVersionIds: [],
+    }).success).toBe(false);
+    expect(SaveKnowledgeActivityRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition: {
+        ...definition,
+        sessionPolicy: {
+          allowedOrigins: ['https://127.0.0.1'],
+          allowRoomJoin: true,
+        },
+      },
+      sourceVersionIds: [],
+    }).success).toBe(false);
+    expect(ClassroomDirectiveSchema.safeParse({
+      id: randomUUID(),
+      sequence: 1,
+      kind: 'open_url',
+      delivery: 'manual_only',
+      instruction: 'Open this link.',
+      criterionIds: [],
+      url: 'https://[ff02::1]/exercise',
+      origin: 'https://[ff02::1]',
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }).success).toBe(false);
+
+    expect(CreateKnowledgeRunRequestSchema.parse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      activityVersionId: randomUUID(),
+      mode: 'live',
+      opensAt: null,
+      closesAt: null,
+      target: { kind: 'room' },
+      insightPolicy: 'explicit_and_operational',
+    }).target).toEqual({ kind: 'room' });
+    expect(CreateKnowledgeRunRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      activityVersionId: randomUUID(),
+      mode: 'async',
+      opensAt: null,
+      closesAt: null,
+      target: { kind: 'room' },
+      insightPolicy: 'explicit_and_operational',
+    }).success).toBe(false);
+  });
+
+  it('accepts explicit Check intent and leaves trusted Attempt inheritance to main', () => {
+    const attemptId = randomUUID();
+    expect(SubmitTaskRequestSchema.parse({
+      text: 'Is this solution correct?',
+      activityAttemptId: attemptId,
+      activityIntent: 'check',
+    })).toMatchObject({ activityAttemptId: attemptId, activityIntent: 'check' });
+    expect(SubmitTaskRequestSchema.parse({
+      text: 'Check this unrelated task.',
+      activityIntent: 'check',
+    })).toMatchObject({ activityAttemptId: null, activityIntent: 'check' });
   });
   it('validates bounded companion response cards across streaming and completion', () => {
     const cardId = randomUUID();

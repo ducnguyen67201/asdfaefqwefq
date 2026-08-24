@@ -98,6 +98,19 @@ export interface HostedTaskClientOptions {
   reconnectDelay?: (attempt: number) => number;
 }
 
+class HostedRequestError extends Error {
+  constructor(message: string, readonly outcomeUnknown: boolean) {
+    super(message);
+  }
+}
+
+export class HostedTaskOutcomeUnknownError extends Error {
+  constructor(cause: unknown) {
+    super('The hosted task may have started, but Tro could not recover its response.');
+    this.cause = cause;
+  }
+}
+
 function parseEventBlock(block: string): HostedTaskEvent | null {
   const data = block
     .replaceAll('\r\n', '\n')
@@ -127,11 +140,36 @@ export class HostedTaskClient {
     autonomyMode: 'balanced' | 'strict';
     executionProfile: 'everyday' | 'workspace';
     workspaceSelectionId: string | null;
+    activityAttemptId: string | null;
+    activityIntent: 'work' | 'help' | 'check';
   }): Promise<HostedTaskRecord> {
-    return HostedTaskRecordSchema.parse(await this.json('/v1/tasks', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }));
+    const submitOnce = async () => {
+      try {
+        return HostedTaskRecordSchema.parse(await this.json('/v1/tasks', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        }));
+      } catch (error) {
+        if (error instanceof HostedRequestError) throw error;
+        throw new HostedRequestError(
+          error instanceof Error ? error.message : 'Hosted task response was invalid.',
+          true,
+        );
+      }
+    };
+    try {
+      return await submitOnce();
+    } catch (error) {
+      if (!(error instanceof HostedRequestError) || !error.outcomeUnknown) throw error;
+      try {
+        return await submitOnce();
+      } catch (retryError) {
+        if (retryError instanceof HostedRequestError && retryError.outcomeUnknown) {
+          throw new HostedTaskOutcomeUnknownError(retryError);
+        }
+        throw retryError;
+      }
+    }
   }
 
   async status(): Promise<{
@@ -238,20 +276,39 @@ export class HostedTaskClient {
 
   private async json(path: string, init: RequestInit = {}): Promise<unknown> {
     const token = await this.requireToken();
-    const response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...init.headers,
-      },
-      signal: init.signal ?? AbortSignal.timeout(30_000),
-    });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...init.headers,
+        },
+        signal: init.signal ?? AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      throw new HostedRequestError(
+        error instanceof Error ? error.message : 'Hosted task request did not return.',
+        true,
+      );
+    }
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { error?: string } | null;
-      throw new Error(body?.error ?? `Hosted task request failed (${response.status}).`);
+      throw new HostedRequestError(
+        body?.error ?? `Hosted task request failed (${response.status}).`,
+        response.status >= 500,
+      );
     }
-    return response.status === 204 ? null : response.json();
+    if (response.status === 204) return null;
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new HostedRequestError(
+        error instanceof Error ? error.message : 'Hosted task response was invalid.',
+        true,
+      );
+    }
   }
 
   private async requireToken(): Promise<string> {

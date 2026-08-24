@@ -110,7 +110,7 @@ export class PostgresActivityRepository {
           [target.groupId, spaceId],
         );
         userIds = members.rows.map((row) => row.user_id);
-      } else {
+      } else if (target.kind === 'participants') {
         const requestedUserIds = [...new Set(target.userIds)];
         const members = await client.query(
           `SELECT user_id FROM knowledge_space_members
@@ -122,6 +122,8 @@ export class PostgresActivityRepository {
           error.status = 400; error.code = 'participant_not_in_space'; throw error;
         }
         userIds = members.rows.map((row) => row.user_id);
+      } else {
+        userIds = [];
       }
       if (userIds.length) {
         await client.query(
@@ -141,10 +143,20 @@ export class PostgresActivityRepository {
   }
 
   async setRunState(runId, spaceId, state) {
-    const result = await this.pool.query(
-      `UPDATE knowledge_activity_runs SET state=$3, updated_at=NOW() WHERE id=$1 AND space_id=$2 RETURNING id,state`, [runId, spaceId, state],
-    );
-    return result.rows[0] ?? null;
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `UPDATE knowledge_activity_runs SET state=$3, updated_at=NOW()
+         WHERE id=$1 AND space_id=$2 RETURNING id,state`, [runId, spaceId, state],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      await client.query(
+        `INSERT INTO knowledge_activity_run_events (run_id,event_type,payload)
+         VALUES ($1,$2,jsonb_build_object('state',$3::text))`,
+        [runId, state === 'open' ? 'class_started' : 'class_ended', state],
+      );
+      return row;
+    });
   }
 
   async runState(runId, spaceId) {
@@ -292,6 +304,18 @@ export class PostgresActivityRepository {
     } : null;
   }
 
+  async workSessionForTask(taskId, attemptId, userId) {
+    const result = await this.pool.query(
+      `SELECT sessions.id,sessions.purpose,sessions.state
+       FROM knowledge_activity_work_sessions sessions
+       JOIN knowledge_activity_attempts attempts ON attempts.id=sessions.attempt_id
+       WHERE sessions.task_id=$1 AND sessions.attempt_id=$2 AND attempts.user_id=$3`,
+      [taskId, attemptId, userId],
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, purpose: row.purpose, state: row.state } : null;
+  }
+
   async acknowledgePolicy(attemptId, userId, policyVersion) {
     const result = await this.pool.query(
       `UPDATE knowledge_activity_attempts attempts SET acknowledged_policy_version=$3, updated_at=NOW()
@@ -307,7 +331,7 @@ export class PostgresActivityRepository {
         `UPDATE knowledge_activity_attempts attempts
          SET state='submitted',submitted_at=COALESCE(submitted_at,NOW()),updated_at=NOW()
          WHERE attempts.id=$1 AND attempts.user_id=$2
-           AND attempts.state IN ('assigned','in_progress','blocked')
+           AND attempts.state IN ('assigned','in_progress','blocked','ready_for_review')
            AND EXISTS (
              SELECT 1 FROM knowledge_submission_artifacts artifacts
              JOIN knowledge_source_versions versions ON versions.id=artifacts.source_version_id
@@ -353,8 +377,12 @@ export class PostgresActivityRepository {
       const request = await client.query(
         `INSERT INTO knowledge_attempt_help_requests
            (client_id,attempt_id,requested_by)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (attempt_id,client_id) DO NOTHING
+         SELECT $1,$2,$3
+         WHERE NOT EXISTS (
+           SELECT 1 FROM knowledge_attempt_help_requests
+           WHERE attempt_id=$2 AND resolved_at IS NULL
+         )
+         ON CONFLICT DO NOTHING
          RETURNING requested_at`,
         [clientId, attemptId, userId],
       );
@@ -375,11 +403,11 @@ export class PostgresActivityRepository {
     });
   }
 
-  async createWorkSession({ attemptId, clientId, launchKind, taskId, userId }) {
+  async createWorkSession({ attemptId, clientId, launchKind, purpose, taskId, userId }) {
     return inTransaction(this.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`work:${attemptId}:${clientId}`]);
       const existing = await client.query(
-        `SELECT sessions.id,sessions.state,sessions.task_id,sessions.launch_kind,sessions.updated_at AS created_at
+        `SELECT sessions.id,sessions.state,sessions.task_id,sessions.launch_kind,sessions.purpose,sessions.updated_at AS created_at
          FROM knowledge_activity_work_sessions sessions
          JOIN knowledge_activity_attempts attempts ON attempts.id=sessions.attempt_id
          WHERE sessions.attempt_id=$1 AND sessions.client_id=$2 AND attempts.user_id=$3`,
@@ -387,13 +415,13 @@ export class PostgresActivityRepository {
       );
       if (existing.rows[0]) {
         const row = existing.rows[0];
-        return { id: row.id, state: row.state, taskId: row.task_id, launchKind: row.launch_kind, createdAt: iso(row.created_at) };
+        return { id: row.id, state: row.state, taskId: row.task_id, launchKind: row.launch_kind, purpose: row.purpose, createdAt: iso(row.created_at) };
       }
       const result = await client.query(
-        `INSERT INTO knowledge_activity_work_sessions (client_id,attempt_id,task_id,launch_kind)
-         SELECT $2,attempts.id,$3,$4 FROM knowledge_activity_attempts attempts
+        `INSERT INTO knowledge_activity_work_sessions (client_id,attempt_id,task_id,launch_kind,purpose)
+         SELECT $2,attempts.id,$3,$4,$6 FROM knowledge_activity_attempts attempts
          WHERE attempts.id=$1 AND attempts.user_id=$5
-         RETURNING id,state,task_id,launch_kind,created_at`, [attemptId, clientId, taskId, launchKind, userId],
+         RETURNING id,state,task_id,launch_kind,purpose,created_at`, [attemptId, clientId, taskId, launchKind, userId, purpose],
       );
       if (!result.rows[0]) return null;
       await client.query(
@@ -402,32 +430,40 @@ export class PostgresActivityRepository {
       );
       await client.query(
         `INSERT INTO knowledge_activity_run_events (run_id,attempt_id,event_type,payload)
-         SELECT run_id,id,'work_session_created',jsonb_build_object('state','created') FROM knowledge_activity_attempts WHERE id=$1`, [attemptId],
+         SELECT run_id,id,'work_session_created',jsonb_build_object('state','created','purpose',$2::text) FROM knowledge_activity_attempts WHERE id=$1`, [attemptId, purpose],
       );
       const row = result.rows[0];
-      return { id: row.id, state: row.state, taskId: row.task_id, launchKind: row.launch_kind, createdAt: iso(row.created_at) };
+      return { id: row.id, state: row.state, taskId: row.task_id, launchKind: row.launch_kind, purpose: row.purpose, createdAt: iso(row.created_at) };
     });
   }
 
   async updateWorkSession({ helpRequested, hintLevel, state, userId, workSessionId }) {
-    const result = await this.pool.query(
-      `UPDATE knowledge_activity_work_sessions sessions SET
-         state=$2, help_requested_at=CASE WHEN $3::boolean THEN COALESCE(help_requested_at,NOW()) ELSE help_requested_at END,
-         hint_level=COALESCE($4,hint_level), started_at=CASE WHEN $2='active' THEN COALESCE(started_at,NOW()) ELSE started_at END,
-         ended_at=CASE WHEN $2 IN ('completed','cancelled','failed') THEN NOW() ELSE ended_at END, updated_at=NOW()
-       FROM knowledge_activity_attempts attempts
-       WHERE sessions.id=$1 AND sessions.attempt_id=attempts.id AND attempts.user_id=$5
-       RETURNING sessions.id,sessions.attempt_id,sessions.state,sessions.help_requested_at,sessions.hint_level`,
-      [workSessionId, state, Boolean(helpRequested), hintLevel ?? null, userId],
-    );
-    const row = result.rows[0];
-    if (!row) return null;
-    await this.pool.query(
-      `INSERT INTO knowledge_activity_run_events (run_id,attempt_id,event_type,payload)
-       SELECT run_id,id,'work_session_updated',jsonb_build_object('state',$2::text,'helpRequested',$3::boolean,'hintLevel',$4::int)
-       FROM knowledge_activity_attempts WHERE id=$1`, [row.attempt_id, state, Boolean(helpRequested), row.hint_level],
-    );
-    return { id: row.id, state: row.state, helpRequestedAt: iso(row.help_requested_at), hintLevel: row.hint_level };
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `UPDATE knowledge_activity_work_sessions sessions SET
+           state=$2,
+           help_requested_at=CASE WHEN $3::boolean THEN COALESCE(sessions.help_requested_at,NOW()) ELSE sessions.help_requested_at END,
+           hint_level=COALESCE($4,sessions.hint_level),
+           started_at=CASE WHEN $2='active' THEN COALESCE(sessions.started_at,NOW()) ELSE sessions.started_at END,
+           ended_at=CASE WHEN $2 IN ('completed','cancelled','failed') THEN NOW() ELSE sessions.ended_at END,
+           updated_at=NOW()
+         FROM knowledge_activity_attempts attempts
+         WHERE sessions.id=$1 AND sessions.attempt_id=attempts.id AND attempts.user_id=$5
+         RETURNING sessions.id,sessions.attempt_id,sessions.state,sessions.help_requested_at,
+                   sessions.hint_level,attempts.run_id`,
+        [workSessionId, state, Boolean(helpRequested), hintLevel ?? null, userId],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      await client.query(
+        `INSERT INTO knowledge_activity_run_events (run_id,attempt_id,event_type,payload)
+         VALUES ($1,$2,'work_session_updated',jsonb_build_object(
+           'state',$3::text,'helpRequested',$4::boolean,'hintLevel',$5::int
+         ))`,
+        [row.run_id, row.attempt_id, row.state, Boolean(helpRequested), row.hint_level],
+      );
+      return { id: row.id, state: row.state, helpRequestedAt: iso(row.help_requested_at), hintLevel: row.hint_level };
+    });
   }
 
   async insertEvidence(input) {
@@ -463,22 +499,29 @@ export class PostgresActivityRepository {
   async dashboard(runId, spaceId, sinceSequence = null) {
     if (sinceSequence !== null) {
       const events = await this.pool.query(
-        `SELECT sequence,event_type,payload,created_at FROM knowledge_activity_run_events
+        `SELECT sequence,attempt_id,event_type,payload,created_at FROM knowledge_activity_run_events
          WHERE run_id=$1 AND sequence>$2 ORDER BY sequence LIMIT 1000`, [runId, sinceSequence],
       );
-      return { kind: 'delta', events: events.rows.map((row) => ({ sequence: Number(row.sequence), type: row.event_type, payload: row.payload, createdAt: iso(row.created_at) })), maxSequence: Number(events.rows.at(-1)?.sequence ?? sinceSequence) };
+      return { kind: 'delta', events: events.rows.map((row) => ({ sequence: Number(row.sequence), attemptId: row.attempt_id, type: row.event_type, payload: row.payload, createdAt: iso(row.created_at) })), maxSequence: Number(events.rows.at(-1)?.sequence ?? sinceSequence) };
     }
     const result = await this.pool.query(
       `SELECT attempts.id,attempts.user_id,attempts.state,attempts.updated_at,
+              participations.joined_at,participations.left_at,runs.state AS run_state,
+              (SELECT latest.state FROM knowledge_activity_work_sessions latest
+               WHERE latest.attempt_id=attempts.id
+               ORDER BY latest.updated_at DESC,latest.id DESC LIMIT 1) AS latest_session_state,
               COUNT(DISTINCT sessions.id)::int AS session_count,
               COUNT(DISTINCT evidence.id)::int AS evidence_count,
-              GREATEST(MAX(sessions.help_requested_at),MAX(help.requested_at)) AS help_requested_at
+              MAX(help.requested_at) AS help_requested_at
        FROM knowledge_activity_runs runs
        JOIN knowledge_activity_attempts attempts ON attempts.run_id=runs.id
+       LEFT JOIN knowledge_run_participations participations ON participations.attempt_id=attempts.id
        LEFT JOIN knowledge_activity_work_sessions sessions ON sessions.attempt_id=attempts.id
        LEFT JOIN knowledge_activity_evidence evidence ON evidence.attempt_id=attempts.id
        LEFT JOIN knowledge_attempt_help_requests help ON help.attempt_id=attempts.id AND help.resolved_at IS NULL
-       WHERE runs.id=$1 AND runs.space_id=$2 GROUP BY attempts.id ORDER BY attempts.updated_at DESC LIMIT 500`, [runId, spaceId],
+       WHERE runs.id=$1 AND runs.space_id=$2
+       GROUP BY attempts.id,participations.joined_at,participations.left_at,runs.state
+       ORDER BY attempts.updated_at DESC LIMIT 500`, [runId, spaceId],
     );
     const [sequence, evidence] = await Promise.all([this.pool.query(
       `SELECT COALESCE(MAX(events.sequence),0) AS value
@@ -502,7 +545,27 @@ export class PostgresActivityRepository {
     )]);
     return {
       kind: 'snapshot',
-      participants: result.rows.map((row) => ({ id: row.user_id, attemptId: row.id, state: row.state, updatedAt: iso(row.updated_at), sessionCount: row.session_count, evidenceCount: row.evidence_count, helpRequestedAt: iso(row.help_requested_at) })),
+      participants: result.rows.map((row) => ({
+        id: row.user_id,
+        attemptId: row.id,
+        state: row.state,
+        status: row.state === 'completed' ? 'completed'
+          : row.state === 'submitted' ? 'submitted'
+            : row.state === 'ready_for_review' ? 'ready'
+              : row.state === 'withdrawn' ? 'withdrawn'
+                : row.left_at ? 'left'
+                  : row.help_requested_at ? 'needs_help'
+                    : row.joined_at && row.run_state === 'draft' ? 'lobby'
+                      : row.latest_session_state === 'failed' ? 'launch_failed'
+                        : !row.joined_at && row.session_count === 0 ? 'not_joined'
+                          : 'working',
+        joinedAt: iso(row.joined_at),
+        leftAt: iso(row.left_at),
+        updatedAt: iso(row.updated_at),
+        sessionCount: row.session_count,
+        evidenceCount: row.evidence_count,
+        helpRequestedAt: iso(row.help_requested_at),
+      })),
       criterionEvidence: evidence.rows.map((row) => ({
         agentCandidateCount: row.agent_candidate_count,
         corroboratedCount: row.corroborated_count,

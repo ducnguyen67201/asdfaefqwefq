@@ -12,8 +12,8 @@ import {
 describe('app language', () => {
   it('only exposes interface languages supported by the shared contract', () => {
     expect(
-      APP_LANGUAGE_OPTIONS.every((option) =>
-        AppLanguageSchema.safeParse(option.code).success,
+      APP_LANGUAGE_OPTIONS.every(
+        (option) => AppLanguageSchema.safeParse(option.code).success,
       ),
     ).toBe(true);
   });
@@ -39,5 +39,21 @@ describe('app language', () => {
     expect(
       translate('vi', 'Strict mode asks before every mutation or side effect.'),
     ).not.toContain('Strict mode');
+  });
+
+  it('translates the role-aware live classroom flow', () => {
+    expect(translate('vi', 'Join your class')).toBe('Tham gia lớp học');
+    expect(translate('vi', 'Broadcast to class')).toBe('Gửi cho cả lớp');
+    expect(translate('vi', 'Ready for review')).toBe('Sẵn sàng để xem xét');
+    expect(translate('vi', 'Confirm Complete')).toBe('Xác nhận hoàn tất');
+    expect(
+      translate('vi', '{count} students in the lobby', { count: 24 }),
+    ).toBe('24 học sinh trong phòng chờ');
+    expect(
+      translate(
+        'vi',
+        ' Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.',
+      ),
+    ).not.toContain('continuous cursor');
   });
 });

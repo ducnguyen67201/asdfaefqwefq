@@ -101,6 +101,7 @@ export class AgentRunWorker {
       });
     }
     const common = {
+      activity: operational.contract.activity ?? null,
       budgetContext: {
         agentTurnId: operational.agentTurnId,
         planId: capabilities.planId,

@@ -47,6 +47,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   cuaConnect: ReturnType<typeof vi.fn>;
   cuaGetStatus: ReturnType<typeof vi.fn>;
   callOrder: string[];
+  classroomJoin: ReturnType<typeof vi.fn>;
+  classroomOpenDirective: ReturnType<typeof vi.fn>;
+  createClassroomDirective: ReturnType<typeof vi.fn>;
   checkForUpdates: ReturnType<typeof vi.fn>;
   transcribeVoiceSegment: ReturnType<typeof vi.fn>;
   getAppPreferences: ReturnType<typeof vi.fn>;
@@ -263,6 +266,48 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     summary: 'Workspace mode is available through the Tro service.',
   }));
   const workspaceSelect = vi.fn(async () => null);
+  const classroomSession = {
+    attemptId: '11111111-1111-4111-8111-111111111111',
+    attemptState: 'assigned' as const,
+    run: {
+      id: '22222222-2222-4222-8222-222222222222',
+      state: 'draft' as const,
+      mode: 'live' as const,
+      status: 'lobby' as const,
+    },
+    space: {
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Python 101',
+    },
+    activityVersionId: '44444444-4444-4444-8444-444444444444',
+    activity: { title: 'Loops', objective: 'Practice loops.', requiresSubmission: false },
+    currentDirective: null,
+    joinedAt: '2026-08-25T00:00:00.000Z',
+    leftAt: null,
+    role: 'student' as const,
+    autoOpenConsent: false,
+  };
+  const classroomJoin = vi.fn(async () => classroomSession);
+  const classroomOpenDirective = vi.fn(async () => undefined);
+  const createClassroomDirective = vi.fn(async (request: unknown) => request);
+  const classroomSessionService = {
+    clear: vi.fn(),
+    get: vi.fn(() => classroomSession),
+    join: classroomJoin,
+    leave: vi.fn(async () => undefined),
+    onChange: vi.fn(() => vi.fn()),
+    restore: vi.fn(async () => classroomSession),
+    setAutoOpenConsent: vi.fn((consent: boolean) => ({
+      ...classroomSession,
+      autoOpenConsent: consent,
+    })),
+  };
+  const classroomDirectiveService = {
+    dismiss: vi.fn(),
+    getNotice: vi.fn(() => null),
+    onNotice: vi.fn(() => vi.fn()),
+    open: classroomOpenDirective,
+  };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
     appUpdateService: {
@@ -276,11 +321,16 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       update: updateAppPreferences,
     },
     authService,
+    classroomDirectiveService,
+    classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
     executionCoordinator,
     getCompanionInteractionWindow: () => interactionWindow,
     handleCompanionResponseAction,
     membershipService,
+    knowledgeSpaceClient: {
+      createDirective: createClassroomDirective,
+    },
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,
@@ -326,10 +376,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   return {
     authService,
     callOrder,
+    classroomJoin,
+    classroomOpenDirective,
     checkForUpdates,
     transcribeVoiceSegment,
     cuaConnect,
     cuaGetStatus,
+    createClassroomDirective,
     event,
     interactionEvent,
     executionCoordinator,
@@ -457,6 +510,65 @@ describe('registerIpcHandlers auth boundary', () => {
     expect(executionCoordinator.start).toHaveBeenCalledWith({
       taskId: 'task-id',
     });
+    unregister();
+  });
+
+  it('routes parsed classroom join and directive actions through trusted main services', async () => {
+    const {
+      classroomJoin,
+      classroomOpenDirective,
+      createClassroomDirective,
+      event,
+      unregister,
+    } = setup(true);
+    const joinRequest = {
+      clientId: '55555555-5555-4555-8555-555555555555',
+      code: 'TRO-ABCD-12',
+    };
+    const directive = {
+      id: '66666666-6666-4666-8666-666666666666',
+      sequence: 1,
+      kind: 'exercise' as const,
+      delivery: 'manual_only' as const,
+      instruction: 'Complete exercise A.',
+      criterionIds: ['exercise-a'],
+      createdAt: '2026-08-25T00:00:00.000Z',
+    };
+    const createRequest = {
+      spaceId: '33333333-3333-4333-8333-333333333333',
+      runId: '22222222-2222-4222-8222-222222222222',
+      clientId: '77777777-7777-4777-8777-777777777777',
+      directive: {
+        kind: 'exercise' as const,
+        instruction: 'Complete exercise A.',
+        criterionIds: ['exercise-a'],
+      },
+    };
+
+    await electronMock.handlers.get(IPC_CHANNELS.joinKnowledgeRoom)?.(
+      event,
+      joinRequest,
+    );
+    await electronMock.handlers.get(IPC_CHANNELS.createClassroomDirective)?.(
+      event,
+      createRequest,
+    );
+    await electronMock.handlers.get(IPC_CHANNELS.openClassroomDirective)?.(
+      event,
+      { directive },
+    );
+
+    expect(classroomJoin).toHaveBeenCalledWith(joinRequest);
+    expect(createClassroomDirective).toHaveBeenCalledWith(createRequest);
+    expect(classroomOpenDirective).toHaveBeenCalledWith(directive);
+
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.joinKnowledgeRoom)?.(
+        event,
+        { ...joinRequest, code: 'short' },
+      ),
+    ).rejects.toThrow();
+    expect(classroomJoin).toHaveBeenCalledOnce();
     unregister();
   });
 

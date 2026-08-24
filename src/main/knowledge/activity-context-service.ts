@@ -11,13 +11,21 @@ export class ActivityContextService {
     return this.client.getAttempt(attemptId);
   }
 
-  async create(attempt: HostedAttemptContext, taskId: string, launchKind: 'none' | 'workspace' | 'current_surface'): Promise<ActivityContext> {
+  async create(
+    attempt: HostedAttemptContext,
+    taskId: string,
+    launchKind: 'none' | 'workspace' | 'current_surface',
+    purpose: 'work' | 'help' | 'check' = 'work',
+    currentDirective: ActivityContext['currentDirective'] = null,
+  ): Promise<ActivityContext> {
     const attemptId = attempt.attemptId;
-    const workSession = await this.client.createWorkSession(attemptId, { clientId: randomUUID(), taskId, launchKind });
+    const workSession = await this.client.createWorkSession(attemptId, { clientId: randomUUID(), taskId, launchKind, purpose });
     return ActivityContextSchema.parse({
       attemptId, workSessionId: workSession.id, activityVersionId: attempt.activityVersionId, runId: attempt.run.id,
       space: attempt.space,
       activity: attempt.definition,
+      purpose,
+      currentDirective,
       insightPolicy: attempt.run.insightPolicy,
       insightPolicyVersion: attempt.run.insightPolicyVersion,
       policyAcknowledged: attempt.acknowledgedPolicyVersion === attempt.run.insightPolicyVersion,

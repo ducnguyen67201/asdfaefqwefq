@@ -12,16 +12,17 @@ const TRANSITIONS = Object.freeze({
   },
   attempt: {
     assigned: new Set(['in_progress', 'withdrawn']),
-    in_progress: new Set(['blocked', 'submitted', 'completed', 'withdrawn']),
-    blocked: new Set(['in_progress', 'submitted', 'withdrawn']),
+    in_progress: new Set(['blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']),
+    blocked: new Set(['in_progress', 'ready_for_review', 'submitted', 'withdrawn']),
+    ready_for_review: new Set(['in_progress', 'submitted', 'completed', 'withdrawn']),
     submitted: new Set(['completed', 'in_progress']),
     completed: new Set(),
     withdrawn: new Set(),
   },
   workSession: {
-    created: new Set(['active', 'cancelled']),
+    created: new Set(['active', 'cancelled', 'failed']),
     active: new Set(['paused', 'completed', 'cancelled', 'failed']),
-    paused: new Set(['active', 'completed', 'cancelled']),
+    paused: new Set(['active', 'completed', 'cancelled', 'failed']),
     completed: new Set(),
     cancelled: new Set(),
     failed: new Set(),
@@ -47,6 +48,10 @@ export function isRunOpen(run, now = new Date()) {
   if (run.opensAt && time < new Date(run.opensAt).getTime()) return false;
   if (run.closesAt && time >= new Date(run.closesAt).getTime()) return false;
   return true;
+}
+
+export function canWorkOnAttempt(state) {
+  return ['assigned', 'in_progress', 'blocked', 'ready_for_review'].includes(state);
 }
 
 export function nextAttemptState({ current, helpRequested, submitted }) {

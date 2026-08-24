@@ -76,6 +76,22 @@ import {
   RedeemKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteResponseSchema,
   RequestKnowledgeAttemptHelpSchema,
+  ClassroomDirectiveNoticeSchema,
+  ClassroomDirectiveSchema,
+  ClassroomSessionProjectionSchema,
+  CreateClassroomDirectiveRequestSchema,
+  CreateKnowledgeRoomCodeRequestSchema,
+  DismissClassroomDirectiveRequestSchema,
+  JoinKnowledgeRoomRequestSchema,
+  KnowledgeAttemptMutationRequestSchema,
+  KnowledgeAttemptTransitionSchema,
+  KnowledgeRoomCodeSchema,
+  KnowledgeRoomRevocationSchema,
+  OpenClassroomDirectiveRequestSchema,
+  ResolveKnowledgeAttemptHelpRequestSchema,
+  ReviewKnowledgeAttemptRequestSchema,
+  RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomLinkConsentRequestSchema,
 } from './shared/contracts';
 import {
   IPC_CHANNELS,
@@ -227,6 +243,95 @@ const desktopApi: DesktopApi = {
   async requestKnowledgeAttemptHelp(input) {
     const request = RequestKnowledgeAttemptHelpSchema.parse(input);
     await ipcRenderer.invoke(IPC_CHANNELS.requestKnowledgeAttemptHelp, request);
+  },
+
+  async createKnowledgeRoomCode(input) {
+    const request = CreateKnowledgeRoomCodeRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createKnowledgeRoomCode, request);
+    return KnowledgeRoomCodeSchema.parse(response);
+  },
+
+  async revokeKnowledgeRoomCode(input) {
+    const request = RevokeKnowledgeRoomCodeRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.revokeKnowledgeRoomCode, request);
+    return KnowledgeRoomRevocationSchema.parse(response);
+  },
+
+  async joinKnowledgeRoom(input) {
+    const request = JoinKnowledgeRoomRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.joinKnowledgeRoom, request);
+    return ClassroomSessionProjectionSchema.parse(response);
+  },
+
+  async restoreClassroomSession() {
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.restoreClassroomSession);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async getClassroomSession() {
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getClassroomSession);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async leaveClassroomSession(input) {
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.leaveClassroomSession, request);
+  },
+
+  async setClassroomLinkConsent(input) {
+    const request = SetClassroomLinkConsentRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.setClassroomLinkConsent, request);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async createClassroomDirective(input) {
+    const request = CreateClassroomDirectiveRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createClassroomDirective, request);
+    return ClassroomDirectiveSchema.parse(response);
+  },
+
+  async openClassroomDirective(input) {
+    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.openClassroomDirective, request);
+  },
+
+  async dismissClassroomDirective(directiveId) {
+    const request = DismissClassroomDirectiveRequestSchema.parse({ directiveId });
+    await ipcRenderer.invoke(IPC_CHANNELS.dismissClassroomDirective, request);
+  },
+
+  async readyKnowledgeAttempt(input) {
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readyKnowledgeAttempt, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  async reviewKnowledgeAttempt(input) {
+    const request = ReviewKnowledgeAttemptRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.reviewKnowledgeAttempt, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  async resolveKnowledgeAttemptHelp(input) {
+    const request = ResolveKnowledgeAttemptHelpRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.resolveKnowledgeAttemptHelp, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  onClassroomSessionChanged(listener) {
+    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      listener(ClassroomSessionProjectionSchema.nullable().parse(value));
+    };
+    ipcRenderer.on(IPC_CHANNELS.classroomSessionChanged, eventHandler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomSessionChanged, eventHandler);
+  },
+
+  onClassroomDirectiveChanged(listener) {
+    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      listener(ClassroomDirectiveNoticeSchema.nullable().parse(value));
+    };
+    ipcRenderer.on(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
   },
 
   onAgentActivity(listener) {

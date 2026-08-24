@@ -13,6 +13,8 @@ const TOOL_DEFINITIONS = Object.freeze([
   { toolId: 'task.interaction', operations: ['request'], defaultEffectKind: 'none' },
   { toolId: 'workspace.filesystem', operations: ['read_file', 'write_file'], defaultEffectKind: 'operation_specific' },
   { toolId: 'workspace.terminal', operations: ['run_command'], defaultEffectKind: 'operation_specific' },
+  { toolId: 'knowledge.search', operations: ['search'], defaultEffectKind: 'none' },
+  { toolId: 'activity.signal', operations: ['record'], defaultEffectKind: 'none' },
 ]);
 
 function canonical(value) {

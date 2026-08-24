@@ -7,7 +7,7 @@ import {
 } from '../src/agent-run-service.mjs';
 import { deterministicOutcomeContract } from '../src/outcome-compiler.mjs';
 
-function harness(intentEnabled) {
+function harness(intentEnabled, overrides = {}) {
   const submissions = [];
   const crypto = {
     encryptJson(value, aad) {
@@ -56,6 +56,7 @@ function harness(intentEnabled) {
           deterministicOutcomeContract(request, executionProfile),
       },
       repository,
+      ...overrides,
     }),
   };
 }
@@ -92,6 +93,179 @@ test('disabled rollout produces a fail-closed v8 projection', async () => {
   });
   assert.equal(result.contractSchemaVersion, 8);
   assert.deepEqual(result.intentAuthorization.grants, []);
+});
+
+test('binds a hosted Help run to the authenticated Attempt and Work Session', async () => {
+  const attemptId = '55555555-5555-4555-8555-555555555555';
+  const workSessionId = '66666666-6666-4666-8666-666666666666';
+  const directive = {
+    id: '77777777-7777-4777-8777-777777777777',
+    sequence: 3,
+    kind: 'exercise',
+    delivery: 'manual_only',
+    instruction: 'Complete exercise B.',
+    criterionIds: ['criterion-b'],
+    createdAt: '2026-08-21T00:00:00.000Z',
+  };
+  const activityRepository = {
+    attemptContext: async (requestedAttemptId, userId) => {
+      assert.equal(requestedAttemptId, attemptId);
+      assert.equal(userId, 'student-1');
+      return {
+        attemptId,
+        userId,
+        state: 'in_progress',
+        acknowledgedPolicyVersion: 'policy-v1',
+        run: {
+          id: '88888888-8888-4888-8888-888888888888',
+          state: 'open',
+          mode: 'live',
+          opensAt: null,
+          closesAt: null,
+          insightPolicy: 'explicit_and_operational',
+          insightPolicyVersion: 'policy-v1',
+        },
+        space: {
+          id: '99999999-9999-4999-8999-999999999999',
+          name: 'Python 101',
+        },
+        activityVersionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        definition: {
+          title: 'Loops',
+          objective: 'Use a loop to solve the exercise.',
+          instructions: 'Complete exercise B without revealing the final answer.',
+          launchTarget: 'current_surface',
+          guidancePolicy: {
+            answerReveal: 'after_attempt',
+            hintMode: 'guided',
+            maxHintLevel: 2,
+          },
+          criteria: [{
+            id: 'criterion-b',
+            title: 'Correct loop',
+            description: 'The program uses a loop.',
+            tags: ['python'],
+          }],
+          completionPolicy: {
+            requiresSubmission: true,
+            requiresFacilitatorConfirmation: true,
+          },
+          sessionPolicy: {
+            allowedOrigins: ['https://class.example'],
+            allowRoomJoin: true,
+          },
+        },
+        sourceCatalog: [{ title: 'Lesson 3', role: 'instructions' }],
+        priorProgress: {
+          completedCriterionIds: [],
+          sessionCount: 1,
+          summary: 'One prior Work Session.',
+        },
+      };
+    },
+    workSessionForTask: async (taskId, requestedAttemptId, userId) => {
+      assert.equal(taskId, submission.taskId);
+      assert.equal(requestedAttemptId, attemptId);
+      assert.equal(userId, 'student-1');
+      return { id: workSessionId, purpose: 'help', state: 'active' };
+    },
+  };
+  const liveClassroomRepository = {
+    sessionForAttempt: async () => ({
+      currentDirective: directive,
+      leftAt: null,
+      run: { state: 'open' },
+    }),
+  };
+  const { service, submissions } = harness(true, {
+    activityRepository,
+    liveClassroomRepository,
+  });
+
+  const result = await service.submit(
+    { id: 'student-1', plan: 'free' },
+    {
+      ...submission,
+      request: 'Give me a hint for exercise B.',
+      activityAttemptId: attemptId,
+      activityIntent: 'help',
+    },
+  );
+
+  assert.deepEqual(result.activity, submissions[0].contractEnvelope.value.activity);
+  assert.equal(result.activity.attemptId, attemptId);
+  assert.equal(result.activity.workSessionId, workSessionId);
+  assert.equal(result.activity.purpose, 'help');
+  assert.deepEqual(result.activity.currentDirective, directive);
+  assert.equal(result.activity.policyAcknowledged, true);
+});
+
+test('rejects an Activity Attempt that is not owned by the authenticated user', async () => {
+  const { service, submissions } = harness(true, {
+    activityRepository: {
+      attemptContext: async () => null,
+      workSessionForTask: async () => {
+        throw new Error('must not be called');
+      },
+    },
+  });
+
+  await assert.rejects(
+    service.submit(
+      { id: 'student-2', plan: 'free' },
+      {
+        ...submission,
+        activityAttemptId: '55555555-5555-4555-8555-555555555555',
+        activityIntent: 'check',
+      },
+    ),
+    (error) => error.code === 'activity_attempt_not_found' && error.status === 404,
+  );
+  assert.equal(submissions.length, 0);
+});
+
+test('rejects submitted Attempts and terminal Work Sessions', async () => {
+  const attemptId = '55555555-5555-4555-8555-555555555555';
+  const submittedHarness = harness(true, {
+    activityRepository: {
+      attemptContext: async () => ({
+        state: 'submitted',
+        run: { state: 'open', opensAt: null, closesAt: null },
+      }),
+      workSessionForTask: async () => {
+        throw new Error('must not be called');
+      },
+    },
+  });
+  await assert.rejects(
+    submittedHarness.service.submit(
+      { id: 'student-1', plan: 'free' },
+      { ...submission, activityAttemptId: attemptId },
+    ),
+    (error) => error.code === 'attempt_not_active',
+  );
+
+  const failedSessionHarness = harness(true, {
+    activityRepository: {
+      attemptContext: async () => ({
+        state: 'in_progress',
+        run: { state: 'open', opensAt: null, closesAt: null },
+        definition: { launchTarget: 'current_surface' },
+      }),
+      workSessionForTask: async () => ({
+        id: '66666666-6666-4666-8666-666666666666',
+        purpose: 'work',
+        state: 'failed',
+      }),
+    },
+  });
+  await assert.rejects(
+    failedSessionHarness.service.submit(
+      { id: 'student-1', plan: 'free' },
+      { ...submission, activityAttemptId: attemptId },
+    ),
+    (error) => error.code === 'activity_session_missing',
+  );
 });
 
 test('kill switch preserves existing grants while advancing the steering revision', () => {

@@ -11,6 +11,7 @@ import {
 import { AGENT_TOOL_SCHEMA_DIGEST } from './agent-tool-catalog.mjs';
 import { compileIntentAuthorization } from './intent-authorization-compiler.mjs';
 import { verifierDigest } from './outcome-compiler.mjs';
+import { canWorkOnAttempt, isRunOpen } from './activity-lifecycle.mjs';
 
 const DEFAULT_TASK_TTL_MS = 30 * 60 * 1_000;
 const DEFAULT_PAYLOAD_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -45,6 +46,8 @@ export class AgentRunService {
     maxActiveRunsPerUser = 2,
     maxQueueDepth = 1_000,
     intentAuthorizationPolicy = { enabledFor: () => false },
+    activityRepository = null,
+    liveClassroomRepository = null,
   }) {
     this.agentTurnService = agentTurnService;
     this.crypto = crypto;
@@ -55,11 +58,16 @@ export class AgentRunService {
     this.maxActiveRunsPerUser = maxActiveRunsPerUser;
     this.maxQueueDepth = maxQueueDepth;
     this.intentAuthorizationPolicy = intentAuthorizationPolicy;
+    this.activityRepository = activityRepository;
+    this.liveClassroomRepository = liveClassroomRepository;
   }
 
   async submit(user, input) {
     const request = SubmitAgentRunSchema.parse(input);
     const runId = randomUUID();
+    const activity = request.activityAttemptId
+      ? await this.#resolveActivity(user.id, request)
+      : null;
     const outcomeContract = await this.outcomeCompiler.compile({
       request: request.request,
       executionProfile: request.executionProfile,
@@ -80,6 +88,7 @@ export class AgentRunService {
       executionProfile: request.executionProfile,
       autonomyMode: request.autonomyMode,
       workspaceSelectionId: request.workspaceSelectionId,
+      activity,
       outcomeContract,
       intentAuthorization,
       approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
@@ -373,9 +382,71 @@ export class AgentRunService {
       contractSchemaVersion: contract.schemaVersion,
       autonomyMode: contract.autonomyMode ?? 'balanced',
       outcomeContract: contract.outcomeContract,
+      activity: contract.activity ?? null,
       ...(contract.schemaVersion === 8
         ? { intentAuthorization: contract.intentAuthorization }
         : {}),
+    };
+  }
+
+  async #resolveActivity(userId, request) {
+    if (!this.activityRepository) {
+      const error = new Error('Activity execution is unavailable.');
+      error.status = 503; error.code = 'activity_runtime_unavailable'; throw error;
+    }
+    const attempt = await this.activityRepository.attemptContext(request.activityAttemptId, userId);
+    if (!attempt) {
+      const error = new Error('Assigned Activity not found.');
+      error.status = 404; error.code = 'activity_attempt_not_found'; throw error;
+    }
+    if (!isRunOpen(attempt.run)) {
+      const error = new Error('This Run is not open.');
+      error.status = 409; error.code = 'run_not_open'; throw error;
+    }
+    if (!canWorkOnAttempt(attempt.state)) {
+      const error = new Error('This Attempt is waiting for review or no longer active.');
+      error.status = 409; error.code = 'attempt_not_active'; throw error;
+    }
+    if (
+      (attempt.definition.launchTarget === 'workspace') !==
+      (request.executionProfile === 'workspace')
+    ) {
+      const error = new Error('Activity launch authority does not match the execution profile.');
+      error.status = 409; error.code = 'activity_launch_mismatch'; throw error;
+    }
+    const session = await this.activityRepository.workSessionForTask(
+      request.taskId,
+      request.activityAttemptId,
+      userId,
+    );
+    if (
+      !session ||
+      session.purpose !== request.activityIntent ||
+      !['created', 'active', 'paused'].includes(session.state)
+    ) {
+      const error = new Error('The Activity Work Session is unavailable or mismatched.');
+      error.status = 409; error.code = 'activity_session_missing'; throw error;
+    }
+    const classroom = await this.liveClassroomRepository?.sessionForAttempt(
+      request.activityAttemptId,
+      userId,
+    );
+    return {
+      attemptId: attempt.attemptId,
+      workSessionId: session.id,
+      activityVersionId: attempt.activityVersionId,
+      runId: attempt.run.id,
+      space: attempt.space,
+      activity: attempt.definition,
+      purpose: request.activityIntent,
+      currentDirective: classroom && !classroom.leftAt && classroom.run.state === 'open'
+        ? classroom.currentDirective
+        : null,
+      insightPolicy: attempt.run.insightPolicy,
+      insightPolicyVersion: attempt.run.insightPolicyVersion,
+      policyAcknowledged: attempt.acknowledgedPolicyVersion === attempt.run.insightPolicyVersion,
+      sourceCatalog: attempt.sourceCatalog,
+      priorProgress: attempt.priorProgress,
     };
   }
 }

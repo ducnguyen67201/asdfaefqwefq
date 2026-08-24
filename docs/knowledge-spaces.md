@@ -19,6 +19,28 @@ Space
                 └── provenance-labeled evidence
 ```
 
+## Live classroom rooms
+
+A live classroom is a `live` or `hybrid` Run with a `room` target; it is not a
+second session model. A draft Run is the lobby, an open Run is the live class,
+and a closed Run removes the student's sticky Activity authority. The teacher
+creates a short-lived room code. The API stores only its HMAC digest and an
+authenticated join creates or reuses exactly one Space membership, assignment,
+Attempt, and participation for that Run.
+
+Teachers can broadcast only typed exercise or public-HTTPS link directives.
+Automatic link opening requires both an origin published in the immutable
+Activity version and local student consent; Electron main claims and
+revalidates the directive before opening it once. Otherwise the student gets a
+visible Open link action. A model may assist with the student's explicit Help
+or Check Work Session, but it cannot broadcast, submit, mark work ready, or
+complete an Attempt on its own.
+
+The classroom dashboard is intentionally event-based. It reports join/lobby,
+Work Session, explicit Help, Ready, Submit, Return, Complete, and Leave facts.
+It does not collect cursor motion, typing speed, screen history, attention, or
+an inferred “stuck” state.
+
 ## Launch context and performance
 
 An Activity launch combines a compact immutable definition with fresh work context. Workspace Activities use one explicitly trusted local folder. Current-screen Activities force one fresh CUA observation; the semantic route is preferred when available and the existing screenshot route remains the fallback. Uploaded books and course material are not inserted wholesale. The task gets a title/role catalog and an Attempt-scoped `search_activity_knowledge` tool capped at six results and 12,000 characters.
@@ -37,4 +59,8 @@ Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configu
 
 Back up PostgreSQL metadata and object storage together. Retention deletion must remove metadata and objects through an audited job; never infer object keys in desktop code. To roll back, disable the feature flag first, stop the worker after its current lease, and retain both stores. Disabling the flag hides desktop navigation and rejects feature routes without deleting data.
 
-The operational load script covers 200/500-row dashboard projection. Real assignment/start/search latency gates run only with `TEST_DATABASE_URL` and a disposable S3-compatible test service.
+The operational load script covers 200/500-row dashboard projection. With
+`TEST_DATABASE_URL`, the PostgreSQL integration suite also admits 200 students
+concurrently and verifies one participation and Attempt per user. Real
+assignment/start/search latency gates require a disposable S3-compatible test
+service.

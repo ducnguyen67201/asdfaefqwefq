@@ -23,7 +23,7 @@ export class KnowledgeSpaceService {
     if (!role) { const error = new Error('Space not found.'); error.status = 404; error.code = 'space_not_found'; throw error; }
     assertSpaceRole(role, operation); return role;
   }
-  async listSources(userId, spaceId) { await this.role(userId, spaceId, 'space.read'); return this.sourceRepository.list(spaceId, userId); }
+  async listSources(userId, spaceId) { await this.role(userId, spaceId, 'source.read'); return this.sourceRepository.list(spaceId, userId); }
   async initiateUpload(userId, spaceId, input, limits = null) {
     await this.role(userId, spaceId, 'source.upload');
     if (limits) {
@@ -44,7 +44,7 @@ export class KnowledgeSpaceService {
     return this.uploadService.complete({ sourceVersionId: input.sourceVersionId, userId });
   }
   async createGroup(userId, spaceId, input) { await this.role(userId, spaceId, 'group.manage'); return this.spaceRepository.createGroup({ ...input, spaceId, userId }); }
-  async listGroups(userId, spaceId) { await this.role(userId, spaceId, 'space.read'); return this.spaceRepository.listGroups(spaceId); }
+  async listGroups(userId, spaceId) { await this.role(userId, spaceId, 'group.manage'); return this.spaceRepository.listGroups(spaceId); }
   async listMembers(userId, spaceId) { await this.role(userId, spaceId, 'member.manage'); return this.spaceRepository.listMembers(spaceId); }
   async createInvite(userId, spaceId, input) {
     await this.role(userId, spaceId, 'member.manage');

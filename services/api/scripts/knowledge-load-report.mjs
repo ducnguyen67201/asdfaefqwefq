@@ -10,7 +10,6 @@ function percentile(values, ratio) {
 for (const participantCount of [200, 500]) {
   const durations = [];
   const participants = Array.from({ length: participantCount }, (_, index) => ({
-    blockedSessionCount: index % 19 === 0 ? 2 : 0,
     helpRequested: index % 23 === 0,
     id: `fixture-user-${index + 1}`,
   }));

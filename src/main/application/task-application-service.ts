@@ -13,17 +13,20 @@ import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { ActivityContextService } from '../knowledge/activity-context-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
+import type { ClassroomSessionService } from '../knowledge/classroom-session-service';
 import type { AppPreferencesService } from '../preferences/app-preferences-service';
 import type { WorkspaceSelectionService } from '../workspace/workspace-selection-service';
 
 import {
+  HostedTaskOutcomeUnknownError,
   projectHostedTask,
   type HostedTaskClient,
 } from './hosted-task-client';
 
 interface TaskApplicationServiceOptions {
   activityContextService?: Pick<ActivityContextService, 'create' | 'inspect'>;
-  activityProgressReporter?: Pick<ActivityProgressReporter, 'bind'>;
+  activityProgressReporter?: Pick<ActivityProgressReporter, 'bind' | 'fail'>;
+  classroomSessionService?: Pick<ClassroomSessionService, 'activeStudentAttemptId' | 'latestDirective'>;
   appPreferencesService?: Pick<AppPreferencesService, 'get'>;
   workspaceSelectionService?: Pick<WorkspaceSelectionService, 'resolve'>;
   hostedTaskClient?: Pick<
@@ -66,15 +69,20 @@ export class TaskApplicationService {
   async submitAndStart(input: unknown): Promise<TaskSnapshot> {
     const request = SubmitTaskRequestSchema.parse(input);
     const preferences = await this.options.appPreferencesService?.get();
-    const attempt = request.activityAttemptId
-      ? await this.options.activityContextService?.inspect(request.activityAttemptId)
+    const joinedAttemptId = this.options.classroomSessionService?.activeStudentAttemptId() ?? null;
+    const activityAttemptId = request.activityAttemptId ?? joinedAttemptId;
+    if (!activityAttemptId && request.activityIntent !== 'work') {
+      throw new Error('Join an active class before using Help or Check.');
+    }
+    const attempt = activityAttemptId
+      ? await this.options.activityContextService?.inspect(activityAttemptId)
       : null;
-    if (request.activityAttemptId && !attempt) {
+    if (activityAttemptId && !attempt) {
       throw new Error('This assigned Activity is unavailable.');
     }
     const executionProfile = attempt?.definition.launchTarget === 'workspace'
       ? 'workspace'
-      : request.activityAttemptId
+      : activityAttemptId
         ? 'everyday'
         : request.executionProfile;
     const workspace = request.workspaceSelectionId
@@ -94,59 +102,83 @@ export class TaskApplicationService {
           attempt,
           taskId,
           attempt.definition.launchTarget,
+          request.activityIntent,
+          joinedAttemptId === activityAttemptId
+            ? this.options.classroomSessionService?.latestDirective() ?? null
+            : null,
         )
       : null;
-    if (request.activityAttemptId && !activity) {
+    if (activityAttemptId && !activity) {
       throw new Error('Could not create the Activity Work Session.');
     }
     if (activity) this.options.activityProgressReporter?.bind(taskId, activity.workSessionId);
     const autonomyMode = preferences?.autonomyMode ?? 'balanced';
-    if (this.options.useHostedRuntime?.() && this.options.hostedTaskClient) {
-      const record = await this.options.hostedTaskClient.submit({
-        clientTaskId: randomUUID(),
-        taskId,
-        request: request.text,
-        autonomyMode,
-        executionProfile,
-        workspaceSelectionId: request.workspaceSelectionId,
-      });
-      if (
-        record.contractSchemaVersion !== 8 ||
-        !record.outcomeContract ||
-        !record.intentAuthorization ||
-        !record.autonomyMode
-      ) {
-        throw new Error('The hosted runtime did not return a compatible task authority contract.');
+    try {
+      if (this.options.useHostedRuntime?.() && this.options.hostedTaskClient) {
+        const record = await this.options.hostedTaskClient.submit({
+          clientTaskId: randomUUID(),
+          taskId,
+          request: request.text,
+          autonomyMode,
+          executionProfile,
+          workspaceSelectionId: request.workspaceSelectionId,
+          activityAttemptId,
+          activityIntent: request.activityIntent,
+        });
+        if (
+          record.contractSchemaVersion !== 8 ||
+          !record.outcomeContract ||
+          !record.intentAuthorization ||
+          !record.autonomyMode
+        ) {
+          throw new Error('The hosted runtime did not return a compatible task authority contract.');
+        }
+        if (
+          activity &&
+          (
+            !record.activity ||
+            record.activity.attemptId !== activity.attemptId ||
+            record.activity.workSessionId !== activity.workSessionId ||
+            record.activity.purpose !== request.activityIntent
+          )
+        ) {
+          throw new Error('The hosted runtime returned mismatched Activity authority.');
+        }
+        this.runtime.submit(
+          { ...request, activityAttemptId, executionProfile },
+          {
+            activity: record.activity ?? null,
+            autonomyMode: record.autonomyMode,
+            executionProfile,
+            intentAuthorization: record.intentAuthorization,
+            outcomeContract: record.outcomeContract,
+            runtimeKind: 'openai_agents',
+            taskId,
+            workspace,
+          },
+        );
+        const snapshot = this.runtime.start({ taskId });
+        this.attachHostedRun(record, snapshot);
+        return snapshot;
       }
-      this.runtime.submit(
-        { ...request, executionProfile },
+      const submitted = this.runtime.submit(
+        { ...request, activityAttemptId, executionProfile },
         {
           activity,
-          autonomyMode: record.autonomyMode,
+          autonomyMode,
           executionProfile,
-          intentAuthorization: record.intentAuthorization,
-          outcomeContract: record.outcomeContract,
           runtimeKind: 'openai_agents',
           taskId,
           workspace,
         },
       );
-      const snapshot = this.runtime.start({ taskId });
-      this.attachHostedRun(record, snapshot);
-      return snapshot;
+      return this.execution.start({ taskId: submitted.taskId });
+    } catch (error) {
+      if (!(error instanceof HostedTaskOutcomeUnknownError)) {
+        await this.options.activityProgressReporter?.fail(taskId);
+      }
+      throw error;
     }
-    const submitted = this.runtime.submit(
-      { ...request, executionProfile },
-      {
-        activity,
-        autonomyMode,
-        executionProfile,
-        runtimeKind: 'openai_agents',
-        taskId,
-        workspace,
-      },
-    );
-    return this.execution.start({ taskId: submitted.taskId });
   }
 
   start(input: unknown): TaskSnapshot {
@@ -254,13 +286,14 @@ export class TaskApplicationService {
       if (!intentAuthorization) continue;
       this.runtime.submit(
         {
-          activityAttemptId: null,
+          activityAttemptId: record.activity?.attemptId ?? null,
+          activityIntent: record.activity?.purpose ?? 'work',
           executionProfile: record.executionProfile,
           text: record.request,
           workspaceSelectionId: record.workspaceSelectionId,
         },
         {
-          activity: null,
+          activity: record.activity ?? null,
           autonomyMode: record.autonomyMode,
           executionProfile: record.executionProfile,
           intentAuthorization,
@@ -271,6 +304,12 @@ export class TaskApplicationService {
         },
       );
       const snapshot = this.runtime.start({ taskId: record.taskId });
+      if (record.activity) {
+        this.options.activityProgressReporter?.bind(
+          record.taskId,
+          record.activity.workSessionId,
+        );
+      }
       this.attachHostedRun(record, snapshot);
       restored += 1;
     }

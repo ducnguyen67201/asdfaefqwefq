@@ -2,16 +2,18 @@ const OPERATIONS = Object.freeze({
   owner: new Set([
     'space.read', 'space.update', 'space.delete', 'member.manage', 'group.manage',
     'source.read', 'source.upload', 'source.delete', 'activity.read', 'activity.write',
-    'activity.publish', 'run.manage', 'attempt.read_all', 'insight.read', 'help.resolve',
+    'activity.publish', 'run.manage', 'run.room_manage', 'run.directive_manage',
+    'attempt.read_all', 'attempt.review', 'insight.read', 'help.resolve',
   ]),
   facilitator: new Set([
     'space.read', 'group.manage', 'source.read', 'source.upload', 'activity.read',
-    'activity.write', 'activity.publish', 'run.manage', 'attempt.read_all',
-    'insight.read', 'help.resolve',
+    'activity.write', 'activity.publish', 'run.manage', 'run.room_manage',
+    'run.directive_manage', 'attempt.read_all', 'attempt.review', 'insight.read',
+    'help.resolve',
   ]),
   participant: new Set([
     'space.read', 'source.read_pinned', 'activity.read_assigned', 'attempt.read_own',
-    'attempt.start_own', 'attempt.help_own', 'attempt.submit_own',
+    'attempt.start_own', 'attempt.help_own', 'attempt.submit_own', 'attempt.ready_own',
   ]),
 });
 
@@ -53,11 +55,11 @@ export function canRecordEvidence({
 export function deriveSupportSuggestions({ activeParticipants, criterionEvidence, participants }) {
   const suggestions = [];
   for (const participant of participants) {
-    if (participant.helpRequested || participant.blockedSessionCount >= 2) {
+    if (participant.helpRequested) {
       suggestions.push({
         kind: 'individual_follow_up',
         participantId: participant.id,
-        reason: participant.helpRequested ? 'explicit_help_request' : 'repeated_blocked_sessions',
+        reason: 'explicit_help_request',
       });
     }
   }

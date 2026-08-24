@@ -12,6 +12,12 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   a private/local browser target admissible.
 - A model cannot select a runtime, choose or expand a workspace, change the
   trusted root, grant itself an approval, or operate TroCode approval controls.
+- A renderer or model cannot grant a classroom role, broadcast a directive, or
+  invent Activity context. Room codes are HMAC-digested at the API; public HTTPS
+  teacher links are origin-checked server-side and revalidated in Electron main.
+  Automatic opening is off by default and claimed once only after student
+  consent. Classroom dashboards receive explicit lifecycle/evidence facts, not
+  cursor, typing, continuous screen, attention, or inferred-stuck telemetry.
 
 ## Default behavior
 
