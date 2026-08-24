@@ -226,6 +226,7 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
     assert_eq!(budget.speech_estimate_micro_usd(1_001), 60_060);
     assert_eq!(budget.transcription_estimate_micro_usd(320).unwrap(), 32);
     assert!(budget.transcription_estimate_micro_usd(15_001).is_err());
+    assert_eq!(budget.transcription_actual_micro_usd(0.300_1).unwrap(), 31);
 
     let success = mock_endpoint(
         "/v1/responses",
@@ -291,7 +292,8 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
         "event: response.output_text.delta\n",
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n",
         "event: response.completed\n",
-        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5.6-luna\",\"usage\":{\"input_tokens\":80,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":12,\"output_tokens_details\":{\"reasoning_tokens\":2}}}}\n\n"
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5.6-luna\",\"usage\":{\"input_tokens\":80,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":12,\"output_tokens_details\":{\"reasoning_tokens\":2}}}}\n\n",
+        "data: [DONE]\n\n"
     );
     let stream_server = mock_endpoint("/v1/responses", 200, "text/event-stream", stream_body).await;
     let (request, response) = execute_response(&pool, &budget, &stream_server, true).await;
@@ -357,6 +359,17 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
     assert_eq!(result.billed_seconds, 0.32);
     assert_eq!(reservation_status(&pool, request).await, "settled");
 
+    let empty_transcription = mock_endpoint(
+        "/v1/audio/transcriptions",
+        200,
+        "application/json",
+        br#"{"languages":[{"code":"en"}],"text":"   "}"#.to_vec(),
+    )
+    .await;
+    let (request, result) = execute_transcription(&budget, &empty_transcription).await;
+    assert_eq!(result.expect("empty transcript is valid").text, "");
+    assert_eq!(reservation_status(&pool, request).await, "settled");
+
     for (upstream_status, expected_status) in [(400, "released"), (500, "uncertain")] {
         let server = mock_endpoint(
             "/v1/audio/transcriptions",
@@ -374,7 +387,8 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
 
     for invalid_body in [
         b"not-json".to_vec(),
-        br#"{"text":""}"#.to_vec(),
+        br#"{"languages":[{"code":""}],"text":"valid"}"#.to_vec(),
+        br#"{"languages":"en","text":"valid"}"#.to_vec(),
         serde_json::to_vec(&json!({"text":"x".repeat(8_001)})).unwrap(),
     ] {
         let server = mock_endpoint(
@@ -480,6 +494,15 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
         reservation_status(&pool, observe_request).await,
         "uncertain"
     );
+    let disposition: String = query_scalar(
+        "SELECT disposition FROM model_budget_reservations WHERE user_id=$1 AND request_id=$2",
+    )
+    .bind(USER)
+    .bind(observe_request)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(disposition, "ambiguous");
 
     let settle_request = Uuid::new_v4();
     let settle_task = Uuid::new_v4();
@@ -510,7 +533,6 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
         actual_micro_usd: 90,
         audio_duration_ms: 0,
         character_count: 10,
-        disposition: "completed",
         duration_ms: 5,
         provider_response_id: Some("settled-test"),
         request_id: settle_request,
@@ -520,6 +542,31 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
     };
     budget.settle(settlement.clone()).await.unwrap();
     budget.settle(settlement).await.unwrap();
+    let old_request = Uuid::new_v4();
+    observe
+        .reserve(ReservationInput {
+            agent_turn_id: None,
+            catalog_version: "test",
+            lane: "speech",
+            model: "test",
+            plan_id: "basic",
+            request_id: old_request,
+            reserved_micro_usd: 999,
+            task_id: settle_task,
+            user_id: USER,
+        })
+        .await
+        .unwrap();
+    query(
+        "UPDATE model_budget_reservations
+         SET created_at=date_trunc('month',NOW())-INTERVAL '1 day',updated_at=date_trunc('month',NOW())-INTERVAL '1 day'
+         WHERE user_id=$1 AND request_id=$2",
+    )
+    .bind(USER)
+    .bind(old_request)
+    .execute(&pool)
+    .await
+    .unwrap();
     let snapshot = budget
         .snapshot(USER, Some(settle_task), "basic")
         .await
@@ -527,7 +574,8 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
     assert!(snapshot.actual_micro_usd > 0);
     assert_eq!(snapshot.enforcement_mode, "enforce");
     assert_eq!(snapshot.plan, "basic");
-    assert!(snapshot.task.settled_micro_usd >= 90);
+    assert_eq!(snapshot.task.settled_micro_usd, 90);
+    assert_eq!(snapshot.task.reserved_micro_usd, 0);
 
     pool.close().await;
 }

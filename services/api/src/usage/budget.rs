@@ -33,7 +33,6 @@ pub struct SettlementInput<'a> {
     pub actual_micro_usd: i64,
     pub audio_duration_ms: i64,
     pub character_count: i64,
-    pub disposition: &'a str,
     pub duration_ms: i64,
     pub provider_response_id: Option<&'a str>,
     pub request_id: Uuid,
@@ -115,6 +114,15 @@ impl BudgetService {
             .saturating_mul(self.options.transcription_micro_usd_per_minute)
             .saturating_add(59_999)
             / 60_000)
+    }
+
+    pub fn transcription_actual_micro_usd(&self, seconds: f64) -> ApiResult<i64> {
+        if !seconds.is_finite() || !(0.0..=15.0).contains(&seconds) {
+            return Err(ApiError::internal(anyhow::anyhow!(
+                "duration exceeds the transcription segment limit."
+            )));
+        }
+        Ok((seconds * self.options.transcription_micro_usd_per_minute as f64 / 60.0).ceil() as i64)
     }
 
     pub async fn reserve(&self, input: ReservationInput<'_>) -> ApiResult<()> {
@@ -283,7 +291,7 @@ impl BudgetService {
     }
 
     pub async fn mark_uncertain(&self, user_id: &str, request_id: Uuid) -> ApiResult<()> {
-        self.transition(user_id, request_id, "uncertain", "ambiguous_dispatch")
+        self.transition(user_id, request_id, "uncertain", "ambiguous")
             .await
     }
 
@@ -345,7 +353,7 @@ impl BudgetService {
         }
         sqlx::query("INSERT INTO model_usage_events (request_id,user_id,task_id,lane,model,catalog_version,input_tokens,cached_input_tokens,cache_write_tokens,output_tokens,reasoning_tokens,duration_ms,audio_duration_ms,character_count,amount_micro_usd,usage_source,disposition,provider_response_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT (user_id,request_id) DO NOTHING")
                 .bind(input.request_id).bind(input.user_id).bind(row.get::<Uuid,_>("task_id")).bind(row.get::<String,_>("lane")).bind(row.get::<String,_>("model")).bind(row.get::<String,_>("catalog_version"))
-                .bind(input.usage.input_tokens).bind(input.usage.cached_input_tokens).bind(input.usage.cache_write_tokens).bind(input.usage.output_tokens).bind(input.usage.reasoning_tokens).bind(input.duration_ms.max(0)).bind(input.audio_duration_ms.max(0)).bind(input.character_count.max(0)).bind(input.actual_micro_usd.max(0)).bind(input.usage_source).bind(input.disposition).bind(input.provider_response_id).execute(&mut *tx).await?;
+                .bind(input.usage.input_tokens).bind(input.usage.cached_input_tokens).bind(input.usage.cache_write_tokens).bind(input.usage.output_tokens).bind(input.usage.reasoning_tokens).bind(input.duration_ms.max(0)).bind(input.audio_duration_ms.max(0)).bind(input.character_count.max(0)).bind(input.actual_micro_usd.max(0)).bind(input.usage_source).bind("completed").bind(input.provider_response_id).execute(&mut *tx).await?;
         sqlx::query("UPDATE model_budget_reservations SET status='settled',actual_micro_usd=$3,disposition='completed',settled_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND request_id=$2")
             .bind(input.user_id).bind(input.request_id).bind(input.actual_micro_usd).execute(&mut *tx).await?;
         if let Some(turn) = row.get::<Option<Uuid>, _>("agent_turn_id") {
@@ -362,7 +370,7 @@ impl BudgetService {
         task_id: Option<Uuid>,
         plan_id: &str,
     ) -> ApiResult<UsageSnapshot> {
-        let row = sqlx::query("SELECT COALESCE(SUM(CASE WHEN created_at>=date_trunc('month',NOW()) AND status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint month_settled, COALESCE(SUM(CASE WHEN created_at>=date_trunc('month',NOW()) AND status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint month_reserved, COALESCE(SUM(CASE WHEN updated_at>=date_trunc('day',NOW()) AND status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint day_settled, COALESCE(SUM(CASE WHEN updated_at>=date_trunc('day',NOW()) AND status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint day_reserved, COALESCE(SUM(CASE WHEN task_id=$2 AND status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint task_settled, COALESCE(SUM(CASE WHEN task_id=$2 AND status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint task_reserved FROM model_budget_reservations WHERE user_id=$1")
+        let row = sqlx::query("SELECT COALESCE(SUM(CASE WHEN status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint month_settled, COALESCE(SUM(CASE WHEN status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint month_reserved, COALESCE(SUM(CASE WHEN updated_at>=date_trunc('day',NOW()) AND status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint day_settled, COALESCE(SUM(CASE WHEN updated_at>=date_trunc('day',NOW()) AND status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint day_reserved, COALESCE(SUM(CASE WHEN task_id=$2 AND status='settled' THEN actual_micro_usd ELSE 0 END),0)::bigint task_settled, COALESCE(SUM(CASE WHEN task_id=$2 AND status IN ('reserved','uncertain') THEN reserved_micro_usd ELSE 0 END),0)::bigint task_reserved FROM model_budget_reservations WHERE user_id=$1 AND created_at>=date_trunc('month',NOW())")
             .bind(user_id).bind(task_id).fetch_one(&self.pool).await?;
         let week_messages: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM agent_turns WHERE user_id=$1 AND created_at>=date_trunc('week',NOW()) AND status<>'released'")
             .bind(user_id).fetch_one(&self.pool).await?;

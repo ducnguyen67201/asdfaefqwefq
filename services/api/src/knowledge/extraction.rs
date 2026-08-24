@@ -31,19 +31,6 @@ pub struct Locator {
     pub start_character: usize,
 }
 
-pub trait PdfExtractor: Send + Sync {
-    fn extract(&self, bytes: &[u8]) -> ApiResult<Extracted>;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct DefaultPdfExtractor;
-
-impl PdfExtractor for DefaultPdfExtractor {
-    fn extract(&self, bytes: &[u8]) -> ApiResult<Extracted> {
-        extract_pdf_inner(bytes)
-    }
-}
-
 pub fn verify_sha256(bytes: &[u8], expected: &str) -> bool {
     format!("{:x}", Sha256::digest(bytes)) == expected
 }
@@ -79,7 +66,7 @@ pub fn extract_text(bytes: &[u8]) -> ApiResult<Extracted> {
     })
 }
 pub fn extract_pdf(bytes: &[u8]) -> ApiResult<Extracted> {
-    DefaultPdfExtractor.extract(bytes)
+    extract_pdf_inner(bytes)
 }
 fn extract_pdf_inner(bytes: &[u8]) -> ApiResult<Extracted> {
     if !bytes.starts_with(b"%PDF-") {

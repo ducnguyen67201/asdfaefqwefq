@@ -40,7 +40,7 @@ runtime or tests were deleted.
 | Rust footprint | About 40 source/test/config files | 45 Rust files; 13,301 Rust lines including tests |
 | JavaScript oracle | 130 passing baseline cases | 131/131 pass with disposable PostgreSQL enabled |
 | Rust tests | Full replacement coverage required | 36 tests pass, including 8 real PostgreSQL/S3 integration cases |
-| Required line coverage | At least 80% | **80.06% — pass** (6,582/8,221 lines covered) |
+| Required line coverage | At least 80% | **80.37% — pass** (6,747/8,395 lines covered) |
 
 ## Task Status
 
@@ -51,10 +51,10 @@ runtime or tests were deleted.
 | 3 | Port config, errors, observability, HTTP primitives, assets | Partial | Candidate behavior and major route tests pass; exhaustive status/header/body/static-asset byte comparison remains. |
 | 4 | Preserve database startup and migrations | Complete locally | All 17 embedded migrations pass twice on empty PostgreSQL 17 and preserve a Node-initialized database. Protected CI/staging proof remains. |
 | 5 | Port auth, sessions, access codes, admin, CLI | Partial | Positive, invalid, idempotent, revoke/block, cookie, access-code, admin, CLI, Google signature/claim/cache paths pass; exhaustive browser and bidirectional crypto corpus remains. |
-| 6 | Port plans, catalog, rate limits, turns, budgets, usage | Substantially complete locally | Real PostgreSQL reserve/observe/duplicate/uncertain/settle/snapshot paths pass. Additional high-contention and database-fault testing remains. |
-| 7 | Port provider proxies | Partial | Buffered/SSE Responses and transcription success, 4xx/5xx, malformed, missing usage, wrong content type, dispatch failure, and unknown settlement pass. Cancellation/slow-stream/oversize differential breadth remains. |
+| 6 | Port plans, catalog, rate limits, turns, budgets, usage | Substantially complete locally | Real PostgreSQL reserve/observe/duplicate/uncertain/settle/snapshot paths pass, including current-month task scoping. Additional high-contention and database-fault testing remains. |
+| 7 | Port provider proxies | Partial | Buffered/SSE Responses (including terminal `[DONE]`) and transcription success, language validation, duration billing, 4xx/5xx, malformed, missing usage, wrong content type, dispatch failure, and unknown settlement pass. Cancellation/slow-stream/oversize differential breadth remains. |
 | 8 | Port Knowledge Spaces, S3, PDF/text, worker | Partial | Real presigned PUT/HEAD/GET, upload completion, ingestion, checksum/UTF-8/missing-object failures, parser bounds, routes, and idempotency pass. Full real-PDF parity and load/concurrency gates remain. |
-| 9 | Port durable run/effect/approval/evidence ownership | Substantially complete locally | Real PostgreSQL durable task/worker, reconnect, tool grant/result/evidence, approval, cancel, malformed provider, consequential unknown, and disconnect ambiguity paths pass. Broader stale-worker/concurrency replay remains. |
+| 9 | Port durable run/effect/approval/evidence ownership | Substantially complete locally | Real PostgreSQL durable task/worker, reconnect, tool grant/result/evidence, approval, cancel, malformed provider, consequential unknown, stale-worker disconnect, deadline/tool expiry, and private-payload cleanup paths pass. Broader concurrency replay remains. |
 | 10 | Implement direct Responses agent runner | Partial | Bounded direct loop and fail-closed outcomes pass; input compaction, complete circuit-breaker/pre-event retry parity, trace decision, and full scripted JS/Rust conversation replay remain. |
 | 11 | Port routes and prove wire compatibility | Partial | Major route families pass Axum-level compatibility tests; every route/method/body/header/SSE sequence is not yet byte-differentially replayed. |
 | 12 | Full verification/security/performance gate | Partial | Fmt, Clippy, tests, 80.06% coverage, audits, release build, repository checks, and package pass. Benchmarks, soak, signal/shutdown matrix, license/secret scan, and supported-platform CI remain. |
@@ -70,7 +70,7 @@ runtime or tests were deleted.
 | Rust static analysis | Pass | `cargo clippy --manifest-path services/api/Cargo.toml --locked --all-targets --all-features -- -D warnings` |
 | JavaScript backend oracle with PostgreSQL | Pass | 131 discovered, 131 passed, 0 failed, 0 skipped |
 | Rust unit/contract/property/integration suite | Pass | 36 passed with ignored real integrations explicitly enabled |
-| Rust line coverage | Pass | 80.06% (`cargo llvm-cov --all-targets --fail-under-lines 80`) |
+| Rust line coverage | Pass | 80.37% (`cargo llvm-cov --all-targets --fail-under-lines 80`) |
 | Disposable PostgreSQL 17 | Pass | Empty and Node-populated migration compatibility, idempotent second run, HTTP, budgets, and durable-agent persistence |
 | Disposable S3-compatible storage | Pass | Presigned PUT/HEAD/GET, completion integrity, ingestion success/failure/idempotency |
 | Provider compatibility | Pass for implemented matrix | Buffered/SSE/transcription success and fail-closed error/ambiguity paths use deterministic upstream fixtures |
@@ -103,6 +103,20 @@ runtime or tests were deleted.
   are now bounded and validated.
 - Invalid/empty text ingestion was classified as retryable. Corrupt content is
   now a permanent failure; genuinely missing objects remain retryable.
+- Rust omitted the JavaScript maintenance loop for stale desktop workers,
+  deadline/tool expiry, and encrypted private-payload cleanup. The same
+  lifecycle transitions now run every 60 seconds and are covered against real
+  PostgreSQL.
+- Responses SSE parsing treated a valid terminal `[DONE]` marker as missing
+  usage, leaving settled calls uncertain. The parser now skips terminal and
+  malformed non-completion events while retaining the completed usage event.
+- Transcription accepted unsupported languages, truncated fractional WAV
+  duration before billing, rejected valid empty transcripts, and ignored
+  malformed optional language metadata. Validation and accounting now match
+  the JavaScript behavior.
+- Budget task snapshots included reservations from prior months, and uncertain
+  reservations used a Rust-only disposition. Both database contracts now match
+  the JavaScript repository.
 
 ## Files Changed
 

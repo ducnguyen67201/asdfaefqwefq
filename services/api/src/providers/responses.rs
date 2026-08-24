@@ -237,7 +237,6 @@ impl ResponsesService {
                         actual_micro_usd: actual,
                         audio_duration_ms: 0,
                         character_count: 0,
-                        disposition: "completed",
                         duration_ms: i64::try_from(started.elapsed().as_millis())
                             .unwrap_or(i64::MAX),
                         provider_response_id: response_id.as_deref(),
@@ -291,7 +290,7 @@ impl ResponsesService {
             let mut guard = StreamingReservationGuard::new(budget.clone(), user.clone(), request);
             let mut all=Vec::new();let mut pending=Vec::new();
             while let Some(next)=upstream.next().await{let chunk=match next{Ok(value)=>value,Err(error)=>{budget.mark_uncertain(&user,request).await.map_err(io_error)?;guard.disarm();Err(std::io::Error::other(error))?;unreachable!()}};if all.len().saturating_add(chunk.len())>MAX_BYTES{budget.mark_uncertain(&user,request).await.map_err(io_error)?;guard.disarm();Err(std::io::Error::other("upstream response was unexpectedly large"))?;}all.extend_from_slice(&chunk);pending.extend_from_slice(&chunk);while let Some(index)=pending.iter().position(|byte|*byte==b'\n'){if index>MAX_LINE{budget.mark_uncertain(&user,request).await.map_err(io_error)?;guard.disarm();Err(std::io::Error::other("upstream SSE event was unexpectedly large"))?;}pending.drain(..=index);}if pending.len()>MAX_LINE{budget.mark_uncertain(&user,request).await.map_err(io_error)?;guard.disarm();Err(std::io::Error::other("upstream SSE event was unexpectedly large"))?;}yield chunk;}
-            let usage=parse_stream_usage(&all,&model_clone);if let Some((usage,response_id))=usage{let actual=catalog.calculate_usage_cost(&usage).map_err(io_error)?;budget.settle(SettlementInput{actual_micro_usd:actual,audio_duration_ms:0,character_count:0,disposition:"completed",duration_ms:i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),provider_response_id:response_id.as_deref(),request_id:request,usage:&usage,usage_source:"actual",user_id:&user}).await.map_err(io_error)?;}else{budget.mark_uncertain(&user,request).await.map_err(io_error)?;}guard.disarm();
+            let usage=parse_stream_usage(&all,&model_clone);if let Some((usage,response_id))=usage{let actual=catalog.calculate_usage_cost(&usage).map_err(io_error)?;budget.settle(SettlementInput{actual_micro_usd:actual,audio_duration_ms:0,character_count:0,duration_ms:i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),provider_response_id:response_id.as_deref(),request_id:request,usage:&usage,usage_source:"actual",user_id:&user}).await.map_err(io_error)?;}else{budget.mark_uncertain(&user,request).await.map_err(io_error)?;}guard.disarm();
         };
         Ok(ProviderResponse {
             body: ProviderBody::Stream(Box::pin(output)),
@@ -354,7 +353,13 @@ fn parse_stream_usage(bytes: &[u8], model: &str) -> Option<(ProviderUsage, Optio
         let Some(data) = line.strip_prefix("data:") else {
             continue;
         };
-        let value: Value = serde_json::from_str(data.trim()).ok()?;
+        let data = data.trim();
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(data) else {
+            continue;
+        };
         if value.get("type").and_then(Value::as_str) == Some("response.completed") {
             return parse_usage(value.get("response")?, model).ok().flatten();
         }

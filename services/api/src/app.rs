@@ -89,11 +89,23 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
     let cancel = state.shutdown.clone();
     if let Some(agent) = state.agent.clone() {
         let token = cancel.clone();
+        let worker = agent.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(250));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=agent.run_once().await{tracing::error!(event="agent.worker.failed",error=%error);}}}
+                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=worker.run_once().await{tracing::error!(event="agent.worker.failed",error=%error);}}}
+            }
+        });
+        let token = cancel.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                Duration::from_secs(60),
+            );
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}}}
             }
         });
     }
