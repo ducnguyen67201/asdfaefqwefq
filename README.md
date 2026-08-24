@@ -117,6 +117,8 @@ card before anything is dispatched.
 - Docker Desktop with Docker Compose v2 for local PostgreSQL.
 - macOS 13+ or a supported 64-bit Windows environment for CUA.
 - macOS development requires Accessibility and Screen Recording permissions.
+- Bazelisk and rustup are required only when changing the Rust backend. The
+  repository pins Bazel 9.2.0 and Rust 1.97.1 automatically.
 
 ## Start locally
 
@@ -442,7 +444,12 @@ authenticated and proxied by Railway.
 npm run check
 npm run test:coverage
 npm run package
+npm run bazel:check
 ```
+
+`npm run bazel:check` builds, tests, formats, and lints the non-production Rust
+backend foundation. Run it for Rust or Bazel changes; it is intentionally not
+part of the Electron `npm run check` or release workflow.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject
@@ -452,7 +459,9 @@ code-signing credentials before it will publish a release.
 CUA installs a native package for the host OS and CPU, so build each release on
 its target operating system. During packaging, Tro stages the CUA JavaScript
 SDK and native libraries together outside ASAR; this preserves CUA's relative
-native-library resolution in the packaged application.
+native-library resolution in the packaged application. Electron packaging
+remains owned by Forge; Bazel currently owns only targets under
+`services/api-rs` and does not create desktop installers.
 
 ### Application updates and releases
 
@@ -571,6 +580,11 @@ src/
 ├── index.ts         Electron main entry
 ├── preload.ts       minimal renderer API
 └── renderer.tsx     React entry
+services/
+├── api/              production Node hosted API
+└── api-rs/           non-production Rust migration foundation
+Cargo.toml            Rust workspace dependency source
+MODULE.bazel          Bazel module and Rust toolchain graph
 ```
 
 ## Design rule

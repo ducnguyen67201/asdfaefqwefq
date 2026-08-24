@@ -222,6 +222,14 @@ dependency island under `app.asar.unpacked/cua-runtime` so platform libraries
 resolve from a real filesystem. Each macOS or Windows release must be built on
 its matching target.
 
+Build ownership is intentionally split. npm, Webpack, and Electron Forge own
+the renderer, preload, Electron main process, native CUA staging, signing, and
+desktop installers. Bazel owns only the Rust targets under `services/api-rs`,
+using the root Cargo workspace as its dependency source. The Rust service is a
+non-production migration foundation that exposes only `GET /healthz`; the Node
+service continues to own Railway deployment and all production `/v1` traffic.
+No Rust binary is bundled into the desktop application in this phase.
+
 The local PostgreSQL task-history adapter remains a development foundation. The
 hosted PostgreSQL database stores users, revocable device-session digests, cost
 reservations, sanitized immutable usage events, and intentional Knowledge Space
