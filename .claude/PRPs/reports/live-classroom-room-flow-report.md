@@ -4,7 +4,7 @@
 
 Implemented the live-classroom flow on `feat/live-classroom-room-flow` in the isolated worktree `/Users/ducng/.codex/worktrees/live-classroom-room-flow/TroCode`.
 
-The implementation preserves Tro's canonical `Space → Activity Version → Run → Attempt → Work Session` model and adds room-code admission, a lobby/live session, typed teacher directives, consent-aware safe URL delivery, sticky Activity context, explicit Help/Check/Ready/Submit actions, and teacher Help resolution and review. The desktop-facing live-classroom backend slice is now implemented in Rust as well as the Node compatibility API, sharing the same PostgreSQL schema, opaque sessions, and wire contracts.
+The implementation preserves Tro's canonical `Space → Activity Version → Run → Attempt → Work Session` model and adds room-code admission, a lobby/live session, typed teacher directives, consent-aware safe URL delivery, sticky Activity context, explicit Help/Check/Ready/Submit actions, and teacher Help resolution and review. Live-classroom routes now run inside the unified in-place Rust backend candidate under `services/api`; the retained Node implementation is the differential oracle and rollback path, sharing the same PostgreSQL schema, opaque sessions, and wire contracts.
 
 Continuous cursor, typing, screen, foreground-window, and passive “stuck” observation remain explicitly deferred.
 
@@ -41,7 +41,7 @@ Continuous cursor, typing, screen, foreground-window, and passive “stuck” ob
 - Help creates an explicit teacher queue item before contextual assistance. Check is advisory and cannot grade, submit, or complete work.
 - Teacher dashboards use explicit lifecycle/evidence facts only; they do not infer attention, confusion, speed, or understanding.
 - Room codes, directive text, URLs, student content, screenshots, and file details are excluded from logging/analytics.
-- Rust startup is opt-in and fails closed unless `DATABASE_URL`, the shared session HMAC key, and migration 018 are present. Ingress cuts over complete classroom route families and can return them to Node without rewriting data.
+- Rust startup is opt-in and fails closed unless `DATABASE_URL`, the shared session HMAC key, and migration 018 are present. Classroom routes compose with the complete Rust API and can return with that same-service deployment to the Node rollback implementation without rewriting data.
 
 ## Validation Results
 
@@ -75,7 +75,7 @@ Continuous cursor, typing, screen, foreground-window, and passive “stuck” ob
 - Optional `join_live_room` and `draft_session_directive` model-tool seams were not added. UI room-code join is complete, and excluding these optional seams keeps join/broadcast authority narrower.
 - Teacher Run state is reconstructed from the authoritative dashboard rather than assumed locally. The short-lived plaintext room code is intentionally not recoverable from its stored HMAC digest; leaving the exact room page requires creating/rotating a code when returning through a future Run-history entry point.
 - No live packaged two-account sign-in smoke was possible because two authenticated test accounts were not available. The same flow is covered through service, IPC, renderer-state, package, and real PostgreSQL tests.
-- The Rust migration is intentionally a vertical route slice rather than a duplicate full API. Node continues to own migrations, identity issuance, materials/publishing, ingestion, submissions, agents, and unrelated `/v1` endpoints until those route families migrate.
+- Production still launches Node because the full Rust candidate's documented differential, performance, staging, backup/restore, and rollback gates remain open. The classroom implementation is nevertheless part of that one Rust binary—not a second service or route proxy.
 
 ## Issues Encountered
 
@@ -97,11 +97,11 @@ Continuous cursor, typing, screen, foreground-window, and passive “stuck” ob
 | `src/main/application/task-application-service.test.ts` | Sticky Attempt inheritance, explicit precedence, hosted authority, non-class parity |
 | `src/main/application/hosted-task-client.test.ts` | Same-ID retry for uncertain hosted launch outcomes, definitive rejection handling |
 | Renderer/shared tests | Role-safe Space markup, explicit session action mapping, Vietnamese copy, strict schemas |
-| `services/api-rs/tests/classroom_e2e.rs` | Node-compatible session auth, complete classroom HTTP flow, review route isolation, one-time claims, and concurrent 200-seat capacity |
+| `services/api/tests/classroom_e2e.rs` | Node-compatible session auth, complete classroom HTTP flow, review route isolation, one-time claims, and concurrent exact 200-seat capacity |
 
 ## Next Steps
 
 - Run a packaged two-account pilot with real teacher/student sign-in.
 - Add a Run-history/reopen entry point if teachers must leave and later return to the same control page during the pilot.
 - Keep passive classroom observation in a separate privacy-reviewed PRP.
-- Cut over the Rust classroom route families in a small canary only after migration 018 is applied; leave Node route ownership available for immediate rollback.
+- Canary the unified Rust API only after its full cutover runbook is satisfied and migration 018 is applied; retain the Node deployment as the immediate same-schema rollback path.

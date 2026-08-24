@@ -1,5 +1,0 @@
-filegroup(
-    name = "sql",
-    srcs = glob(["*.sql"]),
-    visibility = ["//services/api-rs:__pkg__"],
-)

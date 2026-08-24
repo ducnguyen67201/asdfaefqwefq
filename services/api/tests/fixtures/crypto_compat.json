@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "accessCode": {
+    "normalized": "TRO-SECRET-CODE",
+    "hmacKey": "test-access-code-cipher-key-that-is-at-least-32-characters",
+    "digestHex": "9ea919b99dbec17935d98acee946a6f6045d092ad68ea073c0b45c2218d2840e",
+    "sealedBase64": "AZQVb9WJLeQSHgNC/3y0nkuIUsSH9wVq4O+K/OcxzyR2/tqkueW38fxj6MU=",
+    "plaintext": "TRO-SECRET-CODE"
+  },
+  "adminSession": {
+    "accessToken": "test-admin-token-that-is-longer-than-thirty-two-characters",
+    "issuedAtMs": 1787215500000,
+    "value": "v1.1789807500.8ibwIWtfcKztQ9F8ls1znA2LytEPCOjRygHGgkMTr5Q"
+  },
+  "agentState": {
+    "keys": "1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "currentVersion": 1,
+    "metadata": {
+      "kind": "agent_run_state",
+      "modelStepId": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "runVersion": 3,
+      "schemaVersion": 2
+    },
+    "value": {
+      "checkpointVersion": 2,
+      "items": [{ "role": "user", "content": "synthetic fixture" }],
+      "pendingCallId": null
+    },
+    "envelope": {
+      "ciphertext": "wlwCt5xCVaDdRE1sSy9h3YWp2zYO1QZqNwUbDXx91QjZN/bsiLMQb47SEWDmzjCIMhpRr7s3MLQfIpeR0dqA7vjWqglQ+GD7in+dmv387+43iF7/AmA9NfDWEiC6gI3eR7+9jQ==",
+      "iv": "lrO6unGfD2Ea3ZIu",
+      "keyVersion": 1,
+      "tag": "mdANJfpmIZfoNgn6jKbtMA=="
+    }
+  },
+  "digests": {
+    "toolSchema": "2f21290b5c0fb2b5c450cec2019e9c8622a39d56de82519fa7018ae5086d335a",
+    "sessionToken": "tro_live_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "sessionDigestHex": "f26a9df70c4ccf037dbb5810149228a8ca9a91d7f304b11fb2973903f037aadc",
+    "rateScope": "responses.minute",
+    "rateKey": "fixture-user",
+    "rateDigestHex": "9c32e6e2d34b433080c58e962f167dc60ae75021b33569d62e1d87a5b6c302a3",
+    "intentDigest": "11f705701352168b6e7b0104dcea523bbf9454f0605a62139b5c30924a992298",
+    "outcomeVerifierDigests": {
+      "assistant-output": "35dc7a1954868a5a758fa8a85632c1ae984778b03f6c01aa9aa2ce085031a7f0",
+      "workspace-mutated": "87878c61a5e80c7f1c96e58dda67a17b60792124bba32e5a30f75e562e14af04"
+    }
+  }
+}

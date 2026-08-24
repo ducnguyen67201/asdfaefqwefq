@@ -12,6 +12,7 @@ function deterministicRoomCode(hmacKey, runId, clientId) {
     .digest('base64url')
     .replace(/[^a-z0-9]/giu, '')
     .slice(0, 12)
+    .padEnd(12, 'X')
     .toUpperCase();
   return `TRO-${compact.slice(0, 4)}-${compact.slice(4, 8)}-${compact.slice(8, 12)}`;
 }

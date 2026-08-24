@@ -1,0 +1,82 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps", "crate_edition")
+load(
+    "@rules_rust//rust:defs.bzl",
+    "rust_binary",
+    "rust_library",
+    "rust_test",
+)
+load("//bazel/rust:defs.bzl", "trocode_rust_checks", "trocode_rust_lint_config")
+
+trocode_rust_lint_config(
+    name = "rust_lints",
+)
+
+rust_library(
+    name = "api_lib",
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/main.rs"],
+    ),
+    aliases = aliases(),
+    compile_data = glob([
+        "migrations/*.sql",
+        "public/*",
+    ]),
+    crate_name = "trocode_api",
+    edition = crate_edition(),
+    lint_config = ":rust_lints",
+    deps = all_crate_deps(normal = True),
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+)
+
+rust_binary(
+    name = "trocode_api",
+    srcs = ["src/main.rs"],
+    aliases = aliases(),
+    crate_name = "trocode_api_server",
+    edition = crate_edition(),
+    lint_config = ":rust_lints",
+    visibility = ["//visibility:public"],
+    deps = [":api_lib"] + all_crate_deps(normal = True),
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+)
+
+rust_test(
+    name = "api_lib_test",
+    aliases = aliases(
+        normal_dev = True,
+        proc_macro_dev = True,
+    ),
+    crate = ":api_lib",
+    edition = crate_edition(),
+    lint_config = ":rust_lints",
+    deps = all_crate_deps(normal_dev = True),
+    proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+)
+
+rust_test(
+    name = "classroom_e2e_test",
+    srcs = ["tests/classroom_e2e.rs"],
+    aliases = aliases(
+        normal_dev = True,
+        proc_macro_dev = True,
+    ),
+    crate_name = "classroom_e2e_test",
+    edition = crate_edition(),
+    lint_config = ":rust_lints",
+    deps = [":api_lib"] + all_crate_deps(normal = True) + all_crate_deps(normal_dev = True),
+    proc_macro_deps = all_crate_deps(proc_macro = True) + all_crate_deps(proc_macro_dev = True),
+)
+
+trocode_rust_checks(
+    clippy_name = "clippy",
+    rustfmt_name = "rustfmt_test",
+    source_targets = [
+        ":api_lib",
+        ":trocode_api",
+    ],
+    test_targets = [
+        ":api_lib_test",
+        ":classroom_e2e_test",
+    ],
+)

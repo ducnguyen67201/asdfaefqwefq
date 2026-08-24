@@ -121,6 +121,7 @@ card before anything is dispatched.
 
 - Node.js 24 or newer.
 - npm 11 or newer.
+- Rust 1.97.1 with Cargo (the pinned hosted-backend toolchain).
 - Docker Desktop with Docker Compose v2 for local PostgreSQL.
 - macOS 13+ or a supported 64-bit Windows environment for CUA.
 - macOS development requires Accessibility and Screen Recording permissions.
@@ -221,6 +222,19 @@ PostgreSQL service. `GET /healthz` checks process liveness and `GET /readyz`
 checks database readiness. Railway starts the API from
 [`services/api`](services/api) and applies its idempotent session migration
 before accepting traffic.
+
+The in-progress Rust replacement builds from the same directory and is kept
+behind the current Node deployment until the parity and rollback gates in the
+[same-service cutover runbook](docs/operations/rust-backend-cutover.md) pass.
+
+Run the backend locally with:
+
+```bash
+cargo run --manifest-path services/api/Cargo.toml --locked -- serve
+```
+
+Run its unit/contract tests with `npm run api:test`, or the complete desktop,
+Node-oracle, and Rust-candidate gate with `npm run check`.
 
 At sign-in, Electron verifies Google's JWT nonce and signature locally, then
 the API verifies it independently and exchanges it for a random opaque device
@@ -454,12 +468,9 @@ npm run package
 npm run bazel:check
 ```
 
-`npm run bazel:check` builds, tests, formats, and lints the Rust backend. Run it
-for Rust or Bazel changes; it is intentionally not part of the Electron
-`npm run check` or release workflow. The Rust service can own the live-classroom
-route slice behind `TROCODE_KNOWLEDGE_SPACES_ENABLED`; see
-[`services/api-rs/README.md`](services/api-rs/README.md) for route ownership and
-cutover requirements.
+`npm run bazel:check` builds, tests, formats, and lints the in-place Rust backend
+candidate, including the live-classroom route family. Run it for Rust or Bazel
+changes; it is intentionally not part of the Electron release workflow.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject
@@ -471,7 +482,7 @@ its target operating system. During packaging, Tro stages the CUA JavaScript
 SDK and native libraries together outside ASAR; this preserves CUA's relative
 native-library resolution in the packaged application. Electron packaging
 remains owned by Forge; Bazel currently owns only targets under
-`services/api-rs` and does not create desktop installers.
+`services/api` and does not create desktop installers.
 
 ### Application updates and releases
 
@@ -593,8 +604,7 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-├── api/              Node compatibility API, migrations, ingestion, agents
-└── api-rs/           Rust API and live-classroom migration slice
+└── api/              Node compatibility oracle and in-place Rust backend candidate
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```
