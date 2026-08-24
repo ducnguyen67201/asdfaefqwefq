@@ -17,7 +17,9 @@ use crate::{
     auth::{AccessStatus, DeviceSession},
     error::{ApiError, ApiResult},
     http::{bearer, bytes_response, json_response, read_json, request_ip},
-    providers::{ProviderBody, ResponsesInput, TranscriptionBody, TranscriptionInput},
+    providers::{
+        ProviderBody, ResponsesInput, TranscriptionBody, TranscriptionInput, is_supported_language,
+    },
     usage::{ProviderUsage, ReservationInput, SettlementInput, plan_for},
     validation::{api_uuid, js_string_len},
 };
@@ -404,6 +406,12 @@ pub async fn handle(
         let input: TranscriptionBody = serde_json::from_value(input_value).map_err(|_| {
             ApiError::new(StatusCode::BAD_REQUEST, "Transcription request is invalid.")
         })?;
+        if !is_supported_language(&input.language) {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Transcription request is invalid.",
+            ));
+        }
         let header_request = uuid_header(headers, "x-trocode-request-id").map_err(|_| {
             ApiError::new(StatusCode::BAD_REQUEST, "Transcription request is invalid.")
         })?;
@@ -578,7 +586,6 @@ async fn realtime(
                 actual_micro_usd: reserved,
                 audio_duration_ms: 0,
                 character_count: 0,
-                disposition: "completed",
                 duration_ms: i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),
                 provider_response_id: None,
                 request_id,
@@ -741,7 +748,6 @@ async fn speech(
             actual_micro_usd: reserved,
             audio_duration_ms: 0,
             character_count: i64::try_from(character_count).unwrap_or(i64::MAX),
-            disposition: "completed",
             duration_ms: 0,
             provider_response_id: None,
             request_id,

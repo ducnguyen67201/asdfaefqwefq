@@ -472,6 +472,90 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
             .unwrap(),
         5
     );
-    assert!(agent.disconnect(USER, worker).await.is_ok());
+    assert!(agent.heartbeat(USER, worker).await.unwrap().is_some());
+
+    let (invocation_expiry_run, _, _) =
+        submit(&agent, "Open Chrome before the desktop invocation expires.").await;
+    assert!(agent.run_once().await.unwrap());
+    let pending = agent.pending(USER, worker).await.unwrap();
+    let invocation_id: Uuid = pending[0]["invocationId"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    query("UPDATE agent_tool_invocations SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1")
+        .bind(invocation_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    agent.maintain().await.unwrap();
+    assert_eq!(
+        query_scalar::<_, String>("SELECT state FROM agent_tool_invocations WHERE id=$1")
+            .bind(invocation_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "expired"
+    );
+    assert_eq!(
+        agent
+            .get(USER, invocation_expiry_run)
+            .await
+            .unwrap()
+            .unwrap()["state"],
+        "blocked"
+    );
+
+    let (stale_worker_run, _, _) = submit(
+        &agent,
+        "Perform a consequential workspace change before the worker expires.",
+    )
+    .await;
+    assert!(agent.run_once().await.unwrap());
+    let pending = agent.pending(USER, worker).await.unwrap();
+    agent
+        .grant_execution(USER, worker, &execution_grant(&pending[0], true))
+        .await
+        .unwrap();
+    query("UPDATE agent_worker_sessions SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1")
+        .bind(worker)
+        .execute(&pool)
+        .await
+        .unwrap();
+    agent.maintain().await.unwrap();
+    assert_eq!(
+        agent.get(USER, stale_worker_run).await.unwrap().unwrap()["state"],
+        "blocked"
+    );
+    assert!(agent.heartbeat(USER, worker).await.unwrap().is_none());
+
+    let (expired_run, _, _) = submit(&agent, "Expire this private durable task payload.").await;
+    query(
+        "UPDATE agent_runs SET deadline_at=NOW()-INTERVAL '1 second',payload_expires_at=NOW()-INTERVAL '1 second' WHERE id=$1",
+    )
+    .bind(expired_run)
+    .execute(&pool)
+    .await
+    .unwrap();
+    agent.maintain().await.unwrap();
+    let expired = agent.get(USER, expired_run).await.unwrap().unwrap();
+    assert_eq!(expired["state"], "expired");
+    assert_eq!(expired["request"], "Expired private task content.");
+    assert!(
+        agent
+            .events(USER, expired_run, 0)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event["type"] == "run.expired")
+    );
+    assert_eq!(
+        query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM agent_session_items WHERE run_id=$1")
+            .bind(expired_run)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
     pool.close().await;
 }

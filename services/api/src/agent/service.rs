@@ -763,6 +763,118 @@ impl AgentService {
         tx.commit().await?;
         Ok(json!({"ambiguousInvocationCount":ambiguous.len()}))
     }
+
+    pub async fn maintain(&self) -> ApiResult<()> {
+        let stale_workers = sqlx::query(
+            "SELECT id,user_id FROM agent_worker_sessions
+             WHERE disconnected_at IS NULL AND expires_at<=NOW() LIMIT 500",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for worker in stale_workers {
+            self.disconnect(worker.get("user_id"), worker.get("id"))
+                .await?;
+        }
+
+        let mut tx = self.pool.begin().await?;
+        let expired_runs = sqlx::query(
+            "UPDATE agent_runs SET state='expired',updated_at=NOW(),lease_owner=NULL,lease_expires_at=NULL
+             WHERE deadline_at<=NOW() AND state NOT IN ('completed','blocked','failed','cancelled','expired')
+             RETURNING id",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        for run in expired_runs {
+            append_event(
+                &mut tx,
+                run.get("id"),
+                "run.expired",
+                "Task deadline expired.",
+                None,
+            )
+            .await?;
+        }
+
+        let expired_tools = sqlx::query(
+            "UPDATE agent_tool_invocations SET state='expired',terminal_at=NOW(),
+               public_summary='Desktop invocation expired before execution.'
+             WHERE expires_at<=NOW() AND state IN ('requested','delivered') RETURNING run_id",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        let run_ids = expired_tools
+            .iter()
+            .map(|row| row.get::<Uuid, _>("run_id"))
+            .collect::<BTreeSet<_>>();
+        for run_id in run_ids {
+            let changed = sqlx::query(
+                "UPDATE agent_runs SET state='blocked',lease_owner=NULL,lease_expires_at=NULL,
+                   public_summary='A required desktop invocation expired.',updated_at=NOW()
+                 WHERE id=$1 AND state NOT IN ('completed','blocked','failed','cancelled','expired')",
+            )
+            .bind(run_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if changed == 1 {
+                append_event(
+                    &mut tx,
+                    run_id,
+                    "run.blocked",
+                    "A required desktop invocation expired before execution.",
+                    None,
+                )
+                .await?;
+            }
+        }
+
+        sqlx::query(
+            "UPDATE agent_runs SET request_ciphertext=NULL,request_iv=NULL,request_tag=NULL,
+               request_key_version=NULL,contract_ciphertext=NULL,contract_iv=NULL,contract_tag=NULL,
+               contract_key_version=NULL WHERE payload_expires_at<=NOW()
+               AND request_ciphertext IS NOT NULL",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_tool_invocations invocations SET
+               request_ciphertext=NULL,request_iv=NULL,request_tag=NULL,request_key_version=NULL,
+               result_ciphertext=NULL,result_iv=NULL,result_tag=NULL,result_key_version=NULL
+             FROM agent_runs runs WHERE invocations.run_id=runs.id AND runs.payload_expires_at<=NOW()
+               AND (invocations.request_ciphertext IS NOT NULL OR invocations.result_ciphertext IS NOT NULL)",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_run_events events SET payload_ciphertext=NULL,payload_iv=NULL,payload_tag=NULL,
+               payload_key_version=NULL FROM agent_runs runs
+             WHERE events.run_id=runs.id AND runs.payload_expires_at<=NOW()
+               AND events.payload_ciphertext IS NOT NULL",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "DELETE FROM agent_run_checkpoints checkpoints USING agent_runs runs
+             WHERE checkpoints.run_id=runs.id AND runs.payload_expires_at<=NOW()",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "DELETE FROM agent_session_items items USING agent_runs runs
+             WHERE items.run_id=runs.id AND runs.payload_expires_at<=NOW()",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_evidence SET detail_ciphertext=NULL,detail_iv=NULL,detail_tag=NULL,detail_key_version=NULL
+             WHERE detail_expires_at<=NOW() AND detail_ciphertext IS NOT NULL",
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn run_once(&self) -> ApiResult<bool> {
         let row=sqlx::query("WITH candidate AS(SELECT id FROM agent_runs WHERE state IN('queued','planning','recovering','verifying')AND deadline_at>NOW()AND recovery_attempt_count<6 AND(lease_expires_at IS NULL OR lease_expires_at<NOW())ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)UPDATE agent_runs runs SET state=CASE WHEN runs.lease_owner IS NULL THEN runs.state ELSE'recovering'END,lease_owner=$1,lease_expires_at=NOW()+($2*INTERVAL'1 millisecond'),recovery_attempt_count=CASE WHEN runs.lease_owner IS NULL THEN runs.recovery_attempt_count ELSE runs.recovery_attempt_count+1 END,run_version=run_version+1,updated_at=NOW()FROM candidate WHERE runs.id=candidate.id RETURNING runs.*").bind(&self.worker_id).bind(i64::try_from(self.config.lease_ms).unwrap_or(i64::MAX)).fetch_optional(&self.pool).await?;
         let Some(run) = row else { return Ok(false) };

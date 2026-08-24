@@ -91,7 +91,6 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
     Config {
         admin: AdminConfig {
             access_token: Some(ADMIN_TOKEN.to_owned()),
-            enabled: true,
         },
         agent_runtime: AgentRuntimeConfig {
             canary_users: BTreeSet::from(["http-owner".to_owned()]),
@@ -1121,6 +1120,24 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&transcription, StatusCode::OK);
     assert_eq!(transcription.json()["text"], "HTTP transcription");
+    let invalid_language_request_id = Uuid::new_v4().to_string();
+    assert_status(
+        &send_with_headers(
+            &router,
+            Method::POST,
+            "/v1/openai/audio/transcriptions",
+            Some(&owner_token),
+            Some(&json!({
+                "audioBase64":STANDARD.encode(pcm_wav(320)),
+                "clientDurationMs":320,
+                "language":"xx",
+                "utteranceId":Uuid::new_v4()
+            })),
+            &[("x-trocode-request-id", &invalid_language_request_id)],
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+    );
     assert_status(
         &send(
             &router,

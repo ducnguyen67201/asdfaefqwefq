@@ -107,10 +107,7 @@ mod tests {
     #[tokio::test]
     async fn access_code_command_rejects_invalid_arguments_before_database_access() {
         let config = Config {
-            admin: crate::config::AdminConfig {
-                access_token: None,
-                enabled: false,
-            },
+            admin: crate::config::AdminConfig { access_token: None },
             agent_runtime: crate::config::AgentRuntimeConfig {
                 canary_users: std::collections::BTreeSet::new(),
                 compaction_item_threshold: 80,

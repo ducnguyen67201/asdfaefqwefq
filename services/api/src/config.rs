@@ -27,7 +27,6 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct AdminConfig {
     pub access_token: Option<String>,
-    pub enabled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -181,7 +180,6 @@ impl Config {
 
         Ok(Self {
             admin: AdminConfig {
-                enabled: admin_access_token.is_some(),
                 access_token: admin_access_token,
             },
             agent_runtime: AgentRuntimeConfig {

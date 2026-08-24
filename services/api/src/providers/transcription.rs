@@ -43,8 +43,46 @@ pub struct TranscriptionResult {
     pub usage_source: &'static str,
 }
 pub struct Wav {
-    pub duration_ms: i64,
-    pub data_byte_length: usize,
+    pub duration_ms: f64,
+}
+
+pub(crate) fn is_supported_language(language: &str) -> bool {
+    matches!(
+        language,
+        "ar" | "de"
+            | "en"
+            | "es"
+            | "fr"
+            | "hi"
+            | "id"
+            | "it"
+            | "ja"
+            | "ko"
+            | "ms"
+            | "nl"
+            | "pl"
+            | "pt"
+            | "ru"
+            | "th"
+            | "tr"
+            | "uk"
+            | "vi"
+            | "zh"
+    )
+}
+
+fn transcription_text(value: &serde_json::Value) -> Option<String> {
+    if let Some(languages) = value.get("languages") {
+        let languages = languages.as_array()?;
+        for language in languages {
+            let code = language.get("code")?.as_str()?.trim();
+            if code.is_empty() || js_string_len(code) > 32 {
+                return None;
+            }
+        }
+    }
+    let text = value.get("text")?.as_str()?.trim();
+    (js_string_len(text) <= 8_000).then(|| text.to_owned())
 }
 impl TranscriptionService {
     #[must_use]
@@ -85,7 +123,7 @@ impl TranscriptionService {
         })?;
         let reserved = self
             .budget
-            .transcription_estimate_micro_usd(wav.duration_ms)?;
+            .transcription_estimate_micro_usd(wav.duration_ms.ceil() as i64)?;
         self.budget
             .reserve(ReservationInput {
                 agent_turn_id: None,
@@ -182,12 +220,7 @@ impl TranscriptionService {
                 ));
             }
         };
-        let Some(text) = value
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty() && js_string_len(value) <= 8_000)
-        else {
+        let Some(text) = transcription_text(&value) else {
             self.budget
                 .mark_uncertain(input.user_id, input.request_id)
                 .await?;
@@ -197,8 +230,9 @@ impl TranscriptionService {
                 "The transcription provider returned an invalid response. This call was not retried.",
             ));
         };
-        let text = text.to_owned();
-        let actual = reserved;
+        let actual = self
+            .budget
+            .transcription_actual_micro_usd(wav.duration_ms / 1_000.0)?;
         let usage = ProviderUsage {
             cache_write_tokens: 0,
             cached_input_tokens: 0,
@@ -210,9 +244,8 @@ impl TranscriptionService {
         self.budget
             .settle(SettlementInput {
                 actual_micro_usd: actual,
-                audio_duration_ms: wav.duration_ms,
+                audio_duration_ms: wav.duration_ms.round() as i64,
                 character_count: 0,
-                disposition: "completed",
                 duration_ms: i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX),
                 provider_response_id: None,
                 request_id: input.request_id,
@@ -222,8 +255,8 @@ impl TranscriptionService {
             })
             .await?;
         Ok(TranscriptionResult {
-            audio_duration_ms: wav.duration_ms,
-            billed_seconds: wav.duration_ms as f64 / 1_000.0,
+            audio_duration_ms: wav.duration_ms.round() as i64,
+            billed_seconds: wav.duration_ms / 1_000.0,
             model: MODEL,
             text,
             usage_source: "actual",
@@ -305,26 +338,47 @@ pub fn parse_pcm_wav(buffer: &[u8], client: Option<i64>) -> Result<Wav, &'static
     if size == 0 || size % 2 != 0 {
         return Err("samples");
     }
-    let duration = i64::try_from(size)
-        .map_err(|_| "duration")?
-        .saturating_mul(1_000)
-        / 32_000;
-    if !(300..=15_000).contains(&duration)
-        || client.is_some_and(|client| (client - duration).abs() > 21)
+    let duration = size as f64 * 1_000.0 / 32_000.0;
+    if !(300.0..=15_000.0).contains(&duration)
+        || client.is_some_and(|client| (client as f64 - duration).abs() > 21.0)
     {
         return Err("duration");
     }
     Ok(Wav {
         duration_ms: duration,
-        data_byte_length: size,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pcm_wav(data_size: u32) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(44 + data_size as usize);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_000_u32.to_le_bytes());
+        bytes.extend_from_slice(&32_000_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size.to_le_bytes());
+        bytes.resize(44 + data_size as usize, 0);
+        bytes
+    }
+
     #[test]
     fn rejects_non_wav() {
         assert!(parse_pcm_wav(b"not wav", None).is_err());
+    }
+
+    #[test]
+    fn preserves_fractional_pcm_duration() {
+        let wav = parse_pcm_wav(&pcm_wav(9_794), Some(306)).expect("valid PCM WAV");
+        assert!((wav.duration_ms - 306.062_5).abs() < f64::EPSILON);
     }
 }
