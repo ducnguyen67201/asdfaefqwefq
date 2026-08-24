@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "license": "CC0 synthetic fixtures",
+  "normalization": "NFC, collapsed whitespace, per-page trim",
+  "cases": [
+    {"name":"single-page-text","generator":"minimal-pdf","pages":["Loops repeat a bounded block while a condition remains true."],"expectedPageCount":1,"expectedError":null},
+    {"name":"multi-page-unicode","generator":"minimal-pdf","pages":["Xin chào người học.","Café naïve résumé – bounded repetition."],"expectedPageCount":2,"expectedError":null},
+    {"name":"empty-scanned","generator":"minimal-pdf","pages":[""],"expectedPageCount":null,"expectedError":"scanned_pdf_unsupported"},
+    {"name":"encrypted","rawBase64":"JVBERi0xLjcKMSAwIG9iaiA8PCAvRW5jcnlwdCAyIDAgUiA+PiBlbmRvYmoKJSVFT0YK","expectedPageCount":null,"expectedError":"encrypted_pdf_unsupported"},
+    {"name":"malformed-signature","rawBase64":"bm90LWEtcGRm","expectedPageCount":null,"expectedError":"invalid_pdf"},
+    {"name":"page-limit","generator":"minimal-pdf","pageCount":500,"pageTemplate":"Synthetic page {page}","expectedPageCount":500,"expectedError":null},
+    {"name":"page-limit-exceeded","generator":"minimal-pdf","pageCount":501,"pageTemplate":"Synthetic page {page}","expectedPageCount":null,"expectedError":"pdf_page_limit"},
+    {"name":"character-limit","generator":"minimal-pdf","pageCount":500,"charactersPerPage":4000,"expectedPageCount":500,"expectedError":null},
+    {"name":"character-limit-exceeded","generator":"minimal-pdf","pageCount":500,"charactersPerPage":4001,"expectedPageCount":null,"expectedError":"extracted_text_too_large"}
+  ]
+}
