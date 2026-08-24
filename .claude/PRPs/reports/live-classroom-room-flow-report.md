@@ -14,7 +14,7 @@ Continuous cursor, typing, screen, foreground-window, and passive “stuck” ob
 |---|---:|---:|
 | Complexity | XL | XL |
 | Confidence | 8/10 | 8/10 |
-| Files changed or created | 68 | 77 before the post-push PR review artifact |
+| Files changed or created | 68 | 78 including local and post-push PR review artifacts |
 
 ## Tasks Completed
 
