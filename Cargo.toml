@@ -1,7 +1,12 @@
 [workspace]
-members = ["services/api-rs"]
+members = ["services/api"]
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.97.1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

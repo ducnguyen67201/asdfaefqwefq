@@ -13,8 +13,15 @@ trocode_rust_lint_config(
 
 rust_library(
     name = "api_lib",
-    srcs = ["src/lib.rs"],
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/main.rs"],
+    ),
     aliases = aliases(),
+    compile_data = glob([
+        "migrations/*.sql",
+        "public/*",
+    ]),
     crate_name = "trocode_api",
     edition = crate_edition(),
     lint_config = ":rust_lints",
