@@ -60,6 +60,10 @@ export function ClassroomSessionBar({
   if (!session || !view) return null;
 
   const launch = async (intent: 'check' | 'help') => {
+    if (session.activity.launchTarget === 'workspace') {
+      onOpenClasswork(session.attemptId);
+      return;
+    }
     setBusyAction(intent);
     setError(null);
     try {

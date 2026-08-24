@@ -1433,6 +1433,7 @@ export const KnowledgeClassroomSessionSchema = z.object({
   activity: z.object({
     title: z.string().trim().min(1).max(240),
     objective: z.string().trim().min(1).max(4_000),
+    launchTarget: z.enum(['none', 'workspace', 'current_surface']),
     requiresSubmission: z.boolean(),
   }),
   currentDirective: ClassroomDirectiveSchema.nullable(), joinedAt: z.string().datetime(),

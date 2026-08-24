@@ -10,7 +10,12 @@ const firstSession: KnowledgeClassroomSession = {
   run: { id: '00000000-0000-4000-8000-000000000002', state: 'draft', mode: 'live', status: 'lobby' },
   space: { id: '00000000-0000-4000-8000-000000000003', name: 'Python Lab' },
   activityVersionId: '00000000-0000-4000-8000-000000000004',
-  activity: { title: 'Loops', objective: 'Practice loops safely.', requiresSubmission: false },
+  activity: {
+    title: 'Loops',
+    objective: 'Practice loops safely.',
+    launchTarget: 'workspace',
+    requiresSubmission: false,
+  },
   currentDirective: null,
   joinedAt: '2026-08-25T00:00:00.000Z',
   leftAt: null,

@@ -11,7 +11,7 @@ const TRANSITIONS = Object.freeze({
     archived: new Set(),
   },
   attempt: {
-    assigned: new Set(['in_progress', 'withdrawn']),
+    assigned: new Set(['in_progress', 'ready_for_review', 'withdrawn']),
     in_progress: new Set(['blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']),
     blocked: new Set(['in_progress', 'ready_for_review', 'submitted', 'withdrawn']),
     ready_for_review: new Set(['in_progress', 'submitted', 'completed', 'withdrawn']),

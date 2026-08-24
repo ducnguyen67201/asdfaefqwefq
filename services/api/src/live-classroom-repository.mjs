@@ -206,6 +206,7 @@ export class PostgresLiveClassroomRepository {
         activity: {
           title: room.definition.title,
           objective: room.definition.objective,
+          launchTarget: room.definition.launchTarget,
           requiresSubmission: room.definition.completionPolicy?.requiresSubmission === true,
         },
         currentDirective: directiveFromRow(latest.rows[0]),
@@ -244,6 +245,7 @@ export class PostgresLiveClassroomRepository {
       activity: {
         title: row.definition.title,
         objective: row.definition.objective,
+        launchTarget: row.definition.launchTarget,
         requiresSubmission: row.definition.completionPolicy?.requiresSubmission === true,
       },
       currentDirective: directiveFromRow(latest.rows[0]),
@@ -396,7 +398,8 @@ export class PostgresLiveClassroomRepository {
   async readyAttempt({ attemptId, userId }) {
     return inTransaction(this.pool, async (client) => {
       const locked = await client.query(
-        `SELECT attempts.id,attempts.run_id,attempts.state,versions.definition
+        `SELECT attempts.id,attempts.run_id,attempts.state,versions.definition,
+                runs.state AS run_state,runs.opens_at,runs.closes_at
          FROM knowledge_activity_attempts attempts
          JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id
          JOIN knowledge_activity_versions versions ON versions.id=runs.activity_version_id
@@ -405,9 +408,15 @@ export class PostgresLiveClassroomRepository {
       );
       const row = locked.rows[0];
       if (!row) return null;
+      const now = Date.now();
+      if (row.run_state !== 'open'
+        || (row.opens_at && now < new Date(row.opens_at).getTime())
+        || (row.closes_at && now >= new Date(row.closes_at).getTime())) {
+        fail(409, 'run_not_open', 'This Run is not open.');
+      }
       if (row.state === 'ready_for_review' || row.state === 'submitted') return { attemptId, state: row.state };
       if (row.definition.completionPolicy?.requiresSubmission) fail(409, 'submission_required', 'Submit the required files before requesting review.');
-      if (!['in_progress', 'blocked'].includes(row.state)) fail(409, 'invalid_review_transition', 'This Attempt cannot be marked ready.');
+      if (!['assigned', 'in_progress', 'blocked'].includes(row.state)) fail(409, 'invalid_review_transition', 'This Attempt cannot be marked ready.');
       const updated = await client.query(
         `UPDATE knowledge_activity_attempts SET state='ready_for_review',ready_at=COALESCE(ready_at,NOW()),updated_at=NOW()
          WHERE id=$1 RETURNING state,ready_at`,

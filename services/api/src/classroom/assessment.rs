@@ -14,7 +14,8 @@ impl ClassroomService {
     ) -> Result<Option<AttemptTransitionResponse>, ApiError> {
         let mut transaction = self.begin().await?;
         let attempt = query(
-            r#"SELECT attempts.run_id,attempts.state,versions.definition
+            r#"SELECT attempts.run_id,attempts.state,versions.definition,
+                      runs.state AS run_state,runs.opens_at,runs.closes_at
                FROM knowledge_activity_attempts attempts
                JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id
                JOIN knowledge_activity_versions versions ON versions.id=runs.activity_version_id
@@ -27,6 +28,16 @@ impl ClassroomService {
         let Some(attempt) = attempt else {
             return Ok(None);
         };
+        let run_state: String = attempt.get("run_state");
+        let opens_at: Option<time::OffsetDateTime> = attempt.get("opens_at");
+        let closes_at: Option<time::OffsetDateTime> = attempt.get("closes_at");
+        let now = time::OffsetDateTime::now_utc();
+        if run_state != "open"
+            || opens_at.is_some_and(|opens| now < opens)
+            || closes_at.is_some_and(|closes| now >= closes)
+        {
+            return Err(ApiError::conflict("run_not_open", "This Run is not open."));
+        }
         let state: String = attempt.get("state");
         if matches!(state.as_str(), "ready_for_review" | "submitted") {
             transaction.commit().await?;
@@ -39,7 +50,7 @@ impl ClassroomService {
                 "Submit the required files before requesting review.",
             ));
         }
-        if !matches!(state.as_str(), "in_progress" | "blocked") {
+        if !matches!(state.as_str(), "assigned" | "in_progress" | "blocked") {
             return Err(ApiError::conflict(
                 "invalid_review_transition",
                 "This Attempt cannot be marked ready.",

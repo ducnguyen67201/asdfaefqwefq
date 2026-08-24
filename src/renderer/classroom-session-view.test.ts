@@ -11,7 +11,12 @@ import {
 } from './classroom-session-view';
 
 const session: ClassroomSessionProjection = {
-  activity: { objective: 'Build a small Scratch scene.', title: 'Scratch loops', requiresSubmission: false },
+  activity: {
+    launchTarget: 'current_surface',
+    objective: 'Build a small Scratch scene.',
+    title: 'Scratch loops',
+    requiresSubmission: false,
+  },
   activityVersionId: '00000000-0000-4000-8000-000000000003',
   attemptId: '00000000-0000-4000-8000-000000000004',
   attemptState: 'in_progress',
@@ -60,7 +65,7 @@ describe('classroomSessionView', () => {
     });
     expect(
       classroomSessionView({ ...session, attemptState: 'assigned' }),
-    ).toMatchObject({ canMarkReady: false, label: 'Class live' });
+    ).toMatchObject({ canMarkReady: true, label: 'Class live' });
     expect(
       classroomSessionView({
         ...session,

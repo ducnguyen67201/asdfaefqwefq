@@ -492,6 +492,7 @@ fn session_activity(definition: &serde_json::Value) -> SessionActivity {
     SessionActivity {
         title: definition_string(definition, "title"),
         objective: definition_string(definition, "objective"),
+        launch_target: definition_string(definition, "launchTarget"),
         requires_submission: definition_bool(
             definition,
             &["completionPolicy", "requiresSubmission"],

@@ -106,7 +106,9 @@ export function AttemptLaunchPage({
   const isLockedForWork = isTerminal || isSubmitted;
   const canReady =
     !attempt.definition.completionPolicy.requiresSubmission &&
-    (attempt.state === 'in_progress' || attempt.state === 'blocked');
+    (attempt.state === 'assigned' ||
+      attempt.state === 'in_progress' ||
+      attempt.state === 'blocked');
 
   const launch = async (intent: ActivityIntent, text = prompt) => {
     setBusyAction(intent);

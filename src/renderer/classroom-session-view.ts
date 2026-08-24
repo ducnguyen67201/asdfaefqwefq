@@ -99,9 +99,7 @@ export function classroomSessionView(
     canAskForHelp: true,
     canCheck: true,
     canLeave: true,
-    canMarkReady:
-      session.attemptState !== 'assigned' &&
-      !session.activity.requiresSubmission,
+    canMarkReady: !session.activity.requiresSubmission,
     description:
       'Class context is active. Tro knows the published exercise when you ask for help.',
     label: 'Class live',

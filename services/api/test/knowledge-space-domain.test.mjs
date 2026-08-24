@@ -31,6 +31,7 @@ test('role operations and lifecycle transitions fail closed', () => {
   assert.equal(canTransition('attempt', 'assigned', 'in_progress'), true);
   assert.equal(canTransition('attempt', 'assigned', 'completed'), false);
   assert.equal(canTransition('attempt', 'in_progress', 'ready_for_review'), true);
+  assert.equal(canTransition('attempt', 'assigned', 'ready_for_review'), true);
   assert.equal(canTransition('attempt', 'ready_for_review', 'in_progress'), true);
   assert.equal(canTransition('workSession', 'created', 'failed'), true);
   assert.equal(canTransition('workSession', 'paused', 'failed'), true);

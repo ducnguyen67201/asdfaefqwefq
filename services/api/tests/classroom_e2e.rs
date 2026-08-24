@@ -79,6 +79,7 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     assert_eq!(joined.status, StatusCode::OK);
     assert_eq!(joined.body["run"]["status"], "lobby");
     assert_eq!(joined.body["activity"]["title"], "Rust loops lab");
+    assert_eq!(joined.body["activity"]["launchTarget"], "current_surface");
     let attempt_id = Uuid::parse_str(joined.body["attemptId"].as_str().unwrap()).unwrap();
 
     let current = call(
@@ -91,6 +92,17 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     .await;
     assert_eq!(current.status, StatusCode::OK);
     assert_eq!(current.body["session"]["attemptId"], attempt_id.to_string());
+
+    let lobby_ready = call(
+        &router,
+        Method::POST,
+        &format!("/v1/attempts/{attempt_id}/ready"),
+        Some(&fixture.student_token),
+        Some(json!({"clientId":Uuid::new_v4()})),
+    )
+    .await;
+    assert_eq!(lobby_ready.status, StatusCode::CONFLICT);
+    assert_eq!(lobby_ready.body["code"], "run_not_open");
 
     let opened = call(
         &router,
@@ -105,6 +117,29 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     .await;
     assert_eq!(opened.status, StatusCode::OK);
     assert_eq!(opened.body["state"], "open");
+
+    let ready_without_agent = call(
+        &router,
+        Method::POST,
+        &format!("/v1/attempts/{attempt_id}/ready"),
+        Some(&fixture.student_token),
+        Some(json!({"clientId":Uuid::new_v4()})),
+    )
+    .await;
+    assert_eq!(ready_without_agent.body["state"], "ready_for_review");
+
+    let returned = call(
+        &router,
+        Method::POST,
+        &format!(
+            "/v1/spaces/{}/runs/{}/attempts/{attempt_id}/review",
+            fixture.space_id, fixture.run_id
+        ),
+        Some(&fixture.teacher_token),
+        Some(json!({"clientId":Uuid::new_v4(),"action":"return"})),
+    )
+    .await;
+    assert_eq!(returned.body["state"], "in_progress");
 
     let directive = call(
         &router,

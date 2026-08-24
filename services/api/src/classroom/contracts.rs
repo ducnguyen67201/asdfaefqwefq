@@ -234,6 +234,7 @@ pub struct SessionSpace {
 pub struct SessionActivity {
     pub title: String,
     pub objective: String,
+    pub launch_target: String,
     pub requires_submission: bool,
 }
 
