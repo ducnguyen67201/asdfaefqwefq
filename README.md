@@ -580,6 +580,8 @@ src/
 ├── index.ts         Electron main entry
 ├── preload.ts       minimal renderer API
 └── renderer.tsx     React entry
+bazel/
+└── rust/             shared first-party Rust lint and check macros
 services/
 ├── api/              production Node hosted API
 └── api-rs/           non-production Rust migration foundation

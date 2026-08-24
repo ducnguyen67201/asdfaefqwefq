@@ -2,21 +2,13 @@ load("@crates//:defs.bzl", "aliases", "all_crate_deps", "crate_edition")
 load(
     "@rules_rust//rust:defs.bzl",
     "rust_binary",
-    "rust_clippy",
     "rust_library",
-    "rust_lint_config",
     "rust_test",
-    "rustfmt_test",
 )
+load("//bazel/rust:defs.bzl", "trocode_rust_checks", "trocode_rust_lint_config")
 
-rust_lint_config(
+trocode_rust_lint_config(
     name = "rust_lints",
-    clippy = {
-        "all": "deny",
-    },
-    rustc = {
-        "unsafe_code": "forbid",
-    },
 )
 
 rust_library(
@@ -55,20 +47,14 @@ rust_test(
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),
 )
 
-rustfmt_test(
-    name = "rustfmt_test",
-    targets = [
+trocode_rust_checks(
+    clippy_name = "clippy",
+    rustfmt_name = "rustfmt_test",
+    source_targets = [
         ":api_lib",
         ":trocode_api",
     ],
-)
-
-rust_clippy(
-    name = "clippy",
-    testonly = True,
-    deps = [
-        ":api_lib",
+    test_targets = [
         ":api_lib_test",
-        ":trocode_api",
     ],
 )

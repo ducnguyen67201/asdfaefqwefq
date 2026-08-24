@@ -23,6 +23,8 @@ version; it defaults to `local`.
 
 `Cargo.toml` files and the root `Cargo.lock` are the Rust dependency source of
 truth. Bazel imports them through Crate Universe and owns the CI build graph.
+Shared first-party lint and verification conventions live under `bazel/rust`;
+each service keeps its compilation targets explicit in its local `BUILD.bazel`.
 After changing a Cargo manifest, update both dependency locks locally:
 
 ```bash

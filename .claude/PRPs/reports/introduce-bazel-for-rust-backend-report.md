@@ -7,6 +7,9 @@ Electron Forge desktop pipeline or production Node API. The repository now pins
 Bazel 9.2.0, `rules_rust` 0.73.0, and Rust 1.97.1; imports Cargo dependencies
 through Crate Universe; builds, tests, formats, and lints a non-production Rust
 health service; and verifies that service in a dedicated Ubuntu CI job.
+Repository-owned reusable Rust lint and verification macros live under
+`bazel/rust`, while each service keeps its compilation graph explicit in its
+nearest `BUILD.bazel` file.
 
 The Rust service exposes only `GET /healthz`. It defaults to port 8081, reports
 the Railway commit SHA or `local`, applies the existing API's hardening headers,
@@ -24,7 +27,7 @@ diff SHA-256 remained
 |---|---|---|
 | Complexity | Large | Large |
 | Confidence | Not specified | High after full validation |
-| Files Changed | 20 implementation files | 20 implementation files |
+| Files Changed | 20 implementation files | 23 implementation files after requested follow-up |
 
 Workflow artifacts—the archived plan and this report—are not included in the
 implementation-file count. The unrelated pre-existing `package-lock.json`
@@ -42,6 +45,7 @@ modification is also excluded.
 | 6 | Add developer commands and document ownership | Complete | npm scripts, service guide, root README, architecture, and contributor guidance updated |
 | 7 | Add an independent Linux Bazel/Rust CI gate | Complete | Ubuntu job uses Bazelisk caches and lockfile error mode without secrets |
 | 8 | Run full regression and manual health validation | Complete | All consolidated gates and edge checks pass |
+| 9 | Add a scalable repository-owned Bazel support folder | Complete | Requested follow-up centralizes reusable Rust lint/check conventions without hiding service compilation targets |
 
 ## Validation Results
 
@@ -75,15 +79,18 @@ Additional reproducibility checks passed:
 | `MODULE.bazel.lock` | Generated | +1538 |
 | `REPO.bazel` | Created | +8 |
 | `rust-toolchain.toml` | Created | +4 |
-| `services/api-rs/BUILD.bazel` | Created | +74 |
+| `bazel/README.md` | Created | +13 |
+| `bazel/rust/BUILD.bazel` | Created | +4 |
+| `bazel/rust/defs.bzl` | Created | +35 |
+| `services/api-rs/BUILD.bazel` | Created | +60 |
 | `services/api-rs/Cargo.toml` | Created | +26 |
-| `services/api-rs/README.md` | Created | +35 |
+| `services/api-rs/README.md` | Created | +37 |
 | `services/api-rs/src/lib.rs` | Created | +195 |
 | `services/api-rs/src/main.rs` | Created | +59 |
 | `.github/workflows/ci.yml` | Updated | +13 |
 | `.gitignore` | Updated | +4 |
 | `AGENTS.md` | Updated | +3 |
-| `README.md` | Updated | +15 / -1 |
+| `README.md` | Updated | +17 / -1 |
 | `docs/architecture.md` | Updated | +8 |
 | `package.json` | Updated | +4 |
 
