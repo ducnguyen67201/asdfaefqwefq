@@ -426,13 +426,16 @@ export class PostgresLiveClassroomRepository {
     return inTransaction(this.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`review:${attemptId}:${clientId}`]);
       const existing = await client.query(
-        `SELECT action,created_at FROM knowledge_attempt_review_actions
-         WHERE attempt_id=$1 AND client_id=$2`,
-        [attemptId, clientId],
+        `SELECT reviews.action,reviews.created_at,attempts.state
+         FROM knowledge_attempt_review_actions reviews
+         JOIN knowledge_activity_attempts attempts ON attempts.id=reviews.attempt_id
+         JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id
+         WHERE reviews.attempt_id=$1 AND reviews.client_id=$2
+           AND attempts.run_id=$3 AND runs.space_id=$4`,
+        [attemptId, clientId, runId, spaceId],
       );
       if (existing.rows[0]) {
-        const current = await client.query(`SELECT state FROM knowledge_activity_attempts WHERE id=$1`, [attemptId]);
-        return { attemptId, action: existing.rows[0].action, state: current.rows[0]?.state, reviewedAt: iso(existing.rows[0].created_at), newlyCreated: false };
+        return { attemptId, action: existing.rows[0].action, state: existing.rows[0].state, reviewedAt: iso(existing.rows[0].created_at), newlyCreated: false };
       }
       const locked = await client.query(
         `SELECT attempts.state FROM knowledge_activity_attempts attempts

@@ -4,12 +4,13 @@ import {
   CreateWorkSessionSchema, InitiateUploadSchema, JoinLiveRoomSchema, LiveRoomMutationSchema,
   PublishActivitySchema, RecordEvidenceSchema, RedeemInviteSchema, RequestHelpSchema, SaveActivityDraftSchema,
   ClaimSessionDirectiveSchema, ReadyAttemptSchema, ResolveAttemptHelpSchema, ReviewAttemptSchema,
-  SearchKnowledgeSchema, UpdateWorkSessionSchema, publicValidationError,
+  KNOWLEDGE_LIMITS, SearchKnowledgeSchema, UpdateWorkSessionSchema, publicValidationError,
 } from './knowledge-space-contracts.mjs';
 import { HttpError, readJson, requireHostedSession, sendJson } from './http-primitives.mjs';
 import { planFor } from './plan-catalog.mjs';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const CLASSROOM_JOIN_PEER_LIMIT = KNOWLEDGE_LIMITS.roomParticipants + 400;
 const match = (path, expression) => new RegExp(`^${expression}$`, 'iu').exec(path);
 
 function parse(schema, value) {
@@ -43,7 +44,7 @@ export class KnowledgeSpaceHttpController {
     if (scope === 'classroom.join' && request.socket?.remoteAddress) {
       const peerRate = await this.rateLimiter.consume({
         key: request.socket.remoteAddress,
-        limit: 120,
+        limit: CLASSROOM_JOIN_PEER_LIMIT,
         scope: 'classroom.join.peer',
         windowMs: 60_000,
       });

@@ -257,6 +257,14 @@ test(
         reviews.map((review) => review.newlyCreated).sort(),
         [false, true],
       );
+      assert.equal(await repository.reviewAttempt({
+        action: 'complete',
+        attemptId: joined[3].attemptId,
+        clientId: reviewClientId,
+        runId: randomUUID(),
+        spaceId,
+        userId: ownerId,
+      }), null);
       const counts = await pool.query(
         `SELECT
            (SELECT used_count FROM knowledge_live_room_codes WHERE id=$1) AS used_count,

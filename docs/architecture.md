@@ -230,10 +230,16 @@ its matching target.
 Build ownership is intentionally split. npm, Webpack, and Electron Forge own
 the renderer, preload, Electron main process, native CUA staging, signing, and
 desktop installers. Bazel owns only the Rust targets under `services/api-rs`,
-using the root Cargo workspace as its dependency source. The Rust service is a
-non-production migration foundation that exposes only `GET /healthz`; the Node
-service continues to own Railway deployment and all production `/v1` traffic.
-No Rust binary is bundled into the desktop application in this phase.
+using the root Cargo workspace as its dependency source. The Rust service owns
+`GET /healthz` and can own the live-classroom room, directive, assessment, and
+dashboard route families behind `TROCODE_KNOWLEDGE_SPACES_ENABLED`. It validates
+the existing migration 018 schema and accepts the same opaque device sessions
+and wire contracts as Node. Node remains the compatibility owner for migrations,
+identity issuance, Space/material publishing, ingestion, agent execution,
+submissions, and unrelated `/v1` traffic. Deployment cuts over complete route
+families at ingress; disabling the flag and routing them back to Node is the
+non-destructive rollback. No Rust binary is bundled into the desktop
+application.
 
 The local PostgreSQL task-history adapter remains a development foundation. The
 hosted PostgreSQL database stores users, revocable device-session digests, cost

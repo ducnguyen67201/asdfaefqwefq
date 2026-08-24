@@ -454,9 +454,12 @@ npm run package
 npm run bazel:check
 ```
 
-`npm run bazel:check` builds, tests, formats, and lints the non-production Rust
-backend foundation. Run it for Rust or Bazel changes; it is intentionally not
-part of the Electron `npm run check` or release workflow.
+`npm run bazel:check` builds, tests, formats, and lints the Rust backend. Run it
+for Rust or Bazel changes; it is intentionally not part of the Electron
+`npm run check` or release workflow. The Rust service can own the live-classroom
+route slice behind `TROCODE_KNOWLEDGE_SPACES_ENABLED`; see
+[`services/api-rs/README.md`](services/api-rs/README.md) for route ownership and
+cutover requirements.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject
@@ -590,8 +593,8 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-├── api/              production Node hosted API
-└── api-rs/           non-production Rust migration foundation
+├── api/              Node compatibility API, migrations, ingestion, agents
+└── api-rs/           Rust API and live-classroom migration slice
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```

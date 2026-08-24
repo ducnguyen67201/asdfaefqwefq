@@ -1091,6 +1091,24 @@ Rollback by disabling `TROCODE_KNOWLEDGE_SPACES_ENABLED` and stopping the UI flo
 - Direct browser navigation is the correct delivery primitive for a teacher link. Computer use should inspect/recover student work only after Help/Check or another explicit approved action.
 - The current repository already contains most of the product foundation. Implementation should prefer extending it over introducing “classroom” duplicates of Space, Activity, Run, Attempt, source, evidence, or dashboard concepts.
 
+## Follow-on: Rust backend migration
+
+After the original plan completed, the requested scope expanded to follow
+`main`'s Rust migration. The live-classroom backend is now a vertical Axum/SQLx
+slice in `services/api-rs`, not a second classroom model:
+
+- Rust implements room admission, current/leave, Run open/close, directives and
+  one-time claims, Help/Ready/review/resolve, and dashboard snapshot/delta.
+- Rust accepts the existing `tro_live_` device sessions and reads/writes the
+  existing migration 018 PostgreSQL schema. Node still owns migration
+  application and the remaining hosted API route families.
+- The same desktop contracts are exercised through a real PostgreSQL HTTP E2E,
+  including the exact 200-seat boundary and wrong-Run idempotency isolation.
+- Cargo tests/build/clippy, Bazel rustfmt/tests/clippy, Node compatibility tests,
+  dependency audits, and the production Electron package are release gates.
+- Rollout and rollback switch whole classroom route families at ingress; they
+  do not transform or delete shared data.
+
 ---
 
 ## Next Step

@@ -13,7 +13,13 @@ trocode_rust_lint_config(
 
 rust_library(
     name = "api_lib",
-    srcs = ["src/lib.rs"],
+    srcs = [
+        "src/config.rs",
+        "src/database.rs",
+        "src/error.rs",
+        "src/http.rs",
+        "src/lib.rs",
+    ] + glob(["src/classroom/*.rs"]),
     aliases = aliases(),
     crate_name = "trocode_api",
     edition = crate_edition(),
@@ -47,6 +53,21 @@ rust_test(
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),
 )
 
+rust_test(
+    name = "classroom_e2e_test",
+    srcs = ["tests/classroom_e2e.rs"],
+    aliases = aliases(
+        normal_dev = True,
+        proc_macro_dev = True,
+    ),
+    crate_name = "classroom_e2e_test",
+    data = ["//services/api/migrations:sql"],
+    edition = crate_edition(),
+    lint_config = ":rust_lints",
+    deps = [":api_lib"] + all_crate_deps(normal = True) + all_crate_deps(normal_dev = True),
+    proc_macro_deps = all_crate_deps(proc_macro = True) + all_crate_deps(proc_macro_dev = True),
+)
+
 trocode_rust_checks(
     clippy_name = "clippy",
     rustfmt_name = "rustfmt_test",
@@ -56,5 +77,6 @@ trocode_rust_checks(
     ],
     test_targets = [
         ":api_lib_test",
+        ":classroom_e2e_test",
     ],
 )
