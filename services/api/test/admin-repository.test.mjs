@@ -38,6 +38,7 @@ test('lists bounded user records with access and plan metadata', async () => {
       rows: [
         {
           blocked_at: null,
+          classroom_role: 'teacher',
           access_code_id: '11111111-1111-4111-8111-111111111111',
           code_label: 'August cohort',
           created_at: new Date('2026-08-01T00:00:00.000Z'),
@@ -61,6 +62,7 @@ test('lists bounded user records with access and plan metadata', async () => {
         {
           blockedAt: null,
           accessCodeId: '11111111-1111-4111-8111-111111111111',
+          classroomRole: 'teacher',
           codeLabel: 'August cohort',
           createdAt: '2026-08-01T00:00:00.000Z',
           email: 'ada@example.com',
@@ -77,6 +79,60 @@ test('lists bounded user records with access and plan metadata', async () => {
   );
   assert.match(queries[1].sql, /LIMIT \$2 OFFSET \$3/u);
   assert.deepEqual(queries[1].parameters, ['%ada%', 50, 0]);
+});
+
+test('assigns an Admin classroom role and audits the change', async () => {
+  const { client, pool, queries } = sequencedPool([
+    { rows: [] },
+    { rows: [{ classroom_role: 'unassigned', id: 'google-user-1' }] },
+    { rows: [] },
+    { rows: [{ classroom_role: 'teacher', id: 'google-user-1' }] },
+    { rows: [] },
+    { rows: [] },
+  ]);
+  const repository = new PostgresAdminRepository(pool, {
+    hmacKey: TEST_HMAC_KEY,
+  });
+
+  assert.deepEqual(
+    await repository.setUserClassroomRole('google-user-1', 'teacher'),
+    {
+      classroomRole: 'teacher',
+      id: 'google-user-1',
+      kind: 'updated',
+    },
+  );
+  assert.match(queries[1].sql, /FROM users[\s\S]+FOR UPDATE/u);
+  assert.match(queries[2].sql, /knowledge_space_members/u);
+  assert.match(queries[4].sql, /user\.classroom_role_updated/u);
+  assert.deepEqual(queries[4].parameters, [
+    'google-user-1',
+    JSON.stringify({ from: 'unassigned', to: 'teacher' }),
+  ]);
+  assert.equal(queries.at(-1).sql, 'COMMIT');
+  assert.equal(client.released, true);
+});
+
+test('refuses a classroom role that conflicts with active class membership', async () => {
+  const { pool, queries } = sequencedPool([
+    { rows: [] },
+    { rows: [{ classroom_role: 'teacher', id: 'google-user-1' }] },
+    { rows: [{ role: 'owner' }] },
+    { rows: [] },
+  ]);
+  const repository = new PostgresAdminRepository(pool, {
+    hmacKey: TEST_HMAC_KEY,
+  });
+
+  assert.deepEqual(
+    await repository.setUserClassroomRole('google-user-1', 'student'),
+    { kind: 'role_in_use' },
+  );
+  assert.equal(
+    queries.some((query) => query.sql.includes('UPDATE users')),
+    false,
+  );
+  assert.equal(queries.at(-1).sql, 'ROLLBACK');
 });
 
 test('lists privacy-safe usage activity with user and task context', async () => {

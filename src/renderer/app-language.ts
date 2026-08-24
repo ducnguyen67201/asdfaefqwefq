@@ -165,7 +165,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Lifecycle events per day for the last six weeks':
     'Sự kiện vòng đời mỗi ngày trong sáu tuần qua',
   'Learning focus': 'Trọng tâm học tập',
-  'Loading application update status…': 'Đang tải trạng thái cập nhật ứng dụng…',
+  'Loading application update status…':
+    'Đang tải trạng thái cập nhật ứng dụng…',
   'Loading saved task history…': 'Đang tải lịch sử tác vụ đã lưu…',
   'Loading version…': 'Đang tải phiên bản…',
   'Loading…': 'Đang tải…',
@@ -219,8 +220,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'GPT Transcribe voice input is ready. The microphone stays off until you hold the shortcut.':
     'Nhập liệu giọng nói GPT Transcribe đã sẵn sàng. Micrô sẽ tắt cho đến khi bạn giữ phím tắt.',
   'Restart to update': 'Khởi động lại để cập nhật',
-  'Restart to install Tro {version}':
-    'Khởi động lại để cài đặt Tro {version}',
+  'Restart to install Tro {version}': 'Khởi động lại để cài đặt Tro {version}',
   'Restarting…': 'Đang khởi động lại…',
   Saved: 'Đã lưu',
   'Saved task history': 'Lịch sử tác vụ đã lưu',
@@ -339,16 +339,17 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Your active task has not settled yet.': 'Tác vụ đang chạy chưa kết thúc.',
   'Your move': 'Đến lượt bạn',
   'Your reference code': 'Mã tham chiếu của bạn',
-  'Fix the failing tests in my project': 'Sửa các bài kiểm thử đang lỗi trong dự án của tôi',
+  'Fix the failing tests in my project':
+    'Sửa các bài kiểm thử đang lỗi trong dự án của tôi',
   'Follow the live signal, steer the next safe step, or stop the task at any time.':
     'Theo dõi tín hiệu trực tiếp, điều hướng bước an toàn tiếp theo hoặc dừng tác vụ bất cứ lúc nào.',
-  'Less': 'Ít hơn',
-  'More': 'Nhiều hơn',
+  Less: 'Ít hơn',
+  More: 'Nhiều hơn',
   'Last six weeks': 'Sáu tuần qua',
   'Membership access': 'Quyền thành viên',
   'Membership needs attention': 'Tư cách thành viên cần được chú ý',
   Microphone: 'Micrô',
-  'Mode': 'Chế độ',
+  Mode: 'Chế độ',
   'No execution steps': 'Không có bước thực thi',
   'Nothing executes until scope and approvals are checked.':
     'Không có gì được thực thi cho đến khi phạm vi và phê duyệt được kiểm tra.',
@@ -407,9 +408,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Create Space': 'Tạo không gian',
   'Join a Space': 'Tham gia không gian',
   'Join Space': 'Tham gia',
-  'Library': 'Thư viện',
-  'Activities': 'Hoạt động',
-  'People': 'Mọi người',
+  Library: 'Thư viện',
+  Activities: 'Hoạt động',
+  People: 'Mọi người',
   'Upload files': 'Tải tệp lên',
   'Snapshot folder': 'Chụp nhanh thư mục',
   'Review upload': 'Xem lại nội dung tải lên',
@@ -446,6 +447,125 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Evidence patterns': 'Mẫu bằng chứng',
   'Suggested support': 'Hỗ trợ đề xuất',
   participants: 'người tham gia',
+  Classes: 'Lớp học',
+  class: 'lớp',
+  classes: 'lớp',
+  'Class workspaces': 'Không gian lớp học',
+  'Class workspace': 'Không gian lớp học',
+  'Keep each class easy to find, switch between, and manage from one place.':
+    'Dễ dàng tìm, chuyển đổi và quản lý từng lớp học tại một nơi.',
+  Teacher: 'Giáo viên',
+  Student: 'Học sinh',
+  'Role pending': 'Đang chờ phân vai',
+  'Account ready': 'Tài khoản đã sẵn sàng',
+  Account: 'Tài khoản',
+  Class: 'Lớp học',
+  'Your classroom role has not been assigned yet.':
+    'Vai trò lớp học của bạn chưa được chỉ định.',
+  'An administrator assigns Teacher or Student after your account is created.':
+    'Quản trị viên sẽ chỉ định Giáo viên hoặc Học sinh sau khi tài khoản được tạo.',
+  'New class workspace': 'Không gian lớp học mới',
+  'Create a class': 'Tạo lớp học',
+  'Start a dedicated home for a new group.':
+    'Tạo một không gian riêng cho nhóm mới.',
+  'Create class': 'Tạo lớp học',
+  'Creating…': 'Đang tạo…',
+  'Join a class': 'Tham gia lớp học',
+  'Use a code shared for your assigned role.':
+    'Dùng mã được chia sẻ cho vai trò của bạn.',
+  'Join class': 'Vào lớp học',
+  'Joining…': 'Đang tham gia…',
+  'No class workspaces yet': 'Chưa có không gian lớp học',
+  'Create a class, then add registered Teachers and Students.':
+    'Tạo lớp học rồi thêm Giáo viên và Học sinh đã đăng ký.',
+  'A Teacher can add your registered account to a class.':
+    'Giáo viên có thể thêm tài khoản đã đăng ký của bạn vào lớp.',
+  'Class owner': 'Chủ lớp học',
+  'Open class': 'Mở lớp học',
+  'All class workspaces': 'Tất cả không gian lớp học',
+  'Switch class': 'Chuyển lớp',
+  'Switch class workspace': 'Chuyển không gian lớp học',
+  'Current class': 'Lớp hiện tại',
+  'Your classroom role': 'Vai trò lớp học của bạn',
+  'Class overview': 'Tổng quan lớp học',
+  resources: 'tài nguyên',
+  resource: 'tài nguyên',
+  people: 'người',
+  Teaching: 'Đang giảng dạy',
+  Learning: 'Đang học',
+  'Class community': 'Cộng đồng lớp học',
+  'on the roster': 'trong danh sách lớp',
+  'Roster composition': 'Thành phần lớp học',
+  'At a glance': 'Tổng quan nhanh',
+  Teachers: 'Giáo viên',
+  Students: 'Học sinh',
+  'Roles are verified before anyone is added.':
+    'Vai trò được xác minh trước khi thêm bất kỳ ai.',
+  'Add registered accounts': 'Thêm tài khoản đã đăng ký',
+  'Build the roster': 'Xây dựng danh sách lớp',
+  'Add people after their account exists and an administrator assigns their Teacher or Student role.':
+    'Thêm mọi người sau khi tài khoản đã tồn tại và quản trị viên đã chỉ định vai trò Giáo viên hoặc Học sinh.',
+  'Registered account emails': 'Email tài khoản đã đăng ký',
+  'One email per line, comma, or space':
+    'Mỗi email một dòng, hoặc phân cách bằng dấu phẩy hay khoảng trắng',
+  'Add up to 500 people per batch. You can repeat as needed.':
+    'Thêm tối đa 500 người mỗi lượt và lặp lại khi cần.',
+  'Add as': 'Thêm với vai trò',
+  'Add to class': 'Thêm vào lớp',
+  'Adding…': 'Đang thêm…',
+  'Check these email entries': 'Kiểm tra các email này',
+  'Use 500 or fewer emails in each batch.':
+    'Dùng tối đa 500 email trong mỗi lượt.',
+  '{count} people added': 'Đã thêm {count} người',
+  '{count} already in this class': '{count} người đã có trong lớp',
+  'Roster update complete': 'Đã cập nhật danh sách lớp',
+  'Every account was checked against its classroom role.':
+    'Mỗi tài khoản đã được kiểm tra theo vai trò lớp học.',
+  Added: 'Đã thêm',
+  'Already here': 'Đã có trong lớp',
+  'Role mismatch': 'Sai vai trò',
+  'Review accounts that need attention': 'Xem các tài khoản cần xử lý',
+  'Wrong Admin-assigned role':
+    'Vai trò do quản trị viên chỉ định không phù hợp',
+  'Account not found or unavailable':
+    'Không tìm thấy tài khoản hoặc tài khoản không khả dụng',
+  'Class roster': 'Danh sách lớp',
+  'Everyone in this class': 'Mọi người trong lớp',
+  'Find a person': 'Tìm một người',
+  'Search name, email, or account ID': 'Tìm tên, email hoặc ID tài khoản',
+  'Show role': 'Hiển thị vai trò',
+  Everyone: 'Tất cả mọi người',
+  shown: 'đang hiển thị',
+  'No people match this view': 'Không có người phù hợp với chế độ xem này',
+  'Try another name or role.': 'Thử tên hoặc vai trò khác.',
+  Person: 'Người dùng',
+  Role: 'Vai trò',
+  'Account ID': 'ID tài khoản',
+  'Student join code': 'Mã tham gia cho Học sinh',
+  'Create 7-day Student join code': 'Tạo mã tham gia 7 ngày cho Học sinh',
+  'Only an account assigned as Student can use this code.':
+    'Chỉ tài khoản được chỉ định là Học sinh mới dùng được mã này.',
+  'Smaller circles': 'Các nhóm nhỏ',
+  'Organize students for focused activities and shared join codes.':
+    'Sắp xếp học sinh cho hoạt động tập trung và mã tham gia chung.',
+  'e.g. Studio A': 'ví dụ: Nhóm A',
+  'Resource count': 'Số tài nguyên',
+  'Ready to add': 'Sẵn sàng để thêm',
+  'All classes': 'Tất cả lớp học',
+  'Showing work from': 'Hiển thị bài từ',
+  'All clear': 'Đã hoàn tất',
+  'Class folio': 'Hồ sơ lớp học',
+  '{count} activity': '{count} hoạt động',
+  '{count} activities': '{count} hoạt động',
+  'Open activity': 'Mở hoạt động',
+  'When a Teacher opens a Run for you, it will appear here.':
+    'Khi Giáo viên mở một đợt thực hiện cho bạn, nội dung sẽ xuất hiện tại đây.',
+  'Your Teacher-published work appears in the Assigned view.':
+    'Bài tập do Giáo viên xuất bản sẽ xuất hiện trong mục Được giao.',
+  'Resources, activities, and people for this class.':
+    'Tài nguyên, hoạt động và mọi người trong lớp học này.',
+  'Your Teacher has not shared class resources yet.':
+    'Giáo viên chưa chia sẻ tài nguyên lớp học.',
   'Previous work': 'Công việc trước đó',
   'Spoken or typed “yes” cannot approve this action. Use the button below.':
     'Nói hoặc nhập “có” không thể phê duyệt hành động này. Hãy dùng nút bên dưới.',
@@ -478,9 +598,7 @@ export function translate(
   replacements: Readonly<Record<string, string | number>> = {},
 ): string {
   let translated =
-    language === 'vi'
-      ? (VIETNAMESE_TRANSLATIONS[message] ?? message)
-      : message;
+    language === 'vi' ? (VIETNAMESE_TRANSLATIONS[message] ?? message) : message;
 
   for (const [key, value] of Object.entries(replacements)) {
     translated = translated.replaceAll(`{${key}}`, String(value));

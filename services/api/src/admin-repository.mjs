@@ -61,6 +61,7 @@ function publicUser(row) {
   return {
     accessCodeId: row.access_code_id ?? null,
     blockedAt,
+    classroomRole: row.classroom_role ?? 'unassigned',
     codeLabel: row.code_label ?? null,
     createdAt: iso(row.created_at),
     email: row.email,
@@ -167,7 +168,7 @@ export class PostgresAdminRepository {
     this.pool = pool;
   }
 
-  async listUsers({ limit, offset, search, status = 'all' }) {
+  async listUsers({ classroomRole = 'all', limit, offset, search, status = 'all' }) {
     const pattern = search ? `%${search}%` : '';
     const statusClause =
       status === 'blocked'
@@ -175,6 +176,17 @@ export class PostgresAdminRepository {
         : status === 'active'
           ? 'AND users.blocked_at IS NULL'
           : '';
+    const classroomRoleClause = classroomRole === 'all'
+      ? ''
+      : 'AND users.classroom_role = $2';
+    const summaryParameters = classroomRole === 'all'
+      ? [pattern]
+      : [pattern, classroomRole];
+    const listParameters = classroomRole === 'all'
+      ? [pattern, limit, offset]
+      : [pattern, classroomRole, limit, offset];
+    const limitParameter = classroomRole === 'all' ? 2 : 3;
+    const offsetParameter = classroomRole === 'all' ? 3 : 4;
     const summaryResult = await this.pool.query(
       `SELECT COUNT(*)::INTEGER AS total_users,
               COUNT(*) FILTER (WHERE blocked_at IS NULL)::INTEGER AS active_users,
@@ -182,15 +194,17 @@ export class PostgresAdminRepository {
               COUNT(*) FILTER (
                 WHERE ($1 = '' OR email ILIKE $1 OR name ILIKE $1)
                 ${statusClause.replaceAll('users.', '')}
+                ${classroomRoleClause.replaceAll('users.', '')}
               )::INTEGER AS filtered_users
        FROM users`,
-      [pattern],
+      summaryParameters,
     );
     const usersResult = await this.pool.query(
       `SELECT users.id,
               users.email,
               users.name,
               users.plan,
+              users.classroom_role,
               users.blocked_at,
               users.created_at,
               codes.id AS access_code_id,
@@ -209,9 +223,10 @@ export class PostgresAdminRepository {
        ) AS latest_session ON TRUE
        WHERE ($1 = '' OR users.email ILIKE $1 OR users.name ILIKE $1)
          ${statusClause}
+         ${classroomRoleClause}
        ORDER BY users.created_at DESC, users.id
-       LIMIT $2 OFFSET $3`,
-      [pattern, limit, offset],
+       LIMIT $${limitParameter} OFFSET $${offsetParameter}`,
+      listParameters,
     );
     const summary = summaryResult.rows[0] ?? {};
     const firstUser = usersResult.rows[0];
@@ -416,6 +431,72 @@ export class PostgresAdminRepository {
         blockedAt,
         id: row.id,
         status: blockedAt ? 'blocked' : 'active',
+      };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async setUserClassroomRole(userId, classroomRole) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const userResult = await client.query(
+        `SELECT id, classroom_role
+         FROM users
+         WHERE id = $1
+         FOR UPDATE`,
+        [userId],
+      );
+      const user = userResult.rows[0];
+      if (!user) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const membershipResult = await client.query(
+        `SELECT role
+         FROM knowledge_space_members
+         WHERE user_id = $1 AND removed_at IS NULL`,
+        [userId],
+      );
+      const membershipRoles = new Set(
+        membershipResult.rows.map((row) => row.role),
+      );
+      const incompatible = classroomRole === 'unassigned'
+        ? membershipRoles.size > 0
+        : classroomRole === 'student'
+          ? membershipRoles.has('owner') || membershipRoles.has('facilitator')
+          : false;
+      if (incompatible) {
+        await client.query('ROLLBACK');
+        return { kind: 'role_in_use' };
+      }
+      const updated = await client.query(
+        `UPDATE users
+         SET classroom_role = $2, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, classroom_role`,
+        [userId, classroomRole],
+      );
+      await client.query(
+        `INSERT INTO admin_audit_events (action, target_user_id, detail)
+         VALUES ('user.classroom_role_updated', $1, $2::jsonb)`,
+        [
+          userId,
+          JSON.stringify({
+            from: user.classroom_role ?? 'unassigned',
+            to: classroomRole,
+          }),
+        ],
+      );
+      await client.query('COMMIT');
+      return {
+        classroomRole: updated.rows[0].classroom_role,
+        id: updated.rows[0].id,
+        kind: 'updated',
       };
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);

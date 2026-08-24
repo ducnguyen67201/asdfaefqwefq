@@ -1,11 +1,12 @@
 const OPERATIONS = Object.freeze({
   owner: new Set([
     'space.read', 'space.update', 'space.delete', 'member.manage', 'group.manage',
+    'member.read', 'invite.participant',
     'source.read', 'source.upload', 'source.delete', 'activity.read', 'activity.write',
     'activity.publish', 'run.manage', 'attempt.read_all', 'insight.read', 'help.resolve',
   ]),
   facilitator: new Set([
-    'space.read', 'group.manage', 'source.read', 'source.upload', 'activity.read',
+    'space.read', 'group.manage', 'member.read', 'invite.participant', 'source.read', 'source.upload', 'activity.read',
     'activity.write', 'activity.publish', 'run.manage', 'attempt.read_all',
     'insight.read', 'help.resolve',
   ]),
@@ -24,6 +25,26 @@ export function assertSpaceRole(role, operation) {
     const error = new Error('This Space operation is not available.');
     error.status = 403;
     error.code = 'space_forbidden';
+    throw error;
+  }
+}
+
+export function canClassroomRoleUseSpaceRole(classroomRole, spaceRole) {
+  if (classroomRole === 'teacher') {
+    return spaceRole === 'owner'
+      || spaceRole === 'facilitator'
+      || spaceRole === 'participant';
+  }
+  return classroomRole === 'student' && spaceRole === 'participant';
+}
+
+export function assertClassroomRoleForSpaceRole(classroomRole, spaceRole) {
+  if (!canClassroomRoleUseSpaceRole(classroomRole, spaceRole)) {
+    const error = new Error('Your account role does not allow this class role.');
+    error.status = 403;
+    error.code = classroomRole === 'unassigned'
+      ? 'classroom_role_required'
+      : 'classroom_role_mismatch';
     throw error;
   }
 }

@@ -17,11 +17,18 @@ test(
       const tables = await pool.query(
         `SELECT to_regclass('public.knowledge_spaces') AS spaces,
                 to_regclass('public.knowledge_source_chunks') AS chunks,
-                to_regclass('public.knowledge_activity_attempts') AS attempts`,
+                to_regclass('public.knowledge_activity_attempts') AS attempts,
+                to_regclass('public.knowledge_space_member_batches') AS member_batches,
+                EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='users' AND column_name='classroom_role'
+                ) AS has_classroom_role`,
       );
       assert.equal(tables.rows[0].spaces, 'knowledge_spaces');
       assert.equal(tables.rows[0].chunks, 'knowledge_source_chunks');
       assert.equal(tables.rows[0].attempts, 'knowledge_activity_attempts');
+      assert.equal(tables.rows[0].member_batches, 'knowledge_space_member_batches');
+      assert.equal(tables.rows[0].has_classroom_role, true);
 
       const search = await pool.query(
         `SELECT websearch_to_tsquery('simple', 'shopping cart loop') @@

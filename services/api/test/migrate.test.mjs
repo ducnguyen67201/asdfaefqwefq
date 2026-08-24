@@ -11,7 +11,7 @@ test('runs every checked-in SQL migration in filename order', async () => {
     },
   });
 
-  assert.equal(statements.length, 17);
+  assert.equal(statements.length, 18);
   assert.match(statements[0], /CREATE TABLE IF NOT EXISTS users/u);
   assert.match(statements[1], /CREATE TABLE IF NOT EXISTS access_codes/u);
   assert.match(statements[2], /CREATE TABLE IF NOT EXISTS model_budget_reservations/u);
@@ -45,6 +45,10 @@ test('runs every checked-in SQL migration in filename order', async () => {
   );
   assert.match(statements[15], /user\.access_code_granted/u);
   assert.match(statements[16], /free_access_started_at/u);
+  assert.match(
+    statements[17],
+    /classroom_role[\s\S]+knowledge_space_member_batches[\s\S]+user\.classroom_role_updated/u,
+  );
 });
 
 test('latest migrations are forward-only and re-runnable', async () => {
@@ -52,9 +56,10 @@ test('latest migrations are forward-only and re-runnable', async () => {
   const database = { query: async (sql) => statements.push(sql) };
   await runMigrations(database);
   await runMigrations(database);
-  assert.equal(statements.length, 34);
+  assert.equal(statements.length, 36);
   assert.match(statements[14], /ADD COLUMN IF NOT EXISTS effect_kind/u);
-  assert.match(statements[31], /ADD COLUMN IF NOT EXISTS effect_kind/u);
-  assert.match(statements[32], /user\.access_code_granted/u);
-  assert.match(statements[33], /free_access_started_at/u);
+  assert.match(statements[32], /ADD COLUMN IF NOT EXISTS effect_kind/u);
+  assert.match(statements[33], /user\.access_code_granted/u);
+  assert.match(statements[34], /free_access_started_at/u);
+  assert.match(statements[35], /classroom_role/u);
 });

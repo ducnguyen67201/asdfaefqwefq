@@ -38,6 +38,8 @@ const USER_ACCESS_PATH =
   /^\/v1\/admin\/users\/(?<userId>[^/]{1,768})\/access$/u;
 const USER_ACCESS_CODE_PATH =
   /^\/v1\/admin\/users\/(?<userId>[^/]{1,768})\/access-code$/u;
+const USER_CLASSROOM_ROLE_PATH =
+  /^\/v1\/admin\/users\/(?<userId>[^/]{1,768})\/classroom-role$/u;
 const ACCESS_CODE_USERS_PATH =
   /^\/v1\/admin\/access-codes\/(?<codeId>[^/]{1,128})\/users$/u;
 const ACCESS_CODE_PATH =
@@ -65,6 +67,9 @@ const BulkCodeSchema = z
   })
   .strict();
 const AccessCodeStateSchema = z.object({ paused: z.boolean() }).strict();
+const ClassroomRoleSchema = z
+  .object({ role: z.enum(['unassigned', 'teacher', 'student']) })
+  .strict();
 
 function sendAsset(response, body, contentType) {
   response.statusCode = 200;
@@ -260,6 +265,13 @@ export class AdminHttpController {
       if (status !== null && !['active', 'blocked'].includes(status)) {
         throw new HttpError(400, 'Status filter is invalid.', 'invalid_request');
       }
+      const classroomRole = url.searchParams.get('classroomRole');
+      if (
+        classroomRole !== null &&
+        !['unassigned', 'teacher', 'student'].includes(classroomRole)
+      ) {
+        throw new HttpError(400, 'Classroom role filter is invalid.', 'invalid_request');
+      }
       sendJson(
         response,
         200,
@@ -267,6 +279,7 @@ export class AdminHttpController {
           limit,
           offset,
           search,
+          ...(classroomRole ? { classroomRole } : {}),
           ...(status ? { status } : {}),
         }),
       );
@@ -428,6 +441,39 @@ export class AdminHttpController {
       const body = parse(UserAccessSchema, await readJson(request, 4_096));
       const result = await this.repository.setUserBlocked(userId, body.blocked);
       if (!result) throw new HttpError(404, 'User not found.', 'user_not_found');
+      sendJson(response, 200, result);
+      return true;
+    }
+
+    const userClassroomRoleMatch = USER_CLASSROOM_ROLE_PATH.exec(path);
+    if (
+      request.method === 'PATCH' &&
+      userClassroomRoleMatch?.groups?.userId
+    ) {
+      let userId;
+      try {
+        userId = decodeURIComponent(
+          userClassroomRoleMatch.groups.userId,
+        ).trim();
+      } catch {
+        throw new HttpError(400, 'User ID is invalid.', 'invalid_request');
+      }
+      if (!userId || userId.length > 255) {
+        throw new HttpError(400, 'User ID is invalid.', 'invalid_request');
+      }
+      const body = parse(ClassroomRoleSchema, await readJson(request, 4_096));
+      const result = await this.repository.setUserClassroomRole(
+        userId,
+        body.role,
+      );
+      if (!result) throw new HttpError(404, 'User not found.', 'user_not_found');
+      if (result.kind === 'role_in_use') {
+        throw new HttpError(
+          409,
+          'Remove incompatible class memberships before changing this role.',
+          'classroom_role_in_use',
+        );
+      }
       sendJson(response, 200, result);
       return true;
     }

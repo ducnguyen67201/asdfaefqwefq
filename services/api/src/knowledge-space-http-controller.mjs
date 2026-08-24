@@ -1,5 +1,5 @@
 import {
-  AttemptAcknowledgeSchema, CommitSubmissionSchema, CompleteUploadSchema, CreateGroupSchema, CreateInviteSchema,
+  AttemptAcknowledgeSchema, BulkAddSpaceMembersSchema, CommitSubmissionSchema, CompleteUploadSchema, CreateGroupSchema, CreateInviteSchema,
   CreateRunSchema, CreateSpaceSchema, CreateWorkSessionSchema, InitiateUploadSchema,
   PublishActivitySchema, RecordEvidenceSchema, RedeemInviteSchema, RequestHelpSchema, SaveActivityDraftSchema,
   SearchKnowledgeSchema, UpdateWorkSessionSchema, publicValidationError,
@@ -42,7 +42,7 @@ export class KnowledgeSpaceHttpController {
   async handle({ request, response, url }) {
     const path = url.pathname;
     if (request.method === 'GET' && path === '/v1/capabilities') {
-      sendJson(response, 200, { knowledgeSpaces: { enabled: this.enabled, contractVersion: 1 } }); return true;
+      sendJson(response, 200, { knowledgeSpaces: { enabled: this.enabled, contractVersion: 2 } }); return true;
     }
     if (!this.enabled || (!path.startsWith('/v1/spaces') && !path.startsWith('/v1/activities') && !path.startsWith('/v1/runs') && !path.startsWith('/v1/attempts') && !path.startsWith('/v1/work-sessions') && path !== '/v1/uploads/complete' && path !== '/v1/assignments/me' && path !== '/v1/space-invites/redeem')) return false;
 
@@ -89,6 +89,17 @@ export class KnowledgeSpaceHttpController {
     }
     if ((route = match(path, `/v1/spaces/(?<spaceId>${UUID})/members`)) && request.method === 'GET') {
       sendJson(response, 200, { items: await this.spaceService.listMembers(userId, route.groups.spaceId) }); return true;
+    }
+    if ((route = match(path, `/v1/spaces/(?<spaceId>${UUID})/members/bulk`)) && request.method === 'POST') {
+      sendJson(
+        response,
+        200,
+        await this.spaceService.addMembers(
+          userId,
+          route.groups.spaceId,
+          parse(BulkAddSpaceMembersSchema, await readJson(request)),
+        ),
+      ); return true;
     }
     if ((route = match(path, `/v1/spaces/(?<spaceId>${UUID})/invites`)) && request.method === 'POST') {
       sendJson(response, 201, await this.spaceService.createInvite(userId, route.groups.spaceId, parse(CreateInviteSchema, await readJson(request)))); return true;

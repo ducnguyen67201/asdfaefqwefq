@@ -154,6 +154,12 @@ async function withAdmin(run, { now } = {}) {
         status: blocked ? 'blocked' : 'active',
       };
     },
+    setUserClassroomRole: async (id, classroomRole) => {
+      calls.push({ classroomRole, id, method: 'setUserClassroomRole' });
+      if (id === 'missing-user') return null;
+      if (id === 'role-in-use') return { kind: 'role_in_use' };
+      return { classroomRole, id, kind: 'updated' };
+    },
     setAccessCodePaused: async (id, paused) => {
       calls.push({ id, method: 'setAccessCodePaused', paused });
       return {
@@ -236,6 +242,8 @@ test('serves the separate admin dashboard with a strict self-only CSP', async ()
     assert.match(javascript, /\/v1\/admin\/usage/u);
     assert.match(javascript, /renderUsageChart/u);
     assert.match(javascript, /grantAccessCode/u);
+    assert.match(javascript, /changeClassroomRole/u);
+    assert.match(html, /Classroom role/u);
     assert.match(html, /signed in for 30 days/u);
     assert.match(html, /<th scope="col">Actions<\/th>/u);
   });
@@ -473,19 +481,70 @@ test('requires the admin bearer token and a same-origin browser request', async 
   });
 });
 
-test('lists users with bounded pagination and search', async () => {
+test('lists users with bounded pagination, search, and classroom role', async () => {
   await withAdmin(async ({ baseUrl, calls }) => {
-    const response = await fetch(`${baseUrl}/v1/admin/users?limit=25&offset=50&search=ada%40example.com`, {
+    const response = await fetch(`${baseUrl}/v1/admin/users?limit=25&offset=50&search=ada%40example.com&classroomRole=teacher`, {
       headers: adminHeaders(baseUrl),
     });
 
     assert.equal(response.status, 200);
     assert.deepEqual(calls, [
       {
-        input: { limit: 25, offset: 50, search: 'ada@example.com' },
+        input: { classroomRole: 'teacher', limit: 25, offset: 50, search: 'ada@example.com' },
         method: 'listUsers',
       },
     ]);
+  });
+});
+
+test('assigns classroom roles and reports incompatible memberships', async () => {
+  await withAdmin(async ({ baseUrl, calls }) => {
+    const assigned = await fetch(
+      `${baseUrl}/v1/admin/users/google-user-1/classroom-role`,
+      {
+        body: JSON.stringify({ role: 'teacher' }),
+        headers: {
+          ...adminHeaders(baseUrl),
+          'Content-Type': 'application/json',
+        },
+        method: 'PATCH',
+      },
+    );
+    assert.equal(assigned.status, 200);
+    assert.equal((await assigned.json()).classroomRole, 'teacher');
+    assert.deepEqual(calls, [
+      {
+        classroomRole: 'teacher',
+        id: 'google-user-1',
+        method: 'setUserClassroomRole',
+      },
+    ]);
+
+    const inUse = await fetch(
+      `${baseUrl}/v1/admin/users/role-in-use/classroom-role`,
+      {
+        body: JSON.stringify({ role: 'student' }),
+        headers: {
+          ...adminHeaders(baseUrl),
+          'Content-Type': 'application/json',
+        },
+        method: 'PATCH',
+      },
+    );
+    assert.equal(inUse.status, 409);
+
+    const malformed = await fetch(
+      `${baseUrl}/v1/admin/users/google-user-1/classroom-role`,
+      {
+        body: JSON.stringify({ role: 'principal' }),
+        headers: {
+          ...adminHeaders(baseUrl),
+          'Content-Type': 'application/json',
+        },
+        method: 'PATCH',
+      },
+    );
+    assert.equal(malformed.status, 400);
   });
 });
 

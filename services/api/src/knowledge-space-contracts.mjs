@@ -13,6 +13,7 @@ export const KNOWLEDGE_LIMITS = Object.freeze({
 });
 
 export const UuidSchema = z.string().uuid();
+export const ClassroomAccountRoleSchema = z.enum(['unassigned', 'teacher', 'student']);
 export const SpaceRoleSchema = z.enum(['owner', 'facilitator', 'participant']);
 export const SourceRoleSchema = z.enum([
   'reference',
@@ -102,6 +103,11 @@ export const CreateInviteSchema = z.object({
   expiresAt: z.string().datetime().nullable().default(null),
 }).strict();
 export const RedeemInviteSchema = z.object({ code: z.string().trim().min(8).max(128) }).strict();
+export const BulkAddSpaceMembersSchema = z.object({
+  clientId: UuidSchema,
+  emails: z.array(z.string().trim().email().max(320)).min(1).max(500),
+  role: z.enum(['facilitator', 'participant']),
+}).strict();
 
 export const UploadFileSchema = z.object({
   clientId: UuidSchema,

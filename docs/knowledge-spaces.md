@@ -2,6 +2,37 @@
 
 Knowledge Spaces are TroCode's database-backed container for reusable context and guided work. The vocabulary is intentionally general: a Space can be a class, onboarding program, workshop, research project, field procedure, or team playbook. Activities can be assignments, labs, drills, cases, or work orders.
 
+## Classroom package and roles
+
+The desktop presents education-focused Spaces as **Class workspaces**. Account
+creation does not grant a classroom role. An administrator assigns one of these
+roles from `/source/admin`:
+
+- **Teacher** — may create Class workspaces. A class owner can add registered
+  Teachers and Students; a non-owner Teacher can add registered Students.
+- **Student** — may join only as a participant and use assigned class resources,
+  Activities, Attempts, help, and submissions. Student views do not expose the
+  roster, groups, upload controls, authoring, Runs, or facilitator insights.
+- **Unassigned** — may not create or join a class until an administrator assigns
+  Teacher or Student.
+
+The administrator-assigned role is an eligibility boundary. The existing
+`owner | facilitator | participant` membership remains the authority inside one
+specific class. A Teacher may therefore own one class, facilitate another, and
+participate in a third without receiving owner access everywhere. A Student may
+only hold participant memberships. Existing owner/facilitator accounts are
+backfilled to Teacher and participant-only accounts to Student by migration 018.
+
+Teachers add already registered accounts by email from the People tab. Requests
+are deduplicated, limited to 500 emails per idempotent batch, and may be repeated
+as often as needed. Missing, blocked, ambiguous, or incorrectly assigned accounts
+are not added and are reported separately. Join codes remain supported, but
+redemption must match the administrator-assigned account role.
+
+Class workspaces are navigation over existing Spaces, not trusted local folders
+and not a second lifecycle/session system. Switching class changes only the
+current classroom surface.
+
 ## Canonical model
 
 PostgreSQL owns Space membership, groups, immutable Activity versions, Runs, assignment snapshots, Attempts, Work Sessions, submissions, and evidence. A private S3-compatible bucket owns uploaded bytes. There is no required `trocode.space.yaml` and no folder-as-database behavior. A folder upload is a reviewed point-in-time snapshot.
