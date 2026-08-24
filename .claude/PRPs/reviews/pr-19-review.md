@@ -1,71 +1,87 @@
-# PR #19 Review: Live Classroom Room Flow and Rust Migration
+# PR #19 Review: Live Classroom Flow on the Unified Rust Backend
 
 ## Pull request
 
 - URL: https://github.com/ducnguyen67201/TroCode/pull/19
-- Base: `main`
+- Base: `main` at `16b401420054687a0d5333e7059eed7317256a1b`
 - Head: `feat/live-classroom-room-flow`
-- Reviewed implementation head: `49e8d7fee2d5d3b87b452620a63e236de4c2e2af`
-- Scope at review: 100 files, 20,280 additions, 1,050 deletions
+- Reviewed source head: `cd1f415112e45e9f1321a00cc20c2812d2df44eb`
+- Scope: 107 files, 16,379 additions, 761 deletions
 
 ## Verdict
 
-Approve. The reviewed implementation has no unresolved critical, high, or
-medium-severity correctness, security, performance, or maintainability finding.
+Approve. No unresolved critical, high, medium, or low actionable finding
+remains after the requested code-review and Ponytail passes.
 
-The review covered the complete original classroom PR plus the Rust migration:
-role and tenant authorization, opaque session compatibility, room-code HMAC and
-capacity behavior, transactional join/rejoin, Run and Attempt transitions,
-directive validation and one-time claims, Help/Ready/review idempotency,
-dashboard privacy, Axum boundary parsing, SQLx query scoping, Node/Rust wire
-parity, Vietnamese input limits, Electron IPC/preload authority, accessibility,
-rollout/rollback, and dependency ownership.
+The review covered the complete PR diff and its executable trust boundaries:
+teacher/student role enforcement, room admission and capacity, Run/Attempt
+lifecycle transitions, directive URL validation and one-time claims, Help and
+review queues, submission authority, dashboard privacy, Electron IPC/preload
+validation, local and hosted Activity context, Node/Rust response parity,
+migrations, rollback compatibility, and the database-backed end-to-end path.
+
+The intentionally retained Node classroom implementation is a migration oracle
+and rollback path while the production entry point is the unified Axum/Rust API;
+it is not a second production backend.
 
 ## Findings addressed
 
-- Scoped idempotent review replays to the exact Attempt, Run, and Space in both
-  Node and Rust; a wrong-Run replay now returns not found.
-- Rejected unknown nested directive fields at the Rust boundary.
-- Counted Rust directive limits as UTF-16 code units so Vietnamese text matches
-  the TypeScript/Node contract instead of being constrained by UTF-8 byte size.
-- Raised the authenticated peer join ceiling from 120 to 2,400 while retaining
-  the 12/minute per-user limit, so one shared school network can admit a
-  2,000-seat Max room plus bounded retry headroom.
-- Made the Rust E2E attach one shared peer address to all requests, ensuring the
-  capacity test exercises the network limiter as well as database admission.
-- Removed the SQLx facade's unused MySQL/RSA dependency graph. Direct
-  `sqlx-core` and `sqlx-postgres` ownership reduced the lock graph from 253 to
-  227 crates and cleared the RustSec advisory without a waiver.
-- Removed duplicate HMAC code, generic one-use config branches, redundant
-  sequence conversions, an unreachable integer-conversion error, and an
-  unnecessary room-response `Result` wrapper.
+- Scoped idempotent teacher review replays to the exact Attempt, Run, and Space.
+- Rejected unknown nested Rust directive fields and matched TypeScript UTF-16
+  limits for Vietnamese text.
+- Preserved 200-seat shared-network admission without weakening the per-user
+  limiter and exercised that boundary through the real HTTP router.
+- Removed the unused MySQL/RSA SQLx dependency graph and earlier redundant HMAC,
+  conversion, wrapper, and renderer state paths.
+- Bound hosted Activity runs to an owned open Attempt and active Work Session;
+  Rust now carries the same Help/Check context and classroom tool catalog as the
+  desktop/Node compatibility implementation.
+- Allowed an explicit Ready action directly from `assigned`, so a student who
+  completed teacher-directed work manually does not need to start an agent first.
+  Ready still requires an open Run and is rejected in the lobby, outside the Run
+  time window, after submission, or for terminal Attempts.
+- Added `launchTarget` to the trusted session projection. Workspace/Python Help
+  and Check now route through classwork workspace selection instead of attempting
+  an untrusted workspace launch from the compact session bar.
+- Added published guidance policy, observable criteria, and completion policy to
+  both Node and Rust hosted-agent instructions, with an explicit untrusted-content
+  boundary. This resolves the existing P1 hosted-guidance review comment.
+- Made room auto-open consent part of the single renderer-to-main join request,
+  stripped it before the server request, and initialized directive polling from
+  the current sequence. Joining an open room can therefore process the current
+  instruction without racing consent or consuming historical links. This
+  resolves the existing P1 join-consent review comment.
 
 ## Requested review passes
 
-- Code review: complete; every actionable finding above was fixed and covered
-  before this artifact was written.
-- Ponytail review: complete; no remaining speculative abstraction, duplicate
-  helper, unreachable branch, or unused dependency was found. **Lean already.
-  Ship.**
-- Security review within changed surfaces: complete; no unresolved finding.
+- Code review: complete. All repository and GitHub review findings were
+  reproduced or validated against the current Rust-integrated head and fixed.
+- Ponytail review: complete. The remaining Node/Rust overlap is required for
+  migration verification and rollback; no speculative abstraction, pass-through
+  wrapper, unused schema field, unreachable branch, or removable dependency
+  remains. **Lean already. Ship.**
+- Security review of changed boundaries: complete; no unresolved finding.
 
-## Validation at reviewed implementation head
+## Validation
 
-- `npm run check`: pass — 113 Vitest files / 791 tests, 12 script tests, 143 API
-  tests; two expected database skips in the non-DB pass.
-- Node PostgreSQL integration: pass — 2/2, including migrations/search,
-  wrong-Run review isolation, and 200 concurrent students.
-- `cargo test --workspace --all-targets`: pass — 12 Rust unit/HTTP tests plus
-  the environment-gated E2E target.
-- Real Rust PostgreSQL HTTP E2E: pass — teacher/student room flow, shared-peer
-  capacity, wrong-Run review isolation, Help/resolve, Ready/review, directive
-  one-time claim, authentication rejection, and exact 200-seat admission.
-- `cargo build --workspace --all-targets`: pass.
-- `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- `npm run bazel:check`: pass — rustfmt, unit, E2E, and clippy targets.
-- Root/API `npm audit --audit-level=high`: pass — zero vulnerabilities.
-- `cargo audit`: pass — zero RustSec vulnerabilities across 227 locked crates.
-- `npm run package`: pass — arm64 macOS application package.
+- `npm run check`: pass — 113 Vitest files / 792 tests, 12 script tests,
+  146 Node API/compatibility tests, 29 Rust unit tests, contract corpus, parser
+  properties, Google auth compatibility, lint, typecheck, rustfmt, and Clippy.
+- Real PostgreSQL Rust classroom E2E: pass — room creation/idempotency, lobby,
+  open, current/future directive delivery, one-time claim, manual Ready/Return,
+  Help/resolve, Work Session, hosted Activity context, review completion, leave,
+  terminal rejection, and exact 200-seat admission.
+- Real PostgreSQL durable-agent compatibility E2E: pass.
+- Earlier final-branch database compatibility passes retained: Rust HTTP parity,
+  provider budget transitions, and Node-initialized/Rust migration compatibility.
+- `npm run api:build`: pass — optimized unified Rust API.
+- `npm run bazel:check`: pass — rustfmt, Rust unit, classroom E2E, and Clippy.
+- `npm run package`: pass — arm64 macOS Electron package.
+- Root and API `npm audit --audit-level=high`: pass — zero vulnerabilities.
+- `cargo audit`: exits successfully with two inherited, repository-allowed
+  warnings (`ttf-parser` RUSTSEC-2026-0192 and `lru` RUSTSEC-2026-0253).
 - `git diff --check`: pass.
 
-GitHub Actions are monitored after the review-artifact commit is pushed.
+GitHub Actions must rerun against the pushed review commits. GitHub does not
+allow an author to approve their own PR, so the technical approval is published
+as a review comment if the approval API rejects self-approval.
