@@ -1421,6 +1421,9 @@ export const KnowledgeRoomCodeSchema = z.object({
 export const RevokeKnowledgeRoomCodeRequestSchema = z.object({ spaceId: z.string().uuid(), runId: z.string().uuid() });
 export const KnowledgeRoomRevocationSchema = z.object({ revoked: z.boolean(), revokedAt: z.string().datetime().nullable() });
 export const JoinKnowledgeRoomRequestSchema = z.object({ clientId: z.string().uuid(), code: z.string().trim().min(8).max(32) });
+export const JoinClassroomSessionRequestSchema = JoinKnowledgeRoomRequestSchema.extend({
+  autoOpenConsent: z.boolean().optional(),
+});
 export const KnowledgeClassroomSessionSchema = z.object({
   attemptId: z.string().uuid(),
   attemptState: z.enum(['assigned', 'in_progress', 'blocked', 'ready_for_review', 'submitted', 'completed', 'withdrawn']),
@@ -2331,6 +2334,7 @@ export type KnowledgeRoomCode = z.infer<typeof KnowledgeRoomCodeSchema>;
 export type RevokeKnowledgeRoomCodeRequest = z.infer<typeof RevokeKnowledgeRoomCodeRequestSchema>;
 export type KnowledgeRoomRevocation = z.infer<typeof KnowledgeRoomRevocationSchema>;
 export type JoinKnowledgeRoomRequest = z.infer<typeof JoinKnowledgeRoomRequestSchema>;
+export type JoinClassroomSessionRequest = z.infer<typeof JoinClassroomSessionRequestSchema>;
 export type KnowledgeClassroomSession = z.infer<typeof KnowledgeClassroomSessionSchema>;
 export type KnowledgeAttemptMutationRequest = z.infer<typeof KnowledgeAttemptMutationRequestSchema>;
 export type LeaveKnowledgeClassroomResponse = z.infer<typeof LeaveKnowledgeClassroomResponseSchema>;

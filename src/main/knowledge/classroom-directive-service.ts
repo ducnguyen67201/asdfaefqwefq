@@ -160,7 +160,10 @@ export class ClassroomDirectiveService {
     if (this.timer) this.clearTimer(this.timer);
     this.timer = null;
     this.attemptId = attemptId;
-    this.sinceSequence = 0;
+    const currentDirective = this.dependencies.sessionService.get()?.currentDirective;
+    this.sinceSequence = attemptId && currentDirective
+      ? Math.max(0, currentDirective.sequence - 1)
+      : 0;
     this.failures = 0;
     this.polling = false;
     this.notice = null;

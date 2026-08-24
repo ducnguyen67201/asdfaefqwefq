@@ -47,7 +47,7 @@ import {
   CreateClassroomDirectiveRequestSchema,
   CreateKnowledgeRoomCodeRequestSchema,
   DismissClassroomDirectiveRequestSchema,
-  JoinKnowledgeRoomRequestSchema,
+  JoinClassroomSessionRequestSchema,
   KnowledgeAttemptMutationRequestSchema,
   OpenClassroomDirectiveRequestSchema,
   ResolveKnowledgeAttemptHelpRequestSchema,
@@ -519,7 +519,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.joinKnowledgeRoom, async (event, input: unknown) => {
     await assertMembershipAuthorizedSender(event, mainWindow, services);
-    return services.classroomSessionService.join(JoinKnowledgeRoomRequestSchema.parse(input));
+    return services.classroomSessionService.join(JoinClassroomSessionRequestSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.restoreClassroomSession, async (event) => {

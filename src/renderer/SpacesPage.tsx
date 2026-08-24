@@ -71,15 +71,11 @@ export function SpacesPage({
     setJoinBusy(true);
     setError(null);
     try {
-      let session = await window.tro.joinKnowledgeRoom({
+      const session = await window.tro.joinKnowledgeRoom({
+        autoOpenConsent,
         clientId: randomUUID(),
         code,
       });
-      if (autoOpenConsent) {
-        session =
-          (await window.tro.setClassroomLinkConsent({ consent: true })) ??
-          session;
-      }
       setRoomCode('');
       onJoined(session.attemptId);
     } catch (cause) {

@@ -522,6 +522,7 @@ describe('registerIpcHandlers auth boundary', () => {
       unregister,
     } = setup(true);
     const joinRequest = {
+      autoOpenConsent: true,
       clientId: '55555555-5555-4555-8555-555555555555',
       code: 'TRO-ABCD-12',
     };

@@ -32,19 +32,26 @@ describe('ClassroomSessionService', () => {
     const changes: Array<string | null> = [];
     service.onChange((session) => changes.push(session?.run.status ?? null));
 
-    const lobby = await service.join({ clientId: '00000000-0000-4000-8000-000000000005', code: 'TRO-ABCD-EFGH-JKLM' });
-    expect(lobby.autoOpenConsent).toBe(false);
+    const lobby = await service.join({
+      autoOpenConsent: true,
+      clientId: '00000000-0000-4000-8000-000000000005',
+      code: 'TRO-ABCD-EFGH-JKLM',
+    });
+    expect(lobby.autoOpenConsent).toBe(true);
+    expect(client.joinRoom).toHaveBeenCalledWith({
+      clientId: '00000000-0000-4000-8000-000000000005',
+      code: 'TRO-ABCD-EFGH-JKLM',
+    });
     expect(service.activeStudentAttemptId()).toBeNull();
 
     service.updateRunState('open');
-    service.setAutoOpenConsent(true);
     expect(service.activeStudentAttemptId()).toBe(firstSession.attemptId);
     expect(service.get()?.autoOpenConsent).toBe(true);
 
     await service.leave();
     expect(client.leaveClassroom).toHaveBeenCalledOnce();
     expect(service.get()).toBeNull();
-    expect(changes).toEqual(['lobby', 'live', 'live', null]);
+    expect(changes).toEqual(['lobby', 'live', null]);
   });
 
   it('does not carry link consent when restoring another Attempt', async () => {

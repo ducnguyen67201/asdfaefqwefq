@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { interruptionDetails } from '../src/backend-agent-runtime.mjs';
+import { instructionsFor, interruptionDetails } from '../src/backend-agent-runtime.mjs';
 
 const calendarCreate = {
   kind: 'create_resource',
@@ -55,4 +55,23 @@ test('backend interruption rejects illegal communication metadata', () => {
     [{ toolId: 'computer.control', operations: ['click_element'] }],
     1,
   ));
+});
+
+test('hosted classroom instructions include published guidance and criteria', () => {
+  const instructions = instructionsFor({
+    space: { name: 'Python 101' },
+    activity: {
+      title: 'Loops',
+      objective: 'Practice loops.',
+      instructions: 'Complete exercise B.',
+      guidancePolicy: { answerReveal: 'after_attempt', hintMode: 'guided', maxHintLevel: 2 },
+      criteria: [{ id: 'loop', title: 'Uses a loop' }],
+      completionPolicy: { requiresSubmission: false, requiresFacilitatorConfirmation: true },
+    },
+    purpose: 'help',
+    currentDirective: null,
+  });
+  assert.match(instructions, /Guidance policy: .*after_attempt/u);
+  assert.match(instructions, /Observable criteria: .*Uses a loop/u);
+  assert.match(instructions, /Completion policy: .*requiresFacilitatorConfirmation/u);
 });

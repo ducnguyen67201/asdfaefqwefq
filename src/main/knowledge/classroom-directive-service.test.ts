@@ -67,6 +67,44 @@ describe('ClassroomDirectiveService', () => {
     service.stop();
   });
 
+  it('starts from the current directive instead of consuming the room backlog', async () => {
+    const classroom = new ClassroomSessionService({
+      getCurrentClassroomSession: vi.fn(),
+      joinRoom: vi.fn(),
+      leaveClassroom: vi.fn(),
+    });
+    classroom.activate({ ...session, currentDirective: directive }, true);
+    const listDirectives = vi.fn(async () => ({
+      attemptState: 'in_progress' as const,
+      runState: 'open' as const,
+      items: [directive],
+      maxSequence: directive.sequence,
+    }));
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective: vi.fn(async () => ({
+          execute: true as const,
+          url: directive.url,
+          origin: directive.origin,
+          claimedAt: '2026-08-25T00:01:01.000Z',
+        })),
+        listDirectives,
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    service.start();
+    await service.pollNow();
+    expect(listDirectives).toHaveBeenCalledWith(
+      session.attemptId,
+      directive.sequence - 1,
+      expect.any(AbortSignal),
+    );
+    service.stop();
+  });
+
   it('delivers manual links without claiming or opening automatically', async () => {
     const classroom = sessionService(true);
     const manual = { ...directive, delivery: 'manual_only' as const };

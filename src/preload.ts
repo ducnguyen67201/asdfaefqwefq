@@ -82,7 +82,7 @@ import {
   CreateClassroomDirectiveRequestSchema,
   CreateKnowledgeRoomCodeRequestSchema,
   DismissClassroomDirectiveRequestSchema,
-  JoinKnowledgeRoomRequestSchema,
+  JoinClassroomSessionRequestSchema,
   KnowledgeAttemptMutationRequestSchema,
   KnowledgeAttemptTransitionSchema,
   KnowledgeRoomCodeSchema,
@@ -258,7 +258,7 @@ const desktopApi: DesktopApi = {
   },
 
   async joinKnowledgeRoom(input) {
-    const request = JoinKnowledgeRoomRequestSchema.parse(input);
+    const request = JoinClassroomSessionRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.joinKnowledgeRoom, request);
     return ClassroomSessionProjectionSchema.parse(response);
   },

@@ -73,7 +73,7 @@ import type {
   ClassroomSessionProjection,
   CreateClassroomDirectiveRequest,
   CreateKnowledgeRoomCodeRequest,
-  JoinKnowledgeRoomRequest,
+  JoinClassroomSessionRequest,
   KnowledgeAttemptMutationRequest,
   KnowledgeAttemptTransition,
   KnowledgeRoomCode,
@@ -219,7 +219,7 @@ export interface DesktopApi {
   requestKnowledgeAttemptHelp(request: RequestKnowledgeAttemptHelp): Promise<void>;
   createKnowledgeRoomCode(request: CreateKnowledgeRoomCodeRequest): Promise<KnowledgeRoomCode>;
   revokeKnowledgeRoomCode(request: RevokeKnowledgeRoomCodeRequest): Promise<KnowledgeRoomRevocation>;
-  joinKnowledgeRoom(request: JoinKnowledgeRoomRequest): Promise<ClassroomSessionProjection>;
+  joinKnowledgeRoom(request: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection>;
   restoreClassroomSession(): Promise<ClassroomSessionProjection | null>;
   getClassroomSession(): Promise<ClassroomSessionProjection | null>;
   leaveClassroomSession(request: KnowledgeAttemptMutationRequest): Promise<void>;

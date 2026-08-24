@@ -5,7 +5,7 @@ import {
   ClassroomSessionProjectionSchema,
   type ClassroomDirective,
   type ClassroomSessionProjection,
-  type JoinKnowledgeRoomRequest,
+  type JoinClassroomSessionRequest,
   type KnowledgeClassroomSession,
 } from '../../shared/contracts';
 
@@ -36,8 +36,9 @@ export class ClassroomSessionService {
     return this.current?.currentDirective ?? null;
   }
 
-  async join(input: JoinKnowledgeRoomRequest, autoOpenConsent = false): Promise<ClassroomSessionProjection> {
-    const session = await this.client.joinRoom(input);
+  async join(input: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection> {
+    const { autoOpenConsent = false, ...joinRequest } = input;
+    const session = await this.client.joinRoom(joinRequest);
     return this.activate(session, autoOpenConsent);
   }
 
