@@ -1,9 +1,26 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppUpdateStatus } from '../shared/contracts';
+import type {
+  AppUpdateStatus,
+  CompanionCustomizationStatus,
+} from '../shared/contracts';
 
 import { SettingsPage } from './SettingsPage';
+
+const COMPANION_STATUS: CompanionCustomizationStatus = {
+  appearance: { kind: 'default' },
+  candidate: null,
+  quota: {
+    limit: 5,
+    periodEndsAt: '2026-09-01T00:00:00.000Z',
+    periodStartsAt: '2026-08-01T00:00:00.000Z',
+    remaining: 5,
+    used: 0,
+  },
+  state: 'available',
+  summary: 'Companion generation is available.',
+};
 
 function renderSettings(appUpdateStatus: AppUpdateStatus): string {
   return renderToStaticMarkup(
@@ -12,6 +29,9 @@ function renderSettings(appUpdateStatus: AppUpdateStatus): string {
       autonomyMode: 'balanced',
       appUpdateError: null,
       appUpdateStatus,
+      companionBusy: null,
+      companionError: null,
+      companionStatus: COMPANION_STATUS,
       error: null,
       hasChanges: false,
       isActivatingMembership: false,
@@ -28,13 +48,16 @@ function renderSettings(appUpdateStatus: AppUpdateStatus): string {
       },
       muteSystemAudioWhileSpeaking: false,
       onActivateMembership: vi.fn(),
+      onActivateCompanion: vi.fn(),
       onAppLanguageChange: vi.fn(),
       onAutonomyModeChange: vi.fn(),
       onCheckForUpdates: vi.fn(),
+      onGenerateCompanion: vi.fn(),
       onLanguageChange: vi.fn(),
       onMuteSystemAudioWhileSpeakingChange: vi.fn(),
       onRestartAndInstall: vi.fn(),
       onSave: vi.fn(),
+      onUseDefaultCompanion: vi.fn(),
       primaryLanguage: 'en',
       saveMessage: null,
       systemAudioMuteSupported: true,
@@ -108,6 +131,9 @@ describe('SettingsPage app language', () => {
           phase: 'up_to_date',
           targetVersion: null,
         },
+        companionBusy: null,
+        companionError: null,
+        companionStatus: COMPANION_STATUS,
         error: null,
         hasChanges: true,
         isActivatingMembership: false,
@@ -124,13 +150,16 @@ describe('SettingsPage app language', () => {
         },
         muteSystemAudioWhileSpeaking: true,
         onActivateMembership: vi.fn(),
+        onActivateCompanion: vi.fn(),
         onAppLanguageChange: vi.fn(),
         onAutonomyModeChange: vi.fn(),
         onCheckForUpdates: vi.fn(),
+        onGenerateCompanion: vi.fn(),
         onLanguageChange: vi.fn(),
         onMuteSystemAudioWhileSpeakingChange: vi.fn(),
         onRestartAndInstall: vi.fn(),
         onSave: vi.fn(),
+        onUseDefaultCompanion: vi.fn(),
         primaryLanguage: 'vi',
         saveMessage: null,
         systemAudioMuteSupported: true,
@@ -142,6 +171,9 @@ describe('SettingsPage app language', () => {
     expect(markup).toContain('Ngôn ngữ nói');
     expect(markup).toContain('Lưu tùy chọn');
     expect(markup).toContain('Tắt âm thanh khác khi đang nói');
+    expect(markup).toContain('Bạn đồng hành tùy chỉnh');
+    expect(markup).toContain('Còn 5 trên 5 trong tháng này');
+    expect(markup).not.toContain('Custom companion');
   });
 });
 

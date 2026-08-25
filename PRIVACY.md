@@ -1,6 +1,6 @@
 # Tro privacy policy
 
-Effective date: August 17, 2026
+Effective date: August 25, 2026
 
 Tro is an open-source desktop agent. It can answer requests with a hosted
 model and, when the user asks, observe and control applications on the user's
@@ -24,9 +24,17 @@ user requests:
 - **OpenAI:** typed task text, conversation messages, model tool results, and
   desktop observations needed for a task can be sent to the Responses API.
   Desktop observations can include screenshots and visible text. Push-to-talk
-  audio is sent to OpenAI Realtime for transcription. Responses requests set
-  `store: false`, but OpenAI's own service terms and retention rules still
-  apply. See the [OpenAI privacy policy](https://openai.com/policies/privacy-policy/).
+  audio is sent to OpenAI Realtime for transcription. If an eligible user
+  explicitly generates a custom cursor companion, the selected source image,
+  their customization prompt, and the generated image output are processed by
+  the OpenAI Images API. Tro's hosted API handles those bodies in bounded
+  request memory but does not persist or log them. Responses requests set
+  `store: false`. Companion image generation is enabled only when the operator
+  confirms Zero Data Retention (ZDR) for the exact OpenAI project and key used
+  by the service. ZDR removes normal customer-content retention for eligible
+  calls, but OpenAI may retain images flagged for child-safety review. OpenAI's
+  service terms and retention rules still apply. See the
+  [OpenAI privacy policy](https://openai.com/policies/privacy-policy/).
 - **Google:** when the user chooses Google sign-in, Tro sends the OAuth
   authorization request and receives verified identity claims and tokens. The
   application requests only OpenID, email, and profile scopes. See the
@@ -70,6 +78,13 @@ user requests:
   model-provider credentials are not stored in task history.
 - Screenshots used during a task are kept in the active in-memory execution
   context and are not part of the persistent task-history schema.
+- A generated companion remains in memory as a short-lived preview until the
+  user activates it or it expires. The activated 128-pixel PNG is encrypted by
+  the operating system through Electron `safeStorage` and stored under a
+  one-way hash of the signed-in account ID. The source image and prompt are not
+  stored. **Use default companion** deletes that account's active local image;
+  signing out immediately returns the interface to the bundled default and
+  prevents another account from reading the signed-out account's image.
 
 The retention and deletion policy for an operator-configured PostgreSQL or
 PostHog deployment is controlled by that operator. To request deletion from a

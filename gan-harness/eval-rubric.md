@@ -1,36 +1,43 @@
-# TroCode design evaluation rubric
+# Evaluation Rubric: Custom Companion Settings
 
-Score each category from 0–10, multiply by its weight, and sum the result. Passing requires a weighted score of at least 7.5/10 and no major accessibility or functional regression.
+Score each category from 0–10, calculate the weighted total, and provide
+specific evidence plus the highest-leverage changes needed to reach the pass
+threshold of **7.5**.
 
-## Design Quality (weight: 0.35)
+### Design Quality (weight: 0.35)
 
-- Strong hierarchy, spacing, proportion, typography, and visual balance.
-- Warm shell and bright workspace feel precise, calm, and premium.
-- TroCode yellow/charcoal palette is concentrated and intentional.
-- Cards, borders, radii, and elevation form a coherent system without visual haze.
-- Agent view has a clear focal point and composer priority at realistic desktop sizes.
+- Clear hierarchy and immediately understandable next action.
+- Balanced composition within the existing 900px Settings surface.
+- Current, input, progress, candidate, unavailable, exhausted, error, and reset
+  states feel intentionally designed.
+- Warm, calm, student-appropriate tone consistent with Tro.
 
-## Originality (weight: 0.30)
+### Originality (weight: 0.30)
 
-- The result is recognizably TroCode rather than a literal Flow clone.
-- Autonomous-agent concepts such as bounded execution, live state, or outcome focus inform the visual language.
-- At least one distinctive compositional or interaction idea elevates the interface beyond a conventional dashboard.
-- Visual decisions feel authored rather than template-derived.
+- A memorable companion-personalization moment rather than a generic upload
+  form.
+- Distinctive preview treatment, sequencing, and visual language that still
+  feels native to Tro.
+- Creative decisions improve comprehension instead of adding decoration.
 
-## Craft (weight: 0.25)
+### Craft (weight: 0.25)
 
-- Details hold up across navigation, top bar, composer, context rail, supporting pages, and state variants.
-- Type scale, alignment, icons, control heights, focus states, motion, and responsive transitions are polished.
-- CSS remains maintainable and uses existing tokens coherently.
-- No accidental overflow, clipping, illegible contrast, or fragile one-off styling.
+- Precise spacing, typography, borders, contrast, responsive behavior, and
+  state transitions.
+- Strong keyboard/focus behavior, 44px targets, screen-reader semantics, and
+  reduced-motion compatibility.
+- Copy is concise, honest, localized, and easy for a student to scan.
+- No overflow, duplicate labels, awkward disabled states, or misleading UI.
 
-## Functionality (weight: 0.10)
+### Functionality (weight: 0.10)
 
-- Existing buttons, forms, live-task states, navigation, and supporting pages remain usable.
-- Semantics, keyboard focus, reduced motion, and responsive layout remain intact.
-- Lint, typecheck, tests, and package/build verification pass.
+- Existing secure callbacks and status contracts remain intact.
+- Paste/drop/select, prompt bounds, generation guard, activation, reset, quota,
+  expiry, and failure states remain functional.
+- Tests, lint, typecheck, and packaging remain viable without new dependencies.
 
-## Evaluator question
+## Evaluator standard
 
-Would this feel at home in a design-award shortlist while still behaving like the existing TroCode application? Identify the highest-leverage improvements needed to reach that bar.
+Ask both: **Would this feel effortless to a first-time student?** and **Would
+this be visually strong enough to stand out in a polished product review?**
 

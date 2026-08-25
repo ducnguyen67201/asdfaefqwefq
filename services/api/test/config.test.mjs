@@ -145,6 +145,52 @@ test('loadConfig validates transcription duration pricing', () => {
   );
 });
 
+test('companion images default off and fail closed around ZDR and eligibility', () => {
+  const disabled = loadConfig(VALID_ENVIRONMENT).companionImages;
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.zdrConfirmed, false);
+  assert.equal(disabled.reservationMicroUsd, 50_000);
+  assert.deepEqual([...disabled.eligibleUsers], []);
+
+  assert.throws(
+    () =>
+      loadConfig({
+        ...VALID_ENVIRONMENT,
+        TROCODE_COMPANION_IMAGES_ENABLED: 'true',
+      }),
+    /ZDR_CONFIRMED must be true/u,
+  );
+  assert.throws(
+    () =>
+      loadConfig({
+        ...VALID_ENVIRONMENT,
+        TROCODE_COMPANION_IMAGES_ENABLED: 'true',
+        TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED: 'true',
+      }),
+    /ELIGIBLE_USERS is required/u,
+  );
+
+  const enabled = loadConfig({
+    ...VALID_ENVIRONMENT,
+    TROCODE_COMPANION_IMAGES_ENABLED: 'true',
+    TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED: 'true',
+    TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS: 'student-1,student-2,student-1',
+    TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD: '60000',
+  }).companionImages;
+  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.zdrConfirmed, true);
+  assert.equal(enabled.reservationMicroUsd, 60_000);
+  assert.deepEqual([...enabled.eligibleUsers], ['student-1', 'student-2']);
+  assert.throws(
+    () =>
+      loadConfig({
+        ...VALID_ENVIRONMENT,
+        TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD: '0',
+      }),
+    /positive integer/u,
+  );
+});
+
 test('Knowledge Spaces defaults off and validates exact boolean values', () => {
   assert.deepEqual(loadConfig(VALID_ENVIRONMENT).knowledgeSpaces, {
     enabled: false,

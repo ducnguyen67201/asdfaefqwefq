@@ -7,6 +7,7 @@ import {
   Menu,
   nativeImage,
   protocol,
+  safeStorage,
   screen,
   shell,
   Tray,
@@ -56,6 +57,7 @@ import { GoogleAuthService } from './main/auth/google-auth-service';
 import { LocalOAuthBrowserFlow } from './main/auth/local-oauth-browser-flow';
 import { keepWindowAliveForBackgroundVoice } from './main/background-app-lifecycle';
 import { UsageBudgetService } from './main/budget/usage-budget-service';
+import { CompanionCustomizationService } from './main/companion/companion-customization-service';
 import {
   isAuthenticatedCompanionSession,
   toCompanionInteraction,
@@ -139,8 +141,10 @@ import {
   CompanionResponseCardSchema,
   TaskUpdateSchema,
   TROCODE_AUDIO_SCHEME,
+  TROCODE_COMPANION_SCHEME,
   type AuthUser,
   type CompanionGuidance,
+  type CompanionAppearance,
   type CompanionInteraction,
   type CompanionResponseActionRequest,
   type CompanionResponseCard,
@@ -174,6 +178,14 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
     },
     scheme: TROCODE_AUDIO_SCHEME,
+  },
+  {
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+    },
+    scheme: TROCODE_COMPANION_SCHEME,
   },
 ]);
 isolateDevelopmentInstance(app);
@@ -565,6 +577,7 @@ let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
 let activeCompanionResponse: CompanionResponseCard | null = null;
 let activeCompanionSpeech: CompanionSpeech | null = null;
+let activeCompanionAppearance: CompanionAppearance = { kind: 'default' };
 let companionGuidancePreviousState: CompanionState | null = null;
 let guidancePlaybackPaused = false;
 let lastCompanionPosition: Point | null = null;
@@ -582,6 +595,17 @@ let auxiliaryWindowsEnabled = false;
 const knownPresentationTaskIds = new Set<string>();
 const backgroundPresentationTaskIds = new Set<string>();
 let backgroundCompletionNarration: AbortController | null = null;
+const companionCustomizationService = new CompanionCustomizationService({
+  accessTokenProvider: () => authService.getAccessToken(),
+  apiBaseUrl: trocodeApiBaseUrl,
+  nativeImage,
+  publish: (appearance) => {
+    activeCompanionAppearance = appearance;
+    sendCompanionAppearance();
+  },
+  safeStorage,
+  userDataPath: app.getPath('userData'),
+});
 
 function stopCompanionFollowing(): void {
   if (companionFollowTimer) clearInterval(companionFollowTimer);
@@ -596,6 +620,14 @@ function sendCompanionState(): void {
   companionWindow.webContents.send(
     IPC_CHANNELS.companionStateChanged,
     companionState,
+  );
+}
+
+function sendCompanionAppearance(): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  companionWindow.webContents.send(
+    IPC_CHANNELS.companionAppearanceChanged,
+    activeCompanionAppearance,
   );
 }
 
@@ -889,6 +921,12 @@ function stopGuidanceSpeech(): void {
 function registerCompanionAudioProtocol(): void {
   protocol.handle(TROCODE_AUDIO_SCHEME, (request) =>
     companionNarrationService.handleRequest(request),
+  );
+}
+
+function registerCompanionImageProtocol(): void {
+  protocol.handle(TROCODE_COMPANION_SCHEME, (request) =>
+    companionCustomizationService.handleRequest(request),
   );
 }
 
@@ -2164,6 +2202,7 @@ const createWindow = (): void => {
     appPreferencesService,
     appUpdateService,
     authService,
+    companionCustomizationService,
     cuaService,
     executionCoordinator,
     fileSelectionService,
@@ -2173,10 +2212,12 @@ const createWindow = (): void => {
     knowledgeSpaceClient,
     knowledgeUploadOrchestrator,
     onAuthSignedIn: async (user) => {
+      await companionCustomizationService.setCurrentOwner(user.id);
       await identifyAnalyticsUser(user);
       enableAuthenticatedAuxiliaryWindows();
     },
     onAuthSignedOut: async () => {
+      await companionCustomizationService.setCurrentOwner(null);
       disableAuthenticatedAuxiliaryWindows();
       hostedRuntimeAvailable = false;
       taskHistoryService.setCurrentOwner(null);
@@ -2439,6 +2480,7 @@ const createCompanionWindow = (): void => {
   companionWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   companionWindow.webContents.on('did-finish-load', () => {
     sendCompanionState();
+    sendCompanionAppearance();
     lastCompanionPosition = null;
     positionCompanion();
   });
@@ -2662,6 +2704,7 @@ if (hasSingleInstanceLock) {
   void app.whenReady().then(async () => {
     configureDock();
     registerCompanionAudioProtocol();
+    registerCompanionImageProtocol();
     appUpdateService.start();
     void appUpdateService.checkForUpdates();
     analyticsService = new AnalyticsService({
@@ -2688,6 +2731,7 @@ if (hasSingleInstanceLock) {
       taskHistoryService.start(),
     ]);
     const authStatus = await authService.getStatus();
+    await companionCustomizationService.setCurrentOwner(authStatus.user?.id ?? null);
     if (authStatus.user) await identifyAnalyticsUser(authStatus.user);
     auxiliaryWindowsEnabled = isAuthenticatedCompanionSession(authStatus);
     createWindow();

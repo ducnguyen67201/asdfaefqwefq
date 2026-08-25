@@ -8,6 +8,7 @@ class MemoryUsageRepository {
 
   committed = {
     dayMicroUsd: 0,
+    monthImageGenerations: 0,
     monthMicroUsd: 0,
     taskMicroUsd: 0,
   };
@@ -18,9 +19,12 @@ class MemoryUsageRepository {
       return { kind: 'duplicate', reservation: this.reservations.get(key) };
     }
     const denial = input.authorize(this.committed);
-    if (denial && input.enforce) return { denial, kind: 'denied' };
+    if (denial && (input.enforce || denial.alwaysEnforce)) {
+      return { denial, kind: 'denied' };
+    }
     const reservation = {
       actualMicroUsd: null,
+      lane: input.lane,
       requestId: input.requestId,
       reservedMicroUsd: input.reservedMicroUsd,
       status: 'reserved',
@@ -28,6 +32,9 @@ class MemoryUsageRepository {
     this.reservations.set(key, reservation);
     this.committed = {
       dayMicroUsd: this.committed.dayMicroUsd + input.reservedMicroUsd,
+      monthImageGenerations:
+        this.committed.monthImageGenerations +
+        (input.lane === 'image_generation' ? 1 : 0),
       monthMicroUsd: this.committed.monthMicroUsd + input.reservedMicroUsd,
       taskMicroUsd: this.committed.taskMicroUsd + input.reservedMicroUsd,
     };
@@ -38,7 +45,16 @@ class MemoryUsageRepository {
   async settle(input) {
     return { actualMicroUsd: input.actualMicroUsd, status: 'settled' };
   }
-  async release() {}
+  async release(userId, requestId) {
+    const reservation = this.reservations.get(`${userId}:${requestId}`);
+    if (reservation?.status === 'reserved') {
+      reservation.status = 'released';
+      if (reservation.lane === 'image_generation') {
+        this.committed.monthImageGenerations -= 1;
+      }
+    }
+    return reservation;
+  }
   async markUncertain() {}
   async snapshot() {
     return {
@@ -46,6 +62,7 @@ class MemoryUsageRepository {
       dayReservedMicroUsd: this.committed.dayMicroUsd,
       daySettledMicroUsd: 0,
       monthEndsAt: '2026-09-01T00:00:00.000Z',
+      monthImageGenerations: this.committed.monthImageGenerations,
       monthReservedMicroUsd: this.committed.monthMicroUsd,
       monthSettledMicroUsd: 0,
       taskReservedMicroUsd: this.committed.taskMicroUsd,
@@ -187,4 +204,62 @@ test('transcription pricing uses integer micro-USD ceiling math', () => {
   assert.equal(budget.transcriptionActualMicroUsd(12), 1_200);
   assert.throws(() => budget.transcriptionEstimateMicroUsd(15_001), /limit/u);
   assert.throws(() => budget.transcriptionActualMicroUsd(Number.NaN), /bounded/u);
+});
+
+test('companion generation quota accepts five, rejects six, and releases known failures', async () => {
+  const repository = new MemoryUsageRepository();
+  const budget = service(repository);
+  const request = (index) =>
+    budget.reserve({
+      catalogVersion: '2026-04-21',
+      lane: 'image_generation',
+      model: 'gpt-image-2-2026-04-21',
+      planId: 'free',
+      requestId: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`,
+      reservedMicroUsd: 0,
+      taskId: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`,
+      userId: 'student-1',
+    });
+
+  for (let index = 1; index <= 5; index += 1) await request(index);
+  await assert.rejects(request(6), {
+    code: 'companion_generation_limit_reached',
+    status: 429,
+  });
+  assert.deepEqual(
+    await budget.companionGenerationSnapshot('student-1', 'free'),
+    {
+      limit: 5,
+      periodEndsAt: '2026-09-01T00:00:00.000Z',
+      periodStartsAt: '2026-08-01T00:00:00.000Z',
+      remaining: 0,
+      used: 5,
+    },
+  );
+
+  await budget.release(
+    'student-1',
+    '11111111-1111-4111-8111-000000000005',
+    'rejected_before_inference',
+  );
+  await request(6);
+});
+
+test('companion entitlement remains enforced while money guard observes', async () => {
+  const repository = new MemoryUsageRepository();
+  repository.committed.monthImageGenerations = 5;
+  const budget = service(repository, 'observe');
+  await assert.rejects(
+    budget.reserve({
+      catalogVersion: '2026-04-21',
+      lane: 'image_generation',
+      model: 'gpt-image-2-2026-04-21',
+      planId: 'basic',
+      requestId: '11111111-1111-4111-8111-000000000006',
+      reservedMicroUsd: 0,
+      taskId: '11111111-1111-4111-8111-000000000006',
+      userId: 'student-1',
+    }),
+    { code: 'companion_generation_limit_reached', status: 429 },
+  );
 });

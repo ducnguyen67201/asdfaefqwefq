@@ -28,7 +28,9 @@ test('response reservations lock and validate the API-owned agent turn', async (
         };
       }
       if (sql.includes('AS task')) {
-        return { rows: [{ day: 0, month: 0, task: 0 }] };
+        return {
+          rows: [{ day: 0, month: 0, month_image_generations: 0, task: 0 }],
+        };
       }
       if (sql.includes('INSERT INTO model_budget_reservations')) {
         return {
@@ -136,7 +138,7 @@ test('a user turn cannot be reused for unbounded provider calls', async () => {
   assert.equal(inserted, false);
 });
 
-test('settlement stores sanitized audio duration separately from latency', async () => {
+test('settlement stores sanitized audio and image usage separately from latency', async () => {
   const statements = [];
   const client = {
     query: async (sql, parameters = []) => {
@@ -181,8 +183,11 @@ test('settlement stores sanitized audio duration separately from latency', async
       cacheWriteTokens: 0,
       cachedInputTokens: 0,
       inputTokens: 0,
+      inputImageTokens: 11,
+      inputTextTokens: 7,
       model: 'whisper-1',
       outputTokens: 0,
+      outputImageTokens: 13,
       reasoningTokens: 0,
       source: 'actual',
     },
@@ -192,8 +197,12 @@ test('settlement stores sanitized audio duration separately from latency', async
     entry.sql.includes('INSERT INTO model_usage_events'),
   );
   assert.match(insert.sql, /audio_duration_ms/u);
-  assert.equal(insert.parameters[10], 842);
-  assert.equal(insert.parameters[11], 300);
+  assert.match(insert.sql, /input_text_tokens[\s\S]+input_image_tokens[\s\S]+output_image_tokens/u);
+  assert.equal(insert.parameters[8], 7);
+  assert.equal(insert.parameters[9], 11);
+  assert.equal(insert.parameters[10], 13);
+  assert.equal(insert.parameters[13], 842);
+  assert.equal(insert.parameters[14], 300);
   assert.equal(
     insert.parameters.some(
       (value) => typeof value === 'string' && /base64|transcript|hello/u.test(value),
@@ -209,7 +218,7 @@ test('committed spend tracks money without treating provider calls as messages',
       statements.push(sql);
       if (sql.includes('AS month')) {
         return {
-          rows: [{ day: 0, month: 0, task: 0 }],
+          rows: [{ day: 0, month: 0, month_image_generations: 0, task: 0 }],
         };
       }
       return { rows: [] };
@@ -225,8 +234,14 @@ test('committed spend tracks money without treating provider calls as messages',
       taskId: 'task-1',
       userId: 'user-1',
     }),
-    { dayMicroUsd: 0, monthMicroUsd: 0, taskMicroUsd: 0 },
+    {
+      dayMicroUsd: 0,
+      monthImageGenerations: 0,
+      monthMicroUsd: 0,
+      taskMicroUsd: 0,
+    },
   );
   const aggregate = statements.find((sql) => sql.includes('AS month'));
   assert.doesNotMatch(aggregate, /week_messages|lane = 'responses'/u);
+  assert.match(aggregate, /lane = 'image_generation'/u);
 });

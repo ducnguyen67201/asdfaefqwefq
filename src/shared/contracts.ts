@@ -1653,6 +1653,147 @@ export const CompanionStateSchema = z.enum([
   'error',
 ]);
 
+export const TROCODE_COMPANION_SCHEME = 'trocode-companion' as const;
+export const MAX_COMPANION_IMAGE_BYTES = 5 * 1_024 * 1_024;
+
+function isStrictBase64(value: string): boolean {
+  if (value.length % 4 !== 0) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  const contentLength = value.length - padding;
+  for (let index = 0; index < contentLength; index += 1) {
+    const code = value.charCodeAt(index);
+    const isDigit = code >= 48 && code <= 57;
+    const isUpper = code >= 65 && code <= 90;
+    const isLower = code >= 97 && code <= 122;
+    if (!isDigit && !isUpper && !isLower && code !== 43 && code !== 47) {
+      return false;
+    }
+  }
+  for (let index = contentLength; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 61) return false;
+  }
+  return true;
+}
+
+const StrictCompanionImageBase64Schema = z
+  .string()
+  .min(4)
+  .max(Math.ceil(MAX_COMPANION_IMAGE_BYTES / 3) * 4)
+  .refine(isStrictBase64, 'Image data must be strict base64.')
+  .refine((value) => {
+    const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+    return (value.length / 4) * 3 - padding <= MAX_COMPANION_IMAGE_BYTES;
+  }, 'Image data exceeds 5 MiB.');
+
+export const CompanionImageMimeTypeSchema = z.enum([
+  'image/png',
+  'image/jpeg',
+]);
+
+export const GenerateCompanionImageRequestSchema = z
+  .object({
+    imageBase64: StrictCompanionImageBase64Schema,
+    mimeType: CompanionImageMimeTypeSchema,
+    prompt: z.string().trim().min(1).max(400),
+    requestId: z.string().uuid(),
+  })
+  .strict();
+
+export const ActivateCompanionCandidateRequestSchema = z
+  .object({
+    candidateId: z.string().uuid(),
+  })
+  .strict();
+
+export const CompanionGenerationQuotaSchema = z
+  .object({
+    limit: z.literal(5),
+    periodEndsAt: z.string().datetime(),
+    periodStartsAt: z.string().datetime(),
+    remaining: z.number().int().min(0).max(5),
+    used: z.number().int().min(0).max(5),
+  })
+  .strict()
+  .superRefine((quota, context) => {
+    if (quota.used + quota.remaining !== quota.limit) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Used and remaining companion generations must equal the limit.',
+      });
+    }
+    if (Date.parse(quota.periodStartsAt) >= Date.parse(quota.periodEndsAt)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The companion generation period must have a positive duration.',
+      });
+    }
+  });
+
+const CompanionAssetUrlSchema = z
+  .string()
+  .url()
+  .superRefine((value, context) => {
+    const url = new URL(value);
+    const active = /^\/active\/[0-9a-f]{64}$/u.test(url.pathname);
+    const candidate = /^\/candidate\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+      url.pathname,
+    );
+    if (
+      url.protocol !== `${TROCODE_COMPANION_SCHEME}:` ||
+      url.hostname !== 'asset' ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash ||
+      url.toString() !== value ||
+      (!active && !candidate)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Companion assets must use the private Tro companion scheme.',
+      });
+    }
+  });
+
+export const CompanionAppearanceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('default') }).strict(),
+  z
+    .object({
+      assetUrl: CompanionAssetUrlSchema,
+      kind: z.literal('custom'),
+      revision: z.string().regex(/^[0-9a-f]{64}$/u),
+    })
+    .strict(),
+]);
+
+export const CompanionCandidateSchema = z
+  .object({
+    assetUrl: CompanionAssetUrlSchema,
+    expiresAt: z.string().datetime(),
+    id: z.string().uuid(),
+  })
+  .strict();
+
+export const CompanionCustomizationStatusSchema = z
+  .object({
+    appearance: CompanionAppearanceSchema,
+    candidate: CompanionCandidateSchema.nullable(),
+    quota: CompanionGenerationQuotaSchema.nullable(),
+    state: z.enum(['available', 'unavailable', 'error']),
+    summary: z.string().trim().min(1).max(1_000),
+  })
+  .strict()
+  .superRefine((status, context) => {
+    if (status.state === 'available' && status.quota === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Available companion customization requires a quota.',
+        path: ['quota'],
+      });
+    }
+  });
+
 export const PresentationStateSchema = z.enum([
   'ready',
   'listening',
@@ -1997,6 +2138,23 @@ export type ActivateMembershipRequest = z.infer<
   typeof ActivateMembershipRequestSchema
 >;
 export type CompanionPosition = z.infer<typeof CompanionPositionSchema>;
+export type ActivateCompanionCandidateRequest = z.infer<
+  typeof ActivateCompanionCandidateRequestSchema
+>;
+export type CompanionAppearance = z.infer<typeof CompanionAppearanceSchema>;
+export type CompanionCandidate = z.infer<typeof CompanionCandidateSchema>;
+export type CompanionCustomizationStatus = z.infer<
+  typeof CompanionCustomizationStatusSchema
+>;
+export type CompanionGenerationQuota = z.infer<
+  typeof CompanionGenerationQuotaSchema
+>;
+export type CompanionImageMimeType = z.infer<
+  typeof CompanionImageMimeTypeSchema
+>;
+export type GenerateCompanionImageRequest = z.infer<
+  typeof GenerateCompanionImageRequestSchema
+>;
 export type CompanionGuidanceVisual = z.infer<
   typeof CompanionGuidanceVisualSchema
 >;

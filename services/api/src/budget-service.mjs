@@ -110,7 +110,11 @@ export class BudgetService {
       );
     }
     if (result.kind === 'denied') {
-      throw new BudgetError(result.denial.code, result.denial.message);
+      throw new BudgetError(
+        result.denial.code,
+        result.denial.message,
+        result.denial.status ?? 402,
+      );
     }
     if (result.kind === 'invalid_turn') {
       throw new BudgetError(
@@ -209,7 +213,37 @@ export class BudgetService {
     };
   }
 
+  async companionGenerationSnapshot(userId, planId = 'free') {
+    const limits = this.limitsFor(planId);
+    const value = await this.repository.snapshot(userId, null);
+    const used = Math.min(
+      limits.companionGenerationsPerMonth,
+      value.monthImageGenerations,
+    );
+    const periodEnd = new Date(value.monthEndsAt);
+    return {
+      limit: limits.companionGenerationsPerMonth,
+      periodEndsAt: value.monthEndsAt,
+      periodStartsAt: new Date(
+        Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() - 1, 1),
+      ).toISOString(),
+      remaining: Math.max(0, limits.companionGenerationsPerMonth - used),
+      used,
+    };
+  }
+
   denialFor(committed, amount, lane, limits) {
+    if (
+      lane === 'image_generation' &&
+      committed.monthImageGenerations >= limits.companionGenerationsPerMonth
+    ) {
+      return {
+        alwaysEnforce: true,
+        code: 'companion_generation_limit_reached',
+        message: 'You have used all 5 companion generations for this month.',
+        status: 429,
+      };
+    }
     if (committed.monthMicroUsd + amount > limits.monthlyMicroUsd) {
       return {
         code: 'monthly_budget_exhausted',
@@ -234,6 +268,7 @@ export class BudgetService {
   limitsFor(planId) {
     const plan = planFor(planId);
     return {
+      companionGenerationsPerMonth: plan.companionGenerationsPerMonth,
       dailyMicroUsd: Math.min(plan.dailyMicroUsd, this.options.dailyMicroUsd),
       monthlyPriceCents: plan.monthlyPriceCents,
       providerCallsPerTurn: plan.providerCallsPerTurn,

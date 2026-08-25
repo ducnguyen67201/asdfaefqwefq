@@ -172,6 +172,39 @@ main; the API-proposed effect can raise risk but cannot grant computer-use
 authority. Invocation persistence records closed effect/resource and
 authorization labels separately from whether an effect is consequential.
 
+## Custom companion image path
+
+Custom companion generation is an explicit Settings workflow, separate from
+the task agent and CUA capabilities:
+
+```text
+Settings card
+  -> schema-validated narrow preload/IPC request
+  -> Electron main MIME, signature, dimensions, decode, and <=1024px PNG normalization
+  -> authenticated hosted API
+  -> atomic image-lane cost + five-per-UTC-month reservation
+  -> one fixed OpenAI Images edit request
+  -> provider modality-usage settlement
+  -> 10-minute main-memory candidate
+  -> explicit activation to 128px safeStorage-encrypted account asset
+  -> private trocode-companion URL + live overlay appearance event
+```
+
+The renderer owns only the unsubmitted `File`, object URL, and prompt. Source
+bytes and prompt are released after a successful candidate and never enter App
+global state, local storage, PostgreSQL, analytics, or content-bearing logs.
+The generated candidate is not durable. Activation is a second explicit local
+action; it encrypts only the chosen normalized output. Reset deletes the current
+account's asset and broadcasts the bundled default without recreating the
+companion window.
+
+Electron main is the private-asset authority. It maps an authenticated owner to
+one active hash, authorizes exact candidate/active protocol URLs, decrypts only
+on an authorized `GET`/`HEAD`, and serves `no-store` PNG responses. The overlay
+learns only the appearance descriptor and consumes the URL through its `<img>`;
+it never receives bytes, filesystem paths, encryption keys, or provider
+credentials.
+
 ## Voice transcription path
 
 Push-to-talk is capture and transcription only. The sandboxed renderer opens

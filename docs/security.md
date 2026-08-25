@@ -159,6 +159,40 @@ contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
 
+Custom companion generation is a narrow media exception with its own fail-
+closed boundary. It requires the global paid-call switch, the companion feature
+switch, an operator assertion that ZDR is active for the exact OpenAI
+project/key, an active account, and membership in the canary user allowlist.
+The desktop never receives the OpenAI key. The hosted request fixes the image
+model, one output, square low-quality PNG, transparent background, and automatic
+moderation; callers cannot override those provider controls. Logs and usage
+rows contain request IDs, status, model/catalog versions, token modality counts,
+cost, and duration only—not source bytes, prompts, or generated PNG bytes.
+
+At the renderer, main, and API boundaries, source images are limited to one PNG
+or JPEG of at most 5 MiB and a 1–400 character prompt. Electron main verifies
+the actual image signature and dimensions (16–8192 pixels per side), decodes it,
+and normalizes it to an aspect-preserving PNG no larger than 1024 pixels before
+upload. Returned images are signature-checked and decoded before a 128-pixel
+active asset can be written.
+
+Generated candidates live only in main-process memory for ten minutes. An
+activated PNG is encrypted with Electron `safeStorage` and stored beneath a
+SHA-256 hash of the verified owner ID; the user ID and plaintext PNG are not in
+the filename. Reads honor `shouldReEncrypt` so operating-system key rotation
+rewrites a valid asset under the current protection. Owner changes clear the
+candidate and appearance state, so one account cannot resolve another's asset.
+
+The private protocol accepts only exact `GET` or `HEAD` requests matching
+`trocode-companion://asset/candidate/<uuid>` or
+`trocode-companion://asset/active/<64-lowercase-hex-sha256>`, with no
+credentials, port, query, fragment, traversal, or alternate host. The active
+hash must match the current account's decrypted and validated asset, and a
+candidate must be current, unexpired, and owned by that account. Decrypted
+responses are `image/png` with `Cache-Control: no-store`. The scheme is secure
+and fetch-capable but does not bypass CSP; no filesystem path or generic fetch
+capability crosses preload.
+
 The membership signing private key is an administrative secret and must never
 be added to the repository, Doppler application runtime, analytics, or a
 release bundle. Only the Ed25519 public key is compiled into packaged builds.
