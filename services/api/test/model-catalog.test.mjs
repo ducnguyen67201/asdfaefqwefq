@@ -1,7 +1,54 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ModelCatalog } from '../src/model-catalog.mjs';
+import {
+  GPT_IMAGE_MODEL,
+  IMAGE_CATALOG_VERSION,
+  ModelCatalog,
+} from '../src/model-catalog.mjs';
+
+test('image catalog calculates exact modality-specific micro-USD', () => {
+  const catalog = new ModelCatalog();
+  assert.equal(IMAGE_CATALOG_VERSION, '2026-04-21');
+  assert.equal(
+    catalog.calculateImageUsageCost({
+      inputImageTokens: 0,
+      inputTextTokens: 0,
+      model: GPT_IMAGE_MODEL,
+      outputImageTokens: 200,
+    }),
+    6_000,
+  );
+  assert.equal(
+    catalog.calculateImageUsageCost({
+      inputImageTokens: 1,
+      inputTextTokens: 1,
+      model: GPT_IMAGE_MODEL,
+      outputImageTokens: 1,
+    }),
+    43,
+  );
+  assert.throws(
+    () =>
+      catalog.calculateImageUsageCost({
+        inputImageTokens: -1,
+        inputTextTokens: 0,
+        model: GPT_IMAGE_MODEL,
+        outputImageTokens: 0,
+      }),
+    /bounded nonnegative/u,
+  );
+  assert.throws(
+    () =>
+      catalog.calculateImageUsageCost({
+        inputImageTokens: 0,
+        inputTextTokens: 2_000_000_001,
+        model: GPT_IMAGE_MODEL,
+        outputImageTokens: 0,
+      }),
+    /bounded nonnegative/u,
+  );
+});
 
 test('model catalog calculates exact integer micro-USD including cache lanes', () => {
   const catalog = new ModelCatalog();

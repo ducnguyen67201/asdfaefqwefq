@@ -129,7 +129,14 @@ function memoryAccessCodes(
 
 async function withApi(
   run,
-  { accessCodeLimits, adminController, configOverride = {}, fetchImpl, rateLimiter } = {},
+  {
+    accessCodeLimits,
+    adminController,
+    companionImageService,
+    configOverride = {},
+    fetchImpl,
+    rateLimiter,
+  } = {},
 ) {
   const sessions = memorySessions();
   const accessCodes = memoryAccessCodes(accessCodeLimits);
@@ -151,6 +158,13 @@ async function withApi(
       }),
     };
   const budgetService = {
+    companionGenerationSnapshot: async () => ({
+      limit: 5,
+      periodEndsAt: '2026-09-01T00:00:00.000Z',
+      periodStartsAt: '2026-08-01T00:00:00.000Z',
+      remaining: 3,
+      used: 2,
+    }),
     markDispatched: async () => undefined,
     markUncertain: async () => undefined,
     realtimeCallEstimateMicroUsd: () => 5_000,
@@ -222,7 +236,32 @@ async function withApi(
     adminController,
     agentTurnService,
     budgetService,
+    companionImageService:
+      companionImageService ||
+      {
+        execute: async () => ({
+          imageBase64: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString(
+            'base64',
+          ),
+          mimeType: 'image/png',
+          model: 'gpt-image-2-2026-04-21',
+          quota: {
+            limit: 5,
+            periodEndsAt: '2026-09-01T00:00:00.000Z',
+            periodStartsAt: '2026-08-01T00:00:00.000Z',
+            remaining: 3,
+            used: 2,
+          },
+        }),
+      },
     config: {
+      companionImages: {
+        eligibleUsers: new Set(),
+        enabled: false,
+        reservationMicroUsd: 50_000,
+        zdrConfirmed: false,
+      },
+      costGuard: { enabled: true },
       elevenLabsApiKey: null,
       elevenLabsModelId: 'eleven_flash_v2_5',
       elevenLabsVoiceId: null,
@@ -325,6 +364,17 @@ function transcriptionBody(overrides = {}) {
     clientDurationMs: 300,
     language: 'en',
     utteranceId: TEST_TASK_ID,
+    ...overrides,
+  };
+}
+
+function companionImageBody(overrides = {}) {
+  return {
+    imageBase64: Buffer.from([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0,
+    ]).toString('base64'),
+    mimeType: 'image/png',
+    prompt: 'Make it a blue space cat.',
     ...overrides,
   };
 }
@@ -1156,6 +1206,170 @@ test('realtime calls accept only SDP and language and build provider form data',
           headers: { 'Content-Type': 'application/sdp' },
           status: 200,
         });
+      },
+    },
+  );
+});
+
+test('companion quota is authenticated, access-gated, and fail-closed', async () => {
+  await withApi(async ({ baseUrl }) => {
+    const unauthenticated = await fetch(`${baseUrl}/v1/companion-images/quota`);
+    assert.equal(unauthenticated.status, 401);
+
+    const session = await signInAndActivate(baseUrl);
+    const disabled = await fetch(`${baseUrl}/v1/companion-images/quota`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    assert.equal(disabled.status, 200);
+    assert.deepEqual(await disabled.json(), {
+      quota: null,
+      state: 'unavailable',
+      summary: 'Companion generation is not available for this account.',
+    });
+  });
+
+  await withApi(
+    async ({ baseUrl }) => {
+      const session = await signInAndActivate(baseUrl);
+      const response = await fetch(`${baseUrl}/v1/companion-images/quota`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        quota: {
+          limit: 5,
+          periodEndsAt: '2026-09-01T00:00:00.000Z',
+          periodStartsAt: '2026-08-01T00:00:00.000Z',
+          remaining: 3,
+          used: 2,
+        },
+        state: 'available',
+        summary: 'Create up to five cursor companions each month.',
+      });
+    },
+    {
+      configOverride: {
+        companionImages: {
+          eligibleUsers: new Set([TEST_USER.id]),
+          enabled: true,
+          reservationMicroUsd: 50_000,
+          zdrConfirmed: true,
+        },
+        costGuard: { enabled: true },
+      },
+    },
+  );
+});
+
+test('companion edit route validates exact input and returns output-only data', async () => {
+  const calls = [];
+  const limits = [];
+  await withApi(
+    async ({ baseUrl }) => {
+      const session = await signInAndActivate(baseUrl);
+      const request = (body, extraHeaders = {}) =>
+        fetch(`${baseUrl}/v1/openai/images/companion-edits`, {
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Trocode-Request-Id': TEST_REQUEST_ID,
+            ...extraHeaders,
+          },
+          method: 'POST',
+        });
+
+      const invalid = await request({ ...companionImageBody(), extra: true });
+      assert.equal(invalid.status, 400);
+      assert.equal(calls.length, 0);
+
+      const browser = await request(companionImageBody(), {
+        Origin: 'https://student.example',
+      });
+      assert.equal(browser.status, 403);
+      assert.equal(calls.length, 0);
+
+      const valid = await request(companionImageBody());
+      assert.equal(valid.status, 200);
+      const payload = await valid.json();
+      assert.equal(payload.mimeType, 'image/png');
+      assert.equal('prompt' in payload, false);
+      assert.equal(payload.imageBase64, 'generated-output');
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].body.prompt, 'Make it a blue space cat.');
+      assert.equal(calls[0].requestId, TEST_REQUEST_ID);
+      assert.equal(calls[0].userId, TEST_USER.id);
+      assert.equal(calls[0].safetyIdentifier.length, 64);
+      assert.deepEqual(limits.slice(-2), [2, 2]);
+    },
+    {
+      companionImageService: {
+        execute: async (value) => {
+          calls.push(value);
+          return {
+            imageBase64: 'generated-output',
+            mimeType: 'image/png',
+            model: 'gpt-image-2-2026-04-21',
+            quota: {
+              limit: 5,
+              periodEndsAt: '2026-09-01T00:00:00.000Z',
+              periodStartsAt: '2026-08-01T00:00:00.000Z',
+              remaining: 2,
+              used: 3,
+            },
+          };
+        },
+      },
+      configOverride: {
+        companionImages: {
+          eligibleUsers: new Set([TEST_USER.id]),
+          enabled: true,
+          reservationMicroUsd: 50_000,
+          zdrConfirmed: true,
+        },
+        costGuard: { enabled: true },
+      },
+      rateLimiter: {
+        consume: async ({ limit }) => {
+          limits.push(limit);
+          return { allowed: true, limit, remaining: limit - 1, retryAfterSeconds: 1 };
+        },
+      },
+    },
+  );
+});
+
+test('companion edit route does not reveal rollout prerequisites', async () => {
+  await withApi(
+    async ({ baseUrl }) => {
+      const session = await signInAndActivate(baseUrl);
+      const response = await fetch(
+        `${baseUrl}/v1/openai/images/companion-edits`,
+        {
+          body: JSON.stringify(companionImageBody()),
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Trocode-Request-Id': TEST_REQUEST_ID,
+          },
+          method: 'POST',
+        },
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), {
+        code: 'companion_generation_unavailable',
+        error: 'Companion generation is not available for this account.',
+      });
+    },
+    {
+      configOverride: {
+        companionImages: {
+          eligibleUsers: new Set(['someone-else']),
+          enabled: true,
+          reservationMicroUsd: 50_000,
+          zdrConfirmed: true,
+        },
+        costGuard: { enabled: true },
       },
     },
   );

@@ -93,7 +93,7 @@ export class PostgresUsageRepository {
       }
       const committed = await this.committedSpend(client, input);
       const denial = input.authorize(committed);
-      if (denial && input.enforce) {
+      if (denial && (input.enforce || denial.alwaysEnforce)) {
         await client.query('COMMIT');
         return { denial, kind: 'denied' };
       }
@@ -196,10 +196,12 @@ export class PostgresUsageRepository {
            (request_id, user_id, task_id, lane, model, catalog_version,
             input_tokens, cached_input_tokens, cache_write_tokens,
             output_tokens, reasoning_tokens, character_count,
+            input_text_tokens, input_image_tokens, output_image_tokens,
             amount_micro_usd, usage_source,
             disposition, duration_ms, audio_duration_ms, provider_response_id)
          SELECT request_id, user_id, task_id, lane, model, catalog_version,
-                $3, $4, $5, $6, $7, $8, $9, $10, 'completed', $11, $12, $13
+                $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, 'completed', $14, $15, $16
          FROM model_budget_reservations
          WHERE user_id = $1 AND request_id = $2
          ON CONFLICT (user_id, request_id) DO NOTHING`,
@@ -212,6 +214,9 @@ export class PostgresUsageRepository {
           input.usage.outputTokens,
           input.usage.reasoningTokens ?? 0,
           input.usage.characterCount ?? 0,
+          input.usage.inputTextTokens ?? 0,
+          input.usage.inputImageTokens ?? 0,
+          input.usage.outputImageTokens ?? 0,
           input.actualMicroUsd,
           input.usage.source,
           input.durationMs,
@@ -278,6 +283,10 @@ export class PostgresUsageRepository {
          COALESCE(SUM(CASE WHEN status IN ('reserved', 'uncertain') AND updated_at >= date_trunc('day', NOW()) THEN reserved_micro_usd ELSE 0 END), 0) AS day_reserved,
          COALESCE(SUM(CASE WHEN task_id = $2 AND status = 'settled' THEN actual_micro_usd ELSE 0 END), 0) AS task_settled,
          COALESCE(SUM(CASE WHEN task_id = $2 AND status IN ('reserved', 'uncertain') THEN reserved_micro_usd ELSE 0 END), 0) AS task_reserved,
+         COUNT(*) FILTER (
+           WHERE lane = 'image_generation'
+             AND status IN ('reserved', 'settled', 'uncertain')
+         ) AS month_image_generations,
          date_trunc('month', NOW()) + INTERVAL '1 month' AS month_ends_at,
          date_trunc('week', NOW()) + INTERVAL '1 week' AS week_ends_at,
          date_trunc('day', NOW()) + INTERVAL '1 day' AS day_ends_at
@@ -292,6 +301,7 @@ export class PostgresUsageRepository {
       dayReservedMicroUsd: rowNumber(row.day_reserved),
       daySettledMicroUsd: rowNumber(row.day_settled),
       monthEndsAt: row.month_ends_at.toISOString(),
+      monthImageGenerations: rowNumber(row.month_image_generations),
       monthReservedMicroUsd: rowNumber(row.month_reserved),
       monthSettledMicroUsd: rowNumber(row.month_settled),
       taskReservedMicroUsd: rowNumber(row.task_reserved),
@@ -306,13 +316,19 @@ export class PostgresUsageRepository {
       `SELECT
          COALESCE(SUM(CASE WHEN task_id = $2 AND status = 'settled' THEN actual_micro_usd WHEN task_id = $2 AND status IN ('reserved', 'uncertain') THEN reserved_micro_usd ELSE 0 END), 0) AS task,
          COALESCE(SUM(CASE WHEN created_at >= date_trunc('day', NOW()) AND status = 'settled' THEN actual_micro_usd WHEN created_at >= date_trunc('day', NOW()) AND status IN ('reserved', 'uncertain') THEN reserved_micro_usd ELSE 0 END), 0) AS day,
-         COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', NOW()) AND status = 'settled' THEN actual_micro_usd WHEN created_at >= date_trunc('month', NOW()) AND status IN ('reserved', 'uncertain') THEN reserved_micro_usd ELSE 0 END), 0) AS month
+         COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', NOW()) AND status = 'settled' THEN actual_micro_usd WHEN created_at >= date_trunc('month', NOW()) AND status IN ('reserved', 'uncertain') THEN reserved_micro_usd ELSE 0 END), 0) AS month,
+         COUNT(*) FILTER (
+           WHERE created_at >= date_trunc('month', NOW())
+             AND lane = 'image_generation'
+             AND status IN ('reserved', 'settled', 'uncertain')
+         ) AS month_image_generations
        FROM model_budget_reservations
        WHERE user_id = $1`,
       [input.userId, input.taskId],
     );
     return {
       dayMicroUsd: rowNumber(result.rows[0].day),
+      monthImageGenerations: rowNumber(result.rows[0].month_image_generations),
       monthMicroUsd: rowNumber(result.rows[0].month),
       taskMicroUsd: rowNumber(result.rows[0].task),
     };

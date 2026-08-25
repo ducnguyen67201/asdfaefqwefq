@@ -15,6 +15,7 @@ import { runMigrations } from './migrate.mjs';
 import { ModelCatalog } from './model-catalog.mjs';
 import { OpenAiResponsesService } from './openai-responses-service.mjs';
 import { OpenAiTranscriptionService } from './openai-transcription-service.mjs';
+import { OpenAiCompanionImageService } from './openai-companion-image-service.mjs';
 import { PostgresRateLimiter } from './rate-limit-repository.mjs';
 import { createApiHandler } from './server.mjs';
 import { PostgresSessionRepository } from './session-repository.mjs';
@@ -92,6 +93,12 @@ const responsesService = new OpenAiResponsesService({
 const transcriptionService = new OpenAiTranscriptionService({
   budgetService,
   openAiApiKey: config.openAiApiKey,
+});
+const companionImageService = new OpenAiCompanionImageService({
+  budgetService,
+  catalog: modelCatalog,
+  openAiApiKey: config.openAiApiKey,
+  reservationMicroUsd: config.companionImages.reservationMicroUsd,
 });
 const spaceRepository = new PostgresKnowledgeSpaceRepository(pool);
 const sourceRepository = new PostgresKnowledgeSourceRepository(pool);
@@ -228,6 +235,7 @@ const handler = createApiHandler({
   agentRuntimeController,
   agentTurnService,
   budgetService,
+  companionImageService,
   config,
   healthCheck: async () => {
     try {
@@ -246,7 +254,7 @@ const handler = createApiHandler({
 });
 const server = createServer(handler);
 server.headersTimeout = 15_000;
-server.requestTimeout = 30_000;
+server.requestTimeout = 150_000;
 server.keepAliveTimeout = 5_000;
 server.maxRequestsPerSocket = 100;
 

@@ -2,6 +2,8 @@ import type {
   AutonomyMode,
   AppLanguage,
   AppUpdateStatus,
+  CompanionCustomizationStatus,
+  GenerateCompanionImageRequest,
   MembershipStatus,
   PrimaryLanguage,
 } from '../shared/contracts';
@@ -11,6 +13,10 @@ import {
   appLanguageLabel,
   translate,
 } from './app-language';
+import {
+  CompanionCustomizationCard,
+  type CompanionCustomizationBusy,
+} from './CompanionCustomizationCard';
 import {
   PRIMARY_LANGUAGE_OPTIONS,
   primaryLanguageLabel,
@@ -22,6 +28,9 @@ interface SettingsPageProps {
   appLanguage: AppLanguage;
   appUpdateError: string | null;
   appUpdateStatus: AppUpdateStatus | null;
+  companionBusy: CompanionCustomizationBusy;
+  companionError: string | null;
+  companionStatus: CompanionCustomizationStatus | null;
   error: string | null;
   hasChanges: boolean;
   isSaving: boolean;
@@ -32,12 +41,17 @@ interface SettingsPageProps {
   muteSystemAudioWhileSpeaking: boolean;
   onAutonomyModeChange(mode: AutonomyMode): void;
   onAppLanguageChange(language: AppLanguage): void;
+  onActivateCompanion(candidateId: string): Promise<void>;
   onCheckForUpdates(): void;
+  onGenerateCompanion(
+    request: GenerateCompanionImageRequest,
+  ): Promise<boolean>;
   onLanguageChange(language: PrimaryLanguage): void;
   onActivateMembership(code: string): void;
   onMuteSystemAudioWhileSpeakingChange(enabled: boolean): void;
   onRestartAndInstall(): void;
   onSave(): void;
+  onUseDefaultCompanion(): Promise<void>;
   primaryLanguage: PrimaryLanguage;
   saveMessage: string | null;
   systemAudioMuteSupported: boolean;
@@ -78,6 +92,9 @@ export function SettingsPage({
   appLanguage,
   appUpdateError,
   appUpdateStatus,
+  companionBusy,
+  companionError,
+  companionStatus,
   error,
   hasChanges,
   isSaving,
@@ -87,13 +104,16 @@ export function SettingsPage({
   membershipStatus,
   muteSystemAudioWhileSpeaking,
   onAutonomyModeChange,
+  onActivateCompanion,
   onAppLanguageChange,
   onCheckForUpdates,
+  onGenerateCompanion,
   onLanguageChange,
   onActivateMembership,
   onMuteSystemAudioWhileSpeakingChange,
   onRestartAndInstall,
   onSave,
+  onUseDefaultCompanion,
   primaryLanguage,
   saveMessage,
   systemAudioMuteSupported,
@@ -127,7 +147,7 @@ export function SettingsPage({
         <h1 id="settings-heading">{t('Settings')}</h1>
         <p>
           {t(
-            'Manage Tro’s interface language, voice input, and installed application.',
+            'Manage Tro’s companion, interface language, voice input, and installed application.',
           )}
         </p>
       </div>
@@ -201,6 +221,16 @@ export function SettingsPage({
           </form>
         )}
       </section>
+
+      <CompanionCustomizationCard
+        appLanguage={appLanguage}
+        busy={companionBusy}
+        error={companionError}
+        onActivate={onActivateCompanion}
+        onGenerate={onGenerateCompanion}
+        onUseDefault={onUseDefaultCompanion}
+        status={companionStatus}
+      />
 
       <form
         className="settings-card"

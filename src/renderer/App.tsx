@@ -14,9 +14,11 @@ import type {
   AppPreferences,
   AppUpdateStatus,
   AuthUser,
+  CompanionCustomizationStatus,
   CuaStatus,
   ExecutionProfile,
   GoalSpec,
+  GenerateCompanionImageRequest,
   MembershipStatus,
   PendingInteraction,
   PrimaryLanguage,
@@ -37,6 +39,7 @@ import { navigationTitle, type ActiveView } from './app-navigation';
 import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
+import type { CompanionCustomizationBusy } from './CompanionCustomizationCard';
 import { HistoryPage } from './HistoryPage';
 import { InsightsPage } from './InsightsPage';
 import { KnowledgeHubPage } from './KnowledgeHubPage';
@@ -907,6 +910,11 @@ export function App({
   const [membershipStatus, setMembershipStatus] =
     useState<MembershipStatus | null>(null);
   const [membershipError, setMembershipError] = useState<string | null>(null);
+  const [companionStatus, setCompanionStatus] =
+    useState<CompanionCustomizationStatus | null>(null);
+  const [companionError, setCompanionError] = useState<string | null>(null);
+  const [companionBusy, setCompanionBusy] =
+    useState<CompanionCustomizationBusy>(null);
   const [isCheckingMembership, setIsCheckingMembership] = useState(true);
   const [isActivatingMembership, setIsActivatingMembership] = useState(false);
   const [isContinuingFree, setIsContinuingFree] = useState(false);
@@ -926,6 +934,8 @@ export function App({
   const isStoppingTaskRef = useRef(false);
   const permissionRefreshIdRef = useRef(0);
   const membershipRefreshIdRef = useRef(0);
+  const companionRefreshIdRef = useRef(0);
+  const companionActionInFlightRef = useRef(false);
   const t = useCallback(
     (
       message: string,
@@ -1304,6 +1314,30 @@ export function App({
     }
   }, []);
 
+  const refreshCompanionCustomization = useCallback(async () => {
+    const refreshId = companionRefreshIdRef.current + 1;
+    companionRefreshIdRef.current = refreshId;
+    setCompanionBusy('loading');
+    setCompanionError(null);
+    try {
+      const nextStatus = await window.tro.getCompanionCustomizationStatus();
+      if (companionRefreshIdRef.current !== refreshId) return;
+      setCompanionStatus(nextStatus);
+    } catch (statusError) {
+      if (companionRefreshIdRef.current !== refreshId) return;
+      setCompanionStatus(null);
+      setCompanionError(
+        statusError instanceof Error
+          ? statusError.message
+          : 'Tro could not load companion settings.',
+      );
+    } finally {
+      if (companionRefreshIdRef.current === refreshId) {
+        setCompanionBusy(null);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const handleWindowFocus = (): void => {
       void refreshMembership();
@@ -1334,27 +1368,43 @@ export function App({
     return () => clearTimeout(expiryTimer);
   }, [membershipStatus, refreshMembership]);
 
-  const activateMembership = useCallback(async (code: string) => {
-    setIsActivatingMembership(true);
-    setMembershipError(null);
-    try {
-      setMembershipStatus(await window.tro.activateMembership({ code }));
-    } catch (activationError) {
-      setMembershipError(
-        activationError instanceof Error
-          ? activationError.message
-          : 'Tro could not activate this membership code.',
-      );
-    } finally {
-      setIsActivatingMembership(false);
+  useEffect(() => {
+    if (
+      activeView !== 'settings' ||
+      membershipStatus?.state !== 'active'
+    ) {
+      return;
     }
-  }, []);
+
+    queueMicrotask(() => void refreshCompanionCustomization());
+  }, [activeView, membershipStatus?.state, refreshCompanionCustomization]);
+
+  const activateMembership = useCallback(
+    async (code: string) => {
+      setIsActivatingMembership(true);
+      setMembershipError(null);
+      try {
+        setMembershipStatus(await window.tro.activateMembership({ code }));
+        void refreshCompanionCustomization();
+      } catch (activationError) {
+        setMembershipError(
+          activationError instanceof Error
+            ? activationError.message
+            : 'Tro could not activate this membership code.',
+        );
+      } finally {
+        setIsActivatingMembership(false);
+      }
+    },
+    [refreshCompanionCustomization],
+  );
 
   const continueWithFree = useCallback(async () => {
     setIsContinuingFree(true);
     setMembershipError(null);
     try {
       setMembershipStatus(await window.tro.continueWithFree());
+      void refreshCompanionCustomization();
     } catch (continueError) {
       setMembershipError(
         continueError instanceof Error
@@ -1363,6 +1413,87 @@ export function App({
       );
     } finally {
       setIsContinuingFree(false);
+    }
+  }, [refreshCompanionCustomization]);
+
+  const generateCompanion = useCallback(
+    async (request: GenerateCompanionImageRequest): Promise<boolean> => {
+      if (companionActionInFlightRef.current) return false;
+      companionActionInFlightRef.current = true;
+      companionRefreshIdRef.current += 1;
+      setCompanionBusy('generating');
+      setCompanionError(null);
+      try {
+        setCompanionStatus(await window.tro.generateCompanionImage(request));
+        return true;
+      } catch (generationError) {
+        setCompanionError(
+          generationError instanceof Error
+            ? generationError.message
+            : 'Tro could not generate this companion.',
+        );
+        try {
+          setCompanionStatus(
+            await window.tro.getCompanionCustomizationStatus(),
+          );
+        } catch {
+          // Keep the generation error when quota refresh is unavailable.
+        }
+        return false;
+      } finally {
+        companionActionInFlightRef.current = false;
+        setCompanionBusy(null);
+      }
+    },
+    [],
+  );
+
+  const activateCompanion = useCallback(async (candidateId: string) => {
+    if (companionActionInFlightRef.current) return;
+    companionActionInFlightRef.current = true;
+    companionRefreshIdRef.current += 1;
+    setCompanionBusy('activating');
+    setCompanionError(null);
+    try {
+      setCompanionStatus(
+        await window.tro.activateCompanionCandidate({ candidateId }),
+      );
+    } catch (activationError) {
+      setCompanionError(
+        activationError instanceof Error
+          ? activationError.message
+          : 'Tro could not activate this companion.',
+      );
+      try {
+        setCompanionStatus(
+          await window.tro.getCompanionCustomizationStatus(),
+        );
+      } catch {
+        // Preserve the activation error when refreshing an expired candidate fails.
+      }
+    } finally {
+      companionActionInFlightRef.current = false;
+      setCompanionBusy(null);
+    }
+  }, []);
+
+  const useDefaultCompanion = useCallback(async () => {
+    if (companionActionInFlightRef.current) return;
+    companionActionInFlightRef.current = true;
+    companionRefreshIdRef.current += 1;
+    setCompanionBusy('resetting');
+    setCompanionError(null);
+    try {
+      setCompanionStatus(await window.tro.useDefaultCompanion());
+    } catch (resetError) {
+      setCompanionError(
+        resetError instanceof Error
+          ? resetError.message
+          : 'Tro could not restore the default companion.',
+      );
+    } finally {
+      companionActionInFlightRef.current = false;
+      setCompanionBusy(null);
     }
   }, []);
 
@@ -2215,6 +2346,9 @@ export function App({
             autonomyMode={autonomyModeDraft}
             appUpdateError={appUpdateError}
             appUpdateStatus={appUpdateStatus}
+            companionBusy={companionBusy}
+            companionError={companionError}
+            companionStatus={companionStatus}
             error={settingsError}
             hasChanges={
               appPreferences?.appLanguage !== appLanguageDraft ||
@@ -2228,6 +2362,7 @@ export function App({
             isUpdatingApp={isUpdatingApp}
             membershipError={membershipError}
             membershipStatus={membershipStatus}
+            onActivateCompanion={activateCompanion}
             onAppLanguageChange={(language) => {
               setAppLanguageDraft(language);
               setSettingsError(null);
@@ -2239,6 +2374,7 @@ export function App({
               setSettingsSaveMessage(null);
             }}
             onCheckForUpdates={() => void checkForAppUpdates()}
+            onGenerateCompanion={generateCompanion}
             onLanguageChange={(language) => {
               setLanguageDraft(language);
               setSettingsError(null);
@@ -2252,6 +2388,7 @@ export function App({
             }}
             onRestartAndInstall={() => void restartAndInstallAppUpdate()}
             onSave={() => void saveSettings()}
+            onUseDefaultCompanion={useDefaultCompanion}
             primaryLanguage={languageDraft}
             saveMessage={settingsSaveMessage}
             muteSystemAudioWhileSpeaking={muteSystemAudioWhileSpeakingDraft}

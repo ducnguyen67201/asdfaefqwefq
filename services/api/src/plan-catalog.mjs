@@ -1,5 +1,7 @@
 const plans = {
   free: {
+    companionGenerationsPerMinute: 2,
+    companionGenerationsPerMonth: 5,
     dailyMicroUsd: 250_000,
     weeklyMessages: 25,
     monthlyPriceCents: 0,
@@ -10,6 +12,8 @@ const plans = {
   },
   basic: {
     activeRuns: 5,
+    companionGenerationsPerMinute: 2,
+    companionGenerationsPerMonth: 5,
     dailyMicroUsd: 1_000_000,
     weeklyMessages: 300,
     monthlyPriceCents: 2_000,
@@ -26,6 +30,8 @@ const plans = {
   },
   pro: {
     activeRuns: 25,
+    companionGenerationsPerMinute: 2,
+    companionGenerationsPerMonth: 5,
     dailyMicroUsd: 3_000_000,
     weeklyMessages: 750,
     monthlyPriceCents: 5_000,
@@ -42,6 +48,8 @@ const plans = {
   },
   max: {
     activeRuns: 100,
+    companionGenerationsPerMinute: 2,
+    companionGenerationsPerMonth: 5,
     dailyMicroUsd: 8_000_000,
     weeklyMessages: 1_875,
     monthlyPriceCents: 10_000,

@@ -9,6 +9,8 @@ const MAX_AUTH_BODY_BYTES = 32_000;
 const MAX_RESPONSES_BODY_BYTES = 25_000_000;
 const MAX_REALTIME_BODY_BYTES = 4_000_000;
 const MAX_TRANSCRIPTION_BODY_BYTES = 1_000_000;
+const MAX_COMPANION_IMAGE_BODY_BYTES =
+  Math.ceil((5 * 1_024 * 1_024) / 3) * 4 + 2_048;
 const MAX_UPSTREAM_RESPONSE_BYTES = 5_000_000;
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
@@ -160,6 +162,15 @@ function enforceRateLimit(result) {
   }
 }
 
+function companionUnavailable() {
+  const error = new HttpError(
+    403,
+    'Companion generation is not available for this account.',
+  );
+  error.code = 'companion_generation_unavailable';
+  return error;
+}
+
 async function enforceSharedRateLimit(rateLimiter, input) {
   enforceRateLimit(await rateLimiter.consume(input));
 }
@@ -300,6 +311,7 @@ export function createApiHandler({
   agentRuntimeController = null,
   agentTurnService,
   budgetService,
+  companionImageService,
   config,
   fetchImpl = fetch,
   healthCheck,
@@ -661,6 +673,92 @@ export function createApiHandler({
             access.state === 'active' ? access.plan : 'free',
           ),
         );
+        return;
+      }
+
+      if (request.method === 'GET' && path === '/v1/companion-images/quota') {
+        const session = await requireSession(request, sessionRepository);
+        const access = await requireAccess(session, accessCodeRepository);
+        const available = Boolean(
+          config.costGuard?.enabled &&
+            config.companionImages?.enabled &&
+            config.companionImages.zdrConfirmed &&
+            config.companionImages.eligibleUsers.has(session.user.id),
+        );
+        sendJson(
+          response,
+          200,
+          available
+            ? {
+                quota: await budgetService.companionGenerationSnapshot(
+                  session.user.id,
+                  access.plan,
+                ),
+                state: 'available',
+                summary: 'Create up to five cursor companions each month.',
+              }
+            : {
+                quota: null,
+                state: 'unavailable',
+                summary: 'Companion generation is not available for this account.',
+              },
+        );
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        path === '/v1/openai/images/companion-edits'
+      ) {
+        const session = await requireSession(request, sessionRepository);
+        const access = await requireAccess(session, accessCodeRepository);
+        if (
+          !config.costGuard?.enabled ||
+          !config.companionImages?.enabled ||
+          !config.companionImages.zdrConfirmed ||
+          !config.companionImages.eligibleUsers.has(session.user.id)
+        ) {
+          throw companionUnavailable();
+        }
+        await enforceSharedRateLimit(rateLimiter, {
+          key: session.user.id,
+          limit: planFor(access.plan).companionGenerationsPerMinute,
+          scope: 'companion-images.minute',
+          windowMs: 60_000,
+        });
+        const body = await readJson(request, MAX_COMPANION_IMAGE_BODY_BYTES);
+        const headerRequestId = request.headers['x-trocode-request-id'];
+        const keys =
+          body && typeof body === 'object' && !Array.isArray(body)
+            ? Object.keys(body).sort()
+            : [];
+        if (
+          !body ||
+          typeof body !== 'object' ||
+          Array.isArray(body) ||
+          keys.join(',') !== 'imageBase64,mimeType,prompt' ||
+          typeof body.imageBase64 !== 'string' ||
+          body.imageBase64.length < 4 ||
+          body.imageBase64.length > MAX_COMPANION_IMAGE_BODY_BYTES - 2_048 ||
+          body.imageBase64.length % 4 !== 0 ||
+          !/^[A-Za-z0-9+/]+={0,2}$/u.test(body.imageBase64) ||
+          body.mimeType !== 'image/png' ||
+          typeof body.prompt !== 'string' ||
+          body.prompt.trim().length < 1 ||
+          body.prompt.trim().length > 400 ||
+          typeof headerRequestId !== 'string' ||
+          !UUID_PATTERN.test(headerRequestId)
+        ) {
+          throw new HttpError(400, 'Companion image request is invalid.');
+        }
+        const result = await companionImageService.execute({
+          body: { ...body, prompt: body.prompt.trim() },
+          planId: access.plan,
+          requestId: headerRequestId,
+          safetyIdentifier: modelSafetyIdentifier(session.user.id),
+          userId: session.user.id,
+        });
+        sendJson(response, 200, result);
         return;
       }
 

@@ -40,4 +40,31 @@ describe('app language', () => {
       translate('vi', 'Strict mode asks before every mutation or side effect.'),
     ).not.toContain('Strict mode');
   });
+
+  it('translates companion customization states without English fallback', () => {
+    const messages = [
+      'Custom companion',
+      'Generate preview',
+      'Use this companion',
+      'Use default companion',
+      'Monthly limit reached',
+      'Generating… this can take up to 2 minutes',
+      'Drop, paste, or click to choose',
+      'Describe the vibe',
+      'Add an image to continue',
+      'Private by design',
+      'Meet your new companion',
+      'Your source image and prompt are sent to OpenAI only for this generation; Tro does not save them. A companion you activate stays encrypted on this device. OpenAI may retain images flagged for child-safety review. An uncertain provider outcome may use one monthly slot, and Tro will not retry it automatically.',
+    ];
+
+    for (const message of messages) {
+      expect(translate('vi', message)).not.toBe(message);
+    }
+    expect(
+      translate('vi', '{remaining} of {limit} left this month', {
+        limit: 5,
+        remaining: 3,
+      }),
+    ).toBe('Còn 3 trên 5 trong tháng này');
+  });
 });

@@ -6,6 +6,8 @@ function freezeEntry(entry) {
 }
 
 export const DEFAULT_CATALOG_VERSION = '2026-08-20';
+export const IMAGE_CATALOG_VERSION = '2026-04-21';
+export const GPT_IMAGE_MODEL = 'gpt-image-2-2026-04-21';
 
 export const MODEL_CATALOG = Object.freeze({
   'gpt-5.6-luna': freezeEntry({
@@ -28,6 +30,14 @@ export const MODEL_CATALOG = Object.freeze({
   }),
 });
 
+export const IMAGE_MODEL_CATALOG = Object.freeze({
+  [GPT_IMAGE_MODEL]: freezeEntry({
+    imageInputMicroUsdPerMillion: 8_000_000,
+    imageOutputMicroUsdPerMillion: 30_000_000,
+    textInputMicroUsdPerMillion: 5_000_000,
+  }),
+});
+
 function tokenCount(name, value) {
   if (!Number.isSafeInteger(value) || value < 0 || value > MAX_TOKEN_COUNT) {
     throw new Error(`${name} must be a bounded nonnegative integer.`);
@@ -40,11 +50,16 @@ function ceilingDivide(numerator, denominator) {
 }
 
 export class ModelCatalog {
-  constructor({ entries = MODEL_CATALOG, version = DEFAULT_CATALOG_VERSION } = {}) {
+  constructor({
+    entries = MODEL_CATALOG,
+    imageEntries = IMAGE_MODEL_CATALOG,
+    version = DEFAULT_CATALOG_VERSION,
+  } = {}) {
     if (!version || typeof version !== 'string') {
       throw new Error('A price catalog version is required.');
     }
     this.entries = entries;
+    this.imageEntries = imageEntries;
     this.version = version;
   }
 
@@ -89,6 +104,34 @@ export class ModelCatalog {
     const microUsd = ceilingDivide(numerator, TOKENS_PER_MILLION);
     if (microUsd > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error('Calculated usage cost exceeds the supported range.');
+    }
+    return Number(microUsd);
+  }
+
+  calculateImageUsageCost(usage) {
+    const inputTextTokens = tokenCount(
+      'inputTextTokens',
+      usage.inputTextTokens,
+    );
+    const inputImageTokens = tokenCount(
+      'inputImageTokens',
+      usage.inputImageTokens,
+    );
+    const outputImageTokens = tokenCount(
+      'outputImageTokens',
+      usage.outputImageTokens,
+    );
+    const price = this.imageEntries[usage.model];
+    if (!price) {
+      throw new Error(`Image model ${usage.model} is not in the price catalog.`);
+    }
+    const numerator =
+      BigInt(inputTextTokens) * BigInt(price.textInputMicroUsdPerMillion) +
+      BigInt(inputImageTokens) * BigInt(price.imageInputMicroUsdPerMillion) +
+      BigInt(outputImageTokens) * BigInt(price.imageOutputMicroUsdPerMillion);
+    const microUsd = ceilingDivide(numerator, TOKENS_PER_MILLION);
+    if (microUsd > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('Calculated image usage cost exceeds the supported range.');
     }
     return Number(microUsd);
   }

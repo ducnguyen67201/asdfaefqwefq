@@ -6,6 +6,8 @@ import { PLAN_CATALOG, planFor } from '../src/plan-catalog.mjs';
 test('defines the API-owned Free, Basic, Pro, and Max entitlements', () => {
   assert.deepEqual(PLAN_CATALOG, {
     free: {
+      companionGenerationsPerMinute: 2,
+      companionGenerationsPerMonth: 5,
       dailyMicroUsd: 250_000,
       weeklyMessages: 25,
       monthlyPriceCents: 0,
@@ -16,6 +18,8 @@ test('defines the API-owned Free, Basic, Pro, and Max entitlements', () => {
     },
     basic: {
       activeRuns: 5,
+      companionGenerationsPerMinute: 2,
+      companionGenerationsPerMonth: 5,
       dailyMicroUsd: 1_000_000,
       weeklyMessages: 300,
       monthlyPriceCents: 2_000,
@@ -32,6 +36,8 @@ test('defines the API-owned Free, Basic, Pro, and Max entitlements', () => {
     },
     pro: {
       activeRuns: 25,
+      companionGenerationsPerMinute: 2,
+      companionGenerationsPerMonth: 5,
       dailyMicroUsd: 3_000_000,
       weeklyMessages: 750,
       monthlyPriceCents: 5_000,
@@ -48,6 +54,8 @@ test('defines the API-owned Free, Basic, Pro, and Max entitlements', () => {
     },
     max: {
       activeRuns: 100,
+      companionGenerationsPerMinute: 2,
+      companionGenerationsPerMonth: 5,
       dailyMicroUsd: 8_000_000,
       weeklyMessages: 1_875,
       monthlyPriceCents: 10_000,
