@@ -3,6 +3,16 @@ use std::{env, time::Duration, time::Instant};
 use rand::RngCore;
 use serde_json::json;
 
+mod checks;
+mod membership;
+mod reports;
+mod windows_release;
+
+pub use checks::{check_agent_runtime_versions, check_rust_only_script_layout};
+pub use membership::{membership_issue, membership_keygen};
+pub use reports::{agent_reliability_report, cua_fast_path_report, inference_cost_report};
+pub use windows_release::{WindowsArtifactKind, stamp_windows_executable};
+
 use crate::{
     auth::{digest_access_code, normalize_access_code, seal_access_code},
     db,

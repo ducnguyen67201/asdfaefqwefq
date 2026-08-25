@@ -436,9 +436,17 @@ describe('MembershipService', () => {
 
     try {
       const keygen = await execFileAsync(
-        process.execPath,
+        'cargo',
         [
-          path.resolve('scripts/membership-codes.mjs'),
+          'run',
+          '--quiet',
+          '--manifest-path',
+          'services/api/Cargo.toml',
+          '--locked',
+          '--bin',
+          'trocode-api',
+          '--',
+          'membership',
           'keygen',
           '--private-key',
           privateKeyPath,
@@ -453,9 +461,17 @@ describe('MembershipService', () => {
       );
 
       const { stdout } = await execFileAsync(
-        process.execPath,
+        'cargo',
         [
-          path.resolve('scripts/membership-codes.mjs'),
+          'run',
+          '--quiet',
+          '--manifest-path',
+          'services/api/Cargo.toml',
+          '--locked',
+          '--bin',
+          'trocode-api',
+          '--',
+          'membership',
           'issue',
           '--private-key',
           privateKeyPath,
