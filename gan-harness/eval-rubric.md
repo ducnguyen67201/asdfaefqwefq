@@ -1,40 +1,36 @@
-# Live Classroom Design Evaluation Rubric
+# TroCode design evaluation rubric
 
-Passing weighted score: **7.5 / 10**. Maximum iterations: **10**, with plateau stop after two non-improving evaluations following iteration 3.
+Score each category from 0–10, multiply by its weight, and sum the result. Passing requires a weighted score of at least 7.5/10 and no major accessibility or functional regression.
 
-### Design Quality (weight: 0.35)
+## Design Quality (weight: 0.35)
 
-- Teacher and student roles are visually unmistakable.
-- Preparation, lobby, live work, and review form one legible progression.
-- Hierarchy, typography, spacing, density, and state treatment feel intentional and polished.
-- The experience feels calm, trustworthy, and classroom-ready rather than like a generic CRUD dashboard.
+- Strong hierarchy, spacing, proportion, typography, and visual balance.
+- Warm shell and bright workspace feel precise, calm, and premium.
+- TroCode yellow/charcoal palette is concentrated and intentional.
+- Cards, borders, radii, and elevation form a coherent system without visual haze.
+- Agent view has a clear focal point and composer priority at realistic desktop sizes.
 
-### Originality (weight: 0.30)
+## Originality (weight: 0.30)
 
-- The live-class layer has a distinctive but coherent identity within Tro.
-- Room code, session bar, directive banner, and status lanes use memorable composition without novelty for its own sake.
-- The design avoids boilerplate SaaS cards, surveillance metaphors, gradients, and gamification.
+- The result is recognizably TroCode rather than a literal Flow clone.
+- Autonomous-agent concepts such as bounded execution, live state, or outcome focus inform the visual language.
+- At least one distinctive compositional or interaction idea elevates the interface beyond a conventional dashboard.
+- Visual decisions feel authored rather than template-derived.
 
-### Craft (weight: 0.25)
+## Craft (weight: 0.25)
 
-- Responsive layouts, focus states, semantic labels, aria-live feedback, reduced motion, and non-color status cues are complete.
-- Empty, loading, error, lobby, live, ended, Help, ready, submitted, returned, and auto/manual link states are handled.
-- English/Vietnamese critical strings and concise privacy explanations are present.
-- Components reuse shared schemas/APIs and do not bypass Electron-main authority.
+- Details hold up across navigation, top bar, composer, context rail, supporting pages, and state variants.
+- Type scale, alignment, icons, control heights, focus states, motion, and responsive transitions are polished.
+- CSS remains maintainable and uses existing tokens coherently.
+- No accidental overflow, clipping, illegible contrast, or fragile one-off styling.
 
-### Functionality (weight: 0.10)
+## Functionality (weight: 0.10)
 
-- Teacher can create/start a Room Run, create a room code, preview/broadcast directives, resolve Help, and Complete/Return.
-- Student can join, consent, receive/open/dismiss directives, Help, Check, Ready/Submit, restore, and Leave.
-- Participant UI does not expose teacher-only upload/publish/people/dashboard controls.
-- No continuous observation or automatic submission/grade behavior is introduced.
+- Existing buttons, forms, live-task states, navigation, and supporting pages remain usable.
+- Semantics, keyboard focus, reduced motion, and responsive layout remain intact.
+- Lint, typecheck, tests, and package/build verification pass.
 
-## Evaluator output
+## Evaluator question
 
-For each iteration, write `gan-harness/feedback/feedback-N.md` containing:
+Would this feel at home in a design-award shortlist while still behaving like the existing TroCode application? Identify the highest-leverage improvements needed to reach that bar.
 
-- Scores for all four categories out of 10.
-- Weighted total.
-- Concrete evidence from code and, when runnable, screenshots/interactions.
-- Highest-impact changes required for the next iteration.
-- PASS when weighted total is at least 7.5; otherwise FAIL.

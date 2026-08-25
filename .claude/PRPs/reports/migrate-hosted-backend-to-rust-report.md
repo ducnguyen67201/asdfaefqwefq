@@ -46,19 +46,18 @@ runtime or tests were deleted.
 
 | # | Task | Status | Evidence / remaining work |
 |---|---|---|---|
-| 1 | Freeze reference behavior and compatibility corpus | Partial | Route, schema, crypto, parser, and PDF-class inventories exist; exhaustive raw HTTP/SSE replay and a production-shaped 44-table fixture remain. |
+| 1 | Freeze reference behavior and compatibility corpus | Partial | Route, schema, crypto, parser, and PDF-class inventories exist; exhaustive raw HTTP/SSE replay and a production-shaped 39-table fixture remain. |
 | 2 | Scaffold crate, commands, lints, CI, and seams | Complete locally | Pinned toolchain/crate/lockfile, five commands, CI gates, composition, provider/object-store seams, and release profile are present. |
 | 3 | Port config, errors, observability, HTTP primitives, assets | Partial | Candidate behavior and major route tests pass; exhaustive status/header/body/static-asset byte comparison remains. |
-| 4 | Preserve database startup and migrations | Complete locally | All 18 embedded migrations pass twice on empty PostgreSQL 17 and preserve a Node-initialized database. Protected CI/staging proof remains. |
+| 4 | Preserve database startup and migrations | Complete locally | All 17 embedded migrations pass twice on empty PostgreSQL 17 and preserve a Node-initialized database. Protected CI/staging proof remains. |
 | 5 | Port auth, sessions, access codes, admin, CLI | Partial | Positive, invalid, idempotent, revoke/block, cookie, access-code, admin, CLI, Google signature/claim/cache paths pass; exhaustive browser and bidirectional crypto corpus remains. |
 | 6 | Port plans, catalog, rate limits, turns, budgets, usage | Substantially complete locally | Real PostgreSQL reserve/observe/duplicate/uncertain/settle/snapshot paths pass, including current-month task scoping. Additional high-contention and database-fault testing remains. |
 | 7 | Port provider proxies | Partial | Buffered/SSE Responses (including terminal `[DONE]`) and transcription success, language validation, duration billing, 4xx/5xx, malformed, missing usage, wrong content type, dispatch failure, and unknown settlement pass. Cancellation/slow-stream/oversize differential breadth remains. |
 | 8 | Port Knowledge Spaces, S3, PDF/text, worker | Partial | Real presigned PUT/HEAD/GET, upload completion, ingestion, checksum/UTF-8/missing-object failures, parser bounds, routes, and idempotency pass. Full real-PDF parity and load/concurrency gates remain. |
-| 8a | Port live-classroom flow | Complete locally | Room admission, start/end, typed directives, safe URL claims, Help/Ready/Review transitions, and snapshot/delta dashboards run in the unified Rust binary. A real Axum/PostgreSQL E2E covers the teacher/student flow and exact 200-seat boundary. |
 | 9 | Port durable run/effect/approval/evidence ownership | Substantially complete locally | Real PostgreSQL durable task/worker, reconnect, tool grant/result/evidence, approval, cancel, malformed provider, consequential unknown, stale-worker disconnect, deadline/tool expiry, and private-payload cleanup paths pass. Broader concurrency replay remains. |
 | 10 | Implement direct Responses agent runner | Partial | Bounded direct loop and fail-closed outcomes pass; input compaction, complete circuit-breaker/pre-event retry parity, trace decision, and full scripted JS/Rust conversation replay remain. |
 | 11 | Port routes and prove wire compatibility | Partial | Major route families pass Axum-level compatibility tests; every route/method/body/header/SSE sequence is not yet byte-differentially replayed. |
-| 12 | Full verification/security/performance gate | Partial | Fmt, Clippy, tests, 80.37% coverage, audits, release build, repository checks, and package pass. Benchmarks, soak, signal/shutdown matrix, license/secret scan, and supported-platform CI remain. |
+| 12 | Full verification/security/performance gate | Partial | Fmt, Clippy, tests, 80.06% coverage, audits, release build, repository checks, and package pass. Benchmarks, soak, signal/shutdown matrix, license/secret scan, and supported-platform CI remain. |
 | 13 | Switch commands and retire JavaScript | Pending | Node remains the executable oracle and recovery path; Railway and operator commands are intentionally unchanged. |
 | 14 | Same-service Railway cutover | Pending | Requires all prior gates and explicit operator approval. |
 | 15 | Verify rollback and close migration | Pending | No staging JavaScript rollback/Rust roll-forward rehearsal or production monitoring window has occurred. |
@@ -126,7 +125,6 @@ runtime or tests were deleted.
 | Root `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`; `services/api/Cargo.toml`, `build.rs` | Created/updated | One Cargo workspace for the in-place Rust backend, lockfile, build tracking, dependencies, and release policy |
 | `services/api/src/{app,config,db,error,lib,main,observability}.rs` | Created | Composition, startup, migrations, errors, logging, and binary entrypoint |
 | `services/api/src/auth/**`, `http/**`, `usage/**`, `providers/**`, `knowledge/**`, `agent/**`, `cli/**` | Created | Backend implementation by bounded domain ownership |
-| `services/api/src/classroom/**`, `services/api/src/http/classroom.rs` | Created | Live-room admission, directives, assessment transitions, and facilitator dashboard projections |
 | `services/api/tests/**` | Created | Contract/property suites plus real PostgreSQL, S3, HTTP, provider, Google, ingestion, and agent integration tests |
 | `docs/operations/rust-backend-cutover.md` | Created | Same-service drain, cutover, monitoring, and rollback runbook |
 | `.github/workflows/ci.yml`, `package.json` | Updated | Rust quality gates added while retaining the Node oracle |
@@ -142,7 +140,7 @@ runtime or tests were deleted.
 - Direct `sqlx-core` and `sqlx-postgres` dependencies avoid unused MySQL/RSA
   transitive code and RUSTSEC-2023-0071 while preserving PostgreSQL behavior.
 - Compile-time `include_str!` migrations avoid SQLx macro/umbrella features and
-  keep all 18 forward migrations in the candidate binary.
+  keep all 17 forward migrations in the candidate binary.
 - AWS SDK features are limited to the modern HTTPS client and Tokio runtime to
   avoid unnecessary legacy vulnerable transport dependencies.
 
