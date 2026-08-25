@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 20,
+  "migrationCount": 21,
   "tables": [
     "users",
     "device_sessions",
@@ -46,7 +46,10 @@
     "knowledge_run_participations",
     "knowledge_run_directives",
     "knowledge_run_directive_claims",
-    "knowledge_attempt_review_actions"
+    "knowledge_attempt_review_actions",
+    "organizations",
+    "organization_memberships",
+    "organization_audit_events"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],

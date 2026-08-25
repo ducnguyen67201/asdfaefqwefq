@@ -43,6 +43,8 @@ import {
   CreateKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteRequestSchema,
   RequestKnowledgeAttemptHelpSchema,
+  AddOrganizationMemberRequestSchema,
+  CancelOrganizationMemberRequestSchema,
   ClassroomDirectiveNoticeSchema,
   ClassroomSessionProjectionSchema,
   CreateClassroomDirectiveRequestSchema,
@@ -55,6 +57,7 @@ import {
   ReviewKnowledgeAttemptRequestSchema,
   RevokeKnowledgeRoomCodeRequestSchema,
   SetClassroomLinkConsentRequestSchema,
+  ListOrganizationMembersRequestSchema,
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
@@ -73,6 +76,7 @@ import type { FileSelectionService } from '../knowledge/file-selection-service';
 import type { KnowledgeSpaceClient } from '../knowledge/knowledge-space-client';
 import type { KnowledgeUploadOrchestrator } from '../knowledge/knowledge-upload-service';
 import type { MembershipService } from '../membership/membership-service';
+import type { OrganizationClient } from '../organization/organization-client';
 import type { AppPreferencesService } from '../preferences/app-preferences-service';
 import type { AppUpdateService } from '../update/app-update-service';
 import type { SystemAudioDuckingService } from '../voice/system-audio-ducking-service';
@@ -97,6 +101,7 @@ interface IpcServices {
     request: CompanionResponseActionRequest,
   ): Promise<void> | void;
   membershipService: MembershipService;
+  organizationClient: OrganizationClient;
   onAuthSignedIn?(user: AuthUser): Promise<void> | void;
   onAuthSignedOut?(): Promise<void> | void;
   onUsageBudgetSnapshot?(snapshot: UsageBudgetSnapshot): void;
@@ -232,6 +237,10 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getComputerStatus,
     IPC_CHANNELS.getAuthStatus,
     IPC_CHANNELS.getMembershipStatus,
+    IPC_CHANNELS.getOrganization,
+    IPC_CHANNELS.listOrganizationMembers,
+    IPC_CHANNELS.addOrganizationMember,
+    IPC_CHANNELS.cancelOrganizationMember,
     IPC_CHANNELS.getUsageBudget,
     IPC_CHANNELS.getTaskHistory,
     IPC_CHANNELS.getVoiceStatus,
@@ -372,6 +381,40 @@ export function registerIpcHandlers(
     );
     return services.membershipService.continueWithFree(user);
   });
+
+  ipcMain.handle(IPC_CHANNELS.getOrganization, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.organizationClient.getCurrent();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.listOrganizationMembers,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.listMembers(
+        ListOrganizationMembersRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.addOrganizationMember,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.addMember(
+        AddOrganizationMemberRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.cancelOrganizationMember,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = CancelOrganizationMemberRequestSchema.parse(input);
+      return services.organizationClient.cancelMember(request.memberId);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.getAppPreferences, async (event) => {
     await assertAuthorizedSender(event, mainWindow, services.authService);

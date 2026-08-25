@@ -104,6 +104,7 @@ import {
   MembershipService,
   membershipRequiredForBuild,
 } from './main/membership/membership-service';
+import { OrganizationClient } from './main/organization/organization-client';
 import {
   AppPreferencesService,
   FileAppPreferencesStore,
@@ -253,6 +254,10 @@ const membershipService = new MembershipService({
   store: new EncryptedMembershipActivationStore(),
 });
 const knowledgeSpaceClient = new KnowledgeSpaceClient(
+  trocodeApiBaseUrl,
+  () => authService.getAccessToken(),
+);
+const organizationClient = new OrganizationClient(
   trocodeApiBaseUrl,
   () => authService.getAccessToken(),
 );
@@ -2184,6 +2189,7 @@ const createWindow = (): void => {
     getCompanionInteractionWindow: () => guidanceWindow,
     handleCompanionResponseAction,
     membershipService,
+    organizationClient,
     knowledgeSpaceClient,
     knowledgeUploadOrchestrator,
     onAuthSignedIn: async (user) => {

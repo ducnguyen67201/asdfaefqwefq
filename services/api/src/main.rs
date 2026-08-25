@@ -24,6 +24,8 @@ enum AccessCodeCommand {
     Create {
         #[arg(long)]
         code: Option<String>,
+        #[arg(long, default_value = "organization")]
+        distribution_mode: String,
         #[arg(long)]
         label: Option<String>,
         #[arg(long)]
@@ -44,11 +46,12 @@ async fn main() -> anyhow::Result<()> {
             command:
                 AccessCodeCommand::Create {
                     code,
+                    distribution_mode,
                     label,
                     max_users,
                     plan,
                 },
-        } => cli::create_access_code(code, label, max_users, &plan).await,
+        } => cli::create_access_code(code, label, max_users, &plan, &distribution_mode).await,
         Command::KnowledgeLoadReport => {
             cli::knowledge_load_report();
             Ok(())

@@ -2187,6 +2187,90 @@ export const ActivateMembershipRequestSchema = z.object({
   code: z.string().trim().min(4).max(4_096),
 });
 
+export const OrganizationRoleSchema = z.enum(['organizer', 'member']);
+
+export const OrganizationCapacitySchema = z
+  .object({
+    assignedSeats: z.number().int().nonnegative(),
+    maxSeats: z.number().int().positive(),
+    remainingSeats: z.number().int().nonnegative(),
+    state: z.enum(['available', 'full']),
+  })
+  .strict();
+
+export const OrganizationSummarySchema = z
+  .object({
+    capacity: OrganizationCapacitySchema,
+    id: z.string().uuid(),
+    name: z.string().min(1).max(100),
+    plan: PlanIdSchema,
+    role: OrganizationRoleSchema,
+  })
+  .strict();
+
+export const OrganizationCurrentResponseSchema = z
+  .object({ organization: OrganizationSummarySchema.nullable() })
+  .strict();
+
+export const OrganizationMemberSchema = z
+  .object({
+    createdAt: z.string().datetime(),
+    email: z.string().email().max(320),
+    id: z.string().uuid(),
+    joinedAt: z.string().datetime().nullable(),
+    name: z.string().min(1).max(255).nullable(),
+    role: OrganizationRoleSchema,
+    state: z.enum(['pending', 'active']),
+  })
+  .strict();
+
+export const OrganizationPageSchema = z
+  .object({
+    limit: z.number().int().min(1).max(100),
+    offset: z.number().int().min(0).max(100_000),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const ListOrganizationMembersRequestSchema = z
+  .object({
+    limit: z.number().int().min(1).max(100).default(50),
+    offset: z.number().int().min(0).max(100_000).default(0),
+  })
+  .strict();
+
+export const OrganizationMemberListSchema = z
+  .object({
+    items: z.array(OrganizationMemberSchema).max(100),
+    organization: OrganizationSummarySchema,
+    page: OrganizationPageSchema,
+  })
+  .strict();
+
+export const AddOrganizationMemberRequestSchema = z
+  .object({ email: z.string().trim().email().max(320) })
+  .strict();
+
+export const AddOrganizationMemberResponseSchema = z
+  .object({
+    member: OrganizationMemberSchema,
+    newlyCreated: z.boolean(),
+    organization: OrganizationSummarySchema,
+  })
+  .strict();
+
+export const CancelOrganizationMemberRequestSchema = z
+  .object({ memberId: z.string().uuid() })
+  .strict();
+
+export const CancelOrganizationMemberResponseSchema = z
+  .object({
+    kind: z.literal('cancelled'),
+    memberId: z.string().uuid(),
+    organization: OrganizationSummarySchema,
+  })
+  .strict();
+
 export type Capability = z.infer<typeof CapabilitySchema>;
 export type ActionEffect = z.infer<typeof ActionEffectSchema>;
 export type ActionEffectKind = z.infer<typeof ActionEffectKindSchema>;
@@ -2268,6 +2352,29 @@ export type InteractionMode = z.infer<typeof InteractionModeSchema>;
 export type AgentActivityKind = z.infer<typeof AgentActivityKindSchema>;
 export type AgentActivityUpdate = z.infer<typeof AgentActivityUpdateSchema>;
 export type MembershipStatus = z.infer<typeof MembershipStatusSchema>;
+export type OrganizationSummary = z.infer<typeof OrganizationSummarySchema>;
+export type OrganizationCurrentResponse = z.infer<
+  typeof OrganizationCurrentResponseSchema
+>;
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
+export type OrganizationMemberList = z.infer<
+  typeof OrganizationMemberListSchema
+>;
+export type ListOrganizationMembersRequest = z.infer<
+  typeof ListOrganizationMembersRequestSchema
+>;
+export type AddOrganizationMemberRequest = z.infer<
+  typeof AddOrganizationMemberRequestSchema
+>;
+export type AddOrganizationMemberResponse = z.infer<
+  typeof AddOrganizationMemberResponseSchema
+>;
+export type CancelOrganizationMemberRequest = z.infer<
+  typeof CancelOrganizationMemberRequestSchema
+>;
+export type CancelOrganizationMemberResponse = z.infer<
+  typeof CancelOrganizationMemberResponseSchema
+>;
 export type PlanId = z.infer<typeof PlanIdSchema>;
 export type PendingInteraction = z.infer<typeof PendingInteractionSchema>;
 export type PrimaryLanguage = z.infer<typeof PrimaryLanguageSchema>;

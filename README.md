@@ -300,30 +300,56 @@ OAuth/model credentials are not part of the task snapshot contract.
 
 Access checks are bypassed by raw local development (`npm start`). In hosted
 builds, every Google account must complete the plan-choice screen after sign-in.
-The user can redeem a shared access code immediately or explicitly continue on
-the Free plan, then enter a promo code later from Settings. The Free choice is
-stored per account so it remains complete across devices. Packaged builds
-without the hosted API retain the signed activation-code fallback.
+New access codes are organization-managed by default: one person claims the
+code as organizer, then reserves the remaining seats by email from Tro. A
+person with a reserved seat joins the organization automatically on their next
+verified Google sign-in and never needs to enter the code. Users can still
+explicitly continue on the Free plan and enter a promo code later from
+Settings. The Free choice is stored per account so it remains complete across
+devices. Packaged builds without the hosted API retain the signed
+activation-code fallback.
 
 Hosted builds configured with `TROCODE_API_BASE_URL` store each account's plan,
-shared access codes, and code redemptions in PostgreSQL. Create access codes
-with the administrator CLI; do not insert them manually:
+access codes, organizations, reserved seats, and code redemptions in
+PostgreSQL. Organization-managed access is implemented by the Rust hosted API
+and the same locked binary owns migrations and operator commands. Create codes
+with the Rust operator CLI; do not insert them manually:
 
 ```bash
 doppler run --project tro-app --config prd -- \
-  npm run access-code:create -- \
+  cargo run --locked --manifest-path services/api/Cargo.toml -- \
+  access-code create \
   --code CODEA \
   --max-users 10 \
   --plan basic \
   --label "Private beta batch A"
 ```
 
-Omit `--code CODEA` to generate a strong random code. The Rust command applies
-pending API migrations, stores a keyed HMAC digest plus an encrypted retrieval
-copy, and prints the code once for secure distribution. `CODEA --max-users 10`
-admits at most ten distinct Google accounts. Each account is permanently linked
-to its first code; when a code is full, existing linked accounts retain access
-while new accounts are rejected.
+Omit `--code CODEA` to generate a strong random code. The command applies
+pending API migrations, stores a keyed HMAC digest plus the admin-retrievable
+encrypted copy, and prints the code once for secure distribution. Give that
+code to the intended organizer. `CODEA --max-users 10` has ten total seats,
+including the organizer;
+pending email reservations and active members both consume capacity. At the
+limit, the organizer sees a persistent full-capacity warning and must cancel a
+pending reservation before adding another person. Active members cannot be
+removed or transferred by this flow.
+
+Legacy shared-code behavior remains available only when explicitly requested:
+
+```bash
+cargo run --locked --manifest-path services/api/Cargo.toml -- \
+  access-code create \
+  --max-users 10 \
+  --plan basic \
+  --distribution-mode shared \
+  --label "Legacy shared batch"
+```
+
+Migration 021 leaves every existing code in `shared` mode and does not create
+organizations for historical redemptions. Pausing an organization code blocks
+its initial claim and new reservations, but preserves existing access and lets
+an already-reserved verified email complete its automatic join.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
@@ -342,11 +368,14 @@ the hosted API environment to enable the separate dashboard at
 signed, `HttpOnly`, `Secure`, `SameSite=Strict` browser session that lasts for
 30 days or until the administrator selects **Lock**.
 
-The dashboard lists registered users, their current plans and access status,
-can grant an available code directly to an unlinked user, can block or unblock
-an account, and can generate 1–100 access codes in a single batch with a
-selected `free`, `basic`, `pro`, or `max` plan. Blocking an account immediately
-revokes all of its device sessions and prevents new sessions from being issued.
+The dashboard lists registered users, their current plans
+and access status, can grant an available code directly to an unlinked user,
+can block or unblock an account, and can generate 1–100 codes in a batch. On
+the Rust API those dashboard-created batches default to organization-managed;
+use the Rust CLI when an explicit shared code is required. The Rust admin API
+also exposes assigned, active, and pending seat counts and rejects grants of an
+already claimed organization code. Blocking an account immediately revokes all
+of its device sessions and prevents new sessions from being issued.
 Access-code verification uses keyed HMAC digests; new codes also keep an
 AES-256-GCM encrypted copy for authenticated admin retrieval. Legacy digest-only
 codes remain valid but cannot be displayed. An administrator can pause or

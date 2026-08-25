@@ -22,6 +22,13 @@ import {
   CuaStatusSchema,
   DecideApprovalRequestSchema,
   MembershipStatusSchema,
+  AddOrganizationMemberRequestSchema,
+  AddOrganizationMemberResponseSchema,
+  CancelOrganizationMemberRequestSchema,
+  CancelOrganizationMemberResponseSchema,
+  ListOrganizationMembersRequestSchema,
+  OrganizationCurrentResponseSchema,
+  OrganizationMemberListSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
   SetVoiceAudioDuckingRequestSchema,
@@ -391,6 +398,40 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.getMembershipStatus,
     );
     return MembershipStatusSchema.parse(response);
+  },
+
+  async getOrganization() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getOrganization,
+    );
+    return OrganizationCurrentResponseSchema.parse(response);
+  },
+
+  async listOrganizationMembers(input) {
+    const request = ListOrganizationMembersRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listOrganizationMembers,
+      request,
+    );
+    return OrganizationMemberListSchema.parse(response);
+  },
+
+  async addOrganizationMember(input) {
+    const request = AddOrganizationMemberRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.addOrganizationMember,
+      request,
+    );
+    return AddOrganizationMemberResponseSchema.parse(response);
+  },
+
+  async cancelOrganizationMember(input) {
+    const request = CancelOrganizationMemberRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.cancelOrganizationMember,
+      request,
+    );
+    return CancelOrganizationMemberResponseSchema.parse(response);
   },
 
   async activateMembership(input) {

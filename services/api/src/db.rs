@@ -110,6 +110,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "live classroom room flow",
             include_str!("../migrations/020_live_classroom_room_flow.sql"),
         ),
+        migration(
+            21,
+            "organization managed access",
+            include_str!("../migrations/021_organization_managed_access.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

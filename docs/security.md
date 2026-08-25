@@ -42,6 +42,24 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   Local development bypasses this gate; legacy packaged builds fail closed if
   the public verification key is absent. Hosted builds authorize access through
   the revocable Google-backed device session instead of an offline activation.
+- Organization-managed access is authorized entirely by the hosted service.
+  The renderer sees only its current organization summary and receives
+  organizer controls only when the server returns `role: organizer`; every
+  list, add, and cancel request repeats session, active-access, role, code-state,
+  and capacity checks. The preload exposes four fixed schema-parsed methods,
+  never a generic REST or IPC bridge, plaintext access code, platform admin
+  token, or arbitrary organization-ID authority.
+- An organizer reserves a seat by normalized email without looking up or
+  revealing whether an account already exists. Only the verified email from a
+  server-validated Google identity may claim that pending seat. Membership,
+  redemption, plan upgrade, audit event, and new device session commit in one
+  PostgreSQL transaction; an expected existing-entitlement conflict leaves the
+  reservation untouched while sign-in still succeeds. Access-code row locks
+  serialize capacity changes, and pending seats count toward the limit.
+- Organization audit details contain IDs and seat counts only. Request logs do
+  not contain email addresses, names, request bodies, bearer tokens, or
+  plaintext access codes. Active members cannot be removed through the
+  organizer API; only pending reservations can be cancelled.
 - Assistant text and tool calls share one model session. A model tool call is a
   proposal, not permission or proof that an effect occurred.
 - Approval requirement and consequence are separate. In Balanced mode,

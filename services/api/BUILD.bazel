@@ -105,6 +105,13 @@ trocode_rust_integration_test(
 )
 
 trocode_rust_integration_test(
+    name = "organization_managed_access_test",
+    size = "small",
+    src = "tests/organization_managed_access.rs",
+    compile_data = ["migrations/021_organization_managed_access.sql"],
+)
+
+trocode_rust_integration_test(
     name = "postgres_compat_test",
     src = "tests/postgres_compat.rs",
     compile_data = glob(["migrations/*.sql"]),
@@ -126,6 +133,7 @@ RUST_TEST_TARGETS = [
     ":google_auth_compat_test",
     ":http_compat_test",
     ":ingestion_test",
+    ":organization_managed_access_test",
     ":parser_properties_test",
     ":postgres_compat_test",
     ":provider_budget_compat_test",

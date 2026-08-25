@@ -21,6 +21,10 @@ import {
   ClassroomDirectiveSchema,
   CreateKnowledgeRunRequestSchema,
   MembershipStatusSchema,
+  AddOrganizationMemberRequestSchema,
+  CancelOrganizationMemberRequestSchema,
+  OrganizationCurrentResponseSchema,
+  OrganizationMemberListSchema,
   PlanIdSchema,
   SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
@@ -33,6 +37,60 @@ import {
   VoiceStatusSchema,
   VOICE_TRANSCRIPTION_MODEL,
 } from './contracts';
+
+describe('organization management contracts', () => {
+  const organization = {
+    capacity: {
+      assignedSeats: 10,
+      maxSeats: 10,
+      remainingSeats: 0,
+      state: 'full',
+    },
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Math Teachers',
+    plan: 'pro',
+    role: 'organizer',
+  };
+
+  it('accepts strict organization summaries and bounded member pages', () => {
+    expect(
+      OrganizationCurrentResponseSchema.parse({ organization }),
+    ).toEqual({ organization });
+    expect(
+      OrganizationMemberListSchema.parse({
+        items: [{
+          createdAt: '2026-08-25T08:00:00.000Z',
+          email: 'student@example.com',
+          id: '22222222-2222-4222-8222-222222222222',
+          joinedAt: null,
+          name: null,
+          role: 'member',
+          state: 'pending',
+        }],
+        organization,
+        page: { limit: 50, offset: 0, total: 1 },
+      }),
+    ).toMatchObject({ page: { total: 1 } });
+  });
+
+  it('normalizes email and rejects extra fields or malformed member IDs', () => {
+    expect(
+      AddOrganizationMemberRequestSchema.parse({
+        email: ' Student@Example.com ',
+      }),
+    ).toEqual({ email: 'Student@Example.com' });
+    expect(
+      AddOrganizationMemberRequestSchema.safeParse({
+        email: 'student@example.com',
+        organizationId: organization.id,
+      }).success,
+    ).toBe(false);
+    expect(
+      CancelOrganizationMemberRequestSchema.safeParse({ memberId: 'member-1' })
+        .success,
+    ).toBe(false);
+  });
+});
 
 describe('intent-aware execution contracts', () => {
   it('rejects hard-confirm grants and contradictory effect metadata', () => {
