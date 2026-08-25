@@ -63,6 +63,9 @@ import type {
   KnowledgeGroup,
   KnowledgeGroupList,
   CreateKnowledgeGroupRequest,
+  AddKnowledgeSpaceMembersRequest,
+  AddKnowledgeSpaceMembersResult,
+  KnowledgeSpaceMemberList,
   CreateKnowledgeInviteRequest,
   KnowledgeInvite,
   RedeemKnowledgeInviteRequest,
@@ -138,6 +141,8 @@ export const IPC_CHANNELS = {
   submitKnowledgeSelection: 'knowledge:submission:upload',
   listKnowledgeGroups: 'knowledge:groups:list',
   createKnowledgeGroup: 'knowledge:groups:create',
+  listKnowledgeMembers: 'knowledge:members:list',
+  addKnowledgeSpaceMembers: 'knowledge:members:add',
   createKnowledgeInvite: 'knowledge:invites:create',
   redeemKnowledgeInvite: 'knowledge:invites:redeem',
   requestKnowledgeAttemptHelp: 'knowledge:attempt:help',
@@ -184,6 +189,8 @@ export interface DesktopApi {
   submitKnowledgeSelection(request: SubmitKnowledgeSelectionRequest): Promise<KnowledgeUploadResult>;
   listKnowledgeGroups(spaceId: string): Promise<KnowledgeGroupList>;
   createKnowledgeGroup(request: CreateKnowledgeGroupRequest): Promise<KnowledgeGroup>;
+  listKnowledgeMembers(spaceId: string): Promise<KnowledgeSpaceMemberList>;
+  addKnowledgeSpaceMembers(request: AddKnowledgeSpaceMembersRequest): Promise<AddKnowledgeSpaceMembersResult>;
   createKnowledgeInvite(request: CreateKnowledgeInviteRequest): Promise<KnowledgeInvite>;
   redeemKnowledgeInvite(request: RedeemKnowledgeInviteRequest): Promise<RedeemKnowledgeInviteResponse>;
   requestKnowledgeAttemptHelp(request: RequestKnowledgeAttemptHelp): Promise<void>;

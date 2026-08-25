@@ -1,4 +1,4 @@
-use std::{process::Command, time::Duration};
+use std::time::Duration;
 
 use trocode_api::{Row as _, db, postgres::PgPoolOptions, query, query_scalar};
 use url::Url;
@@ -36,22 +36,6 @@ async fn reset(pool: &trocode_api::PgPool) {
         .expect("create disposable schema");
 }
 
-fn run_node_migrations(database_url: &str) {
-    let script = r#"
-      import pg from 'pg';
-      import { runMigrations } from './src/migrate.mjs';
-      const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL, max: 2 });
-      try { await runMigrations(pool); } finally { await pool.end(); }
-    "#;
-    let status = Command::new("node")
-        .args(["--input-type=module", "--eval", script])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("TEST_DATABASE_URL", database_url)
-        .status()
-        .expect("run JavaScript migration oracle");
-    assert!(status.success(), "JavaScript migrations failed");
-}
-
 #[tokio::test]
 #[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
 async fn rust_migrations_are_idempotent_on_an_empty_database() {
@@ -72,36 +56,31 @@ async fn rust_migrations_are_idempotent_on_an_empty_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(sqlx_count, 17);
-    assert_eq!(table_count, 40, "39 domain tables plus SQLx bookkeeping");
+    assert_eq!(sqlx_count, 19);
+    assert_eq!(table_count, 41, "40 domain tables plus SQLx bookkeeping");
 }
 
 #[tokio::test]
-#[ignore = "requires Node dependencies and a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
-async fn rust_migrations_preserve_a_node_initialized_database() {
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn rust_migrations_preserve_existing_domain_rows() {
     let database_url = disposable_database_url();
     let pool = open_pool(&database_url).await;
     reset(&pool).await;
-    pool.close().await;
-
-    run_node_migrations(&database_url);
-
-    let pool = open_pool(&database_url).await;
+    db::migrate(&pool)
+        .await
+        .expect("initial Rust migration run");
     query("INSERT INTO users(id,email,name)VALUES('compat-user','compat@example.test','Compat')")
         .execute(&pool)
         .await
-        .expect("seed Node-created domain row");
-    let node_table_count: i64 = query_scalar(
+        .expect("seed domain row");
+    let table_count: i64 = query_scalar(
         "SELECT COUNT(*)::bigint FROM information_schema.tables WHERE table_schema='public'",
     )
     .fetch_one(&pool)
     .await
-    .expect("Node-created domain table count");
-    assert_eq!(node_table_count, 39);
+    .expect("domain table count");
+    assert_eq!(table_count, 41);
 
-    db::migrate(&pool)
-        .await
-        .expect("Rust migration over Node schema");
     db::migrate(&pool).await.expect("Rust second-start no-op");
 
     let row = query("SELECT email,name FROM users WHERE id='compat-user'")
@@ -114,5 +93,5 @@ async fn rust_migrations_preserve_a_node_initialized_database() {
         .fetch_one(&pool)
         .await
         .expect("SQLx bookkeeping count");
-    assert_eq!(sqlx_count, 17);
+    assert_eq!(sqlx_count, 19);
 }

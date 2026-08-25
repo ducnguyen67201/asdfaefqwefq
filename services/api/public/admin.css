@@ -20,7 +20,13 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background: radial-gradient(circle at 80% -20%, rgb(205 225 204 / 44%), transparent 34rem), #f4f5f0;
+  background:
+    radial-gradient(
+      circle at 80% -20%,
+      rgb(205 225 204 / 44%),
+      transparent 34rem
+    ),
+    #f4f5f0;
 }
 
 button,
@@ -548,6 +554,101 @@ select:focus {
   font-size: 16px;
 }
 
+.classroom-flow-note {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin: -2px 0 22px;
+  padding: 13px 16px;
+  overflow: hidden;
+  border: 1px solid #d9e1d4;
+  border-radius: 15px;
+  background:
+    radial-gradient(
+      circle at 102% 50%,
+      rgb(207 230 169 / 28%),
+      transparent 18rem
+    ),
+    rgb(255 255 253 / 74%);
+}
+
+.classroom-flow-note__copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.classroom-flow-note__mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: #dfead3;
+  color: #315c3b;
+  font-size: 16px;
+}
+
+.classroom-flow-note__copy > div {
+  display: grid;
+  gap: 3px;
+}
+
+.classroom-flow-note__copy strong {
+  color: #26382c;
+  font-size: 12px;
+}
+
+.classroom-flow-note__copy span {
+  color: #7b867d;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.classroom-flow-note ol {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  color: #657168;
+  font-size: 11px;
+  font-weight: 710;
+  list-style: none;
+}
+
+.classroom-flow-note li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.classroom-flow-note li + li::before {
+  width: 24px;
+  height: 1px;
+  margin: 0 7px;
+  background: #cdd5ca;
+  content: '';
+}
+
+.classroom-flow-note li > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #cad4c7;
+  border-radius: 50%;
+  background: #fff;
+  color: #42614a;
+  font-size: 10px;
+}
+
 .table-card {
   overflow: hidden;
   border: 1px solid #dfe3db;
@@ -580,13 +681,25 @@ select:focus {
 
 .toolbar-controls {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 9px;
 }
 
 .search-field {
   position: relative;
   display: block;
+}
+
+.filter-field,
+#users-page .search-field {
+  display: grid;
+  gap: 6px;
+}
+
+.filter-field__label {
+  color: #7c887f;
+  font-size: 11px;
+  font-weight: 720;
 }
 
 .search-field > span[aria-hidden] {
@@ -597,6 +710,10 @@ select:focus {
   color: #7a867c;
   font-size: 19px;
   font-weight: 400;
+}
+
+#users-page .search-field > span[aria-hidden] {
+  top: 31px;
 }
 
 .search-field input {
@@ -610,6 +727,126 @@ select:focus {
   width: 134px;
   min-height: 39px;
   font-size: 12px;
+}
+
+.classroom-role-select {
+  min-width: 96px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  padding: 0 28px 0 2px;
+  font-size: 12px;
+  font-weight: 720;
+  box-shadow: none;
+}
+
+.classroom-role-select:hover,
+.classroom-role-select:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.classroom-role-control {
+  display: inline-flex;
+  min-width: 126px;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 5px 1px 9px;
+  border: 1px solid #d9dfd6;
+  border-radius: 999px;
+  background: #f6f7f4;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.classroom-role-control:focus-within {
+  outline: 3px solid rgb(39 91 55 / 18%);
+  outline-offset: 2px;
+}
+
+.classroom-role-control__mark {
+  color: #8b958d;
+  font-size: 8px;
+}
+
+.classroom-role-control--teacher {
+  border-color: #c9d9c3;
+  background: #edf4e9;
+}
+
+.classroom-role-control--teacher .classroom-role-control__mark {
+  color: #3f744c;
+}
+
+.classroom-role-control--student {
+  border-color: #cadade;
+  background: #ecf3f4;
+}
+
+.classroom-role-control--student .classroom-role-control__mark {
+  color: #4d7781;
+}
+
+.classroom-role-control--unassigned .classroom-role-select {
+  color: #727d75;
+}
+
+.classroom-role-cell {
+  position: relative;
+}
+
+.classroom-role-save-state {
+  display: block;
+  min-height: 15px;
+  margin: 4px 0 -4px 10px;
+  color: #7a867d;
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.classroom-role-save-state--saving::before,
+.classroom-role-save-state--saved::before,
+.classroom-role-save-state--error::before {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #839087;
+  content: '';
+  vertical-align: 1px;
+}
+
+.classroom-role-save-state--saving::before {
+  animation: role-saving-pulse 800ms ease-in-out infinite alternate;
+}
+
+.classroom-role-save-state--saved {
+  color: #397248;
+}
+
+.classroom-role-save-state--saved::before {
+  background: #4e8a5b;
+}
+
+.classroom-role-save-state--error {
+  color: #a2473b;
+}
+
+.classroom-role-save-state--error::before {
+  border-radius: 1px;
+  background: #b34e42;
+}
+
+@keyframes role-saving-pulse {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .toolbar-controls--usage .search-field input {
@@ -645,7 +882,7 @@ td {
 th {
   background: #fafbf8;
   color: #7b867d;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 770;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -699,7 +936,7 @@ tbody tr:hover {
   margin-top: 4px;
   overflow: hidden;
   color: #8c958e;
-  font-size: 10px;
+  font-size: 11px;
   text-overflow: ellipsis;
 }
 
@@ -794,7 +1031,7 @@ tbody tr:hover {
   align-items: center;
   border-radius: 999px;
   padding: 0 9px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 760;
   text-transform: capitalize;
 }
@@ -884,7 +1121,7 @@ tbody tr:hover {
   border-radius: 8px;
   background: #fff;
   color: #556159;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 710;
 }
 
@@ -1176,6 +1413,11 @@ dialog::backdrop {
   .toolbar-controls--usage .search-field input {
     width: 100%;
   }
+
+  .classroom-flow-note {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1278,6 +1520,19 @@ dialog::backdrop {
     padding: 28px 16px 38px;
   }
 
+  .classroom-flow-note ol {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .classroom-flow-note li + li::before {
+    width: 1px;
+    height: 8px;
+    margin: -7px 16px -7px 9px;
+  }
+
   .summary-grid {
     grid-template-columns: 1fr;
   }
@@ -1374,13 +1629,17 @@ dialog::backdrop {
     margin-bottom: 5px;
   }
 
-  tbody td:nth-child(3),
-  tbody td:nth-child(4) {
+  .users-table tbody td:nth-child(4),
+  .users-table tbody td:nth-child(5) {
     display: none;
   }
 
-  tbody td:nth-child(6) {
+  .users-table tbody td:nth-child(7) {
     justify-self: end;
+  }
+
+  .classroom-role-control {
+    min-width: 120px;
   }
 
   .user-name,

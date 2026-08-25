@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 17,
+  "migrationCount": 19,
   "tables": [
     "users", "device_sessions", "access_codes", "access_code_redemptions",
     "model_budget_reservations", "model_usage_events", "api_rate_limit_buckets", "agent_turns",
@@ -12,7 +12,7 @@
     "knowledge_activity_work_sessions", "knowledge_submission_artifacts", "knowledge_activity_evidence",
     "knowledge_attempt_help_requests", "knowledge_activity_run_events", "admin_audit_events", "agent_runs",
     "agent_run_events", "agent_session_items", "agent_run_checkpoints", "agent_tool_invocations",
-    "agent_outcome_criteria", "agent_evidence", "agent_worker_sessions"
+    "agent_outcome_criteria", "agent_evidence", "agent_worker_sessions", "knowledge_space_member_batches"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],

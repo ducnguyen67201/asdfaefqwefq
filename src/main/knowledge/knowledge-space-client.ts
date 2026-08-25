@@ -6,6 +6,7 @@ import {
   KnowledgeDashboardSchema, KnowledgeRunSchema, KnowledgeSourceListSchema, KnowledgeSpaceListSchema,
   KnowledgeSpaceSummarySchema,
   KnowledgeGroupListSchema, KnowledgeGroupSchema, KnowledgeInviteSchema,
+  AddKnowledgeSpaceMembersResultSchema, KnowledgeSpaceMemberListSchema,
   RedeemKnowledgeInviteResponseSchema,
   type AssignedActivityList, type CreateKnowledgeRunRequest, type CreateKnowledgeSpaceRequest,
   type CreateKnowledgeSpaceResponse, type HostedAttemptContext, type KnowledgeActivityDraft,
@@ -13,6 +14,8 @@ import {
   type KnowledgeSourceList, type KnowledgeSpaceList, type KnowledgeSpaceSummary,
   type PublishKnowledgeActivityRequest, type SaveKnowledgeActivityRequest,
   type CreateKnowledgeGroupRequest, type CreateKnowledgeInviteRequest,
+  type AddKnowledgeSpaceMembersRequest, type AddKnowledgeSpaceMembersResult,
+  type KnowledgeSpaceMemberList,
   type KnowledgeGroup, type KnowledgeGroupList, type KnowledgeInvite,
   type RedeemKnowledgeInviteResponse,
 } from '../../shared/contracts';
@@ -64,7 +67,7 @@ export class KnowledgeSpaceClient {
   constructor(private readonly apiBaseUrl: string, private readonly accessTokenProvider: () => Promise<string | null>, private readonly fetchImpl: typeof fetch = fetch) {}
 
   capabilities(): Promise<KnowledgeCapabilities> {
-    if (!this.apiBaseUrl.trim()) return Promise.resolve({ knowledgeSpaces: { enabled: false, contractVersion: 1 } });
+    if (!this.apiBaseUrl.trim()) return Promise.resolve({ knowledgeSpaces: { enabled: false, contractVersion: 2 } });
     return this.request('/v1/capabilities', { method: 'GET' }, KnowledgeCapabilitiesSchema, false);
   }
   listSpaces(): Promise<KnowledgeSpaceList> { return this.request('/v1/spaces', { method: 'GET' }, KnowledgeSpaceListSchema); }
@@ -72,6 +75,8 @@ export class KnowledgeSpaceClient {
   getSpace(spaceId: string): Promise<KnowledgeSpaceSummary> { return this.request(`/v1/spaces/${spaceId}`, { method: 'GET' }, KnowledgeSpaceSummarySchema); }
   listGroups(spaceId: string): Promise<KnowledgeGroupList> { return this.request(`/v1/spaces/${spaceId}/groups`, { method: 'GET' }, KnowledgeGroupListSchema); }
   createGroup(input: CreateKnowledgeGroupRequest): Promise<KnowledgeGroup> { const { spaceId, ...body } = input; return this.request(`/v1/spaces/${spaceId}/groups`, this.json('POST', body), KnowledgeGroupSchema); }
+  listMembers(spaceId: string): Promise<KnowledgeSpaceMemberList> { return this.request(`/v1/spaces/${spaceId}/members`, { method: 'GET' }, KnowledgeSpaceMemberListSchema); }
+  addMembers(input: AddKnowledgeSpaceMembersRequest): Promise<AddKnowledgeSpaceMembersResult> { const { spaceId, ...body } = input; return this.request(`/v1/spaces/${spaceId}/members/bulk`, this.json('POST', body), AddKnowledgeSpaceMembersResultSchema); }
   createInvite(input: CreateKnowledgeInviteRequest): Promise<KnowledgeInvite> { const { spaceId, ...body } = input; return this.request(`/v1/spaces/${spaceId}/invites`, this.json('POST', body), KnowledgeInviteSchema); }
   redeemInvite(code: string): Promise<RedeemKnowledgeInviteResponse> { return this.request('/v1/space-invites/redeem', this.json('POST', { code }), RedeemKnowledgeInviteResponseSchema); }
   listSources(spaceId: string): Promise<KnowledgeSourceList> { return this.request(`/v1/spaces/${spaceId}/sources`, { method: 'GET' }, KnowledgeSourceListSchema); }
@@ -113,7 +118,18 @@ export class KnowledgeSpaceClient {
       headers: { ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       signal: AbortSignal.timeout(20_000),
     });
-    if (!response.ok) throw new Error(`Knowledge Spaces returned HTTP ${response.status}.`);
+    if (!response.ok) {
+      let message = `Class workspaces returned HTTP ${response.status}.`;
+      try {
+        const detail = await response.json() as { error?: unknown };
+        if (typeof detail.error === 'string' && detail.error.trim()) {
+          message = detail.error;
+        }
+      } catch {
+        // The stable status fallback is used when an upstream proxy has no JSON body.
+      }
+      throw new Error(message);
+    }
     return schema.parse(await response.json());
   }
 }

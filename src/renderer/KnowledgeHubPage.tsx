@@ -11,6 +11,6 @@ export function KnowledgeHubPage({ appLanguage, mode, onLaunch }: { appLanguage:
   const [space, setSpace] = useState<KnowledgeSpaceSummary | null>(null); const [attemptId, setAttemptId] = useState<string | null>(null);
   if (attemptId) return <AttemptLaunchPage appLanguage={appLanguage} attemptId={attemptId} onBack={() => setAttemptId(null)} onLaunch={onLaunch} />;
   if (mode === 'assigned') return <AssignedActivitiesPage appLanguage={appLanguage} onOpen={setAttemptId} />;
-  if (space) return <SpaceDetailPage appLanguage={appLanguage} onBack={() => setSpace(null)} space={space} />;
+  if (space) return <SpaceDetailPage appLanguage={appLanguage} key={space.id} onBack={() => setSpace(null)} onOpen={setSpace} space={space} />;
   return <SpacesPage appLanguage={appLanguage} onOpen={setSpace} />;
 }

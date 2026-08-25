@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>Tro Admin</title>
-    <link rel="icon" href="/source/admin/assets/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="icon"
+      href="/source/admin/assets/favicon.svg"
+      type="image/svg+xml"
+    />
     <link rel="stylesheet" href="/source/admin/assets/admin.css" />
     <script src="/source/admin/assets/admin.js" defer></script>
   </head>
@@ -19,14 +23,25 @@
         <p class="eyebrow">Protected workspace</p>
         <h2 id="login-title">Open the dashboard</h2>
         <p class="login-copy">
-          Enter the server admin token. It stays in this tab's memory and is never saved by the page.
+          Enter the server admin token. It stays in this tab's memory and is
+          never saved by the page.
         </p>
-        <p class="login-persistence">This browser stays signed in for 30 days. Use Lock to sign out.</p>
+        <p class="login-persistence">
+          This browser stays signed in for 30 days. Use Lock to sign out.
+        </p>
         <form id="login-form">
           <label for="admin-token">Admin access token</label>
-          <input id="admin-token" name="token" type="password" autocomplete="off" required />
+          <input
+            id="admin-token"
+            name="token"
+            type="password"
+            autocomplete="off"
+            required
+          />
           <p class="form-error" id="login-error" role="alert"></p>
-          <button class="button button--primary button--wide" type="submit">Continue</button>
+          <button class="button button--primary button--wide" type="submit">
+            Continue
+          </button>
         </form>
       </div>
     </section>
@@ -38,7 +53,12 @@
           <span>Tro</span>
         </div>
         <nav aria-label="Admin navigation">
-          <button class="nav-item nav-item--active" id="users-nav" type="button" aria-current="page">
+          <button
+            class="nav-item nav-item--active"
+            id="users-nav"
+            type="button"
+            aria-current="page"
+          >
             <span class="nav-icon" aria-hidden="true">◎</span>
             Users
           </button>
@@ -54,7 +74,9 @@
         <div class="sidebar-foot">
           <span class="status-light" aria-hidden="true"></span>
           <span>Admin API connected</span>
-          <button class="text-button" id="lock-dashboard" type="button">Lock</button>
+          <button class="text-button" id="lock-dashboard" type="button">
+            Lock
+          </button>
         </div>
       </aside>
 
@@ -64,9 +86,15 @@
             <div>
               <p class="eyebrow">Workspace access</p>
               <h1>Users</h1>
-              <p class="page-subtitle">Manage accounts, plans, and product access.</p>
+              <p class="page-subtitle">
+                Assign classroom roles, plans, and product access.
+              </p>
             </div>
-            <button class="button button--primary" id="open-code-button" type="button">
+            <button
+              class="button button--primary"
+              id="open-code-button"
+              type="button"
+            >
               <span aria-hidden="true">＋</span>
               New code
             </button>
@@ -81,14 +109,38 @@
             <article class="summary-card">
               <span class="summary-label">Active</span>
               <strong id="active-users">—</strong>
-              <span class="summary-foot summary-foot--good">Can access Tro</span>
+              <span class="summary-foot summary-foot--good"
+                >Can access Tro</span
+              >
             </article>
             <article class="summary-card">
               <span class="summary-label">Blocked</span>
               <strong id="blocked-users">—</strong>
-              <span class="summary-foot summary-foot--warning">Access disabled</span>
+              <span class="summary-foot summary-foot--warning"
+                >Access disabled</span
+              >
             </article>
           </section>
+
+          <aside class="classroom-flow-note" aria-label="Classroom setup flow">
+            <div class="classroom-flow-note__copy">
+              <span class="classroom-flow-note__mark" aria-hidden="true"
+                >↗</span
+              >
+              <div>
+                <strong>Classroom setup</strong>
+                <span
+                  >Set a role here before a teacher adds this account to a
+                  class.</span
+                >
+              </div>
+            </div>
+            <ol>
+              <li><span>1</span> Account created</li>
+              <li><span>2</span> Role assigned</li>
+              <li><span>3</span> Added to class</li>
+            </ol>
+          </aside>
 
           <section class="table-card" aria-labelledby="users-table-title">
             <div class="table-toolbar">
@@ -99,11 +151,24 @@
               <div class="toolbar-controls">
                 <label class="search-field">
                   <span aria-hidden="true">⌕</span>
-                  <span class="sr-only">Search users</span>
-                  <input id="user-search" type="search" placeholder="Search name or email" />
+                  <span class="filter-field__label">Search</span>
+                  <input
+                    id="user-search"
+                    type="search"
+                    placeholder="Search name or email"
+                  />
                 </label>
                 <label class="filter-field">
-                  <span class="sr-only">Filter by status</span>
+                  <span class="filter-field__label">Class role</span>
+                  <select id="classroom-role-filter">
+                    <option value="">All roles</option>
+                    <option value="unassigned">Unassigned</option>
+                    <option value="teacher">Teacher</option>
+                    <option value="student">Student</option>
+                  </select>
+                </label>
+                <label class="filter-field">
+                  <span class="filter-field__label">Status</span>
                   <select id="status-filter">
                     <option value="">All statuses</option>
                     <option value="active">Active</option>
@@ -114,11 +179,12 @@
             </div>
 
             <div class="table-scroll">
-              <table>
+              <table class="users-table">
                 <thead>
                   <tr>
                     <th scope="col">User</th>
                     <th scope="col">Plan</th>
+                    <th scope="col">Classroom role</th>
                     <th scope="col">Access code</th>
                     <th scope="col">Last seen</th>
                     <th scope="col">Status</th>
@@ -135,7 +201,14 @@
             </div>
             <div class="table-footer">
               <span id="range-label"></span>
-              <button class="button button--secondary" id="load-more" type="button" hidden>Load more</button>
+              <button
+                class="button button--secondary"
+                id="load-more"
+                type="button"
+                hidden
+              >
+                Load more
+              </button>
             </div>
           </section>
         </section>
@@ -146,16 +219,24 @@
               <p class="eyebrow">Product activity</p>
               <h1>Usage</h1>
               <p class="page-subtitle">
-                See who is using Tro, what capabilities they use, and how much each activity costs.
+                See who is using Tro, what capabilities they use, and how much
+                each activity costs.
               </p>
             </div>
-            <button class="button button--secondary" id="refresh-usage" type="button">
+            <button
+              class="button button--secondary"
+              id="refresh-usage"
+              type="button"
+            >
               <span aria-hidden="true">↻</span>
               Refresh
             </button>
           </header>
 
-          <section class="summary-grid summary-grid--usage" aria-label="Usage summary">
+          <section
+            class="summary-grid summary-grid--usage"
+            aria-label="Usage summary"
+          >
             <article class="summary-card">
               <span class="summary-label">Total spend</span>
               <strong id="usage-total-spend">—</strong>
@@ -164,12 +245,16 @@
             <article class="summary-card">
               <span class="summary-label">Active users</span>
               <strong id="usage-active-users">—</strong>
-              <span class="summary-foot summary-foot--good">Unique people in this period</span>
+              <span class="summary-foot summary-foot--good"
+                >Unique people in this period</span
+              >
             </article>
             <article class="summary-card">
               <span class="summary-label">Model calls</span>
               <strong id="usage-total-requests">—</strong>
-              <span class="summary-foot">Agent, voice, and speech requests</span>
+              <span class="summary-foot"
+                >Agent, voice, and speech requests</span
+              >
             </article>
             <article class="summary-card">
               <span class="summary-label">Tokens</span>
@@ -188,7 +273,11 @@
                 <label class="search-field">
                   <span aria-hidden="true">⌕</span>
                   <span class="sr-only">Search usage</span>
-                  <input id="usage-search" type="search" placeholder="Search user, task, or model" />
+                  <input
+                    id="usage-search"
+                    type="search"
+                    placeholder="Search user, task, or model"
+                  />
                 </label>
                 <label class="filter-field filter-field--usage">
                   <span class="sr-only">Filter by activity</span>
@@ -228,7 +317,8 @@
             <span class="privacy-note__icon" aria-hidden="true">◇</span>
             <span>
               <strong>Private by design.</strong>
-              Prompts, outputs, screenshots, and tool inputs are never stored here—only billing and activity metadata.
+              Prompts, outputs, screenshots, and tool inputs are never stored
+              here—only billing and activity metadata.
             </span>
           </aside>
 
@@ -262,7 +352,14 @@
             </div>
             <div class="table-footer">
               <span id="usage-range-label"></span>
-              <button class="button button--secondary" id="usage-load-more" type="button" hidden>Load more</button>
+              <button
+                class="button button--secondary"
+                id="usage-load-more"
+                type="button"
+                hidden
+              >
+                Load more
+              </button>
             </div>
           </section>
         </section>
@@ -272,15 +369,24 @@
             <div>
               <p class="eyebrow">Workspace access</p>
               <h1>Access codes</h1>
-              <p class="page-subtitle">Inspect every code, plan, and redemption from the Tro database.</p>
+              <p class="page-subtitle">
+                Inspect every code, plan, and redemption from the Tro database.
+              </p>
             </div>
-            <button class="button button--primary" id="open-code-button-codes" type="button">
+            <button
+              class="button button--primary"
+              id="open-code-button-codes"
+              type="button"
+            >
               <span aria-hidden="true">＋</span>
               New code
             </button>
           </header>
 
-          <section class="summary-grid summary-grid--codes" aria-label="Access code summary">
+          <section
+            class="summary-grid summary-grid--codes"
+            aria-label="Access code summary"
+          >
             <article class="summary-card">
               <span class="summary-label">Total codes</span>
               <strong id="total-codes">—</strong>
@@ -289,12 +395,16 @@
             <article class="summary-card">
               <span class="summary-label">Available</span>
               <strong id="available-codes">—</strong>
-              <span class="summary-foot summary-foot--good">Capacity remaining</span>
+              <span class="summary-foot summary-foot--good"
+                >Capacity remaining</span
+              >
             </article>
             <article class="summary-card">
               <span class="summary-label">Full</span>
               <strong id="full-codes">—</strong>
-              <span class="summary-foot summary-foot--warning">User limit reached</span>
+              <span class="summary-foot summary-foot--warning"
+                >User limit reached</span
+              >
             </article>
             <article class="summary-card">
               <span class="summary-label">Paused</span>
@@ -313,7 +423,11 @@
                 <label class="search-field">
                   <span aria-hidden="true">⌕</span>
                   <span class="sr-only">Search access codes</span>
-                  <input id="code-search" type="search" placeholder="Search label or exact code" />
+                  <input
+                    id="code-search"
+                    type="search"
+                    placeholder="Search label or exact code"
+                  />
                 </label>
                 <label class="filter-field">
                   <span class="sr-only">Filter codes by status</span>
@@ -350,31 +464,66 @@
             </div>
             <div class="table-footer">
               <span id="code-range-label"></span>
-              <button class="button button--secondary" id="codes-load-more" type="button" hidden>Load more</button>
+              <button
+                class="button button--secondary"
+                id="codes-load-more"
+                type="button"
+                hidden
+              >
+                Load more
+              </button>
             </div>
           </section>
         </section>
       </main>
     </div>
 
-    <dialog class="code-dialog" id="code-dialog" aria-labelledby="code-dialog-title">
+    <dialog
+      class="code-dialog"
+      id="code-dialog"
+      aria-labelledby="code-dialog-title"
+    >
       <form class="dialog-card" id="code-form">
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">Instant access</p>
             <h2 id="code-dialog-title">Create new codes</h2>
           </div>
-          <button class="icon-button" id="close-code-dialog" type="button" aria-label="Close">×</button>
+          <button
+            class="icon-button"
+            id="close-code-dialog"
+            type="button"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
-        <p class="dialog-copy">Generate up to 100 codes at once. Each code inherits the plan and user limit below.</p>
+        <p class="dialog-copy">
+          Generate up to 100 codes at once. Each code inherits the plan and user
+          limit below.
+        </p>
         <div class="form-grid">
           <label>
             Number of codes
-            <input name="count" type="number" min="1" max="100" value="1" required />
+            <input
+              name="count"
+              type="number"
+              min="1"
+              max="100"
+              value="1"
+              required
+            />
           </label>
           <label>
             Users per code
-            <input name="maxUsers" type="number" min="1" max="10000" value="1" required />
+            <input
+              name="maxUsers"
+              type="number"
+              min="1"
+              max="10000"
+              value="1"
+              required
+            />
           </label>
           <label>
             Plan
@@ -392,30 +541,59 @@
         </div>
         <p class="security-note">
           <span aria-hidden="true">◇</span>
-          New codes are encrypted at rest and remain viewable in Access codes. Legacy digest-only codes cannot be
-          recovered.
+          New codes are encrypted at rest and remain viewable in Access codes.
+          Legacy digest-only codes cannot be recovered.
         </p>
         <p class="form-error" id="code-error" role="alert"></p>
         <div class="dialog-actions">
-          <button class="button button--secondary" id="cancel-code-dialog" type="button">Cancel</button>
-          <button class="button button--primary" id="generate-codes" type="submit">Generate codes</button>
+          <button
+            class="button button--secondary"
+            id="cancel-code-dialog"
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            class="button button--primary"
+            id="generate-codes"
+            type="submit"
+          >
+            Generate codes
+          </button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="grant-code-dialog" id="grant-code-dialog" aria-labelledby="grant-code-title">
+    <dialog
+      class="grant-code-dialog"
+      id="grant-code-dialog"
+      aria-labelledby="grant-code-title"
+    >
       <form class="dialog-card" id="grant-code-form">
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">Workspace access</p>
             <h2 id="grant-code-title">Grant access code</h2>
           </div>
-          <button class="icon-button" id="close-grant-code-dialog" type="button" aria-label="Close">×</button>
+          <button
+            class="icon-button"
+            id="close-grant-code-dialog"
+            type="button"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
-        <p class="dialog-copy" id="grant-code-user">Choose an available code for this user.</p>
+        <p class="dialog-copy" id="grant-code-user">
+          Choose an available code for this user.
+        </p>
         <label>
           Search available codes
-          <input id="grant-code-search" type="search" placeholder="Search label or exact code" />
+          <input
+            id="grant-code-search"
+            type="search"
+            placeholder="Search label or exact code"
+          />
         </label>
         <label>
           Available access code
@@ -425,57 +603,124 @@
         </label>
         <div class="grant-code-pagination">
           <span id="grant-code-range"></span>
-          <button class="button button--secondary" id="grant-code-load-more" type="button" hidden>Load more</button>
+          <button
+            class="button button--secondary"
+            id="grant-code-load-more"
+            type="button"
+            hidden
+          >
+            Load more
+          </button>
         </div>
         <p class="security-note">
           <span aria-hidden="true">◇</span>
-          Granting reserves one seat immediately and applies the code&rsquo;s plan to this account.
+          Granting reserves one seat immediately and applies the code&rsquo;s
+          plan to this account.
         </p>
         <p class="form-error" id="grant-code-error" role="alert"></p>
         <div class="dialog-actions">
-          <button class="button button--secondary" id="cancel-grant-code" type="button">Cancel</button>
-          <button class="button button--primary" id="grant-code-submit" type="submit">Grant access</button>
+          <button
+            class="button button--secondary"
+            id="cancel-grant-code"
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            class="button button--primary"
+            id="grant-code-submit"
+            type="submit"
+          >
+            Grant access
+          </button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="result-dialog" id="result-dialog" aria-labelledby="result-title">
+    <dialog
+      class="result-dialog"
+      id="result-dialog"
+      aria-labelledby="result-title"
+    >
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">Created successfully</p>
             <h2 id="result-title">Copy your codes</h2>
           </div>
-          <button class="icon-button" id="close-result-dialog" type="button" aria-label="Close">×</button>
+          <button
+            class="icon-button"
+            id="close-result-dialog"
+            type="button"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
         <p class="dialog-copy" id="result-summary"></p>
         <div class="code-results" id="code-results"></div>
         <div class="dialog-actions">
-          <button class="button button--secondary" id="done-results" type="button">Done</button>
-          <button class="button button--primary" id="copy-codes" type="button">Copy all</button>
+          <button
+            class="button button--secondary"
+            id="done-results"
+            type="button"
+          >
+            Done
+          </button>
+          <button class="button button--primary" id="copy-codes" type="button">
+            Copy all
+          </button>
         </div>
       </div>
     </dialog>
 
-    <dialog class="code-users-dialog" id="code-users-dialog" aria-labelledby="code-users-title">
+    <dialog
+      class="code-users-dialog"
+      id="code-users-dialog"
+      aria-labelledby="code-users-title"
+    >
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">Access activity</p>
             <h2 id="code-users-title">Who&rsquo;s using it</h2>
           </div>
-          <button class="icon-button" id="close-code-users-dialog" type="button" aria-label="Close">×</button>
+          <button
+            class="icon-button"
+            id="close-code-users-dialog"
+            type="button"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
         <p class="dialog-copy" id="code-users-summary">Loading users…</p>
-        <div class="code-users-list" id="code-users-list" aria-live="polite"></div>
+        <div
+          class="code-users-list"
+          id="code-users-list"
+          aria-live="polite"
+        ></div>
         <div class="code-users-empty" id="code-users-empty" hidden>
           <span class="empty-icon" aria-hidden="true">◎</span>
           <h3>No users yet</h3>
           <p>This code has not been redeemed.</p>
         </div>
         <div class="dialog-actions">
-          <button class="button button--secondary" id="close-code-users" type="button">Close</button>
-          <button class="button button--primary" id="load-more-code-users" type="button" hidden>Load more</button>
+          <button
+            class="button button--secondary"
+            id="close-code-users"
+            type="button"
+          >
+            Close
+          </button>
+          <button
+            class="button button--primary"
+            id="load-more-code-users"
+            type="button"
+            hidden
+          >
+            Load more
+          </button>
         </div>
       </div>
     </dialog>
