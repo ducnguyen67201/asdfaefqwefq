@@ -11,6 +11,21 @@ permissions:
 jobs:
   rust-backend:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: trocode_test
+          POSTGRES_PASSWORD: trocode_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trocode_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://postgres:trocode_test_password@127.0.0.1:5432/trocode_test
     steps:
       - uses: actions/checkout@v4
       - uses: bazel-contrib/setup-bazel@0.19.0
@@ -20,6 +35,26 @@ jobs:
           repository-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
       - run: npm run bazel:check
+      - run: bazel mod tidy
+      - run: git diff --exit-code -- MODULE.bazel MODULE.bazel.lock
+      - name: Run PostgreSQL-backed Rust integration tests with Bazel
+        run: >-
+          bazel test --config=ci
+          --local_test_jobs=1
+          --test_env=TEST_DATABASE_URL
+          --test_arg=--ignored
+          --test_arg=--test-threads=1
+          //services/api:agent_runtime_compat_test
+          //services/api:postgres_compat_test
+          //services/api:provider_budget_compat_test
+      - name: Run Rust HTTP compatibility test with Bazel
+        run: >-
+          bazel test --config=ci
+          --test_env=TEST_DATABASE_URL
+          --test_arg=rust_router_preserves_backend_contracts_across_major_route_families
+          --test_arg=--ignored
+          --test_arg=--test-threads=1
+          //services/api:http_compat_test
       - run: bazel build --config=ci //services/api:trocode_api
 
   verify:

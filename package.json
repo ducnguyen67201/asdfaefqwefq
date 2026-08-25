@@ -17,7 +17,7 @@
     "bazel:build": "bazel build //services/api:trocode_api",
     "bazel:start": "bazel run //services/api:trocode_api",
     "bazel:test": "bazel test //services/api/...",
-    "bazel:check": "bazel test --config=ci //services/api/... && bazel build --config=ci //services/api:clippy",
+    "bazel:check": "bazel test --config=ci //:buildifier_test //services/api/... && bazel build --config=ci //services/api:clippy",
     "cua:report": "node scripts/cua-fast-path-report.mjs",
     "package": "doppler run --project tro-app --config prd -- npm exec -- electron-forge package",
     "package:dev": "doppler run --project tro-app --config dev -- npm exec -- electron-forge package",

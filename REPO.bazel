@@ -1,3 +1,5 @@
+"""Repository-level Bazel directory exclusions."""
+
 ignore_directories([
     "**/node_modules",
     ".generated-native",
