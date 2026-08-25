@@ -193,7 +193,7 @@ async fn route(
                 StatusCode::OK,
                 state
                     .knowledge
-                    .add_members(user, space, &read_json(headers, body, 64_000)?)
+                    .add_members(user, space, &read_json(headers, body, 200_000)?)
                     .await?,
             );
         }

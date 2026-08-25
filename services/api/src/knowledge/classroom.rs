@@ -52,14 +52,6 @@ impl SpaceRole {
             Self::Participant => "participant",
         }
     }
-
-    #[must_use]
-    pub const fn expected_classroom_role(self) -> ClassroomRole {
-        match self {
-            Self::Owner | Self::Facilitator => ClassroomRole::Teacher,
-            Self::Participant => ClassroomRole::Student,
-        }
-    }
 }
 
 #[must_use]

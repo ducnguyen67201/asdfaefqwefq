@@ -1,0 +1,68 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Class Workspaces on the Rust Backend",
+  "description": "Follow Teacher/Student class workspaces from schema and Rust authorization through the Electron frontend.",
+  "ref": "codex/class-workspace-roles",
+  "steps": [
+    {
+      "file": "services/api/migrations/018_classroom_roles.sql",
+      "line": 1,
+      "title": "Two Layers of Role State",
+      "description": "The account role (`teacher`, `student`, or `unassigned`) determines eligibility. The per-class membership (`owner`, `facilitator`, or `participant`) remains the authority inside one class. The migration also stores idempotent roster-batch results."
+    },
+    {
+      "file": "services/api/src/knowledge/classroom.rs",
+      "line": 1,
+      "title": "Pure Rust Role Policy",
+      "description": "This small pure module defines compatible role combinations, owner/facilitator roster authority, and conflict checks for Admin role changes. Unknown states fail closed and the policy is unit tested without a database."
+    },
+    {
+      "file": "services/api/src/http/admin.rs",
+      "line": 242,
+      "title": "Admin Assigns Eligibility",
+      "description": "The Rust Admin route parses the role update, locks the account, rejects incompatible active memberships, updates the role, and writes a sanitized audit event in one transaction."
+    },
+    {
+      "file": "services/api/src/knowledge/service.rs",
+      "line": 124,
+      "title": "Authorization Is Two-Dimensional",
+      "description": "Every class operation loads both the account role and exact Space membership. A Teacher may be a participant elsewhere, but receives participant permissions in that class; a Student cannot own or facilitate."
+    },
+    {
+      "file": "services/api/src/knowledge/service.rs",
+      "line": 311,
+      "title": "Idempotent Rust Roster Batches",
+      "description": "Teachers add up to 500 registered accounts per request. Rust normalizes and deduplicates email, locks candidates, separates missing/blocked/mismatched/existing users, restores removed memberships safely, and persists a bounded replay result."
+    },
+    {
+      "file": "services/api/src/http/knowledge.rs",
+      "line": 28,
+      "title": "One Hosted Contract",
+      "description": "The Rust router advertises Knowledge contract v2 and owns the roster endpoint. There is no parallel Node API implementation or service-local Node package."
+    },
+    {
+      "file": "src/shared/contracts.ts",
+      "line": 1101,
+      "title": "Electron Parses the Rust API",
+      "description": "The desktop keeps bounded v2 schemas for capabilities, class roles, roster rows, and membership results. Electron main, IPC, and preload remain narrow client boundaries; they do not implement backend policy."
+    },
+    {
+      "file": "src/renderer/SpacesPage.tsx",
+      "line": 87,
+      "title": "Workspace as Navigation",
+      "description": "Spaces become Teaching and Learning shelves, creation appears only for Teachers, and Unassigned users see the Admin-assignment state. A Class workspace is a product/navigation package over Knowledge Spaces."
+    },
+    {
+      "file": "src/renderer/SpaceDetailPage.tsx",
+      "line": 180,
+      "title": "Role-Aware Class Detail",
+      "description": "Teachers receive Library, Activities, and People; Students receive class resources and assigned-work guidance without teacher-only roster, upload, authoring, or run controls."
+    },
+    {
+      "file": "services/api/railway.json",
+      "line": 1,
+      "title": "Rust Is the Deployable Backend",
+      "description": "Railpack builds the locked Rust release binary and the API starts `trocode-api serve`. The existing ingestion worker uses the same artifact with the `ingestion-worker` subcommand."
+    }
+  ]
+}

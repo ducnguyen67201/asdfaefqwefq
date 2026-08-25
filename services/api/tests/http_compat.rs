@@ -665,17 +665,26 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     )
     .await;
     assert_status(&added_participant, StatusCode::OK);
+    let added_participant_body = added_participant.json();
     assert_eq!(
-        added_participant.json()["addedEmails"],
-        json!(["http-participant@example.test"])
+        added_participant_body["addedEmails"],
+        json!(["http-participant@example.test"]),
+        "unexpected roster result: {added_participant_body}"
     );
     assert_eq!(
-        added_participant.json()["roleMismatchEmails"],
-        json!(["http-owner@example.test"])
+        added_participant_body["alreadyMemberEmails"],
+        json!(["http-owner@example.test"]),
+        "unexpected roster result: {added_participant_body}"
     );
     assert_eq!(
-        added_participant.json()["unavailableEmails"],
-        json!(["missing@example.test"])
+        added_participant_body["roleMismatchEmails"],
+        json!([]),
+        "unexpected roster result: {added_participant_body}"
+    );
+    assert_eq!(
+        added_participant_body["unavailableEmails"],
+        json!(["missing@example.test"]),
+        "unexpected roster result: {added_participant_body}"
     );
     let replayed_batch = send(
         &router,
@@ -690,7 +699,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     )
     .await;
     assert_status(&replayed_batch, StatusCode::OK);
-    assert_eq!(replayed_batch.json(), added_participant.json());
+    assert_eq!(replayed_batch.json(), added_participant_body);
     let added_facilitator = send(
         &router,
         Method::POST,
