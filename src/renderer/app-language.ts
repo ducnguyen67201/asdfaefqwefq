@@ -579,6 +579,49 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Liệt kê dữ kiện đã biết, xác định khái niệm hoặc công thức kết nối chúng, rồi kiểm tra bằng một ví dụ đơn giản hơn.',
   'Break the assignment into one smaller question, explain the first step in your own words, then practise a similar example.':
     'Chia bài tập thành một câu hỏi nhỏ hơn, tự giải thích bước đầu tiên, rồi luyện tập với một ví dụ tương tự.',
+  Organization: 'Tổ chức',
+  'Organization access': 'Quyền truy cập tổ chức',
+  'Manage organization': 'Quản lý tổ chức',
+  'Loading organization…': 'Đang tải tổ chức…',
+  'No organization to manage': 'Không có tổ chức để quản lý',
+  'This account does not manage an organization access code.':
+    'Tài khoản này không quản lý mã truy cập của tổ chức.',
+  Refresh: 'Làm mới',
+  Organizer: 'Người tổ chức',
+  'Reserve seats by email. Members join automatically when they sign in with that address.':
+    'Giữ chỗ bằng email. Thành viên sẽ tự động tham gia khi đăng nhập bằng địa chỉ đó.',
+  'Organization refresh failed': 'Không thể làm mới tổ chức',
+  'All seats are assigned': 'Tất cả chỗ đã được phân bổ',
+  'Cancel a pending reservation before adding another person.':
+    'Hủy một chỗ đang chờ trước khi thêm người khác.',
+  'Access capacity': 'Sức chứa truy cập',
+  '{assigned} of {maximum} seats assigned':
+    'Đã phân bổ {assigned} trên {maximum} chỗ',
+  '{remaining} remaining': 'Còn {remaining} chỗ',
+  '{percent}% of seats assigned': 'Đã phân bổ {percent}% số chỗ',
+  'Add a person by email': 'Thêm người bằng email',
+  'teacher@example.com': 'giaovien@example.com',
+  'Reserving…': 'Đang giữ chỗ…',
+  'Reserve seat': 'Giữ chỗ',
+  '{count} assigned seats': '{count} chỗ đã phân bổ',
+  'Refreshing…': 'Đang làm mới…',
+  'Loading members…': 'Đang tải thành viên…',
+  'No seats have been assigned yet.': 'Chưa có chỗ nào được phân bổ.',
+  'Joined {date}': 'Đã tham gia {date}',
+  'Reserved {date}': 'Đã giữ chỗ {date}',
+  Pending: 'Đang chờ',
+  'Cancelling…': 'Đang hủy…',
+  'Cancel reservation': 'Hủy chỗ',
+  'Load more': 'Tải thêm',
+  'Seat reserved for {email}.': 'Đã giữ chỗ cho {email}.',
+  '{email} already has a reserved seat.': '{email} đã có chỗ được giữ.',
+  'The reserved seat for {email} was cancelled.':
+    'Đã hủy chỗ được giữ cho {email}.',
+  'Tro could not load organization members.':
+    'Tro không thể tải thành viên tổ chức.',
+  'Tro could not reserve this seat.': 'Tro không thể giữ chỗ này.',
+  'Tro could not cancel this reserved seat.':
+    'Tro không thể hủy chỗ được giữ này.',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

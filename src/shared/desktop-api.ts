@@ -19,6 +19,13 @@ import type {
   CuaStatus,
   DecideApprovalRequest,
   MembershipStatus,
+  AddOrganizationMemberRequest,
+  AddOrganizationMemberResponse,
+  CancelOrganizationMemberRequest,
+  CancelOrganizationMemberResponse,
+  ListOrganizationMembersRequest,
+  OrganizationCurrentResponse,
+  OrganizationMemberList,
   RecordVoiceTranscriptRequest,
   RespondToInteractionRequest,
   SetVoiceAudioDuckingRequest,
@@ -115,6 +122,10 @@ export const IPC_CHANNELS = {
   getComputerStatus: 'cua:status',
   getAuthStatus: 'auth:status',
   getMembershipStatus: 'membership:status',
+  getOrganization: 'organization:get',
+  listOrganizationMembers: 'organization:members:list',
+  addOrganizationMember: 'organization:members:add',
+  cancelOrganizationMember: 'organization:members:cancel',
   getUsageBudget: 'usage:budget',
   getTaskHistory: 'task:history',
   getVoiceStatus: 'voice:status',
@@ -195,6 +206,16 @@ export interface DesktopApi {
   getAppUpdateStatus(): Promise<AppUpdateStatus>;
   getComputerStatus(): Promise<CuaStatus>;
   getMembershipStatus(): Promise<MembershipStatus>;
+  getOrganization(): Promise<OrganizationCurrentResponse>;
+  listOrganizationMembers(
+    request: ListOrganizationMembersRequest,
+  ): Promise<OrganizationMemberList>;
+  addOrganizationMember(
+    request: AddOrganizationMemberRequest,
+  ): Promise<AddOrganizationMemberResponse>;
+  cancelOrganizationMember(
+    request: CancelOrganizationMemberRequest,
+  ): Promise<CancelOrganizationMemberResponse>;
   getUsageBudget(taskId?: string): Promise<UsageBudgetSnapshot>;
   getTaskHistory(): Promise<TaskHistory>;
   getAuthStatus(): Promise<AuthStatus>;

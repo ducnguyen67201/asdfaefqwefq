@@ -60,6 +60,12 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     continueWithFree: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
   };
+  organizationClient: {
+    addMember: ReturnType<typeof vi.fn>;
+    cancelMember: ReturnType<typeof vi.fn>;
+    getCurrent: ReturnType<typeof vi.fn>;
+    listMembers: ReturnType<typeof vi.fn>;
+  };
   onAuthSignedIn: ReturnType<typeof vi.fn>;
   restartAndInstallUpdate: ReturnType<typeof vi.fn>;
   setVoiceAudioDucking: ReturnType<typeof vi.fn>;
@@ -308,6 +314,45 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     onNotice: vi.fn(() => vi.fn()),
     open: classroomOpenDirective,
   };
+  const organization = {
+    capacity: {
+      assignedSeats: 1,
+      maxSeats: 10,
+      remainingSeats: 9,
+      state: 'available' as const,
+    },
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Math Teachers',
+    plan: 'pro' as const,
+    role: 'organizer' as const,
+  };
+  const pendingMember = {
+    createdAt: '2026-08-25T08:00:00.000Z',
+    email: 'student@example.com',
+    id: '22222222-2222-4222-8222-222222222222',
+    joinedAt: null,
+    name: null,
+    role: 'member' as const,
+    state: 'pending' as const,
+  };
+  const organizationClient = {
+    addMember: vi.fn(async () => ({
+      member: pendingMember,
+      newlyCreated: true,
+      organization,
+    })),
+    cancelMember: vi.fn(async (memberId: string) => ({
+      kind: 'cancelled' as const,
+      memberId,
+      organization,
+    })),
+    getCurrent: vi.fn(async () => ({ organization })),
+    listMembers: vi.fn(async (input: { limit: number; offset: number }) => ({
+      items: [pendingMember],
+      organization,
+      page: { ...input, total: 1 },
+    })),
+  };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
     appUpdateService: {
@@ -331,6 +376,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     knowledgeSpaceClient: {
       createDirective: createClassroomDirective,
     },
+    organizationClient,
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,
@@ -390,6 +436,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     getTaskHistory,
     handleCompanionResponseAction,
     membershipService,
+    organizationClient,
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,
@@ -860,6 +907,76 @@ describe('registerIpcHandlers auth boundary', () => {
       expect.objectContaining({ id: 'user-id' }),
     );
     unregister();
+  });
+
+  it('authorizes and validates exact organization operations at the IPC boundary', async () => {
+    const { event, organizationClient, unregister } = setup(true);
+    const memberId = '22222222-2222-4222-8222-222222222222';
+
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(event),
+    ).resolves.toMatchObject({
+      organization: { role: 'organizer' },
+    });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.listOrganizationMembers)
+        ?.(event, { limit: 25, offset: 0 }),
+    ).resolves.toMatchObject({ page: { limit: 25, offset: 0 } });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.addOrganizationMember)
+        ?.(event, { email: ' Student@Example.com ' }),
+    ).resolves.toMatchObject({ newlyCreated: true });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.cancelOrganizationMember)
+        ?.(event, { memberId }),
+    ).resolves.toMatchObject({ kind: 'cancelled', memberId });
+
+    expect(organizationClient.getCurrent).toHaveBeenCalledOnce();
+    expect(organizationClient.listMembers).toHaveBeenCalledWith({
+      limit: 25,
+      offset: 0,
+    });
+    expect(organizationClient.addMember).toHaveBeenCalledWith({
+      email: 'Student@Example.com',
+    });
+    expect(organizationClient.cancelMember).toHaveBeenCalledWith(memberId);
+    unregister();
+  });
+
+  it('rejects malformed or unauthorized organization calls before the client', async () => {
+    const active = setup(true);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.addOrganizationMember)
+        ?.(active.event, { email: 'not-an-email' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.cancelOrganizationMember)
+        ?.(active.event, { memberId: 'not-a-uuid' }),
+    ).rejects.toThrow();
+    expect(active.organizationClient.addMember).not.toHaveBeenCalled();
+    expect(active.organizationClient.cancelMember).not.toHaveBeenCalled();
+    active.unregister();
+
+    const inactive = setup(true, false);
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(inactive.event),
+    ).rejects.toThrow('active membership');
+    expect(inactive.organizationClient.getCurrent).not.toHaveBeenCalled();
+    inactive.unregister();
+
+    const untrusted = setup(true);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.getOrganization)
+        ?.({ sender: { id: 999 }, senderFrame: {} }),
+    ).rejects.toThrow();
+    expect(untrusted.organizationClient.getCurrent).not.toHaveBeenCalled();
+    untrusted.unregister();
   });
 
   it('rejects unsupported primary languages at the IPC boundary', async () => {

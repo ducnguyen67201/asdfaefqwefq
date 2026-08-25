@@ -18,6 +18,7 @@ import type {
   ExecutionProfile,
   GoalSpec,
   MembershipStatus,
+  OrganizationSummary,
   PendingInteraction,
   PrimaryLanguage,
   TaskEvent,
@@ -45,8 +46,9 @@ import {
   isPrimaryLanguageSetupComplete,
   primaryLanguageLabel,
 } from './language-options';
-import { appEntryGate } from './membership';
+import { appEntryGate, membershipAllowsAccess } from './membership';
 import { MembershipGate } from './MembershipGate';
+import { OrganizationPage } from './OrganizationPage';
 import {
   createPermissionChecklist,
   inspectMicrophonePermission,
@@ -158,7 +160,15 @@ function mergeTaskEvents(
 function NavigationIcon({
   name,
 }: {
-  name: 'activity' | 'agent' | 'assigned' | 'history' | 'insights' | 'settings' | 'spaces';
+  name:
+    | 'activity'
+    | 'agent'
+    | 'assigned'
+    | 'history'
+    | 'insights'
+    | 'organization'
+    | 'settings'
+    | 'spaces';
 }) {
   if (name === 'agent') {
     return (
@@ -193,6 +203,16 @@ function NavigationIcon({
 
   if (name === 'assigned') {
     return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h12v18H6z" /><path d="m9 12 2 2 4-5M9 7h6" /></svg>;
+  }
+
+  if (name === 'organization') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 19v-2.2A3.8 3.8 0 0 1 7.3 13h3.4a3.8 3.8 0 0 1 3.8 3.8V19" />
+        <path d="M16 10.5a2.5 2.5 0 1 0 0-5M16.5 13.5a3.5 3.5 0 0 1 4 3.5v2" />
+      </svg>
+    );
   }
 
   if (name === 'settings') {
@@ -909,6 +929,12 @@ export function App({
   const [membershipStatus, setMembershipStatus] =
     useState<MembershipStatus | null>(null);
   const [membershipError, setMembershipError] = useState<string | null>(null);
+  const [organization, setOrganization] =
+    useState<OrganizationSummary | null>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(
+    null,
+  );
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(false);
   const [isCheckingMembership, setIsCheckingMembership] = useState(true);
   const [isActivatingMembership, setIsActivatingMembership] = useState(false);
   const [isContinuingFree, setIsContinuingFree] = useState(false);
@@ -928,6 +954,7 @@ export function App({
   const isStoppingTaskRef = useRef(false);
   const permissionRefreshIdRef = useRef(0);
   const membershipRefreshIdRef = useRef(0);
+  const organizationRefreshIdRef = useRef(0);
   const t = useCallback(
     (
       message: string,
@@ -1306,6 +1333,28 @@ export function App({
     }
   }, []);
 
+  const refreshOrganization = useCallback(async () => {
+    const refreshId = organizationRefreshIdRef.current + 1;
+    organizationRefreshIdRef.current = refreshId;
+    setIsLoadingOrganization(true);
+    setOrganizationError(null);
+    try {
+      const response = await window.tro.getOrganization();
+      if (organizationRefreshIdRef.current !== refreshId) return;
+      setOrganization(response.organization);
+    } catch (organizationStatusError) {
+      if (organizationRefreshIdRef.current !== refreshId) return;
+      setOrganizationError(
+        organizationStatusError instanceof Error
+          ? organizationStatusError.message
+          : 'Tro could not load this organization.',
+      );
+    } finally {
+      if (organizationRefreshIdRef.current === refreshId) {
+        setIsLoadingOrganization(false);
+      }
+    }
+  }, []);
   useEffect(() => {
     const handleWindowFocus = (): void => {
       void refreshMembership();
@@ -1317,6 +1366,41 @@ export function App({
       window.removeEventListener('focus', handleWindowFocus);
     };
   }, [refreshMembership]);
+
+  useEffect(() => {
+    if (!membershipAllowsAccess(membershipStatus)) {
+      organizationRefreshIdRef.current += 1;
+      queueMicrotask(() => {
+        setOrganization(null);
+        setOrganizationError(null);
+        setIsLoadingOrganization(false);
+      });
+      return;
+    }
+
+    const handleWindowFocus = (): void => {
+      void refreshOrganization();
+    };
+    queueMicrotask(() => void refreshOrganization());
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      organizationRefreshIdRef.current += 1;
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [currentUser.id, membershipStatus, refreshOrganization]);
+
+  useEffect(() => {
+    if (activeView !== 'organization' || !membershipAllowsAccess(membershipStatus)) {
+      return;
+    }
+    queueMicrotask(() => void refreshOrganization());
+  }, [activeView, membershipStatus, refreshOrganization]);
+
+  useEffect(() => {
+    if (activeView === 'organization' && organization?.role !== 'organizer') {
+      queueMicrotask(() => setActiveView('agent'));
+    }
+  }, [activeView, organization?.role]);
 
   useEffect(() => {
     if (membershipStatus?.state !== 'active' || !membershipStatus.expiresAt) {
@@ -2074,6 +2158,23 @@ export function App({
             <NavigationIcon name="insights" />
             <span className="sidebar-item-label">{t('Insights')}</span>
           </button>
+          {organization?.role === 'organizer' && (
+            <button
+              aria-label={t('Organization')}
+              aria-current={
+                activeView === 'organization' ? 'page' : undefined
+              }
+              className={`nav-item ${
+                activeView === 'organization' ? 'nav-item--active' : ''
+              }`}
+              onClick={() => setActiveView('organization')}
+              title={isSidebarCollapsed ? t('Organization') : undefined}
+              type="button"
+            >
+              <NavigationIcon name="organization" />
+              <span className="sidebar-item-label">{t('Organization')}</span>
+            </button>
+          )}
         </nav>
 
         {hasLiveTask && (
@@ -2224,6 +2325,15 @@ export function App({
             events={sessionEvents}
             persistence={taskPersistence}
             tasks={sessionTaskSnapshots}
+          />
+        ) : activeView === 'organization' ? (
+          <OrganizationPage
+            appLanguage={appLanguageDraft}
+            error={organizationError}
+            isLoading={isLoadingOrganization}
+            onOrganizationChange={setOrganization}
+            onRefresh={refreshOrganization}
+            organization={organization}
           />
         ) : activeView === 'settings' ? (
           <SettingsPage

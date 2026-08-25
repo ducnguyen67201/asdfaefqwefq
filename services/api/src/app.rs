@@ -5,7 +5,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::AgentService,
-    auth::{AccessCodeRepository, AgentStateCrypto, GoogleVerifier, SessionRepository},
+    auth::{
+        AccessCodeRepository, AgentStateCrypto, GoogleVerifier, OrganizationRepository,
+        SessionRepository,
+    },
     classroom::ClassroomService,
     config::Config,
     db,
@@ -22,6 +25,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub sessions: SessionRepository,
     pub access_codes: AccessCodeRepository,
+    pub organizations: OrganizationRepository,
     pub rate_limiter: RateLimiter,
     pub budget: BudgetService,
     pub responses: ResponsesService,
@@ -69,6 +73,7 @@ impl AppState {
                 config.session_duration_days,
             ),
             access_codes: AccessCodeRepository::new(pool.clone(), &config.session_token_hmac_key),
+            organizations: OrganizationRepository::new(pool.clone()),
             rate_limiter: RateLimiter::new(pool.clone(), &config.session_token_hmac_key),
             transcription: TranscriptionService::new(
                 budget.clone(),

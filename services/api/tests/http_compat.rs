@@ -511,7 +511,13 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         Method::POST,
         "/v1/admin/access-codes/bulk",
         Some(ADMIN_TOKEN),
-        Some(&json!({"count":2,"label":"HTTP parity","maxUsers":2,"plan":"basic"})),
+        Some(&json!({
+            "count":2,
+            "distributionMode":"shared",
+            "label":"HTTP parity",
+            "maxUsers":2,
+            "plan":"basic"
+        })),
     )
     .await;
     assert_status(&created_codes, StatusCode::CREATED);
@@ -613,6 +619,112 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .await,
         StatusCode::OK,
     );
+
+    let organization_codes = send(
+        &router,
+        Method::POST,
+        "/v1/admin/access-codes/bulk",
+        Some(ADMIN_TOKEN),
+        Some(&json!({
+            "count":1,
+            "distributionMode":"organization",
+            "label":"HTTP organization",
+            "maxUsers":2,
+            "plan":"pro"
+        })),
+    )
+    .await;
+    assert_status(&organization_codes, StatusCode::CREATED);
+    let organization_code = organization_codes.json();
+    let organization_code_id = organization_code["items"][0]["id"]
+        .as_str()
+        .expect("organization access-code id")
+        .to_owned();
+    let organization_plaintext = organization_code["items"][0]["code"]
+        .as_str()
+        .expect("organization access-code plaintext")
+        .to_owned();
+    let organizer_token = issue_user(&state, "http-organizer").await;
+    let organizer_claim = send(
+        &router,
+        Method::POST,
+        "/v1/access-code-redemptions",
+        Some(&organizer_token),
+        Some(&json!({"code":organization_plaintext})),
+    )
+    .await;
+    assert_status(&organizer_claim, StatusCode::CREATED);
+    assert_eq!(organizer_claim.json()["usedUsers"], 1);
+
+    let outsider_token = issue_user(&state, "http-outsider").await;
+    let forwarded_claim = send(
+        &router,
+        Method::POST,
+        "/v1/access-code-redemptions",
+        Some(&outsider_token),
+        Some(&json!({"code":organization_plaintext})),
+    )
+    .await;
+    assert_status(&forwarded_claim, StatusCode::CONFLICT);
+    assert_eq!(forwarded_claim.json()["code"], "organization_managed_code");
+
+    let reserved = send(
+        &router,
+        Method::POST,
+        "/v1/organizations/me/members",
+        Some(&organizer_token),
+        Some(&json!({"email":"HTTP-INVITED@example.test"})),
+    )
+    .await;
+    assert_status(&reserved, StatusCode::CREATED);
+    let reserved_id = reserved.json()["member"]["id"]
+        .as_str()
+        .expect("reserved membership id")
+        .to_owned();
+    assert_eq!(reserved.json()["organization"]["capacity"]["state"], "full");
+    let full = send(
+        &router,
+        Method::POST,
+        "/v1/organizations/me/members",
+        Some(&organizer_token),
+        Some(&json!({"email":"another@example.test"})),
+    )
+    .await;
+    assert_status(&full, StatusCode::CONFLICT);
+    assert_eq!(full.json()["code"], "organization_capacity_reached");
+    assert_status(
+        &send(
+            &router,
+            Method::PATCH,
+            &format!("/v1/admin/access-codes/{organization_code_id}"),
+            Some(ADMIN_TOKEN),
+            Some(&json!({"paused":true})),
+        )
+        .await,
+        StatusCode::OK,
+    );
+    let invited_token = issue_user(&state, "http-invited").await;
+    let invited_access = send(
+        &router,
+        Method::GET,
+        "/v1/access-code-redemptions/me",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&invited_access, StatusCode::OK);
+    assert_eq!(invited_access.json()["state"], "active");
+    assert_eq!(invited_access.json()["plan"], "pro");
+    let active_removal = send(
+        &router,
+        Method::DELETE,
+        &format!("/v1/organizations/me/members/{reserved_id}"),
+        Some(&organizer_token),
+        None,
+    )
+    .await;
+    assert_status(&active_removal, StatusCode::CONFLICT);
+    assert_eq!(active_removal.json()["code"], "organization_member_active");
 
     let space_client_id = Uuid::new_v4();
     let space_body = json!({

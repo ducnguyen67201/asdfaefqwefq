@@ -532,13 +532,13 @@ async fn list_codes(state: &AppState, uri: &Uri, key: &str) -> ApiResult<Respons
     } else {
         digest_access_code(&search, key)?
     };
-    let summary=sqlx::query("WITH usage AS(SELECT codes.id,codes.max_users,codes.code_ciphertext,codes.paused_at,COUNT(redemptions.user_id)::int redeemed_users FROM access_codes codes LEFT JOIN access_code_redemptions redemptions ON redemptions.access_code_id=codes.id GROUP BY codes.id)SELECT COUNT(*)::int total_codes,COUNT(*)FILTER(WHERE paused_at IS NULL AND redeemed_users<max_users)::int available_codes,COUNT(*)FILTER(WHERE paused_at IS NULL AND redeemed_users>=max_users)::int full_codes,COUNT(*)FILTER(WHERE paused_at IS NOT NULL)::int paused_codes,COUNT(*)FILTER(WHERE code_ciphertext IS NOT NULL)::int retrievable_codes,COALESCE(SUM(redeemed_users),0)::int total_redemptions FROM usage").fetch_one(&state.pool).await?;
+    let summary=sqlx::query("WITH usage AS(SELECT codes.id,codes.max_users,codes.code_ciphertext,codes.paused_at,codes.distribution_mode,COUNT(redemptions.user_id)::int redeemed_users,CASE WHEN codes.distribution_mode='organization'THEN(SELECT COUNT(*)::int FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL WHERE organizations.access_code_id=codes.id)ELSE COUNT(redemptions.user_id)::int END assigned_seats FROM access_codes codes LEFT JOIN access_code_redemptions redemptions ON redemptions.access_code_id=codes.id GROUP BY codes.id)SELECT COUNT(*)::int total_codes,COUNT(*)FILTER(WHERE paused_at IS NULL AND assigned_seats<max_users)::int available_codes,COUNT(*)FILTER(WHERE paused_at IS NULL AND assigned_seats>=max_users)::int full_codes,COUNT(*)FILTER(WHERE paused_at IS NOT NULL)::int paused_codes,COUNT(*)FILTER(WHERE code_ciphertext IS NOT NULL)::int retrievable_codes,COALESCE(SUM(redeemed_users),0)::int total_redemptions FROM usage").fetch_one(&state.pool).await?;
     let pattern = if search.is_empty() {
         String::new()
     } else {
         format!("%{search}%")
     };
-    let rows=sqlx::query("WITH usage AS(SELECT codes.*,COUNT(redemptions.user_id)::int redeemed_users FROM access_codes codes LEFT JOIN access_code_redemptions redemptions ON redemptions.access_code_id=codes.id GROUP BY codes.id)SELECT *,COUNT(*)OVER()::int filtered_total FROM usage WHERE($1='all'OR($1='available'AND paused_at IS NULL AND redeemed_users<max_users)OR($1='full'AND paused_at IS NULL AND redeemed_users>=max_users)OR($1='paused'AND paused_at IS NOT NULL))AND($2=''OR COALESCE(label,'')ILIKE $2 OR code_digest=$3)ORDER BY created_at DESC,id LIMIT $4 OFFSET $5").bind(status).bind(&pattern).bind(digest.map(|value|value.to_vec())).bind(limit).bind(offset).fetch_all(&state.pool).await?;
+    let rows=sqlx::query("WITH usage AS(SELECT codes.*,COUNT(redemptions.user_id)::int redeemed_users,(SELECT id FROM organizations WHERE access_code_id=codes.id)organization_id,CASE WHEN codes.distribution_mode='organization'THEN(SELECT COUNT(*)::int FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL WHERE organizations.access_code_id=codes.id)ELSE COUNT(redemptions.user_id)::int END assigned_seats,CASE WHEN codes.distribution_mode='organization'THEN(SELECT COUNT(*)::int FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL AND memberships.user_id IS NOT NULL WHERE organizations.access_code_id=codes.id)ELSE COUNT(redemptions.user_id)::int END active_seats,CASE WHEN codes.distribution_mode='organization'THEN(SELECT COUNT(*)::int FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL AND memberships.user_id IS NULL WHERE organizations.access_code_id=codes.id)ELSE 0 END pending_seats,(SELECT users.email FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.role='organizer'AND memberships.removed_at IS NULL JOIN users ON users.id=memberships.user_id WHERE organizations.access_code_id=codes.id LIMIT 1)organizer_email,(SELECT users.name FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.role='organizer'AND memberships.removed_at IS NULL JOIN users ON users.id=memberships.user_id WHERE organizations.access_code_id=codes.id LIMIT 1)organizer_name FROM access_codes codes LEFT JOIN access_code_redemptions redemptions ON redemptions.access_code_id=codes.id GROUP BY codes.id)SELECT *,COUNT(*)OVER()::int filtered_total FROM usage WHERE($1='all'OR($1='available'AND paused_at IS NULL AND assigned_seats<max_users)OR($1='full'AND paused_at IS NULL AND assigned_seats>=max_users)OR($1='paused'AND paused_at IS NOT NULL))AND($2=''OR COALESCE(label,'')ILIKE $2 OR code_digest=$3)ORDER BY created_at DESC,id LIMIT $4 OFFSET $5").bind(status).bind(&pattern).bind(digest.map(|value|value.to_vec())).bind(limit).bind(offset).fetch_all(&state.pool).await?;
     let total = rows
         .first()
         .map_or(0, |row| row.get::<i32, _>("filtered_total"));
@@ -555,9 +555,14 @@ async fn list_codes(state: &AppState, uri: &Uri, key: &str) -> ApiResult<Respons
                     .and_then(|digest: &[u8; 32]| open_access_code(&sealed, key, digest).ok())
             });
         let redemption_count = row.get::<i32, _>("redeemed_users");
+        let assigned = row.get::<i32, _>("assigned_seats");
         let max = row.get::<i32, _>("max_users");
         let paused = row.get::<Option<time::OffsetDateTime>, _>("paused_at");
-        items.push(json!({"code":code,"createdAt":format_time(row.get("created_at")),"id":row.get::<Uuid,_>("id"),"label":row.get::<Option<String>,_>("label"),"maxUsers":max,"pausedAt":paused.map(format_time),"plan":row.get::<String,_>("plan"),"redeemedUsers":redemption_count,"remainingUsers":(max-redemption_count).max(0),"retrievable":code.is_some(),"status":if paused.is_some(){"paused"}else if redemption_count>=max{"full"}else{"available"}}));
+        let distribution: String = row.get("distribution_mode");
+        let organization_id: Option<Uuid> = row.get("organization_id");
+        let organizer_email: Option<String> = row.get("organizer_email");
+        let organizer_name: Option<String> = row.get("organizer_name");
+        items.push(json!({"activeSeats":row.get::<i32,_>("active_seats"),"assignedSeats":assigned,"claimState":if distribution=="organization"{if organization_id.is_some(){"claimed"}else{"unclaimed"}}else{"shared"},"code":code,"createdAt":format_time(row.get("created_at")),"distributionMode":distribution,"id":row.get::<Uuid,_>("id"),"label":row.get::<Option<String>,_>("label"),"maxUsers":max,"organizer":organizer_email.map(|email|json!({"email":email,"name":organizer_name})),"pausedAt":paused.map(format_time),"pendingSeats":row.get::<i32,_>("pending_seats"),"plan":row.get::<String,_>("plan"),"redeemedUsers":redemption_count,"remainingUsers":(max-assigned).max(0),"retrievable":code.is_some(),"status":if paused.is_some(){"paused"}else if assigned>=max{"full"}else{"available"}}));
     }
     json_response(
         StatusCode::OK,
@@ -586,15 +591,25 @@ async fn create_codes(
         .and_then(Value::as_str)
         .ok_or_else(invalid)?;
     plan_for(plan).map_err(|_| invalid())?;
+    let distribution_mode = input
+        .get("distributionMode")
+        .and_then(Value::as_str)
+        .unwrap_or("organization");
+    if !matches!(distribution_mode, "organization" | "shared") {
+        return Err(invalid());
+    }
     let label = input
         .get("label")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
     if input.as_object().is_none_or(|object| {
-        object
-            .keys()
-            .any(|key| !matches!(key.as_str(), "count" | "label" | "maxUsers" | "plan"))
+        object.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "count" | "distributionMode" | "label" | "maxUsers" | "plan"
+            )
+        })
     }) || input
         .get("label")
         .is_some_and(|value| !value.is_null() && !value.is_string())
@@ -623,11 +638,13 @@ async fn create_codes(
                 format!("{value} {}/{count}", index + 1)
             }
         });
-        let row=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan)VALUES($1,$2,$3,$4,$5)RETURNING id,created_at").bind(digest.to_vec()).bind(sealed).bind(item_label.as_deref()).bind(i32::try_from(max).unwrap_or(10_000)).bind(plan).fetch_one(&mut*tx).await?;
-        items.push(json!({"code":code,"createdAt":format_time(row.get("created_at")),"id":row.get::<Uuid,_>("id"),"label":item_label,"maxUsers":max,"plan":plan}));
+        let row=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan,distribution_mode)VALUES($1,$2,$3,$4,$5,$6)RETURNING id,created_at").bind(digest.to_vec()).bind(sealed).bind(item_label.as_deref()).bind(i32::try_from(max).unwrap_or(10_000)).bind(plan).bind(distribution_mode).fetch_one(&mut*tx).await?;
+        items.push(json!({"code":code,"createdAt":format_time(row.get("created_at")),"distributionMode":distribution_mode,"id":row.get::<Uuid,_>("id"),"label":item_label,"maxUsers":max,"plan":plan}));
     }
     sqlx::query("INSERT INTO admin_audit_events(action,detail)VALUES('access_codes.created',$1)")
-        .bind(json!({"count":count,"maxUsers":max,"plan":plan}))
+        .bind(
+            json!({"count":count,"distributionMode":distribution_mode,"maxUsers":max,"plan":plan}),
+        )
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -635,32 +652,60 @@ async fn create_codes(
 }
 async fn list_code_users(state: &AppState, code: Uuid, uri: &Uri) -> ApiResult<Response> {
     let (limit, offset, _) = page(uri)?;
-    let meta = sqlx::query("SELECT id,label,max_users,plan FROM access_codes WHERE id=$1")
-        .bind(code)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| {
-            ApiError::coded(
-                StatusCode::NOT_FOUND,
-                "code_not_found",
-                "Access code not found.",
-            )
-        })?;
-    let rows=sqlx::query("SELECT users.id,users.email,users.name,users.blocked_at,redemptions.redeemed_at FROM access_code_redemptions redemptions JOIN users ON users.id=redemptions.user_id WHERE redemptions.access_code_id=$1 ORDER BY redemptions.redeemed_at DESC LIMIT $2 OFFSET $3").bind(code).bind(limit).bind(offset).fetch_all(&state.pool).await?;
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM access_code_redemptions WHERE access_code_id=$1",
+    let meta = sqlx::query(
+        "SELECT id,distribution_mode,label,max_users,plan FROM access_codes WHERE id=$1",
     )
     .bind(code)
-    .fetch_one(&state.pool)
-    .await?;
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| {
+        ApiError::coded(
+            StatusCode::NOT_FOUND,
+            "code_not_found",
+            "Access code not found.",
+        )
+    })?;
+    let distribution: String = meta.get("distribution_mode");
+    let organization = distribution == "organization";
+    let rows = if organization {
+        sqlx::query("SELECT memberships.id,memberships.email,users.name,users.blocked_at,memberships.joined_at redeemed_at,memberships.role,memberships.user_id FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL LEFT JOIN users ON users.id=memberships.user_id WHERE organizations.access_code_id=$1 ORDER BY CASE WHEN memberships.role='organizer'THEN 0 ELSE 1 END,memberships.created_at,memberships.id LIMIT $2 OFFSET $3")
+            .bind(code).bind(limit).bind(offset).fetch_all(&state.pool).await?
+    } else {
+        sqlx::query("SELECT users.id,users.email,users.name,users.blocked_at,redemptions.redeemed_at,NULL::text role,users.id user_id FROM access_code_redemptions redemptions JOIN users ON users.id=redemptions.user_id WHERE redemptions.access_code_id=$1 ORDER BY redemptions.redeemed_at DESC LIMIT $2 OFFSET $3")
+            .bind(code).bind(limit).bind(offset).fetch_all(&state.pool).await?
+    };
+    let total: i64 = if organization {
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM organizations JOIN organization_memberships memberships ON memberships.organization_id=organizations.id AND memberships.removed_at IS NULL WHERE organizations.access_code_id=$1")
+            .bind(code).fetch_one(&state.pool).await?
+    } else {
+        sqlx::query_scalar(
+            "SELECT COUNT(*)::bigint FROM access_code_redemptions WHERE access_code_id=$1",
+        )
+        .bind(code)
+        .fetch_one(&state.pool)
+        .await?
+    };
+    let items = rows.into_iter().map(|row| {
+        let joined = row.get::<Option<time::OffsetDateTime>, _>("redeemed_at");
+        let user_id = row.get::<Option<String>, _>("user_id");
+        json!({
+            "email":row.get::<String,_>("email"),
+            "id":if organization{json!(row.get::<Uuid,_>("id"))}else{json!(row.get::<String,_>("id"))},
+            "name":row.get::<Option<String>,_>("name"),
+            "redeemedAt":joined.map(format_time),
+            "role":row.get::<Option<String>,_>("role"),
+            "state":if user_id.is_some(){"active"}else{"pending"},
+            "status":if row.get::<Option<time::OffsetDateTime>,_>("blocked_at").is_some(){"blocked"}else{"active"}
+        })
+    }).collect::<Vec<_>>();
     json_response(
         StatusCode::OK,
-        json!({"code":{"id":code,"label":meta.get::<Option<String>,_>("label"),"maxUsers":meta.get::<i32,_>("max_users"),"plan":meta.get::<String,_>("plan"),"redeemedUsers":total},"items":rows.into_iter().map(|row|json!({"id":row.get::<String,_>("id"),"email":row.get::<String,_>("email"),"name":row.get::<String,_>("name"),"redeemedAt":format_time(row.get("redeemed_at")),"status":if row.get::<Option<time::OffsetDateTime>,_>("blocked_at").is_some(){"blocked"}else{"active"}})).collect::<Vec<_>>(),"page":{"limit":limit,"offset":offset,"total":total}}),
+        json!({"code":{"assignedSeats":total,"distributionMode":distribution,"id":code,"label":meta.get::<Option<String>,_>("label"),"maxUsers":meta.get::<i32,_>("max_users"),"plan":meta.get::<String,_>("plan"),"redeemedUsers":if organization{sqlx::query_scalar::<_,i64>("SELECT COUNT(*)::bigint FROM access_code_redemptions WHERE access_code_id=$1").bind(code).fetch_one(&state.pool).await?}else{total}},"items":items,"page":{"limit":limit,"offset":offset,"total":total}}),
     )
 }
 async fn grant_code(state: &AppState, user: &str, code: Uuid) -> ApiResult<Response> {
     let mut tx = state.pool.begin().await?;
-    let row = sqlx::query("SELECT blocked_at FROM users WHERE id=$1 FOR UPDATE")
+    let row = sqlx::query("SELECT blocked_at,email,name FROM users WHERE id=$1 FOR UPDATE")
         .bind(user)
         .fetch_optional(&mut *tx)
         .await?
@@ -690,7 +735,7 @@ async fn grant_code(state: &AppState, user: &str, code: Uuid) -> ApiResult<Respo
         ));
     }
     let code_row = sqlx::query(
-        "SELECT label,max_users,paused_at,plan FROM access_codes WHERE id=$1 FOR UPDATE",
+        "SELECT distribution_mode,label,max_users,paused_at,plan FROM access_codes WHERE id=$1 FOR UPDATE",
     )
     .bind(code)
     .fetch_optional(&mut *tx)
@@ -712,6 +757,22 @@ async fn grant_code(state: &AppState, user: &str, code: Uuid) -> ApiResult<Respo
             "This access code is temporarily paused.",
         ));
     }
+    let distribution_mode: String = code_row.get("distribution_mode");
+    if distribution_mode == "organization" {
+        let claimed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM organizations WHERE access_code_id=$1)",
+        )
+        .bind(code)
+        .fetch_one(&mut *tx)
+        .await?;
+        if claimed {
+            return Err(ApiError::coded(
+                StatusCode::CONFLICT,
+                "organization_code_claimed",
+                "This organization code already has an organizer.",
+            ));
+        }
+    }
     let redemption_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)::bigint FROM access_code_redemptions WHERE access_code_id=$1",
     )
@@ -727,6 +788,28 @@ async fn grant_code(state: &AppState, user: &str, code: Uuid) -> ApiResult<Respo
         ));
     }
     let plan: String = code_row.get("plan");
+    let mut organization = None;
+    let mut membership = None;
+    if distribution_mode == "organization" {
+        let label: Option<String> = code_row.get("label");
+        let user_name: String = row.get("name");
+        let raw_name = label
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(user_name);
+        let name: String = raw_name.chars().take(100).collect();
+        let organization_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO organizations(access_code_id,name)VALUES($1,$2)RETURNING id",
+        )
+        .bind(code)
+        .bind(name)
+        .fetch_one(&mut *tx)
+        .await?;
+        let email: String = row.get("email");
+        let membership_id: Uuid = sqlx::query_scalar("INSERT INTO organization_memberships(organization_id,email,email_normalized,user_id,role,invited_by_user_id,joined_at)VALUES($1,$2,LOWER(BTRIM($2)),$3,'organizer',$3,NOW())RETURNING id")
+            .bind(organization_id).bind(email).bind(user).fetch_one(&mut *tx).await?;
+        organization = Some(organization_id);
+        membership = Some(membership_id);
+    }
     sqlx::query("INSERT INTO access_code_redemptions(user_id,access_code_id)VALUES($1,$2)")
         .bind(user)
         .bind(code)
@@ -737,6 +820,11 @@ async fn grant_code(state: &AppState, user: &str, code: Uuid) -> ApiResult<Respo
         .bind(&plan)
         .execute(&mut *tx)
         .await?;
+    if let (Some(organization_id), Some(membership_id)) = (organization, membership) {
+        sqlx::query("INSERT INTO organization_audit_events(organization_id,actor_user_id,target_membership_id,action,detail)VALUES($1,$2,$3,'organization.claimed',$4)")
+            .bind(organization_id).bind(user).bind(membership_id)
+            .bind(json!({"assignedSeats":1,"maxSeats":max})).execute(&mut *tx).await?;
+    }
     sqlx::query("INSERT INTO admin_audit_events(action,target_user_id,detail)VALUES('user.access_code_granted',$1,$2)")
         .bind(user)
         .bind(json!({"accessCodeId":code}))

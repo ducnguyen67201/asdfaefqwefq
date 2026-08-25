@@ -70,6 +70,47 @@ impl SessionRepository {
             tx.rollback().await?;
             return Ok(None);
         }
+        let candidate=sqlx::query("SELECT memberships.id,memberships.organization_id,organizations.access_code_id FROM organization_memberships memberships JOIN organizations ON organizations.id=memberships.organization_id WHERE memberships.email_normalized=LOWER(BTRIM($1))AND memberships.user_id IS NULL AND memberships.joined_at IS NULL AND memberships.removed_at IS NULL LIMIT 1")
+            .bind(&user.email).fetch_optional(&mut *tx).await?;
+        if let Some(candidate) = candidate {
+            let membership_id: Uuid = candidate.get("id");
+            let organization_id: Uuid = candidate.get("organization_id");
+            let access_code_id: Uuid = candidate.get("access_code_id");
+            let code = sqlx::query("SELECT id,plan FROM access_codes WHERE id=$1 FOR UPDATE")
+                .bind(access_code_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or_else(|| {
+                    ApiError::internal(anyhow::anyhow!(
+                        "Reserved organization access code is missing"
+                    ))
+                })?;
+            let pending=sqlx::query("SELECT id,organization_id FROM organization_memberships WHERE id=$1 AND email_normalized=LOWER(BTRIM($2))AND user_id IS NULL AND joined_at IS NULL AND removed_at IS NULL FOR UPDATE")
+                .bind(membership_id).bind(&user.email).fetch_optional(&mut *tx).await?;
+            if pending.is_some() {
+                let conflict: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM access_code_redemptions WHERE user_id=$1)OR EXISTS(SELECT 1 FROM organization_memberships WHERE user_id=$1 AND removed_at IS NULL)")
+                    .bind(&user.id).fetch_one(&mut *tx).await?;
+                if !conflict {
+                    sqlx::query("UPDATE organization_memberships SET user_id=$2,email=$3,email_normalized=LOWER(BTRIM($3)),joined_at=NOW() WHERE id=$1")
+                        .bind(membership_id).bind(&user.id).bind(&user.email).execute(&mut *tx).await?;
+                    sqlx::query(
+                        "INSERT INTO access_code_redemptions(user_id,access_code_id)VALUES($1,$2)",
+                    )
+                    .bind(&user.id)
+                    .bind(access_code_id)
+                    .execute(&mut *tx)
+                    .await?;
+                    let plan: String = code.get("plan");
+                    sqlx::query("UPDATE users SET plan=$2,updated_at=NOW() WHERE id=$1")
+                        .bind(&user.id)
+                        .bind(plan)
+                        .execute(&mut *tx)
+                        .await?;
+                    sqlx::query("INSERT INTO organization_audit_events(organization_id,actor_user_id,target_membership_id,action,detail)VALUES($1,$2,$3,'organization.member_joined','{}'::jsonb)")
+                        .bind(organization_id).bind(&user.id).bind(membership_id).execute(&mut *tx).await?;
+                }
+            }
+        }
         let expires_at: OffsetDateTime = sqlx::query_scalar("INSERT INTO device_sessions (user_id,token_digest,expires_at) VALUES ($1,$2,NOW()+($3*INTERVAL '1 day')) RETURNING expires_at")
             .bind(&user.id).bind(digest).bind(i64::from(self.duration_days)).fetch_one(&mut *tx).await?;
         tx.commit().await?;

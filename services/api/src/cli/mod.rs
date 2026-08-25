@@ -16,11 +16,15 @@ pub async fn create_access_code(
     label: Option<String>,
     max_users: i32,
     plan: &str,
+    distribution_mode: &str,
 ) -> anyhow::Result<()> {
     if max_users < 1 {
         anyhow::bail!("--max-users must be a positive integer.")
     }
     plan_for(plan).map_err(|_| anyhow::anyhow!("--plan must be one of: free, basic, pro, max."))?;
+    if !matches!(distribution_mode, "organization" | "shared") {
+        anyhow::bail!("--distribution-mode must be organization or shared.")
+    }
     let code = code
         .map(|value| value.trim().to_uppercase())
         .unwrap_or_else(|| {
@@ -63,7 +67,7 @@ pub async fn create_access_code(
         .connect(&database_url)
         .await?;
     db::migrate(&pool).await?;
-    let result=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan)VALUES($1,$2,$3,$4,$5)RETURNING id").bind(digest.to_vec()).bind(sealed).bind(label.as_deref()).bind(max_users).bind(plan).fetch_one(&pool).await;
+    let result=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan,distribution_mode)VALUES($1,$2,$3,$4,$5,$6)RETURNING id").bind(digest.to_vec()).bind(sealed).bind(label.as_deref()).bind(max_users).bind(plan).bind(distribution_mode).fetch_one(&pool).await;
     match result {
         Ok(row) => {
             use sqlx::Row;
@@ -71,6 +75,7 @@ pub async fn create_access_code(
             println!("Code: {code}");
             println!("User limit: {max_users}");
             println!("Plan: {plan}");
+            println!("Distribution mode: {distribution_mode}");
             if let Some(label) = label {
                 println!("Label: {label}");
             }
@@ -135,19 +140,34 @@ mod tests {
 
     #[tokio::test]
     async fn access_code_command_rejects_invalid_arguments_before_database_access() {
-        assert!(create_access_code(None, None, 0, "basic").await.is_err());
         assert!(
-            create_access_code(None, None, 1, "enterprise")
+            create_access_code(None, None, 0, "basic", "organization")
                 .await
                 .is_err()
         );
         assert!(
-            create_access_code(Some("bad code!".to_owned()), None, 1, "basic")
+            create_access_code(None, None, 1, "enterprise", "organization")
                 .await
                 .is_err()
         );
         assert!(
-            create_access_code(None, Some("x".repeat(101)), 1, "basic")
+            create_access_code(
+                Some("bad code!".to_owned()),
+                None,
+                1,
+                "basic",
+                "organization",
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            create_access_code(None, Some("x".repeat(101)), 1, "basic", "organization")
+                .await
+                .is_err()
+        );
+        assert!(
+            create_access_code(None, None, 1, "basic", "invalid")
                 .await
                 .is_err()
         );
