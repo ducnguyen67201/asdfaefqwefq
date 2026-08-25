@@ -6,6 +6,7 @@ import {
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
   VOICE_TRANSCRIPTION_MODEL,
 } from '../../shared/contracts';
+import type { RustDesktopEngineClient } from '../engine/rust-desktop-engine-client';
 
 import { VoiceService, type VoiceCredentialStore } from './voice-service';
 
@@ -41,8 +42,8 @@ function segmentRequest() {
 }
 
 function memoryStore(initial: string | null = null): {
-  store: VoiceCredentialStore;
   read: ReturnType<typeof vi.fn>;
+  store: VoiceCredentialStore;
   write: ReturnType<typeof vi.fn>;
 } {
   let value = initial;
@@ -50,204 +51,162 @@ function memoryStore(initial: string | null = null): {
   const write = vi.fn(async (nextValue: string) => {
     value = nextValue;
   });
-  return { store: { read, write }, read, write };
+  return { read, store: { read, write }, write };
 }
 
-function providerResponse(text = 'open YouTube'): Response {
-  return new Response(
-    JSON.stringify({
-      languages: [{ code: 'en' }],
-      text,
-    }),
-    { headers: { 'Content-Type': 'application/json' }, status: 200 },
-  );
+type VoiceRustEngine = Pick<
+  RustDesktopEngineClient,
+  'transcribeVoice' | 'validateVoiceCredential'
+>;
+
+function rustEngine(
+  overrides: Partial<VoiceRustEngine> = {},
+): VoiceRustEngine {
+  return {
+    transcribeVoice: overrides.transcribeVoice ?? vi.fn(async () => ({
+      body: {
+        audioDurationMs: 300,
+        billedSeconds: 0.3,
+        model: VOICE_TRANSCRIPTION_MODEL,
+        text: 'open YouTube',
+      },
+      status: 200,
+    })),
+    validateVoiceCredential:
+      overrides.validateVoiceCredential ?? vi.fn(async () => ({
+        body: { id: VOICE_TRANSCRIPTION_MODEL },
+        status: 200,
+      })),
+  };
 }
 
 describe('VoiceService', () => {
-  it('uses the hosted session and never reads the local provider key', async () => {
+  it('routes hosted transcription through Rust and never reads the local key', async () => {
     const { store, read } = memoryStore(TEST_API_KEY);
     const accessToken = `tro_live_${'a'.repeat(43)}`;
     const request = segmentRequest();
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      new Response(
-        JSON.stringify({
-          audioDurationMs: 300,
-          billedSeconds: 0.3,
-          model: LEGACY_VOICE_TRANSCRIPTION_MODEL,
-          text: 'open YouTube',
-          usageSource: 'actual',
-        }),
-        { status: 200 },
-      ),
-    );
+    const transcribeVoice = vi.fn(async () => ({
+      body: {
+        audioDurationMs: 300,
+        billedSeconds: 0.3,
+        model: LEGACY_VOICE_TRANSCRIPTION_MODEL,
+        text: 'open YouTube',
+        usageSource: 'actual',
+      },
+      status: 200,
+    }));
+    const engine = rustEngine({ transcribeVoice });
     const service = new VoiceService({
       accessTokenProvider: vi.fn(async () => accessToken),
       apiBaseUrl: 'http://127.0.0.1:8080',
       credentialStore: store,
-      fetchImpl,
       preferencesService: {
         getPrimaryLanguage: vi.fn(async () => 'vi' as const),
       },
+      rustEngine: engine,
     });
 
-    await expect(service.getStatus()).resolves.toMatchObject({
-      model: VOICE_TRANSCRIPTION_MODEL,
-      state: 'ready',
-    });
     await expect(service.transcribeSegment(request)).resolves.toMatchObject({
       model: LEGACY_VOICE_TRANSCRIPTION_MODEL,
       sequence: request.sequence,
       text: 'open YouTube',
-      utteranceId: request.utteranceId,
     });
     expect(read).not.toHaveBeenCalled();
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'http://127.0.0.1:8080/v1/openai/audio/transcriptions',
-      expect.objectContaining({
-        body: JSON.stringify({
-          audioBase64: request.audioBase64,
-          clientDurationMs: 300,
-          language: 'vi',
-          utteranceId: request.utteranceId,
-        }),
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'X-Trocode-Request-Id': request.requestId,
-          'X-Trocode-Transcription-Contract': '2',
-        },
-      }),
-    );
+    expect(transcribeVoice).toHaveBeenCalledWith({
+      apiBaseUrl: 'http://127.0.0.1:8080',
+      audioBase64: request.audioBase64,
+      clientDurationMs: 300,
+      credential: accessToken,
+      language: 'vi',
+      requestId: request.requestId,
+      utteranceId: request.utteranceId,
+    });
   });
 
-  it('surfaces hosted string and object access errors', async () => {
-    for (const error of [
-      'Enter a valid access code to use Tro.',
-      { message: 'Your session expired.' },
-    ]) {
-      const service = new VoiceService({
-        accessTokenProvider: vi.fn(async () => `tro_live_${'a'.repeat(43)}`),
-        apiBaseUrl: 'http://127.0.0.1:8080',
-        credentialStore: memoryStore().store,
-        fetchImpl: vi.fn<typeof fetch>(async () =>
-          new Response(JSON.stringify({ error }), { status: 403 }),
-        ),
-      });
-      await expect(service.transcribeSegment(segmentRequest())).rejects.toThrow(
-        typeof error === 'string' ? error : error.message,
-      );
-    }
-  });
-
-  it('sends local audio as bounded gpt-transcribe multipart form data', async () => {
+  it('routes local development transcription through Rust', async () => {
     const request = segmentRequest();
-    const fetchImpl = vi.fn<typeof fetch>(async () => providerResponse());
+    const engine = rustEngine();
     const service = new VoiceService({
       credentialStore: memoryStore(TEST_API_KEY).store,
       environmentApiKey: '',
-      fetchImpl,
-      preferencesService: {
-        getPrimaryLanguage: vi.fn(async () => 'en' as const),
-      },
+      rustEngine: engine,
     });
-    await expect(service.transcribeSegment(request)).resolves.toEqual({
-      audioDurationMs: 300,
-      billedSeconds: 0.3,
+
+    await expect(service.transcribeSegment(request)).resolves.toMatchObject({
       model: VOICE_TRANSCRIPTION_MODEL,
-      sequence: 2,
       text: 'open YouTube',
-      utteranceId: request.utteranceId,
     });
-    const [url, options] = fetchImpl.mock.calls[0] ?? [];
-    expect(url).toBe('https://api.openai.com/v1/audio/transcriptions');
-    expect(options?.headers).toEqual({ Authorization: `Bearer ${TEST_API_KEY}` });
-    expect(options?.body).toBeInstanceOf(FormData);
-    const form = options?.body as FormData;
-    expect(form.get('model')).toBe(VOICE_TRANSCRIPTION_MODEL);
-    expect(form.getAll('languages[]')).toEqual(['en']);
-    expect(form.get('language')).toBeNull();
-    expect(form.get('response_format')).toBeNull();
-    expect(form.get('temperature')).toBeNull();
-    expect((form.get('file') as File).type).toBe('audio/wav');
+    expect(engine.transcribeVoice).toHaveBeenCalledOnce();
   });
 
-  it('validates GPT Transcribe model access before storing a local key', async () => {
+  it('validates credentials in Rust before writing the encrypted local key', async () => {
     const { store, write } = memoryStore();
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({ id: VOICE_TRANSCRIPTION_MODEL }), {
-        status: 200,
-      }),
-    );
+    const engine = rustEngine();
     const service = new VoiceService({
       credentialStore: store,
       environmentApiKey: '',
-      fetchImpl,
+      rustEngine: engine,
     });
-    await expect(service.configure({ apiKey: TEST_API_KEY })).resolves.toMatchObject(
-      { model: VOICE_TRANSCRIPTION_MODEL, state: 'ready' },
-    );
-    expect(fetchImpl).toHaveBeenCalledWith(
-      `https://api.openai.com/v1/models/${VOICE_TRANSCRIPTION_MODEL}`,
-      expect.objectContaining({
-        headers: { Authorization: `Bearer ${TEST_API_KEY}` },
-        method: 'GET',
-      }),
-    );
+
+    await expect(service.configure({ apiKey: TEST_API_KEY })).resolves.toMatchObject({
+      state: 'ready',
+    });
+    expect(engine.validateVoiceCredential).toHaveBeenCalledWith(TEST_API_KEY);
     expect(write).toHaveBeenCalledWith(TEST_API_KEY);
   });
 
-  it('does not persist a rejected local key', async () => {
+  it('does not persist a credential rejected by Rust', async () => {
     const { store, write } = memoryStore();
+    const engine = rustEngine({
+      validateVoiceCredential: vi.fn(async () => ({
+        body: { error: { message: 'Invalid API key.' } },
+        status: 401,
+      })),
+    });
     const service = new VoiceService({
       credentialStore: store,
       environmentApiKey: '',
-      fetchImpl: vi.fn<typeof fetch>(async () =>
-        new Response(
-          JSON.stringify({ error: { message: 'Invalid API key.' } }),
-          { status: 401 },
-        ),
-      ),
+      rustEngine: engine,
     });
+
     await expect(service.configure({ apiKey: TEST_API_KEY })).rejects.toThrow(
       'Invalid API key.',
     );
     expect(write).not.toHaveBeenCalled();
   });
 
-  it('requires a credential and never retries malformed responses', async () => {
+  it('never retries missing, malformed, or timed-out Rust responses', async () => {
     const missing = new VoiceService({
       credentialStore: memoryStore().store,
       environmentApiKey: '',
-      fetchImpl: vi.fn(),
+      rustEngine: rustEngine(),
     });
     await expect(missing.transcribeSegment(segmentRequest())).rejects.toThrow(
       'OPENAI_API_KEY is missing',
     );
 
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({ text: 42 }), { status: 200 }),
-    );
+    const malformedCall = vi.fn(async () => ({ body: { text: 42 }, status: 200 }));
     const malformed = new VoiceService({
       credentialStore: memoryStore(TEST_API_KEY).store,
       environmentApiKey: '',
-      fetchImpl,
+      rustEngine: rustEngine({ transcribeVoice: malformedCall }),
     });
-    await expect(malformed.transcribeSegment(segmentRequest())).rejects.toThrow();
-    expect(fetchImpl).toHaveBeenCalledOnce();
-  });
+    await expect(malformed.transcribeSegment(segmentRequest())).rejects.toThrow(
+      'invalid response',
+    );
+    expect(malformedCall).toHaveBeenCalledOnce();
 
-  it('normalizes an ambiguous timeout and never retries it', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () => {
+    const timeoutCall = vi.fn(async () => {
       throw new DOMException('timed out', 'TimeoutError');
     });
-    const service = new VoiceService({
+    const timedOut = new VoiceService({
       credentialStore: memoryStore(TEST_API_KEY).store,
       environmentApiKey: '',
-      fetchImpl,
+      rustEngine: rustEngine({ transcribeVoice: timeoutCall }),
     });
-    await expect(service.transcribeSegment(segmentRequest())).rejects.toThrow(
+    await expect(timedOut.transcribeSegment(segmentRequest())).rejects.toThrow(
       'timed out',
     );
-    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(timeoutCall).toHaveBeenCalledOnce();
   });
 });

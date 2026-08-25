@@ -6,18 +6,16 @@ import {
   type HostedDesktopResult,
   type ProposedAction,
 } from '../../shared/contracts';
-import {
-  isConsequentialEffect,
-  raiseActionEffect,
-  resolveActionEffect,
-} from '../agent/action-effect';
 import type { DesktopObservation } from '../agent/execution-contracts';
-import { evaluateAction } from '../agent/policy';
 import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
   InteractionToolInput,
   RuntimeToolRegistry,
 } from '../agent/runtime-tool-registry';
+import {
+  type EvaluateRustPolicyInput,
+  type RustPolicyDecision,
+} from '../engine/rust-desktop-engine-client';
 
 import {
   HOSTED_AGENT_TOOL_SCHEMA_DIGEST,
@@ -28,6 +26,7 @@ export interface DesktopToolWorkerOptions {
   approvalProvider?: (runId: string, action: ProposedAction) => Promise<boolean>;
   commitResult(result: HostedDesktopResult): Promise<void>;
   dispatcher: Pick<RuntimeToolDispatcher, 'dispatch'>;
+  evaluatePolicy(input: EvaluateRustPolicyInput): Promise<RustPolicyDecision>;
   goalProvider(runId: string): GoalSpec | undefined;
   interactionProvider?: (
     runId: string,
@@ -145,12 +144,13 @@ export class DesktopToolWorker {
       consequential: envelope.consequential,
     };
     if (invocation.action) {
-      const effect = raiseActionEffect(
-        resolveActionEffect(invocation.action),
-        resolveActionEffect({ ...invocation.action, effect: envelope.effect }),
-      );
-      const action = { ...invocation.action, effect };
-      const decision = evaluateAction(goal, action, this.options.registry);
+      const decision = await this.options.evaluatePolicy({
+        action: invocation.action,
+        goal,
+        proposedEffect: envelope.effect,
+        supported: this.options.registry.supports(invocation.action),
+      });
+      const action = { ...invocation.action, effect: decision.effect };
       if (decision.status === 'denied') return this.result(envelope, 'not_executed', decision.summary);
       if (decision.status === 'needs_approval') {
         const approved = await this.options.approvalProvider?.(envelope.runId, action);
@@ -160,7 +160,7 @@ export class DesktopToolWorker {
           intentRevision: currentIntentRevision,
           approvalRequired: true,
           authorizationSource: 'exact_approval',
-          consequential: isConsequentialEffect(decision.effect),
+          consequential: decision.consequential,
         };
       } else {
         executionMetadata = {

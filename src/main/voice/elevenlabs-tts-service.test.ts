@@ -34,8 +34,8 @@ describe('ElevenLabs TTS service', () => {
       },
     });
     const service = new ElevenLabsTtsService({
-      apiKey: 'eleven-test-key',
-      voiceId: 'voice-id',
+      accessTokenProvider: vi.fn(async () => `tro_live_${'a'.repeat(43)}`),
+      apiBaseUrl: 'https://api.example.com',
       fetchImpl: vi.fn(async () =>
         new Response(providerBody, {
           headers: { 'Content-Type': 'audio/mpeg' },
@@ -89,7 +89,7 @@ describe('ElevenLabs TTS service', () => {
     );
   });
 
-  it('stays disabled until both server-side credentials are configured', async () => {
+  it('stays disabled until the hosted Rust speech service is configured', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const service = new ElevenLabsTtsService({ fetchImpl });
 
@@ -98,7 +98,7 @@ describe('ElevenLabs TTS service', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('uses the low-latency multilingual model and returns bounded MP3 data', async () => {
+  it('normalizes text and returns bounded MP3 data from the Rust API', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(Uint8Array.from([1, 2, 3, 4]), {
         status: 200,
@@ -106,8 +106,8 @@ describe('ElevenLabs TTS service', () => {
       }),
     );
     const service = new ElevenLabsTtsService({
-      apiKey: 'eleven-test-key',
-      voiceId: 'voice/test id',
+      accessTokenProvider: vi.fn(async () => `tro_live_${'b'.repeat(43)}`),
+      apiBaseUrl: 'https://api.example.com',
       fetchImpl,
     });
 
@@ -118,24 +118,21 @@ describe('ElevenLabs TTS service', () => {
     ]);
     expect(service.isConfigured()).toBe(true);
     const [url, request] = fetchImpl.mock.calls[0] ?? [];
-    expect(String(url)).toContain(
-      '/voice%2Ftest%20id/stream?output_format=mp3_44100_128',
-    );
+    expect(String(url)).toBe('https://api.example.com/v1/elevenlabs/speech');
     expect(request?.headers).toMatchObject({
       'Content-Type': 'application/json',
-      'xi-api-key': 'eleven-test-key',
+      Authorization: `Bearer ${`tro_live_${'b'.repeat(43)}`}`,
     });
     expect(JSON.parse(String(request?.body))).toEqual({
       text: 'Xin chào',
-      model_id: 'eleven_flash_v2_5',
     });
   });
 
   it('does not expose provider response text when synthesis fails', async () => {
     const logger = { warn: vi.fn() };
     const service = new ElevenLabsTtsService({
-      apiKey: 'eleven-test-key',
-      voiceId: 'voice-id',
+      accessTokenProvider: vi.fn(async () => `tro_live_${'c'.repeat(43)}`),
+      apiBaseUrl: 'https://api.example.com',
       fetchImpl: vi.fn<typeof fetch>(async () =>
         new Response('secret provider response', { status: 401 }),
       ),

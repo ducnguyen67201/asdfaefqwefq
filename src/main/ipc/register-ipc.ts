@@ -61,7 +61,6 @@ import {
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
-import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { TaskApplicationService } from '../application/task-application-service';
 import type { GoogleAuthService } from '../auth/google-auth-service';
@@ -94,8 +93,8 @@ interface IpcServices {
   >;
   appPreferencesService: AppPreferencesService;
   authService: GoogleAuthService;
+  cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
-  executionCoordinator: TaskExecutionCoordinator;
   getCompanionInteractionWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
@@ -342,7 +341,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.signOutGoogle, async (event) => {
     assertTrustedSender(event, mainWindow);
-    services.executionCoordinator.cancelActiveTasks();
+    await services.cancelActiveTasks();
     const status = await services.authService.signOut();
     services.fileSelectionService?.clear();
     services.activityProgressReporter?.clear();

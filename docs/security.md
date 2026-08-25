@@ -8,6 +8,9 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
 - The preload exposes a fixed, typed API rather than raw Electron IPC.
 - The main process validates the sending renderer and parses all payloads.
 - Only trusted main-process code creates and destroys the CUA runtime.
+- The bundled Rust desktop engine independently normalizes effects and returns
+  the policy decision before a hosted native action can request its one-time
+  executing transition. Its private stdio protocol is not exposed to preload.
 - A model cannot register a tool, approve an action, alter host limits, or make
   a private/local browser target admissible.
 - A model cannot select a runtime, choose or expand a workspace, change the
@@ -22,8 +25,9 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
 ## Default behavior
 
 - Google sign-in opens in the system browser and uses a random loopback port,
-  state, nonce, and PKCE. The main process verifies the ID token signature,
-  issuer, audience, timestamps, nonce, and verified-email claim.
+  state, nonce, and PKCE. The bundled Rust engine exchanges the code and checks
+  the nonce; the hosted Rust API verifies the ID token signature, issuer,
+  audience, timestamps, nonce, and verified-email claim.
 - The renderer receives only an allowlisted user ID, email, display name, and
   sign-in status. OAuth codes and tokens never cross the preload boundary. For
   hosted builds, the Railway API independently verifies the Google ID token and
@@ -34,14 +38,9 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   prompting. Text work does not require microphone or CUA permissions.
   Push-to-talk requests microphone access when used; desktop work pauses until
   the user clicks Connect computer. Model output cannot open System Settings.
-- Packaged builds without a hosted API require an active membership after language setup.
-  The renderer can inspect and submit membership codes only through narrow,
-  schema-validated IPC. The main process verifies an Ed25519 signature, binds
-  the signed payload to a reference derived from the verified Google user ID,
-  checks its expiry, and rechecks membership before task and voice operations.
-  Local development bypasses this gate; legacy packaged builds fail closed if
-  the public verification key is absent. Hosted builds authorize access through
-  the revocable Google-backed device session instead of an offline activation.
+- Packaged builds require the hosted Rust API. Membership and plan checks use
+  the revocable Google-backed device session and fail closed when the service
+  is unavailable; Electron has no offline membership verifier.
 - Organization-managed access is authorized entirely by the hosted service.
   The renderer sees only its current organization summary and receives
   organizer controls only when the server returns `role: organizer`; every
@@ -65,7 +64,7 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
 - Approval requirement and consequence are separate. In Balanced mode,
   authenticated user text compiles to closed grants for requested reversible
   private create/update/rename/move/comment and safe Workspace effects. The pure
-  host classifier still resolves the exact effect and can raise risk from
+  Rust host classifier still resolves the exact effect and can raise risk from
   normalized payload facts, opaque/stale state, or visible cues. Send/invite,
   delete/archive, unexpected overwrite, publish/deploy/merge, money/trade,
   credentials, permissions, installs, sensitive transfer, and unknown effects
@@ -86,18 +85,14 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   operation, and resource digest. Semantic approval revalidation can only
   rebind a uniquely matching target on the unchanged surface.
 
-Workspace mode uses the authenticated TroCode backend; it never asks the user
-for a Codex login, ChatGPT subscription, or OpenAI API key. The trusted
-main-process picker canonicalizes one directory and returns only an opaque
-selection ID to the renderer. SDK patch operations resolve paths against that
-canonical root, reject lexical and symlink escapes, bound file and patch sizes,
-and pass host policy at the SDK interruption. Requested create/update/move
-patches may resume without user UI; delete and unexpected overwrite remain
-exact. SDK shell operations start in the root, receive only an allowlisted OS
-environment, and bypass user UI only for the closed read/validation/requested-
-local command policy. TroCode, provider, database, analytics, and release
-secrets are not inherited. When approval is required, the card displays the full
-command or patch and remains single-use. The shell is not an OS
+Workspace mode uses the authenticated Rust backend. The trusted main-process
+picker canonicalizes one directory and returns only an opaque selection ID to
+the renderer. Native patch operations resolve paths against that canonical
+root, reject lexical and symlink escapes, and bound file and patch sizes. Native
+shell operations start in the root and receive only an allowlisted OS
+environment. Rust owns effect and approval policy; Electron revalidates root
+binding and consumes exact approvals. TroCode, provider, database, analytics,
+and release secrets are not inherited. The shell is not an OS
 sandbox: it starts in the selected directory, but an approved command can use
 absolute paths or the network. Patch operations, unlike shell commands, are
 structurally confined to the selected root.
@@ -106,10 +101,11 @@ structurally confined to the selected root.
 
 Screenshots, URLs, document text, file paths, typed input, voice transcripts,
 model reasoning, and raw tool arguments may contain private data. Do not write
-them to analytics logs. Task-history persistence is enabled only when the operator configures
-`DATABASE_URL`. It stores task requests, conversations, goal scope, and
-lifecycle outcomes under the verified Google user ID, but not raw screenshots,
-OAuth tokens, or model-provider credentials. Hosted connections must use TLS,
+them to analytics logs. Task-history persistence is owned by the Rust API when
+its `DATABASE_URL` is configured. Electron never receives that credential. The
+API stores task requests, conversations, goal scope, and lifecycle outcomes
+under the verified Google user ID, but not raw screenshots, OAuth tokens, or
+model-provider credentials. Hosted connections must use TLS,
 a least-privilege database role, access controls, and an explicit retention
 policy. Rich screenshot or document trajectory storage remains out of scope and
 should be opt-in and encrypted.
@@ -194,12 +190,6 @@ contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
 
-The membership signing private key is an administrative secret and must never
-be added to the repository, Doppler application runtime, analytics, or a
-release bundle. Only the Ed25519 public key is compiled into packaged builds.
-Offline activation codes support account binding and expiry but not immediate
-revocation or authoritative time; those require an authenticated backend.
-
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling
 does not widen authority or bypass exact-action approvals.
@@ -207,10 +197,12 @@ does not widen authority or bypass exact-action approvals.
 Backend ownership does not move local authority to Railway. A protocol-v2
 durable tool call carries a typed effect proposal, intent revision, approval
 requirement, authorization source, and independent consequence bit. Only the
-exact signed-in desktop worker may transition it to executing, after repeating
-schema validation, workspace binding, effect normalization, policy, and any
-one-use approval. A stale worker result is rejected. Loss after executing is
-recorded as unknown and blocks completion rather than replaying the effect.
+exact signed-in desktop worker may transition it to executing, after Electron
+repeats schema/workspace binding and the bundled Rust engine performs effect
+normalization, policy, and intent matching. Electron presents and consumes any
+one-use approval before dispatch. A stale worker result is rejected. Loss after
+executing is recorded as unknown and blocks completion rather than replaying
+the effect.
 
 ## Release requirements
 

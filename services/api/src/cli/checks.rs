@@ -7,10 +7,8 @@ use std::{
 use anyhow::Context;
 use serde::Deserialize;
 
-const EXPECTED_AGENT_RUNTIME_VERSIONS: [(&str, &str); 5] = [
-    ("@openai/agents", "0.17.0"),
+const EXPECTED_AGENT_RUNTIME_VERSIONS: [(&str, &str); 3] = [
     ("@trycua/cua-driver", "0.19.3"),
-    ("openai", "7.5.0"),
     ("playwright-core", "1.62.1"),
     ("zod", "4.4.3"),
 ];
@@ -155,7 +153,7 @@ mod tests {
         let mut manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(&manifest_path).expect("manifest read"))
                 .expect("manifest JSON");
-        manifest["dependencies"]["openai"] = serde_json::json!("latest");
+        manifest["dependencies"]["playwright-core"] = serde_json::json!("latest");
         fs::write(
             &manifest_path,
             serde_json::to_vec(&manifest).expect("changed manifest"),

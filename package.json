@@ -77,7 +77,6 @@
     "@electron-forge/publisher-github": "^7.11.2",
     "@electron/fuses": "^1.8.0",
     "@types/node": "^26.2.0",
-    "@types/pg": "^8.21.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/ws": "^8.18.1",
@@ -101,11 +100,8 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@openai/agents": "0.17.0",
     "@trycua/cua-driver": "0.19.3",
     "electron-squirrel-startup": "^1.0.1",
-    "openai": "7.5.0",
-    "pg": "^8.23.0",
     "playwright-core": "1.62.1",
     "posthog-node": "^5.49.1",
     "react": "^19.2.8",

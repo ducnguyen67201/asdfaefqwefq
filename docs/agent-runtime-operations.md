@@ -1,69 +1,56 @@
-# Durable agent runtime operations
+# Durable Rust agent runtime operations
 
-The backend runtime is disabled by default. Enabling it requires a dedicated
-32-byte AES key encoded as `version:base64`, a nonzero canary cohort, current
-desktop protocol support, and a published privacy notice covering encrypted
-short-lived task state.
+The Rust runtime is the only task backend. New tasks require a configured API,
+an authenticated opaque device session, protocol v2, a compatible v8 authority
+contract, and a healthy desktop-engine handshake. Failure at any gate is
+fail-closed; there is no TypeScript rollback loop.
 
 ## Rollout
 
-1. Set `TROCODE_BACKEND_AGENT_ENABLED=true` and keep rollout at `0`.
-2. Add internal user IDs to `TROCODE_BACKEND_AGENT_CANARY_USERS`.
-3. Deploy protocol v2 and migration 015, set
-   `TROCODE_INTENT_AUTHORIZATION_ENABLED=true`, and add internal IDs to
-   `TROCODE_INTENT_AUTHORIZATION_CANARY_USERS`. Keep its rollout percent at `0`.
-4. Run the deterministic reliability benchmark and packaged macOS/Windows
-   restart, reconnect, approval, permission, and sign-out checks.
-5. Advance intent authorization through internal, 1%, 5%, 25%, then 100% only
-   when false completion, duplicate consequential action, and hard-confirm
-   bypass counts remain zero; recovery stays above 95%; and unnecessary
-   approvals materially decrease.
+1. Configure `TROCODE_BACKEND_AGENT_ENABLED=true` on the Rust API.
+2. Configure the versioned 32-byte agent-state encryption key and session HMAC
+   key.
+3. Deploy current migrations and protocol v2 desktop builds.
+4. Add internal IDs or raise the backend rollout percentage.
+5. Enable intent authorization for the same cohort, then advance gradually.
+6. Require zero false completions, duplicate consequential actions, and
+   hard-confirm bypasses before broadening the cohort.
 
-Assignment uses an HMAC of the user ID, so cohorts do not change per request.
-The intent kill switch creates fail-closed v8 contracts with no instruction
-grants for new tasks. Existing v8 tasks retain their encrypted contract, remain
-visible/cancellable, and are never restarted as duplicate v7/local runs.
-The desktop-only fallback also emits fail-closed v8 authority; instruction
-grants become active only from a compatible backend-owned canary contract.
+Assignment uses an HMAC of the user ID, so cohorts remain stable. Disabling
+intent authorization creates new Rust contracts with no instruction grants;
+stored contracts are not rewritten.
 
 ## Incident checks
 
-- Query nonterminal `agent_runs` by state, deadline, lease owner, and lease
-  expiry. Do not select ciphertext columns during routine operations.
-- A run in `awaiting_worker` needs a current signed-in desktop heartbeat.
-- An expired lease in a runnable state is reclaimable. Repeated recovery stops
-  at the configured ceiling and becomes blocked.
-- An invocation in `executing` after desktop loss is ambiguous. Mark it unknown
-  and do not manually set it to confirmed.
-- Use the global enable flag for provider, schema, encryption, or false-
-  completion incidents. Preserve in-flight records for inspection/cancellation.
-- Use `TROCODE_INTENT_AUTHORIZATION_ENABLED=false` for authorization-policy
-  incidents. Do not rewrite stored intent revisions or executing invocations.
-- Reject protocol-v1 workers. Legacy protocol-v1 runs remain visible and
-  cancellable but do not inherit protocol-v2 instruction grants.
-- Rotate any PostgreSQL credential exposed in a chat, log, screenshot, or
-  support trace before deployment; do not use it for rollout validation.
+- Inspect nonterminal `agent_runs` by state, deadline, lease owner, and lease
+  expiry without selecting ciphertext columns.
+- `awaiting_worker` requires a current signed-in desktop heartbeat.
+- An expired lease in a runnable state may be reclaimed by Rust.
+- An invocation left in `executing` after worker loss is unknown. Never mark it
+  confirmed or replay it manually.
+- Disable the Rust runtime for provider, schema, encryption, or false-completion
+  incidents. Existing runs remain inspectable and cancellable.
+- Disable intent authorization for authorization incidents; do not modify stored
+  revisions or in-flight invocations.
+- Reject protocol-v1 workers.
 
 ## Key rotation and retention
 
-Add the new key alongside the previous key, increment
+Add the new encryption key alongside the previous key, increment
 `TROCODE_AGENT_STATE_KEY_VERSION`, and write only with the new version. Retain
-old read keys until every older encrypted payload has passed its TTL and cleanup
-has run. Never reuse the device-session HMAC key for agent state.
+old read keys until older encrypted payloads have passed their TTL and cleanup
+has run. Never reuse the device-session HMAC key.
 
-Cleanup deletes expired checkpoints and session items and removes sensitive
-evidence detail while retaining sanitized lifecycle and billing rows. Screenshot
-bytes are memory-only and disappear on consumption, timeout, or process exit.
+Cleanup deletes expired checkpoints and sensitive session items while retaining
+sanitized lifecycle and billing rows. Screenshot bytes are device-memory-only.
 
 ## Release gates
 
 - `npm run agent:benchmark -- --baseline <json> --candidate <json>`
 - `npm run check`
+- `npm run bazel:check`
 - `npm run package`
-- zero false completions;
-- zero duplicate consequential actions;
-- zero hard-confirm bypasses;
-- lower unnecessary approvals and approvals per verified success;
-- stale workers rejected;
-- API and desktop restart recovery demonstrated;
-- privacy and security documentation matches the deployed data flow.
+- packaged Rust engine handshake on macOS and Windows;
+- stale-worker rejection and restart recovery;
+- zero duplicate consequential actions and hard-confirm bypasses;
+- privacy documentation matching the deployed data flow.

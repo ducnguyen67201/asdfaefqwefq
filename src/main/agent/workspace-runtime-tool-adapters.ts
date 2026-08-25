@@ -7,7 +7,7 @@ import type {
   WorkspaceFilesystemToolInput,
   WorkspaceTerminalToolInput,
 } from './runtime-tool-registry';
-import { WorkspaceEditor, WorkspaceShell } from './workspace-agent-tools';
+import { WorkspaceEditor, WorkspaceShell } from './workspace-device-adapters';
 
 const MAX_RETURNED_FILE_CHARACTERS = 100_000;
 

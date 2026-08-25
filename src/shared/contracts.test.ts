@@ -213,7 +213,7 @@ describe('shared task contracts', () => {
       schemaVersion: 6,
       id: randomUUID(),
       originalRequest: 'Help me debug this Activity',
-      runtimeKind: 'openai_agents',
+      runtimeKind: 'rust_hosted',
       executionProfile: 'everyday',
       autonomyMode: 'balanced',
       workspace: null,
@@ -591,11 +591,11 @@ describe('shared task contracts', () => {
           maxToolCalls: 30,
         },
         originalRequest: 'Fix the tests.',
-        runtimeKind: 'openai_agents',
+        runtimeKind: 'rust_hosted',
         schemaVersion: 5,
         workspace,
       }),
-    ).toMatchObject({ runtimeKind: 'openai_agents', workspace });
+    ).toMatchObject({ runtimeKind: 'rust_hosted', workspace });
     expect(
       SubmitTaskRequestSchema.parse({
         executionProfile: 'workspace',

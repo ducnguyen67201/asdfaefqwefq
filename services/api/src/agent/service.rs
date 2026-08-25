@@ -18,7 +18,9 @@ use crate::{
     validation::{js_string_len, zod_uuid},
 };
 
-const TOOLS: &[(&str, &[&str])] = &[
+use super::policy::{compile_intent_authorization, empty_intent_authorization};
+
+pub(super) const TOOLS: &[(&str, &[&str])] = &[
     ("application.launch", &["launch"]),
     ("browser.navigate", &["open_url"]),
     (
@@ -94,21 +96,45 @@ impl AgentService {
         }
     }
     pub fn enabled_for(&self, user: &str) -> bool {
-        if !self.config.enabled {
+        self.rollout_enabled(
+            user,
+            "backend-agent-rollout",
+            self.config.enabled,
+            &self.config.canary_users,
+            self.config.rollout_percent,
+        )
+    }
+
+    fn intent_authorization_enabled_for(&self, user: &str) -> bool {
+        let rollout = &self.config.intent_authorization;
+        self.rollout_enabled(
+            user,
+            "intent-authorization-rollout",
+            rollout.enabled,
+            &rollout.canary_users,
+            rollout.rollout_percent,
+        )
+    }
+
+    fn rollout_enabled(
+        &self,
+        user: &str,
+        label: &str,
+        enabled: bool,
+        canary_users: &BTreeSet<String>,
+        percent: u8,
+    ) -> bool {
+        if !enabled {
             return false;
         }
-        if self.config.canary_users.contains(user) {
+        if canary_users.contains(user) || percent >= 100 {
             return true;
         }
-        let percent = self.config.rollout_percent;
         if percent == 0 {
             return false;
         }
-        if percent >= 100 {
-            return true;
-        }
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&self.hmac_key).expect("validated key");
-        mac.update(format!("backend-agent-rollout:{user}").as_bytes());
+        mac.update(format!("{label}:{user}").as_bytes());
         let bytes = mac.finalize().into_bytes();
         u32::from_be_bytes(bytes[..4].try_into().expect("four bytes")) % 10_000
             < u32::from(percent) * 100
@@ -200,6 +226,7 @@ impl AgentService {
             value["newlyCreated"] = Value::Bool(false);
             value["request"] = Value::String(self.decrypt_request(&row)?);
             let contract = self.decrypt_contract(&row)?;
+            value["contract"] = contract.clone();
             value["contractSchemaVersion"] = contract["schemaVersion"].clone();
             value["autonomyMode"] = contract["autonomyMode"].clone();
             value["outcomeContract"] = contract["outcomeContract"].clone();
@@ -241,7 +268,12 @@ impl AgentService {
             &json!({"kind":"agent_run_request","runId":run,"schemaVersion":1}),
         )?;
         let outcomes = outcome_contract(request, profile);
-        let contract = json!({"schemaVersion":8,"id":Uuid::new_v4(),"originalRequest":request,"runtimeKind":"openai_agents","executionProfile":profile,"autonomyMode":autonomy,"workspaceSelectionId":workspace,"activity":activity,"outcomeContract":outcomes,"intentAuthorization":{"schemaVersion":1,"revision":1,"source":"user_instruction","grants":[]},"approvalPolicy":{"alwaysConfirmEffects":["send_communication","delete_or_archive","unexpected_overwrite","publish","deploy","merge","financial_or_trade","authentication_or_credential","system_permission","install","sensitive_transfer","unknown"]},"limits":{"maxImages":20,"maxMicroUsd":5_000_000,"maxMinutes":30,"maxModelSamples":40,"maxToolCalls":30}});
+        let intent_authorization = if self.intent_authorization_enabled_for(user) {
+            compile_intent_authorization(request, profile, 1).map_err(ApiError::internal)?
+        } else {
+            empty_intent_authorization(1)
+        };
+        let contract = json!({"schemaVersion":8,"id":Uuid::new_v4(),"originalRequest":request,"runtimeKind":"rust_hosted","executionProfile":profile,"autonomyMode":autonomy,"workspaceSelectionId":workspace,"activity":activity,"outcomeContract":outcomes,"intentAuthorization":intent_authorization,"approvalPolicy":{"alwaysConfirmEffects":["send_communication","delete_or_archive","unexpected_overwrite","publish","deploy","merge","financial_or_trade","authentication_or_credential","system_permission","install","sensitive_transfer","unknown"]},"limits":{"maxImages":20,"maxMicroUsd":5_000_000,"maxMinutes":30,"maxModelSamples":40,"maxToolCalls":30}});
         let contract_envelope = self.crypto.encrypt_json(
             &contract,
             &json!({"kind":"agent_run_contract","runId":run,"schemaVersion":8}),
@@ -272,6 +304,7 @@ impl AgentService {
         let mut value = self.public_run(&row)?;
         value["newlyCreated"] = Value::Bool(true);
         value["request"] = Value::String(request.to_owned());
+        value["contract"] = contract.clone();
         value["outcomeContract"] = outcomes;
         value["contractSchemaVersion"] = json!(8);
         value["autonomyMode"] = Value::String(autonomy.to_owned());
@@ -292,6 +325,7 @@ impl AgentService {
                     .unwrap_or_else(|_| "Expired private task content.".to_owned()),
             );
             if let Ok(contract) = self.decrypt_contract(&row) {
+                value["contract"] = contract.clone();
                 value["contractSchemaVersion"] = json!(8);
                 value["autonomyMode"] = contract["autonomyMode"].clone();
                 value["outcomeContract"] = contract["outcomeContract"].clone();
@@ -317,6 +351,7 @@ impl AgentService {
                     .unwrap_or_else(|_| "Expired private task content.".to_owned()),
             );
             if let Ok(contract) = self.decrypt_contract(&row) {
+                value["contract"] = contract.clone();
                 value["contractSchemaVersion"] = contract["schemaVersion"].clone();
                 value["autonomyMode"] = contract["autonomyMode"].clone();
                 value["outcomeContract"] = contract["outcomeContract"].clone();
@@ -338,7 +373,23 @@ impl AgentService {
             append_event(&mut tx, run, "run.cancelled", "Task cancelled.", None).await?;
         }
         tx.commit().await?;
-        row.map(|row| self.public_run(&row)).transpose()
+        row.map(|row| {
+            let mut value = self.public_run(&row)?;
+            value["request"] = Value::String(
+                self.decrypt_request(&row)
+                    .unwrap_or_else(|_| "Expired private task content.".to_owned()),
+            );
+            if let Ok(contract) = self.decrypt_contract(&row) {
+                value["contract"] = contract.clone();
+                value["contractSchemaVersion"] = contract["schemaVersion"].clone();
+                value["autonomyMode"] = contract["autonomyMode"].clone();
+                value["outcomeContract"] = contract["outcomeContract"].clone();
+                value["intentAuthorization"] = contract["intentAuthorization"].clone();
+                value["activity"] = contract["activity"].clone();
+            }
+            Ok(value)
+        })
+        .transpose()
     }
     pub async fn control(
         &self,

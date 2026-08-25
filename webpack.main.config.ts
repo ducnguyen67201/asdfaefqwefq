@@ -30,9 +30,6 @@ export const mainConfig: Configuration = {
       'process.env.GOOGLE_OAUTH_CLIENT_ID': JSON.stringify(
         process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
       ),
-      'process.env.GOOGLE_OAUTH_CLIENT_SECRET': JSON.stringify(
-        process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '',
-      ),
       'process.env.POSTHOG_ENVIRONMENT': JSON.stringify(
         process.env.POSTHOG_ENVIRONMENT ?? '',
       ),
@@ -42,17 +39,8 @@ export const mainConfig: Configuration = {
       'process.env.POSTHOG_PROJECT_TOKEN': JSON.stringify(
         process.env.POSTHOG_PROJECT_TOKEN ?? '',
       ),
-      'process.env.TROCODE_MEMBERSHIP_PUBLIC_KEY': JSON.stringify(
-        process.env.TROCODE_MEMBERSHIP_PUBLIC_KEY ?? '',
-      ),
       'process.env.TROCODE_API_BASE_URL': JSON.stringify(
         process.env.TROCODE_API_BASE_URL ?? '',
-      ),
-      'process.env.TROCODE_BACKEND_AGENT_ENABLED': JSON.stringify(
-        process.env.TROCODE_BACKEND_AGENT_ENABLED ?? 'false',
-      ),
-      'process.env.TROCODE_AGENT_RUNTIME_ENABLED': JSON.stringify(
-        process.env.TROCODE_AGENT_RUNTIME_ENABLED ?? 'false',
       ),
     }),
   ],

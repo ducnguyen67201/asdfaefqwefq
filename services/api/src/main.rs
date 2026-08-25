@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use trocode_api::{app, cli, config::Config, observability};
+use trocode_api::{app, cli, config::Config, desktop_engine, observability};
 
 #[derive(Parser)]
 #[command(name = "trocode-api", version, about = "Tro hosted backend")]
@@ -14,6 +14,7 @@ struct Arguments {
 enum Command {
     Serve,
     IngestionWorker,
+    DesktopEngine,
     AccessCode {
         #[command(subcommand)]
         command: AccessCodeCommand,
@@ -98,11 +99,17 @@ enum MembershipCommand {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    observability::init();
     let arguments = Arguments::parse();
+    if matches!(&arguments.command, Command::DesktopEngine) {
+        return std::thread::spawn(desktop_engine::run)
+            .join()
+            .map_err(|_| anyhow::anyhow!("Rust desktop engine thread failed."))?;
+    }
+    observability::init();
     match arguments.command {
         Command::Serve => app::serve(Config::from_env()?).await,
         Command::IngestionWorker => app::ingestion_worker(Config::from_env()?).await,
+        Command::DesktopEngine => unreachable!("handled before tracing initialization"),
         Command::AccessCode {
             command:
                 AccessCodeCommand::Create {
