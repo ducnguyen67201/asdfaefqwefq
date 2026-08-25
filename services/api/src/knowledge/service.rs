@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use rand::RngCore;
@@ -9,7 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     error::{ApiError, ApiResult},
-    knowledge::ObjectStore,
+    knowledge::{
+        ClassroomRole, ObjectStore, SpaceRole, can_add_member, classroom_role_allows_space_role,
+    },
     usage::Plan,
     validation::{js_string_len, truncate_js_string, zod_uuid},
 };
@@ -49,6 +53,51 @@ fn invalid_request() -> ApiError {
         "invalid_request",
         "Request data is invalid.",
     )
+}
+fn classroom_role_error(classroom_role: &str) -> ApiError {
+    ApiError::coded(
+        http::StatusCode::FORBIDDEN,
+        if classroom_role == "unassigned" {
+            "classroom_role_required"
+        } else {
+            "classroom_role_mismatch"
+        },
+        "Your account role does not allow this class role.",
+    )
+}
+fn valid_email(value: &str) -> bool {
+    let value = value.trim();
+    if js_string_len(value) > 320 || !value.is_ascii() || value.matches('@').count() != 1 {
+        return false;
+    }
+    let Some((local, domain)) = value.split_once('@') else {
+        return false;
+    };
+    let local_valid = !local.is_empty()
+        && !local.starts_with('.')
+        && !local.contains("..")
+        && local
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_'+-.".contains(&byte))
+        && local
+            .as_bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || b"_+-".contains(byte));
+    let labels = domain.split('.').collect::<Vec<_>>();
+    let domain_valid = labels.len() >= 2
+        && labels.iter().all(|label| {
+            label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+        && labels.last().is_some_and(|label| {
+            label.len() >= 2 && label.bytes().all(|byte| byte.is_ascii_alphabetic())
+        });
+    local_valid && domain_valid
 }
 fn required_uuid(value: &Value, key: &str) -> ApiResult<Uuid> {
     zod_uuid(required_string(value, key, 64)?).ok_or_else(|| {
@@ -96,14 +145,24 @@ impl KnowledgeService {
         }
     }
     pub async fn role(&self, user: &str, space: Uuid, allowed: &[&str]) -> ApiResult<&'static str> {
-        let role:Option<String>=sqlx::query_scalar("SELECT role FROM knowledge_space_members WHERE space_id=$1 AND user_id=$2 AND removed_at IS NULL").bind(space).bind(user).fetch_optional(&self.pool).await?;
-        let Some(role) = role else {
+        let row=sqlx::query("SELECT members.role,users.classroom_role FROM knowledge_space_members members JOIN users ON users.id=members.user_id WHERE members.space_id=$1 AND members.user_id=$2 AND members.removed_at IS NULL").bind(space).bind(user).fetch_optional(&self.pool).await?;
+        let Some(row) = row else {
             return Err(ApiError::coded(
                 http::StatusCode::NOT_FOUND,
                 "space_not_found",
                 "Space not found.",
             ));
         };
+        let role: String = row.get("role");
+        let classroom_role: String = row.get("classroom_role");
+        let roles_are_compatible = ClassroomRole::parse(&classroom_role)
+            .zip(SpaceRole::parse(&role))
+            .is_some_and(|(classroom_role, space_role)| {
+                classroom_role_allows_space_role(classroom_role, space_role)
+            });
+        if !roles_are_compatible {
+            return Err(classroom_role_error(&classroom_role));
+        }
         if !allowed.contains(&role.as_str()) {
             return Err(ApiError::coded(
                 http::StatusCode::FORBIDDEN,
@@ -118,6 +177,11 @@ impl KnowledgeService {
         })
     }
     pub async fn list_spaces(&self, user: &str) -> ApiResult<Value> {
+        let classroom_role: Option<String> =
+            sqlx::query_scalar("SELECT classroom_role FROM users WHERE id=$1")
+                .bind(user)
+                .fetch_optional(&self.pool)
+                .await?;
         let mut rows=sqlx::query("SELECT spaces.id,spaces.name,spaces.description,spaces.purpose_label,members.role,spaces.created_at,spaces.updated_at FROM knowledge_spaces spaces JOIN knowledge_space_members members ON members.space_id=spaces.id WHERE members.user_id=$1 AND members.removed_at IS NULL AND spaces.archived_at IS NULL ORDER BY spaces.created_at DESC,spaces.id DESC LIMIT 51").bind(user).fetch_all(&self.pool).await?;
         let has_more = rows.len() > 50;
         rows.truncate(50);
@@ -132,7 +196,7 @@ impl KnowledgeService {
             None
         };
         Ok(
-            json!({"items":rows.into_iter().map(|row|json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":row.get::<String,_>("role"),"createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))})).collect::<Vec<_>>(),"nextCursor":next_cursor}),
+            json!({"classroomRole":classroom_role.unwrap_or_else(||"unassigned".to_owned()),"items":rows.into_iter().map(|row|json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":row.get::<String,_>("role"),"createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))})).collect::<Vec<_>>(),"nextCursor":next_cursor}),
         )
     }
     pub async fn create_space(
@@ -168,6 +232,18 @@ impl KnowledgeService {
             return Err(invalid_request());
         }
         let mut tx = self.pool.begin().await?;
+        let classroom_role: Option<String> =
+            sqlx::query_scalar("SELECT classroom_role FROM users WHERE id=$1 FOR UPDATE")
+                .bind(user)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if classroom_role.as_deref() != Some("teacher") {
+            return Err(ApiError::coded(
+                http::StatusCode::FORBIDDEN,
+                "teacher_role_required",
+                "An administrator must assign the Teacher role before you can create a class.",
+            ));
+        }
         let owned:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_spaces WHERE owner_user_id=$1 AND archived_at IS NULL").bind(user).fetch_one(&mut*tx).await?;
         if owned >= plan.space_count {
             return Err(ApiError::coded(
@@ -204,6 +280,8 @@ impl KnowledgeService {
         ))
     }
     pub async fn get_space(&self, user: &str, space: Uuid) -> ApiResult<Value> {
+        self.role(user, space, &["owner", "facilitator", "participant"])
+            .await?;
         let row=sqlx::query("SELECT spaces.id,spaces.name,spaces.description,spaces.purpose_label,spaces.created_at,spaces.updated_at,members.role FROM knowledge_spaces spaces JOIN knowledge_space_members members ON members.space_id=spaces.id WHERE spaces.id=$1 AND members.user_id=$2 AND members.removed_at IS NULL").bind(space).bind(user).fetch_optional(&self.pool).await?.ok_or_else(||ApiError::coded(http::StatusCode::NOT_FOUND,"space_not_found","Space not found."))?;
         Ok(
             json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":row.get::<String,_>("role"),"createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))}),
@@ -218,8 +296,7 @@ impl KnowledgeService {
         )
     }
     pub async fn list_groups(&self, user: &str, space: Uuid) -> ApiResult<Value> {
-        self.role(user, space, &["owner", "facilitator", "participant"])
-            .await?;
+        self.role(user, space, &["owner", "facilitator"]).await?;
         let rows=sqlx::query("SELECT groups.id,groups.name,groups.created_at,COUNT(members.user_id)::int participant_count FROM knowledge_space_groups groups LEFT JOIN knowledge_space_group_members members ON members.group_id=groups.id WHERE groups.space_id=$1 AND groups.archived_at IS NULL GROUP BY groups.id ORDER BY groups.created_at DESC,groups.id DESC LIMIT 500").bind(space).fetch_all(&self.pool).await?;
         Ok(
             json!({"items":rows.into_iter().map(|row|json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"createdAt":iso(Some(row.get("created_at"))),"participantCount":row.get::<i32,_>("participant_count")})).collect::<Vec<_>>() }),
@@ -243,11 +320,167 @@ impl KnowledgeService {
         )
     }
     pub async fn list_members(&self, user: &str, space: Uuid) -> ApiResult<Value> {
-        self.role(user, space, &["owner"]).await?;
-        let rows=sqlx::query("SELECT user_id,role,joined_at FROM knowledge_space_members WHERE space_id=$1 AND removed_at IS NULL ORDER BY joined_at,user_id LIMIT 2000").bind(space).fetch_all(&self.pool).await?;
+        self.role(user, space, &["owner", "facilitator"]).await?;
+        let rows=sqlx::query("SELECT members.user_id,members.role,members.joined_at,users.email,users.name,users.classroom_role FROM knowledge_space_members members JOIN users ON users.id=members.user_id WHERE members.space_id=$1 AND members.removed_at IS NULL ORDER BY members.joined_at,members.user_id LIMIT 2000").bind(space).fetch_all(&self.pool).await?;
         Ok(
-            json!({"items":rows.into_iter().map(|row|json!({"userId":row.get::<String,_>("user_id"),"role":row.get::<String,_>("role"),"joinedAt":iso(Some(row.get("joined_at")))})).collect::<Vec<_>>() }),
+            json!({"items":rows.into_iter().map(|row|json!({"classroomRole":row.get::<String,_>("classroom_role"),"email":row.get::<String,_>("email"),"joinedAt":iso(Some(row.get("joined_at"))),"name":row.get::<String,_>("name"),"role":row.get::<String,_>("role"),"userId":row.get::<String,_>("user_id")})).collect::<Vec<_>>() }),
         )
+    }
+    pub async fn add_members(&self, user: &str, space: Uuid, input: &Value) -> ApiResult<Value> {
+        if input.as_object().is_none_or(|object| {
+            object.len() != 3
+                || object
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "clientId" | "emails" | "role"))
+        }) {
+            return Err(invalid_request());
+        }
+        let client_id = required_uuid(input, "clientId")?;
+        let requested_role = SpaceRole::parse(required_string(input, "role", 20)?)
+            .filter(|role| matches!(role, SpaceRole::Facilitator | SpaceRole::Participant))
+            .ok_or_else(invalid_request)?;
+        let emails = input
+            .get("emails")
+            .and_then(Value::as_array)
+            .filter(|emails| (1..=500).contains(&emails.len()))
+            .ok_or_else(invalid_request)?;
+        let mut normalized_emails = Vec::with_capacity(emails.len());
+        let mut seen = HashSet::with_capacity(emails.len());
+        for value in emails {
+            let email = value.as_str().map(str::trim).ok_or_else(invalid_request)?;
+            if !valid_email(email) {
+                return Err(invalid_request());
+            }
+            let email = email.to_lowercase();
+            if seen.insert(email.clone()) {
+                normalized_emails.push(email);
+            }
+        }
+
+        let actor_role = self.role(user, space, &["owner", "facilitator"]).await?;
+        let actor_role = SpaceRole::parse(actor_role).ok_or_else(invalid_request)?;
+        if !can_add_member(actor_role, requested_role) {
+            return Err(ApiError::coded(
+                http::StatusCode::FORBIDDEN,
+                "space_forbidden",
+                "Teachers can only add students to a class they do not own.",
+            ));
+        }
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("members:{space}"))
+            .execute(&mut *tx)
+            .await?;
+        if let Some(result) = sqlx::query_scalar::<_, Value>(
+            "SELECT result FROM knowledge_space_member_batches WHERE space_id=$1 AND client_id=$2",
+        )
+        .bind(space)
+        .bind(client_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            tx.commit().await?;
+            return Ok(result);
+        }
+
+        let rows = sqlx::query(
+            "SELECT id,email,classroom_role,blocked_at FROM users WHERE LOWER(email)=ANY($1::text[]) FOR UPDATE",
+        )
+        .bind(&normalized_emails)
+        .fetch_all(&mut *tx)
+        .await?;
+        let mut users_by_email: HashMap<String, Vec<(String, String, String, bool)>> =
+            HashMap::new();
+        for row in rows {
+            let email: String = row.get("email");
+            users_by_email
+                .entry(email.to_lowercase())
+                .or_default()
+                .push((
+                    row.get("id"),
+                    email,
+                    row.get("classroom_role"),
+                    row.get::<Option<OffsetDateTime>, _>("blocked_at").is_some(),
+                ));
+        }
+        let mut unavailable_emails = Vec::new();
+        let mut role_mismatch_emails = Vec::new();
+        let mut eligible_users = Vec::new();
+        for email in &normalized_emails {
+            let Some(candidates) = users_by_email.get(email) else {
+                unavailable_emails.push(email.clone());
+                continue;
+            };
+            if candidates.len() != 1 || candidates[0].3 {
+                unavailable_emails.push(email.clone());
+            } else {
+                let account_role = ClassroomRole::parse(&candidates[0].2);
+                if account_role.is_some_and(|account_role| {
+                    classroom_role_allows_space_role(account_role, requested_role)
+                }) {
+                    eligible_users.push(candidates[0].clone());
+                } else {
+                    role_mismatch_emails.push(email.clone());
+                }
+            }
+        }
+        let eligible_ids = eligible_users
+            .iter()
+            .map(|candidate| candidate.0.clone())
+            .collect::<Vec<_>>();
+        let existing_ids = if eligible_ids.is_empty() {
+            HashSet::new()
+        } else {
+            sqlx::query_scalar::<_, String>(
+                "SELECT user_id FROM knowledge_space_members WHERE space_id=$1 AND user_id=ANY($2::text[]) AND removed_at IS NULL",
+            )
+            .bind(space)
+            .bind(&eligible_ids)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect::<HashSet<_>>()
+        };
+        let already_member_emails = eligible_users
+            .iter()
+            .filter(|candidate| existing_ids.contains(&candidate.0))
+            .map(|candidate| candidate.1.to_lowercase())
+            .collect::<Vec<_>>();
+        let users_to_add = eligible_users
+            .iter()
+            .filter(|candidate| !existing_ids.contains(&candidate.0))
+            .collect::<Vec<_>>();
+        if !users_to_add.is_empty() {
+            let ids = users_to_add
+                .iter()
+                .map(|candidate| candidate.0.clone())
+                .collect::<Vec<_>>();
+            sqlx::query("INSERT INTO knowledge_space_members(space_id,user_id,role) SELECT $1,users.id,$2 FROM users WHERE users.id=ANY($3::text[]) ON CONFLICT(space_id,user_id)DO UPDATE SET role=EXCLUDED.role,removed_at=NULL,joined_at=NOW()")
+                .bind(space)
+                .bind(requested_role.as_str())
+                .bind(ids)
+                .execute(&mut *tx)
+                .await?;
+        }
+        let result = json!({
+            "addedEmails":users_to_add.iter().map(|candidate|candidate.1.to_lowercase()).collect::<Vec<_>>(),
+            "alreadyMemberEmails":already_member_emails,
+            "requestedRole":requested_role.as_str(),
+            "roleMismatchEmails":role_mismatch_emails,
+            "spaceId":space,
+            "unavailableEmails":unavailable_emails,
+        });
+        sqlx::query("INSERT INTO knowledge_space_member_batches(client_id,space_id,requested_role,created_by,result)VALUES($1,$2,$3,$4,$5)")
+            .bind(client_id)
+            .bind(space)
+            .bind(requested_role.as_str())
+            .bind(user)
+            .bind(&result)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(result)
     }
     fn invite_digest(&self, code: &str) -> ApiResult<Vec<u8>> {
         let mut mac =
@@ -256,7 +489,6 @@ impl KnowledgeService {
         Ok(mac.finalize().into_bytes().to_vec())
     }
     pub async fn create_invite(&self, user: &str, space: Uuid, input: &Value) -> ApiResult<Value> {
-        self.role(user, space, &["owner"]).await?;
         if input.as_object().is_none_or(|object| {
             object.keys().any(|key| {
                 !matches!(
@@ -274,6 +506,16 @@ impl KnowledgeService {
                 http::StatusCode::BAD_REQUEST,
                 "invalid_request",
                 "Request data is invalid.",
+            ));
+        }
+        let actor_role = self.role(user, space, &["owner", "facilitator"]).await?;
+        let actor_role = SpaceRole::parse(actor_role).ok_or_else(invalid_request)?;
+        let requested_role = SpaceRole::parse(role).ok_or_else(invalid_request)?;
+        if !can_add_member(actor_role, requested_role) {
+            return Err(ApiError::coded(
+                http::StatusCode::FORBIDDEN,
+                "space_forbidden",
+                "Teachers can only add students to a class they do not own.",
             ));
         }
         let max = input
@@ -331,6 +573,27 @@ impl KnowledgeService {
         let max: i32 = row.get("max_uses");
         let revoked: Option<OffsetDateTime> = row.get("revoked_at");
         let expires: Option<OffsetDateTime> = row.get("expires_at");
+        let invite_role = SpaceRole::parse(&role).ok_or_else(invalid_request)?;
+        let account =
+            sqlx::query("SELECT classroom_role,blocked_at FROM users WHERE id=$1 FOR UPDATE")
+                .bind(user)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let account_matches = account.is_some_and(|account| {
+            account
+                .get::<Option<OffsetDateTime>, _>("blocked_at")
+                .is_none()
+                && ClassroomRole::parse(&account.get::<String, _>("classroom_role")).is_some_and(
+                    |classroom_role| classroom_role_allows_space_role(classroom_role, invite_role),
+                )
+        });
+        if !account_matches {
+            return Err(ApiError::coded(
+                http::StatusCode::FORBIDDEN,
+                "classroom_role_mismatch",
+                "This invite does not match the role assigned to your account.",
+            ));
+        }
         let already_redeemed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM knowledge_space_invite_redemptions WHERE invite_id=$1 AND user_id=$2)")
             .bind(id)
             .bind(user)
@@ -358,7 +621,7 @@ impl KnowledgeService {
         }
         if existing_role.is_none() {
             sqlx::query(
-                "INSERT INTO knowledge_space_members(space_id,user_id,role)VALUES($1,$2,$3)",
+                "INSERT INTO knowledge_space_members(space_id,user_id,role)VALUES($1,$2,$3)ON CONFLICT(space_id,user_id)DO UPDATE SET role=EXCLUDED.role,removed_at=NULL,joined_at=NOW()",
             )
             .bind(space)
             .bind(user)
@@ -414,5 +677,29 @@ impl KnowledgeService {
         }
         let truncated = row_count > results.len() || chars >= 12_000;
         Ok(json!({"results":results,"truncated":truncated}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_email;
+
+    #[test]
+    fn roster_email_validation_matches_the_desktop_contract() {
+        for email in [
+            "teacher@example.com",
+            "first.last+class_2@example-school.edu",
+        ] {
+            assert!(valid_email(email), "expected valid email: {email}");
+        }
+        for email in [
+            "a@b",
+            ".student@example.com",
+            "student..name@example.com",
+            "student@example.1com",
+            "é@example.com",
+        ] {
+            assert!(!valid_email(email), "expected invalid email: {email}");
+        }
     }
 }

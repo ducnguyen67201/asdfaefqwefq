@@ -216,9 +216,10 @@ checks database readiness. Railway starts the API from
 [`services/api`](services/api) and applies its idempotent session migration
 before accepting traffic.
 
-The in-progress Rust replacement builds from the same directory and is kept
-behind the current Node deployment until the parity and rollback gates in the
-[same-service cutover runbook](docs/operations/rust-backend-cutover.md) pass.
+The hosted API is implemented by the Rust `trocode-api` binary from
+[`services/api`](services/api). Production rollout still follows the parity and
+rollback gates in the
+[same-service cutover runbook](docs/operations/rust-backend-cutover.md).
 
 Run the backend locally with:
 
@@ -226,8 +227,8 @@ Run the backend locally with:
 cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 ```
 
-Run its unit/contract tests with `npm run api:test`, or the complete desktop,
-Node-oracle, and Rust-candidate gate with `npm run check`.
+Run its unit/contract tests with `npm run api:test`, or the complete desktop
+and Rust backend gate with `npm run check`.
 
 At sign-in, Electron verifies Google's JWT nonce and signature locally, then
 the API verifies it independently and exchanges it for a random opaque device

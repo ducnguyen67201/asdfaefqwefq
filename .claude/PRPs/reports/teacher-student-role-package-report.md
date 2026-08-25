@@ -28,8 +28,9 @@ already-added, and incorrectly assigned accounts are handled explicitly.
 - The existing admin dashboard now displays, filters, and updates classroom
   roles. Incompatible demotions/unassignment fail closed while active class
   memberships exist.
-- Hosted Space policy now combines the Admin-assigned account eligibility with
-  the exact `owner | facilitator | participant` membership in one class.
+- The Rust hosted Space policy now combines the Admin-assigned account
+  eligibility with the exact `owner | facilitator | participant` membership in
+  one class.
 - New bounded `POST /v1/spaces/:spaceId/members/bulk` and the existing member
   list are exposed through parsed hosted, Electron-main, preload, and renderer
   contracts. No raw IPC or generic database capability was added.
@@ -79,26 +80,24 @@ data-delivery, task lifecycle, and computer-control changes was preserved.
 
 ## Verification
 
-Passed after installing the lockfile-pinned dependencies with `npm ci` (zero
-reported vulnerabilities):
+The classroom backend is covered by Rust policy tests, migration/route/schema
+corpora, and ignored real Axum/PostgreSQL compatibility tests. The
+PostgreSQL-backed compatibility test encodes Admin assignment, Teacher-only
+class creation, teacher/student roster batches, idempotent replay, incompatible
+role changes, and invite redemption; running it still requires a disposable
+local PostgreSQL 17 `TEST_DATABASE_URL`.
 
-- `npm run check`
-  - runtime-version compatibility guard passed;
-  - ESLint passed;
-  - TypeScript passed;
-  - 108 Vitest files / 765 tests passed;
-  - 12 root Node tests passed;
-  - API suite: 141 passed, 1 skipped, 0 failed.
-- `npm run package` — Electron Forge packaged the macOS arm64 application.
-- `npm audit --audit-level=high` — zero vulnerabilities.
-- `node --check services/api/public/admin.js` — standalone Admin browser script
-  syntax passed.
-- `git diff --check` — passed.
+Passed locally in this cutover verification:
 
-The skipped API test is the existing PostgreSQL integration fixture. It remains
-environment-gated because `TEST_DATABASE_URL` was not configured. Migration
-ordering, forward-only reruns, role policy, admin assignment, service behavior,
-and repository bulk/idempotency behavior all passed in the normal suite.
+- Rust formatting, Clippy with warnings denied, unit tests, contract tests, and
+  release build;
+- root `npm test`, including the Rust API suite;
+- `npm run bazel:check`.
+
+`services/api` no longer contains a Node package, `.mjs` runtime, or Node
+backend tests. Full `npm run check` and `npm run package` were attempted after
+the Rust-only cleanup but were blocked by GitHub/network timeouts while fetching
+the RustSec advisory database and Electron packaging dependencies.
 
 ## Design validation
 
@@ -119,4 +118,6 @@ roster/group/run state or late responses from crossing class boundaries.
 Deploy migration 018 before a desktop/API pair that expects Knowledge contract
 version 2. Administrators should assign all newly created accounts before a
 Teacher attempts to add them. Existing owners/facilitators are backfilled to
-Teacher; participant-only accounts are backfilled to Student.
+Teacher; participant-only accounts are backfilled to Student. Production
+deployment remains an operator-controlled action and was not performed by this
+implementation change.

@@ -22,6 +22,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     http::{bearer, json_response, read_json, request_ip},
+    knowledge::{ClassroomRole, classroom_role_conflicts_with_memberships},
     usage::plan_for,
     validation::{js_string_len, zod_uuid},
 };
@@ -242,6 +243,17 @@ pub async fn handle(
                 json!({"id":user,"blockedAt":at.map(format_time),"status":if at.is_some(){"blocked"}else{"active"}}),
             )?));
         }
+        if parts[4] == "classroom-role" && method == Method::PATCH {
+            let input = read_json(headers, body, 4_096)?;
+            let role = input
+                .as_object()
+                .filter(|map| map.len() == 1)
+                .and_then(|map| map.get("role"))
+                .and_then(Value::as_str)
+                .filter(|value| matches!(*value, "unassigned" | "teacher" | "student"))
+                .ok_or_else(invalid)?;
+            return Ok(Some(set_classroom_role(state, &user, role).await?));
+        }
         if parts[4] == "access-code" && method == Method::POST {
             let input = read_json(headers, body, 4_096)?;
             let code = input
@@ -380,7 +392,14 @@ async fn list_users(state: &AppState, uri: &Uri) -> ApiResult<Response> {
     let (limit, offset, search) = page(uri)?;
     let values = params(uri);
     let status = values.get("status").map(String::as_str).unwrap_or("all");
+    let classroom = values
+        .get("classroomRole")
+        .map(String::as_str)
+        .unwrap_or("all");
     if !matches!(status, "all" | "active" | "blocked") {
+        return Err(invalid());
+    }
+    if !matches!(classroom, "all" | "unassigned" | "teacher" | "student") {
         return Err(invalid());
     }
     let pattern = if search.is_empty() {
@@ -393,14 +412,16 @@ async fn list_users(state: &AppState, uri: &Uri) -> ApiResult<Response> {
                 COUNT(*)FILTER(WHERE blocked_at IS NULL)::int active_users,
                 COUNT(*)FILTER(WHERE blocked_at IS NOT NULL)::int blocked_users,
                 COUNT(*)FILTER(WHERE($1=''OR email ILIKE $1 OR name ILIKE $1)
-                    AND($2='all'OR($2='active'AND blocked_at IS NULL)OR($2='blocked'AND blocked_at IS NOT NULL)))::int filtered_users
+                    AND($2='all'OR($2='active'AND blocked_at IS NULL)OR($2='blocked'AND blocked_at IS NOT NULL))
+                    AND($3='all'OR classroom_role=$3))::int filtered_users
          FROM users",
     )
     .bind(&pattern)
     .bind(status)
+    .bind(classroom)
     .fetch_one(&state.pool)
     .await?;
-    let rows=sqlx::query("SELECT users.id,users.email,users.name,users.plan,users.blocked_at,users.created_at,
+    let rows=sqlx::query("SELECT users.id,users.email,users.name,users.plan,users.classroom_role,users.blocked_at,users.created_at,
                                 redemptions.access_code_id,codes.label code_label,latest_session.last_seen_at,
                                 COUNT(*)OVER()::int filtered_total
                          FROM users
@@ -409,14 +430,64 @@ async fn list_users(state: &AppState, uri: &Uri) -> ApiResult<Response> {
                          LEFT JOIN LATERAL(SELECT MAX(last_used_at)last_seen_at FROM device_sessions WHERE user_id=users.id)latest_session ON TRUE
                          WHERE($1=''OR users.email ILIKE $1 OR users.name ILIKE $1)
                            AND($2='all'OR($2='active'AND users.blocked_at IS NULL)OR($2='blocked'AND users.blocked_at IS NOT NULL))
-                         ORDER BY users.created_at DESC,users.id LIMIT $3 OFFSET $4").bind(&pattern).bind(status).bind(limit).bind(offset).fetch_all(&state.pool).await?;
+                           AND($3='all'OR users.classroom_role=$3)
+                         ORDER BY users.created_at DESC,users.id LIMIT $4 OFFSET $5").bind(&pattern).bind(status).bind(classroom).bind(limit).bind(offset).fetch_all(&state.pool).await?;
     let total = rows.first().map_or_else(
         || summary.get::<i32, _>("filtered_users"),
         |row| row.get::<i32, _>("filtered_total"),
     );
     json_response(
         StatusCode::OK,
-        json!({"items":rows.into_iter().map(|row|{let blocked=row.get::<Option<time::OffsetDateTime>,_>("blocked_at");json!({"accessCodeId":row.get::<Option<Uuid>,_>("access_code_id"),"blockedAt":blocked.map(format_time),"codeLabel":row.get::<Option<String>,_>("code_label"),"createdAt":format_time(row.get("created_at")),"email":row.get::<String,_>("email"),"id":row.get::<String,_>("id"),"lastSeenAt":row.get::<Option<time::OffsetDateTime>,_>("last_seen_at").map(format_time),"name":row.get::<String,_>("name"),"plan":row.get::<String,_>("plan"),"status":if blocked.is_some(){"blocked"}else{"active"}})}).collect::<Vec<_>>(),"page":{"limit":limit,"offset":offset,"total":total},"summary":{"activeUsers":summary.get::<i32,_>("active_users"),"blockedUsers":summary.get::<i32,_>("blocked_users"),"totalUsers":summary.get::<i32,_>("total_users")}}),
+        json!({"items":rows.into_iter().map(|row|{let blocked=row.get::<Option<time::OffsetDateTime>,_>("blocked_at");json!({"accessCodeId":row.get::<Option<Uuid>,_>("access_code_id"),"blockedAt":blocked.map(format_time),"classroomRole":row.get::<String,_>("classroom_role"),"codeLabel":row.get::<Option<String>,_>("code_label"),"createdAt":format_time(row.get("created_at")),"email":row.get::<String,_>("email"),"id":row.get::<String,_>("id"),"lastSeenAt":row.get::<Option<time::OffsetDateTime>,_>("last_seen_at").map(format_time),"name":row.get::<String,_>("name"),"plan":row.get::<String,_>("plan"),"status":if blocked.is_some(){"blocked"}else{"active"}})}).collect::<Vec<_>>(),"page":{"limit":limit,"offset":offset,"total":total},"summary":{"activeUsers":summary.get::<i32,_>("active_users"),"blockedUsers":summary.get::<i32,_>("blocked_users"),"totalUsers":summary.get::<i32,_>("total_users")}}),
+    )
+}
+async fn set_classroom_role(state: &AppState, user: &str, classroom: &str) -> ApiResult<Response> {
+    let mut tx = state.pool.begin().await?;
+    let row = sqlx::query("SELECT id,classroom_role FROM users WHERE id=$1 FOR UPDATE")
+        .bind(user)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| {
+            ApiError::coded(StatusCode::NOT_FOUND, "user_not_found", "User not found.")
+        })?;
+    let roles = sqlx::query(
+        "SELECT role FROM knowledge_space_members WHERE user_id=$1 AND removed_at IS NULL",
+    )
+    .bind(user)
+    .fetch_all(&mut *tx)
+    .await?;
+    let classroom = ClassroomRole::parse(classroom).ok_or_else(invalid)?;
+    let membership_roles = roles
+        .iter()
+        .map(|row| row.get::<String, _>("role"))
+        .collect::<Vec<_>>();
+    let incompatible = classroom_role_conflicts_with_memberships(
+        classroom,
+        membership_roles.iter().map(String::as_str),
+    );
+    if incompatible {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "classroom_role_in_use",
+            "Remove incompatible class memberships before changing this role.",
+        ));
+    }
+    let updated = sqlx::query(
+        "UPDATE users SET classroom_role=$2,updated_at=NOW() WHERE id=$1 RETURNING id,classroom_role",
+    )
+    .bind(user)
+    .bind(classroom.as_str())
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO admin_audit_events(action,target_user_id,detail)VALUES('user.classroom_role_updated',$1,$2)")
+        .bind(user)
+        .bind(json!({"from":row.get::<String,_>("classroom_role"),"to":classroom.as_str()}))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    json_response(
+        StatusCode::OK,
+        json!({"classroomRole":updated.get::<String,_>("classroom_role"),"id":updated.get::<String,_>("id"),"kind":"updated"}),
     )
 }
 async fn list_usage(state: &AppState, uri: &Uri) -> ApiResult<Response> {

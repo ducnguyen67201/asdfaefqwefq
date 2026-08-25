@@ -225,11 +225,9 @@ its matching target.
 Build ownership is intentionally split. npm, Webpack, and Electron Forge own
 the renderer, preload, Electron main process, native CUA staging, signing, and
 desktop installers. Bazel owns only the Rust targets under `services/api`,
-using the root Cargo workspace as its dependency source. The in-place Rust
-backend candidate implements the hosted `/v1` contracts alongside the Node
-compatibility oracle. Railway continues to launch the Node entrypoint until the
-cutover gates and deployment runbook are completed; no Rust binary is bundled
-into the desktop application.
+using the root Cargo workspace as its dependency source. The Rust backend owns
+the hosted `/v1` contracts and runs as a hosted service artifact; no Rust binary
+is bundled into the desktop application.
 
 The local PostgreSQL task-history adapter remains a development foundation. The
 hosted PostgreSQL database stores users, revocable device-session digests, cost

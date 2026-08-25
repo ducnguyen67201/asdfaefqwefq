@@ -33,7 +33,7 @@ pub async fn handle(
     if method == Method::GET && path == "/v1/capabilities" {
         return Ok(Some(json_response(
             StatusCode::OK,
-            json!({"knowledgeSpaces":{"enabled":state.config.knowledge_spaces.enabled,"contractVersion":1}}),
+            json!({"knowledgeSpaces":{"enabled":state.config.knowledge_spaces.enabled,"contractVersion":2}}),
         )?));
     }
     if !state.config.knowledge_spaces.enabled || !matches_knowledge(path) {
@@ -185,6 +185,16 @@ async fn route(
             return json_response(
                 StatusCode::OK,
                 state.knowledge.list_members(user, space).await?,
+            );
+        }
+        if parts.len() == 5 && parts[3] == "members" && parts[4] == "bulk" && method == Method::POST
+        {
+            return json_response(
+                StatusCode::OK,
+                state
+                    .knowledge
+                    .add_members(user, space, &read_json(headers, body, 64_000)?)
+                    .await?,
             );
         }
         if parts.len() == 4 && parts[3] == "invites" && method == Method::POST {

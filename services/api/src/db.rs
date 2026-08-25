@@ -95,6 +95,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "free plan onboarding",
             include_str!("../migrations/017_free_plan_onboarding.sql"),
         ),
+        migration(
+            18,
+            "classroom roles",
+            include_str!("../migrations/018_classroom_roles.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

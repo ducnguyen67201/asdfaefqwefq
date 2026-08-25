@@ -1,12 +1,14 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK"
+    "builder": "RAILPACK",
+    "buildCommand": "cargo build --manifest-path services/api/Cargo.toml --release --locked"
   },
   "deploy": {
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 3,
+    "startCommand": "./target/release/trocode-api serve"
   }
 }

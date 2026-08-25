@@ -64,7 +64,7 @@ Submission is a separate participant action. The renderer previews relative path
 
 ## Deployment and rollback
 
-Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configuring private bucket credentials. Run `npm --prefix services/api run start:worker` as a separate Railway worker process. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied.
+Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configuring private bucket credentials. Run `cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker` as a separate worker process, or run the built `trocode-api ingestion-worker` artifact in production. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied.
 
 Back up PostgreSQL metadata and object storage together. Retention deletion must remove metadata and objects through an audited job; never infer object keys in desktop code. To roll back, disable the feature flag first, stop the worker after its current lease, and retain both stores. Disabling the flag hides desktop navigation and rejects feature routes without deleting data.
 

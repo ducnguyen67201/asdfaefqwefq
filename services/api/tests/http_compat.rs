@@ -387,6 +387,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let capabilities = send(&router, Method::GET, "/v1/capabilities", None, None).await;
     assert_status(&capabilities, StatusCode::OK);
     assert_eq!(capabilities.json()["knowledgeSpaces"]["enabled"], true);
+    assert_eq!(capabilities.json()["knowledgeSpaces"]["contractVersion"], 2);
     let asset = send(&router, Method::GET, "/source/admin", None, None).await;
     assert_status(&asset, StatusCode::OK);
     assert!(asset.headers.contains_key("content-security-policy"));
@@ -409,6 +410,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
 
     let owner_token = issue_user(&state, "http-owner").await;
     let participant_token = issue_user(&state, "http-participant").await;
+    let facilitator_token = issue_user(&state, "http-facilitator").await;
     assert_status(
         &send(
             &router,
@@ -443,6 +445,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_eq!(pending.json()["state"], "inactive");
     activate_basic(&router, &state, "http-owner", &owner_token).await;
     activate_basic(&router, &state, "http-participant", &participant_token).await;
+    activate_basic(&router, &state, "http-facilitator", &facilitator_token).await;
 
     assert_status(
         &send(
@@ -465,11 +468,27 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&admin_session, StatusCode::NO_CONTENT);
     assert!(admin_session.headers.contains_key("set-cookie"));
+    for (user, role) in [
+        ("http-owner", "teacher"),
+        ("http-participant", "student"),
+        ("http-facilitator", "teacher"),
+    ] {
+        let assigned = send(
+            &router,
+            Method::PATCH,
+            &format!("/v1/admin/users/{user}/classroom-role"),
+            Some(ADMIN_TOKEN),
+            Some(&json!({"role":role})),
+        )
+        .await;
+        assert_status(&assigned, StatusCode::OK);
+        assert_eq!(assigned.json()["classroomRole"], role);
+    }
     assert_status(
         &send(
             &router,
             Method::GET,
-            "/v1/admin/users?status=active&limit=10",
+            "/v1/admin/users?status=active&classroomRole=teacher&limit=10",
             Some(ADMIN_TOKEN),
             None,
         )
@@ -626,7 +645,91 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         );
     }
     let spaces = send(&router, Method::GET, "/v1/spaces", Some(&owner_token), None).await;
+    assert_eq!(spaces.json()["classroomRole"], "teacher");
     assert_eq!(spaces.json()["nextCursor"], Value::Null);
+    let participant_batch_id = Uuid::new_v4();
+    let added_participant = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":participant_batch_id,
+            "emails":[
+                "HTTP-PARTICIPANT@example.test",
+                "http-owner@example.test",
+                "missing@example.test"
+            ],
+            "role":"participant"
+        })),
+    )
+    .await;
+    assert_status(&added_participant, StatusCode::OK);
+    assert_eq!(
+        added_participant.json()["addedEmails"],
+        json!(["http-participant@example.test"])
+    );
+    assert_eq!(
+        added_participant.json()["roleMismatchEmails"],
+        json!(["http-owner@example.test"])
+    );
+    assert_eq!(
+        added_participant.json()["unavailableEmails"],
+        json!(["missing@example.test"])
+    );
+    let replayed_batch = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":participant_batch_id,
+            "emails":["different@example.test"],
+            "role":"participant"
+        })),
+    )
+    .await;
+    assert_status(&replayed_batch, StatusCode::OK);
+    assert_eq!(replayed_batch.json(), added_participant.json());
+    let added_facilitator = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":Uuid::new_v4(),
+            "emails":["http-facilitator@example.test"],
+            "role":"facilitator"
+        })),
+    )
+    .await;
+    assert_status(&added_facilitator, StatusCode::OK);
+    assert_eq!(
+        added_facilitator.json()["addedEmails"],
+        json!(["http-facilitator@example.test"])
+    );
+    let facilitator_cannot_add_teacher = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&facilitator_token),
+        Some(&json!({
+            "clientId":Uuid::new_v4(),
+            "emails":["http-owner@example.test"],
+            "role":"facilitator"
+        })),
+    )
+    .await;
+    assert_status(&facilitator_cannot_add_teacher, StatusCode::FORBIDDEN);
+    let owner_role_in_use = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-owner/classroom-role",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"role":"student"})),
+    )
+    .await;
+    assert_status(&owner_role_in_use, StatusCode::CONFLICT);
     let group = send(
         &router,
         Method::POST,

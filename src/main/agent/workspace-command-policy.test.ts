@@ -17,7 +17,7 @@ describe('WorkspaceCommandPolicy', () => {
     'npm run check',
     'npm run typecheck',
     'npx vitest run src/main/agent/policy.test.ts',
-    'node --test services/api/test/config.test.mjs',
+    'cargo test --manifest-path services/api/Cargo.toml --all-features --locked',
   ])('allows bounded validation: %s', (command) => {
     expect(classifyWorkspaceCommand(command).classification).toBe(
       'safe_validation',
