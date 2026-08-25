@@ -59,7 +59,9 @@ async fn apply_legacy_schema(pool: &trocode_api::PgPool) {
         include_str!("../migrations/015_intent_authorization.sql"),
         include_str!("../migrations/016_admin_code_grants.sql"),
         include_str!("../migrations/017_free_plan_onboarding.sql"),
-        include_str!("../migrations/018_live_classroom_room_flow.sql"),
+        include_str!("../migrations/018_classroom_roles.sql"),
+        include_str!("../migrations/019_invite_idempotency.sql"),
+        include_str!("../migrations/020_live_classroom_room_flow.sql"),
     ] {
         raw_sql(migration)
             .execute(pool)
@@ -89,8 +91,8 @@ async fn rust_migrations_are_idempotent_on_an_empty_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(sqlx_count, 18);
-    assert_eq!(table_count, 45, "44 domain tables plus SQLx bookkeeping");
+    assert_eq!(sqlx_count, 20);
+    assert_eq!(table_count, 46, "45 domain tables plus SQLx bookkeeping");
 }
 
 #[tokio::test]
@@ -111,7 +113,7 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(domain_table_count, 44);
+    assert_eq!(domain_table_count, 45);
 
     db::migrate(&pool).await.expect("Rust adoption migration");
     db::migrate(&pool).await.expect("Rust second-start no-op");
@@ -126,5 +128,5 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
         .fetch_one(&pool)
         .await
         .expect("SQLx bookkeeping count");
-    assert_eq!(sqlx_count, 18);
+    assert_eq!(sqlx_count, 20);
 }

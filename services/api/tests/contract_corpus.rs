@@ -131,8 +131,8 @@ fn route_inventory_is_unique_and_covers_every_family() {
 fn schema_inventory_matches_embedded_migrations() {
     let value = fixture("schema");
     let tables = value["tables"].as_array().expect("tables");
-    assert_eq!(tables.len(), 44);
-    assert_eq!(value["migrationCount"], 18);
+    assert_eq!(tables.len(), 45);
+    assert_eq!(value["migrationCount"], 20);
     let migration_sources = [
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),
@@ -151,7 +151,9 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/015_intent_authorization.sql"),
         include_str!("../migrations/016_admin_code_grants.sql"),
         include_str!("../migrations/017_free_plan_onboarding.sql"),
-        include_str!("../migrations/018_live_classroom_room_flow.sql"),
+        include_str!("../migrations/018_classroom_roles.sql"),
+        include_str!("../migrations/019_invite_idempotency.sql"),
+        include_str!("../migrations/020_live_classroom_room_flow.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

@@ -107,6 +107,17 @@ conversation are never uploaded. Submission always requires a separate exact
 file preview and user action. Agent evidence is policy-acknowledged, allowlisted,
 bounded, provenance-labeled, and cannot grade or change state.
 
+Classroom authorization has two server-owned layers. An administrator assigns
+the account-level Teacher or Student eligibility; the Space membership still
+authorizes operations in one exact class. Students can only hold participant
+memberships and never receive roster, group, upload, authoring, Run-management,
+insight, or help-resolution operations. Teachers receive those operations only
+where they are an owner or facilitator. A Teacher role never grants computer
+control, student-screen access, task conversations, or local files. Teacher-only
+rosters expose the registered account identity needed for class management
+(name, email, user ID, role, and join time) but do not join progress, evidence,
+sessions, conversations, screens, or files.
+
 Backend-agent canary runs are a separate, explicit privacy path: task text and
 bounded tool results are processed by Railway and short-lived operational state
 is stored under AES-256-GCM with authenticated run metadata and a dedicated

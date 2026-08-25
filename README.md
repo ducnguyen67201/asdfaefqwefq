@@ -1,4 +1,3 @@
-
 https://github.com/user-attachments/assets/ab86a7a6-d9e1-4645-bd5e-9090b13950b9
 
 # Tro
@@ -328,12 +327,12 @@ while new accounts are rejected.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
-| Plan | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM |
-|---|---:|---:|---:|---:|
-| Free | $0 | 25 | $1 | 15 |
-| Basic | $20 | 300 | $8 | 30 |
-| Pro | $50 | 750 | $20 | 45 |
-| Max | $100 | 1,875 | $45 | 60 |
+| Plan  | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM |
+| ----- | ----------------: | ------------------: | ----------------------: | ------------: |
+| Free  |                $0 |                  25 |                      $1 |            15 |
+| Basic |               $20 |                 300 |                      $8 |            30 |
+| Pro   |               $50 |                 750 |                     $20 |            45 |
+| Max   |              $100 |               1,875 |                     $45 |            60 |
 
 #### Admin dashboard
 
@@ -455,8 +454,8 @@ authenticated and proxied by Railway.
    computer** if CUA is not ready.
 2. Sign in to Gmail yourself. Tro will not type passwords.
 3. Enter a complete bounded request, for example: `Open Gmail, compose an
-   email from my work account to me@example.com with subject "Tro test"
-   and body "The desktop loop works", then send it after I approve.`
+email from my work account to me@example.com with subject "Tro test"
+and body "The desktop loop works", then send it after I approve.`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main

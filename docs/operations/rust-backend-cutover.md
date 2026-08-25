@@ -89,7 +89,7 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or consequential action because local completion is missing.
 7. Preserve logs, diagnostic rows, and backups. Do not delete or manually roll back domain data.
 
-The Rust backend owns all 18 domain migrations and SQLx bookkeeping. A temporary
+The Rust backend owns all 20 domain migrations and SQLx bookkeeping. A temporary
 rollback to a pre-Rust deployment is permitted only during the first monitored
 cutover window and must be proven against a scrubbed clone in staging; current
 source contains no legacy backend implementation.

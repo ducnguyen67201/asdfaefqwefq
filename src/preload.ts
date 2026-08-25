@@ -71,6 +71,9 @@ import {
   KnowledgeGroupListSchema,
   CreateKnowledgeGroupRequestSchema,
   KnowledgeGroupSchema,
+  KnowledgeSpaceMemberListSchema,
+  AddKnowledgeSpaceMembersRequestSchema,
+  AddKnowledgeSpaceMembersResultSchema,
   CreateKnowledgeInviteRequestSchema,
   KnowledgeInviteSchema,
   RedeemKnowledgeInviteRequestSchema,
@@ -220,6 +223,24 @@ const desktopApi: DesktopApi = {
       request,
     );
     return KnowledgeGroupSchema.parse(response);
+  },
+
+  async listKnowledgeMembers(spaceId) {
+    const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listKnowledgeMembers,
+      request,
+    );
+    return KnowledgeSpaceMemberListSchema.parse(response);
+  },
+
+  async addKnowledgeSpaceMembers(input) {
+    const request = AddKnowledgeSpaceMembersRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.addKnowledgeSpaceMembers,
+      request,
+    );
+    return AddKnowledgeSpaceMembersResultSchema.parse(response);
   },
 
   async createKnowledgeInvite(input) {

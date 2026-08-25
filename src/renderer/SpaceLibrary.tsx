@@ -8,40 +8,28 @@ import type {
 
 import { translate } from './app-language';
 
-type ContentRole = 'reference' | 'instructions' | 'rubric' | 'starter';
-
-const CONTENT_ROLE_DESCRIPTIONS: Record<ContentRole, string> = {
-  instructions: 'The task brief students and Tro use during class.',
-  reference:
-    'Background material Tro may retrieve when a student asks for help.',
-  rubric: 'Criteria used by Check and teacher review.',
-  starter: 'A safe starting workspace students can copy before they begin.',
-};
-
 export function SpaceLibrary({
   appLanguage,
-  canManage = true,
-  onChanged,
   sources,
   spaceId,
+  onChanged,
+  readOnly = false,
 }: {
   appLanguage: AppLanguage;
-  canManage?: boolean;
-  onChanged: () => void;
   sources: KnowledgeSourceList['items'];
   spaceId: string;
+  onChanged: () => void;
+  readOnly?: boolean;
 }) {
   const [selection, setSelection] = useState<KnowledgeFileSelection | null>(
     null,
   );
-  const [role, setRole] = useState<ContentRole>('reference');
+  const [role, setRole] = useState<
+    'reference' | 'instructions' | 'rubric' | 'starter'
+  >('reference');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const t = (
-    message: string,
-    values?: Readonly<Record<string, string | number>>,
-  ) => translate(appLanguage, message, values);
-
+  const t = (message: string) => translate(appLanguage, message);
   const choose = async (selectionKind: 'files' | 'folder') => {
     try {
       setSelection(
@@ -56,7 +44,6 @@ export function SpaceLibrary({
       );
     }
   };
-
   const upload = async () => {
     if (!selection) return;
     setBusy(true);
@@ -66,7 +53,6 @@ export function SpaceLibrary({
         selectionId: selection.selectionId,
       });
       setSelection(null);
-      setError(null);
       onChanged();
     } catch (cause) {
       setError(
@@ -78,83 +64,57 @@ export function SpaceLibrary({
       setBusy(false);
     }
   };
-
   return (
     <section
-      className="space-panel library-studio"
+      className="space-panel library-panel"
       aria-labelledby="library-heading"
     >
-      <div className="section-heading-row">
+      <div className="section-heading-row library-panel__heading">
         <div>
-          <p className="eyebrow">{t('Class sourcebook')}</p>
-          <h2 id="library-heading">{t('Materials')}</h2>
-          <p className="section-deck">
-            {canManage
-              ? t('Build the bounded source set Tro can use for this class.')
-              : t(
-                  'Only material published with your Activities is shared with you.',
-                )}
+          <p className="eyebrow">{t('Reusable content')}</p>
+          <h2 id="library-heading">{t('Library')}</h2>
+          <p>
+            {t(
+              'Text, Markdown, and PDF content is versioned, processed privately, and searched only inside assigned Activities.',
+            )}
           </p>
         </div>
-        <span
-          className="library-count"
-          aria-label={t('{count} sources', { count: sources.length })}
-        >
+        <span className="library-count" aria-label={t('Resource count')}>
           <strong>{sources.length}</strong>
-          <small>{t('sources')}</small>
+          {t(sources.length === 1 ? 'resource' : 'resources')}
         </span>
       </div>
-
-      {canManage && (
-        <div className="library-upload-station">
-          <div className="library-upload-copy">
-            <span className="step-index" aria-hidden="true">
-              01
-            </span>
-            <div>
-              <strong>{t('Add class material')}</strong>
-              <p>{t(CONTENT_ROLE_DESCRIPTIONS[role])}</p>
-            </div>
-          </div>
-          <div className="knowledge-actions library-upload-actions">
-            <label>
-              {t('Material type')}
-              <select
-                onChange={(event) => setRole(event.target.value as ContentRole)}
-                value={role}
-              >
-                <option value="reference">{t('Reference')}</option>
-                <option value="instructions">{t('Instructions')}</option>
-                <option value="rubric">{t('Rubric')}</option>
-                <option value="starter">{t('Starter files')}</option>
-              </select>
-            </label>
-            <button onClick={() => void choose('files')} type="button">
-              {t('Choose files')}
-            </button>
-            <button onClick={() => void choose('folder')} type="button">
-              {t('Snapshot folder')}
-            </button>
-          </div>
+      {!readOnly && (
+        <div className="knowledge-actions library-command-bar">
+          <label>
+            {t('Content role')}
+            <select
+              onChange={(event) => setRole(event.target.value as typeof role)}
+              value={role}
+            >
+              <option value="reference">{t('Reference')}</option>
+              <option value="instructions">{t('Instructions')}</option>
+              <option value="rubric">{t('Rubric')}</option>
+              <option value="starter">{t('Starter files')}</option>
+            </select>
+          </label>
+          <span className="library-command-bar__rule" aria-hidden="true" />
+          <button onClick={() => void choose('files')} type="button">
+            <span aria-hidden="true">↑</span> {t('Upload files')}
+          </button>
+          <button onClick={() => void choose('folder')} type="button">
+            <span aria-hidden="true">▱</span> {t('Snapshot folder')}
+          </button>
         </div>
       )}
-
-      {selection && canManage && (
-        <div className="upload-preview" aria-label={t('Review upload')}>
+      {!readOnly && selection && (
+        <div className="upload-preview">
           <div className="upload-preview__heading">
             <div>
-              <span
-                className="step-index step-index--complete"
-                aria-hidden="true"
-              >
-                ✓
-              </span>
-              <strong>{t('Review before upload')}</strong>
+              <p className="eyebrow">{t('Ready to add')}</p>
+              <strong>{t('Review upload')}</strong>
             </div>
-            <small>
-              {selection.files.length} {t('files')} ·{' '}
-              {Math.ceil(selection.totalBytes / 1024)} KB
-            </small>
+            <span>{selection.files.length}</span>
           </div>
           <ul>
             {selection.files.map((file) => (
@@ -164,48 +124,37 @@ export function SpaceLibrary({
               </li>
             ))}
           </ul>
-          <div className="upload-preview__actions">
-            <button onClick={() => setSelection(null)} type="button">
-              {t('Cancel')}
-            </button>
-            <button
-              className="primary-button"
-              disabled={busy}
-              onClick={() => void upload()}
-              type="button"
-            >
-              {busy ? t('Uploading…') : t('Upload reviewed files')}
-            </button>
-          </div>
+          <button
+            className="primary-button"
+            disabled={busy}
+            onClick={() => void upload()}
+            type="button"
+          >
+            {busy ? t('Uploading…') : t('Upload reviewed files')}
+          </button>
         </div>
       )}
-
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-
       {sources.length === 0 ? (
-        <div className="knowledge-empty knowledge-empty--material">
-          <span className="empty-illustration" aria-hidden="true">
-            ＋
-          </span>
+        <div className="knowledge-empty library-empty">
+          <span aria-hidden="true">∷</span>
           <div>
-            <strong>
-              {t(canManage ? 'Your sourcebook is empty' : 'No shared material')}
-            </strong>
+            <strong>{t('Library is empty')}</strong>
             <p>
               {t(
-                canManage
-                  ? 'Start with the exercise instructions, then add a rubric or reference material.'
-                  : 'Your teacher has not published material for this Space yet.',
+                readOnly
+                  ? 'Your Teacher has not shared class resources yet.'
+                  : 'Upload reusable references, instructions, rubrics, or starter material.',
               )}
             </p>
           </div>
         </div>
       ) : (
-        <div className="knowledge-table-shell">
+        <div className="library-table-wrap">
           <table className="knowledge-table">
             <thead>
               <tr>
@@ -218,8 +167,13 @@ export function SpaceLibrary({
               {sources.map((source) => (
                 <tr key={source.id}>
                   <td>
-                    <strong>{source.displayName}</strong>
-                    <small>{source.relativePath}</small>
+                    <span className="source-mark" aria-hidden="true">
+                      T
+                    </span>
+                    <span>
+                      <strong>{source.displayName}</strong>
+                      <small>{source.relativePath}</small>
+                    </span>
                   </td>
                   <td>
                     <span className="source-role">{t(source.role)}</span>
@@ -228,6 +182,7 @@ export function SpaceLibrary({
                     <span
                       className={`knowledge-status knowledge-status--${source.latestVersion?.state ?? 'pending'}`}
                     >
+                      <i aria-hidden="true" />
                       {t(source.latestVersion?.state ?? 'pending')}
                     </span>
                   </td>

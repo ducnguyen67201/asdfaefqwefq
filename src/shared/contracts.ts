@@ -1169,9 +1169,14 @@ export const SubmitTaskRequestSchema = z.object({
 export const KnowledgeCapabilitiesSchema = z.object({
   knowledgeSpaces: z.object({
     enabled: z.boolean(),
-    contractVersion: z.literal(1),
+    contractVersion: z.literal(2),
   }),
 });
+export const ClassroomAccountRoleSchema = z.enum([
+  'unassigned',
+  'teacher',
+  'student',
+]);
 export const KnowledgeSpaceSummarySchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(240),
@@ -1182,6 +1187,7 @@ export const KnowledgeSpaceSummarySchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export const KnowledgeSpaceListSchema = z.object({
+  classroomRole: ClassroomAccountRoleSchema,
   items: z.array(KnowledgeSpaceSummarySchema).max(500),
   nextCursor: z.object({ createdAt: z.string().datetime(), id: z.string().uuid() }).nullable(),
 });
@@ -1208,6 +1214,31 @@ export const CreateKnowledgeGroupRequestSchema = z.object({
   spaceId: z.string().uuid(),
   clientId: z.string().uuid(),
   name: z.string().trim().min(1).max(240),
+});
+export const KnowledgeSpaceMemberSchema = z.object({
+  classroomRole: ClassroomAccountRoleSchema,
+  email: z.string().email().max(320),
+  joinedAt: z.string().datetime(),
+  name: z.string().trim().min(1).max(255),
+  role: z.enum(['owner', 'facilitator', 'participant']),
+  userId: z.string().trim().min(1).max(255),
+});
+export const KnowledgeSpaceMemberListSchema = z.object({
+  items: z.array(KnowledgeSpaceMemberSchema).max(2_000),
+});
+export const AddKnowledgeSpaceMembersRequestSchema = z.object({
+  spaceId: z.string().uuid(),
+  clientId: z.string().uuid(),
+  emails: z.array(z.string().trim().email().max(320)).min(1).max(500),
+  role: z.enum(['facilitator', 'participant']),
+});
+export const AddKnowledgeSpaceMembersResultSchema = z.object({
+  addedEmails: z.array(z.string().email().max(320)).max(500),
+  alreadyMemberEmails: z.array(z.string().email().max(320)).max(500),
+  requestedRole: z.enum(['facilitator', 'participant']),
+  roleMismatchEmails: z.array(z.string().email().max(320)).max(500),
+  spaceId: z.string().uuid(),
+  unavailableEmails: z.array(z.string().email().max(320)).max(500),
 });
 export const CreateKnowledgeInviteRequestSchema = z.object({
   spaceId: z.string().uuid(),
@@ -2296,9 +2327,14 @@ export type WorkspaceRuntimeAvailability = z.infer<
 >;
 export type WorkspaceSelection = z.infer<typeof WorkspaceSelectionSchema>;
 export type KnowledgeCapabilities = z.infer<typeof KnowledgeCapabilitiesSchema>;
+export type ClassroomAccountRole = z.infer<typeof ClassroomAccountRoleSchema>;
 export type KnowledgeGroup = z.infer<typeof KnowledgeGroupSchema>;
 export type KnowledgeGroupList = z.infer<typeof KnowledgeGroupListSchema>;
 export type CreateKnowledgeGroupRequest = z.infer<typeof CreateKnowledgeGroupRequestSchema>;
+export type KnowledgeSpaceMember = z.infer<typeof KnowledgeSpaceMemberSchema>;
+export type KnowledgeSpaceMemberList = z.infer<typeof KnowledgeSpaceMemberListSchema>;
+export type AddKnowledgeSpaceMembersRequest = z.infer<typeof AddKnowledgeSpaceMembersRequestSchema>;
+export type AddKnowledgeSpaceMembersResult = z.infer<typeof AddKnowledgeSpaceMembersResultSchema>;
 export type CreateKnowledgeInviteRequest = z.infer<typeof CreateKnowledgeInviteRequestSchema>;
 export type KnowledgeInvite = z.infer<typeof KnowledgeInviteSchema>;
 export type RedeemKnowledgeInviteRequest = z.infer<typeof RedeemKnowledgeInviteRequestSchema>;

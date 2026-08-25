@@ -2012,20 +2012,20 @@ export function App({
           {knowledgeSpacesEnabled && (
             <>
               <button
-                aria-label={t('Knowledge Spaces')}
+                aria-label={t('Class workspaces')}
                 aria-current={activeView === 'spaces' ? 'page' : undefined}
                 className={`nav-item ${
                   activeView === 'spaces' ? 'nav-item--active' : ''
                 }`}
                 onClick={() => setActiveView('spaces')}
                 title={
-                  isSidebarCollapsed ? t('Knowledge Spaces') : undefined
+                  isSidebarCollapsed ? t('Class workspaces') : undefined
                 }
                 type="button"
               >
                 <NavigationIcon name="spaces" />
                 <span className="sidebar-item-label">
-                  {t('Knowledge Spaces')}
+                  {t('Class workspaces')}
                 </span>
               </button>
               <button

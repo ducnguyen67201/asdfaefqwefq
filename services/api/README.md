@@ -12,11 +12,11 @@ repository-relative, set the API service's config path to
 the Rust provider so the Electron `package.json` does not select Node.
 
 ```bash
-cargo run --locked -- serve
-cargo run --locked -- ingestion-worker
-cargo run --locked -- access-code create --max-users 10 --plan basic
-cargo run --locked -- knowledge-load-report
-cargo run --locked -- knowledge-worker-smoke
+cargo run --manifest-path services/api/Cargo.toml --locked -- serve
+cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker
+cargo run --manifest-path services/api/Cargo.toml --locked -- access-code create --max-users 10 --plan basic
+cargo run --manifest-path services/api/Cargo.toml --locked -- knowledge-load-report
+cargo run --manifest-path services/api/Cargo.toml --locked -- knowledge-worker-smoke
 ```
 
 The crate embeds the unchanged migrations in `migrations/`. Startup applies them before binding the HTTP listener. Do not edit an applied migration or point integration tests at production.

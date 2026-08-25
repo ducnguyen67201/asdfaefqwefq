@@ -1,104 +1,190 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
 import type {
+  AddKnowledgeSpaceMembersResult,
   AppLanguage,
   KnowledgeGroup,
   KnowledgeSourceList,
+  KnowledgeSpaceMember,
   KnowledgeSpaceSummary,
   SaveKnowledgeActivityRequest,
-} from '../shared/contracts';
-import { randomUUID } from '../shared/renderer-uuid';
+} from "../shared/contracts";
+import { randomUUID } from "../shared/renderer-uuid";
 
-import { ActivityEditorPage } from './ActivityEditorPage';
-import { translate } from './app-language';
-import { FacilitatorRunPage } from './FacilitatorRunPage';
-import { SpaceLibrary } from './SpaceLibrary';
+import { ActivityEditorPage } from "./ActivityEditorPage";
+import { translate } from "./app-language";
+import {
+  canManageClassPeople,
+  parseClassMemberEmails,
+  rolesAvailableToMemberManager,
+} from "./class-workspace";
+import { ClassWorkspaceSwitcher } from "./ClassWorkspaceSwitcher";
+import { FacilitatorRunPage } from "./FacilitatorRunPage";
+import { SpaceLibrary } from "./SpaceLibrary";
 
-type TeacherTab = 'activities' | 'library' | 'people';
+type Tab = "library" | "activities" | "people";
 
 export function SpaceDetailPage({
   appLanguage,
   onBack,
+  onOpen,
   space,
 }: {
   appLanguage: AppLanguage;
   onBack: () => void;
+  onOpen: (space: KnowledgeSpaceSummary) => void;
   space: KnowledgeSpaceSummary;
 }) {
-  const canFacilitate = space.role === 'owner' || space.role === 'facilitator';
-  const [tab, setTab] = useState<TeacherTab>('library');
-  const [sources, setSources] = useState<KnowledgeSourceList['items']>([]);
+  const [tab, setTab] = useState<Tab>("library");
+  const [sources, setSources] = useState<KnowledgeSourceList["items"]>([]);
   const [groups, setGroups] = useState<KnowledgeGroup[]>([]);
-  const [groupName, setGroupName] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [members, setMembers] = useState<KnowledgeSpaceMember[]>([]);
+  const [memberEmails, setMemberEmails] = useState("");
+  const [memberRole, setMemberRole] = useState<"facilitator" | "participant">(
+    "participant",
+  );
+  const [memberResult, setMemberResult] =
+    useState<AddKnowledgeSpaceMembersResult | null>(null);
+  const [addingMembers, setAddingMembers] = useState(false);
+  const [rosterQuery, setRosterQuery] = useState("");
+  const [rosterRole, setRosterRole] = useState<"all" | "teacher" | "student">(
+    "all",
+  );
+  const [groupName, setGroupName] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [activityVersionId, setActivityVersionId] = useState<string | null>(
     null,
   );
   const [publishedDefinition, setPublishedDefinition] = useState<
-    SaveKnowledgeActivityRequest['definition'] | null
+    SaveKnowledgeActivityRequest["definition"] | null
   >(null);
   const [runId, setRunId] = useState<string | null>(null);
-  const [participants, setParticipants] = useState('');
-  const [delivery, setDelivery] = useState<'assigned' | 'room'>('room');
-  const [mode, setMode] = useState<'live' | 'async' | 'hybrid'>('live');
+  const [participants, setParticipants] = useState("");
+  const [delivery, setDelivery] = useState<"assigned" | "room">("room");
+  const [mode, setMode] = useState<"live" | "async" | "hybrid">("live");
   const [creatingRun, setCreatingRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const t = (message: string) => translate(appLanguage, message);
+  const t = useCallback(
+    (
+      message: string,
+      replacements: Readonly<Record<string, string | number>> = {},
+    ) => translate(appLanguage, message, replacements),
+    [appLanguage],
+  );
+  const canFacilitate = canManageClassPeople(space.role);
+  const availableMemberRoles = rolesAvailableToMemberManager(space.role);
+  const studentCount = members.filter(
+    (member) => member.role === "participant",
+  ).length;
+  const teacherCount = members.length - studentCount;
+  const normalizedRosterQuery = rosterQuery.trim().toLocaleLowerCase();
+  const visibleMembers = members.filter((member) => {
+    const roleMatches =
+      rosterRole === "all" ||
+      (rosterRole === "student" && member.role === "participant") ||
+      (rosterRole === "teacher" && member.role !== "participant");
+    const queryMatches =
+      !normalizedRosterQuery ||
+      member.name.toLocaleLowerCase().includes(normalizedRosterQuery) ||
+      member.email.toLocaleLowerCase().includes(normalizedRosterQuery) ||
+      member.userId.toLocaleLowerCase().includes(normalizedRosterQuery);
+    return roleMatches && queryMatches;
+  });
 
-  const loadSources = () =>
-    window.tro
-      .listKnowledgeSources(space.id)
-      .then((value) => setSources(value.items))
-      .catch((cause: unknown) =>
-        setError(
-          cause instanceof Error ? cause.message : t('Library is unavailable.'),
+  const loadSources = useCallback(
+    () =>
+      window.tro
+        .listKnowledgeSources(space.id)
+        .then((value) => setSources(value.items))
+        .catch((cause: unknown) =>
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : t("Library is unavailable."),
+          ),
         ),
-      );
-  const loadGroups = () =>
-    window.tro
-      .listKnowledgeGroups(space.id)
-      .then((value) => setGroups(value.items))
-      .catch((cause: unknown) =>
-        setError(
-          cause instanceof Error ? cause.message : t('Groups are unavailable.'),
+    [space.id, t],
+  );
+  const loadGroups = useCallback(
+    () =>
+      window.tro
+        .listKnowledgeGroups(space.id)
+        .then((value) => setGroups(value.items))
+        .catch((cause: unknown) =>
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : t("Groups are unavailable."),
+          ),
         ),
-      );
+    [space.id, t],
+  );
+  const loadMembers = useCallback(
+    () =>
+      window.tro
+        .listKnowledgeMembers(space.id)
+        .then((value) => setMembers(value.items))
+        .catch((cause: unknown) =>
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : t("People are unavailable."),
+          ),
+        ),
+    [space.id, t],
+  );
 
   useEffect(() => {
-    if (!canFacilitate) return;
-    void window.tro
-      .listKnowledgeSources(space.id)
-      .then((value) => setSources(value.items))
-      .catch((cause: unknown) =>
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : translate(appLanguage, 'Library is unavailable.'),
-        ),
-      );
-    void window.tro
-      .listKnowledgeGroups(space.id)
-      .then((value) => setGroups(value.items))
-      .catch((cause: unknown) =>
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : translate(appLanguage, 'Groups are unavailable.'),
-        ),
-      );
-  }, [appLanguage, canFacilitate, space.id]);
+    void loadSources();
+    if (canFacilitate) {
+      void loadGroups();
+      void loadMembers();
+    }
+  }, [canFacilitate, loadGroups, loadMembers, loadSources]);
 
   const participantIds = participants
     .split(/\r?\n/u)
     .map((value) => value.trim())
     .filter(Boolean);
   const runTarget =
-    delivery === 'room'
-      ? { kind: 'room' as const }
+    delivery === "room"
+      ? { kind: "room" as const }
       : selectedGroupId
-        ? { kind: 'group' as const, groupId: selectedGroupId }
-        : { kind: 'participants' as const, userIds: participantIds };
+        ? { kind: "group" as const, groupId: selectedGroupId }
+        : { kind: "participants" as const, userIds: participantIds };
+  const parsedMemberEmails = parseClassMemberEmails(memberEmails);
+
+  const addMembers = async () => {
+    if (
+      parsedMemberEmails.invalid.length ||
+      parsedMemberEmails.emails.length === 0 ||
+      parsedMemberEmails.emails.length > 500
+    ) {
+      return;
+    }
+    setAddingMembers(true);
+    setError(null);
+    try {
+      const result = await window.tro.addKnowledgeSpaceMembers({
+        clientId: randomUUID(),
+        emails: parsedMemberEmails.emails,
+        role: memberRole,
+        spaceId: space.id,
+      });
+      setMemberResult(result);
+      if (result.addedEmails.length) setMemberEmails("");
+      await loadMembers();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : t("Could not add those people."),
+      );
+    } finally {
+      setAddingMembers(false);
+    }
+  };
 
   const createRun = async () => {
     if (!activityVersionId) return;
@@ -106,20 +192,20 @@ export function SpaceDetailPage({
     setError(null);
     try {
       const run = await window.tro.createKnowledgeRun({
-        spaceId: space.id,
-        clientId: randomUUID(),
         activityVersionId,
-        mode: delivery === 'room' ? 'live' : mode,
-        opensAt: null,
+        clientId: randomUUID(),
         closesAt: null,
+        insightPolicy: "explicit_and_operational",
+        mode: delivery === "room" ? "live" : mode,
+        opensAt: null,
+        spaceId: space.id,
         target: runTarget,
-        insightPolicy: 'explicit_and_operational',
       });
-      if (delivery === 'assigned') {
+      if (delivery === "assigned") {
         await window.tro.setKnowledgeRunState({
-          spaceId: space.id,
           runId: run.id,
-          state: 'open',
+          spaceId: space.id,
+          state: "open",
         });
       }
       setRunId(run.id);
@@ -127,413 +213,654 @@ export function SpaceDetailPage({
       setError(
         cause instanceof Error
           ? cause.message
-          : t('Could not create this Run.'),
+          : t("Could not create this Run."),
       );
     } finally {
       setCreatingRun(false);
     }
   };
 
-  if (!canFacilitate) {
-    return (
-      <section className="knowledge-page participant-space-page">
-        <button className="back-link" onClick={onBack} type="button">
-          ← {t('Knowledge Spaces')}
-        </button>
-        <header className="knowledge-heading knowledge-heading--editorial">
-          <div>
-            <p className="eyebrow">{t('Student Space')}</p>
-            <h1>{space.name}</h1>
-            <p>
-              {space.description ||
-                t(
-                  'Your published class context and private Attempts live here.',
-                )}
-            </p>
-          </div>
-          <span className="role-seal role-seal--student">
-            <i aria-hidden="true">S</i>
-            {t('Student access')}
-          </span>
-        </header>
-        <section className="participant-boundary-card">
-          <div className="participant-boundary-card__mark" aria-hidden="true">
-            ✓
-          </div>
-          <div>
-            <p className="eyebrow">{t('Role-aware by design')}</p>
-            <h2>{t('Your classwork stays private')}</h2>
-            <p>
-              {t(
-                'You receive only the Activity material assigned to you. Teacher uploads, publishing, room controls, and class-wide reporting are not available in the student view.',
-              )}
-            </p>
-          </div>
-          <dl>
-            <div>
-              <dt>{t('You can')}</dt>
-              <dd>{t('Join · Work · Help · Check · Submit')}</dd>
-            </div>
-            <div>
-              <dt>{t('Teachers can')}</dt>
-              <dd>{t('Prepare · Broadcast · Review')}</dd>
-            </div>
-          </dl>
-        </section>
-        <div className="knowledge-empty knowledge-empty--inline">
-          <span className="empty-illustration" aria-hidden="true">
-            →
-          </span>
-          <div>
-            <strong>{t('Open Assigned Activities')}</strong>
-            <p>
-              {t(
-                'Your current and previous Attempts appear in Classwork in the sidebar.',
-              )}
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
+  const tabs: Tab[] = canFacilitate
+    ? ["library", "activities", "people"]
+    : ["library", "activities"];
 
   return (
-    <section className="knowledge-page teacher-space-page">
+    <section className="knowledge-page knowledge-page--class-detail">
       <button className="back-link" onClick={onBack} type="button">
-        ← {t('Knowledge Spaces')}
+        ← {t("All class workspaces")}
       </button>
-      <header className="knowledge-heading knowledge-heading--editorial knowledge-heading--space">
-        <div>
-          <p className="eyebrow">
-            {t(
-              space.role === 'owner'
-                ? 'Teacher · Owner'
-                : 'Teacher · Facilitator',
-            )}
-          </p>
-          <h1>{space.name}</h1>
-          <p>
-            {space.description ||
-              t(
-                'Prepare material, publish a learning path, then invite the room.',
-              )}
-          </p>
-        </div>
-        <div
-          className="teacher-flow-map"
-          aria-label={t('Teacher flow: Materials, Activity, Live room')}
-        >
-          <span className={tab === 'library' ? 'is-current' : ''}>
-            <b>1</b>
-            {t('Materials')}
-          </span>
-          <i />
-          <span className={tab === 'activities' ? 'is-current' : ''}>
-            <b>2</b>
-            {t('Activity')}
-          </span>
-          <i />
-          <span className={runId ? 'is-current' : ''}>
-            <b>3</b>
-            {t('Live room')}
-          </span>
-        </div>
-      </header>
-
-      <div
-        className="space-tabs"
-        role="tablist"
-        aria-label={t('Space sections')}
-      >
-        {(
-          [
-            ['library', 'Materials'],
-            ['activities', 'Activities & rooms'],
-            ['people', 'People'],
-          ] as const
-        ).map(([value, label]) => (
+      <ClassWorkspaceSwitcher
+        appLanguage={appLanguage}
+        currentSpace={space}
+        onOpen={(nextSpace) => {
+          setSources([]);
+          setGroups([]);
+          setMembers([]);
+          setRosterQuery("");
+          setRosterRole("all");
+          setError(null);
+          setMemberResult(null);
+          setTab("library");
+          onOpen(nextSpace);
+        }}
+      />
+      <div className="space-tabs" role="tablist">
+        {tabs.map((value, index) => (
           <button
+            aria-controls={`space-panel-${space.id}-${value}`}
             aria-selected={tab === value}
+            id={`space-tab-${space.id}-${value}`}
             key={value}
             onClick={() => setTab(value)}
+            onKeyDown={(event) => {
+              let nextIndex = index;
+              if (event.key === "ArrowRight")
+                nextIndex = (index + 1) % tabs.length;
+              else if (event.key === "ArrowLeft") {
+                nextIndex = (index - 1 + tabs.length) % tabs.length;
+              } else if (event.key === "Home") nextIndex = 0;
+              else if (event.key === "End") nextIndex = tabs.length - 1;
+              else return;
+              event.preventDefault();
+              const nextTab = tabs[nextIndex];
+              if (!nextTab) return;
+              setTab(nextTab);
+              const buttons =
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]',
+                );
+              buttons?.[nextIndex]?.focus();
+            }}
             role="tab"
+            tabIndex={tab === value ? 0 : -1}
             type="button"
           >
-            {t(label)}
-            {value === 'library' && <span>{sources.length}</span>}
+            {t(
+              value === "library"
+                ? "Library"
+                : value === "activities"
+                  ? "Activities"
+                  : "People",
+            )}
           </button>
         ))}
       </div>
-
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
 
-      {tab === 'library' && (
-        <SpaceLibrary
-          appLanguage={appLanguage}
-          canManage
-          onChanged={() => void loadSources()}
-          sources={sources}
-          spaceId={space.id}
-        />
-      )}
-
-      {tab === 'activities' && (
-        <>
-          <ActivityEditorPage
+      {tab === "library" && (
+        <div
+          aria-labelledby={`space-tab-${space.id}-library`}
+          id={`space-panel-${space.id}-library`}
+          role="tabpanel"
+          tabIndex={0}
+        >
+          <SpaceLibrary
             appLanguage={appLanguage}
-            onPublished={(versionId, definition) => {
-              setActivityVersionId(versionId);
-              setPublishedDefinition(definition);
-            }}
+            onChanged={() => void loadSources()}
+            readOnly={!canFacilitate}
             sources={sources}
             spaceId={space.id}
           />
-          {activityVersionId && !runId && (
-            <section
-              className="space-panel run-launchpad"
-              aria-labelledby="run-launch-heading"
+        </div>
+      )}
+
+      {tab === "activities" &&
+        (canFacilitate ? (
+          <div
+            aria-labelledby={`space-tab-${space.id}-activities`}
+            id={`space-panel-${space.id}-activities`}
+            role="tabpanel"
+            tabIndex={0}
+          >
+            <ActivityEditorPage
+              appLanguage={appLanguage}
+              onPublished={(versionId, definition) => {
+                setActivityVersionId(versionId);
+                setPublishedDefinition(definition);
+              }}
+              sources={sources}
+              spaceId={space.id}
+            />
+            {activityVersionId && !runId && (
+              <section
+                aria-labelledby="run-launch-heading"
+                className="space-panel run-launchpad"
+              >
+                <div className="section-heading-row">
+                  <div>
+                    <p className="eyebrow">{t("Published and ready")}</p>
+                    <h2 id="run-launch-heading">
+                      {t("How will students begin?")}
+                    </h2>
+                    <p className="section-deck">
+                      {t(
+                        "Open a live room for class, or assign this version for independent work.",
+                      )}
+                    </p>
+                  </div>
+                  <span className="published-seal">
+                    ✓ {t("Immutable version")}
+                  </span>
+                </div>
+                <div
+                  aria-label={t("Delivery method")}
+                  className="delivery-choice"
+                  role="radiogroup"
+                >
+                  <label className={delivery === "room" ? "is-selected" : ""}>
+                    <input
+                      checked={delivery === "room"}
+                      name="delivery"
+                      onChange={() => setDelivery("room")}
+                      type="radio"
+                    />
+                    <span className="delivery-choice__icon" aria-hidden="true">
+                      ◎
+                    </span>
+                    <strong>{t("Live room")}</strong>
+                    <small>
+                      {t(
+                        "Students join a lobby with one short code. You decide when class starts.",
+                      )}
+                    </small>
+                    <em>{t("Recommended")}</em>
+                  </label>
+                  <label
+                    className={delivery === "assigned" ? "is-selected" : ""}
+                  >
+                    <input
+                      checked={delivery === "assigned"}
+                      name="delivery"
+                      onChange={() => setDelivery("assigned")}
+                      type="radio"
+                    />
+                    <span className="delivery-choice__icon" aria-hidden="true">
+                      ↗
+                    </span>
+                    <strong>{t("Direct assignment")}</strong>
+                    <small>
+                      {t("Send to an existing group or a list of account IDs.")}
+                    </small>
+                  </label>
+                </div>
+                {delivery === "assigned" && (
+                  <div className="run-assignment-options">
+                    {groups.length > 0 && (
+                      <label>
+                        {t("Assign a group")}
+                        <select
+                          onChange={(event) =>
+                            setSelectedGroupId(event.target.value)
+                          }
+                          value={selectedGroupId}
+                        >
+                          <option value="">
+                            {t("Use individual account IDs")}
+                          </option>
+                          {groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name} ({group.participantCount})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {!selectedGroupId && (
+                      <label>
+                        {t("Participant account IDs")}
+                        <textarea
+                          onChange={(event) =>
+                            setParticipants(event.target.value)
+                          }
+                          placeholder={t("One account ID per line")}
+                          rows={4}
+                          value={participants}
+                        />
+                      </label>
+                    )}
+                    <label>
+                      {t("Mode")}
+                      <select
+                        onChange={(event) =>
+                          setMode(event.target.value as typeof mode)
+                        }
+                        value={mode}
+                      >
+                        <option value="live">{t("live")}</option>
+                        <option value="async">{t("async")}</option>
+                        <option value="hybrid">{t("hybrid")}</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+                <button
+                  className="primary-button run-launchpad__action"
+                  disabled={
+                    creatingRun ||
+                    (delivery === "assigned" &&
+                      !selectedGroupId &&
+                      participantIds.length === 0)
+                  }
+                  onClick={() => void createRun()}
+                  type="button"
+                >
+                  {creatingRun
+                    ? t("Creating…")
+                    : delivery === "room"
+                      ? t("Create room lobby")
+                      : t("Open assignment")}{" "}
+                  →
+                </button>
+              </section>
+            )}
+            {runId && (
+              <FacilitatorRunPage
+                allowedOrigins={
+                  publishedDefinition?.sessionPolicy.allowedOrigins ?? []
+                }
+                appLanguage={appLanguage}
+                criteria={publishedDefinition?.criteria ?? []}
+                runId={runId}
+                spaceId={space.id}
+              />
+            )}
+          </div>
+        ) : (
+          <div
+            aria-labelledby={`space-tab-${space.id}-activities`}
+            id={`space-panel-${space.id}-activities`}
+            role="tabpanel"
+            tabIndex={0}
+          >
+            <div className="knowledge-empty">
+              <strong>{t("Assigned Activities")}</strong>
+              <p>
+                {t("Your Teacher-published work appears in the Assigned view.")}
+              </p>
+            </div>
+          </div>
+        ))}
+
+      {tab === "people" && canFacilitate && (
+        <section
+          aria-labelledby={`space-tab-${space.id}-people`}
+          className="space-panel people-panel"
+          id={`space-panel-${space.id}-people`}
+          role="tabpanel"
+          tabIndex={0}
+        >
+          <div className="section-heading-row people-panel__heading">
+            <div>
+              <p className="eyebrow">{t("Class community")}</p>
+              <h2>{t("People")}</h2>
+              <p>
+                {t(
+                  "Add people after their account exists and an administrator assigns their Teacher or Student role.",
+                )}
+              </p>
+            </div>
+            <span className="people-panel__total">
+              <strong>{members.length}</strong>
+              {t("on the roster")}
+            </span>
+          </div>
+
+          <div className="people-console">
+            <aside
+              className="people-composition"
+              aria-label={t("Roster composition")}
             >
-              <div className="section-heading-row">
+              <p className="eyebrow">{t("At a glance")}</p>
+              <div className="people-composition__total">
+                <strong>{members.length}</strong>
+                <span>{t("people")}</span>
+              </div>
+              <dl>
                 <div>
-                  <p className="eyebrow">{t('Published and ready')}</p>
-                  <h2 id="run-launch-heading">
-                    {t('How will students begin?')}
-                  </h2>
-                  <p className="section-deck">
+                  <dt>
+                    <i
+                      className="role-dot role-dot--teacher"
+                      aria-hidden="true"
+                    />
+                    {t("Teachers")}
+                  </dt>
+                  <dd>{teacherCount}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <i
+                      className="role-dot role-dot--student"
+                      aria-hidden="true"
+                    />
+                    {t("Students")}
+                  </dt>
+                  <dd>{studentCount}</dd>
+                </div>
+              </dl>
+              <p>{t("Roles are verified before anyone is added.")}</p>
+            </aside>
+
+            <div className="member-composer">
+              <div className="member-composer__heading">
+                <div>
+                  <p className="eyebrow">{t("Add registered accounts")}</p>
+                  <h3>{t("Build the roster")}</h3>
+                </div>
+                <span>
+                  {parsedMemberEmails.emails.length}
+                  <small>/ 500</small>
+                </span>
+              </div>
+              <div className="class-member-add">
+                <label>
+                  {t("Registered account emails")}
+                  <textarea
+                    onChange={(event) => setMemberEmails(event.target.value)}
+                    placeholder={t("One email per line, comma, or space")}
+                    rows={6}
+                    value={memberEmails}
+                  />
+                  <small>
                     {t(
-                      'Open a live room for class, or assign this version for independent work.',
+                      "Add up to 500 people per batch. You can repeat as needed.",
+                    )}
+                  </small>
+                </label>
+                <div className="member-composer__actions">
+                  <label>
+                    {t("Add as")}
+                    <select
+                      onChange={(event) =>
+                        setMemberRole(
+                          event.target.value as "facilitator" | "participant",
+                        )
+                      }
+                      value={memberRole}
+                    >
+                      {availableMemberRoles.map((role) => (
+                        <option key={role} value={role}>
+                          {t(role === "facilitator" ? "Teacher" : "Student")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={
+                      addingMembers ||
+                      parsedMemberEmails.emails.length === 0 ||
+                      parsedMemberEmails.emails.length > 500 ||
+                      parsedMemberEmails.invalid.length > 0
+                    }
+                    onClick={() => void addMembers()}
+                    type="button"
+                  >
+                    {t(addingMembers ? "Adding…" : "Add to class")}
+                    {!addingMembers && <span aria-hidden="true">→</span>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          {parsedMemberEmails.invalid.length > 0 && (
+            <p className="form-error" role="alert">
+              {t("Check these email entries")}:{" "}
+              {parsedMemberEmails.invalid.join(", ")}
+            </p>
+          )}
+          {parsedMemberEmails.emails.length > 500 && (
+            <p className="form-error" role="alert">
+              {t("Use 500 or fewer emails in each batch.")}
+            </p>
+          )}
+          {memberResult && (
+            <div className="member-add-result" role="status">
+              <div className="member-add-result__heading">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <strong>{t("Roster update complete")}</strong>
+                  <p>
+                    {t("Every account was checked against its classroom role.")}
+                  </p>
+                </div>
+              </div>
+              <dl className="member-add-result__stats">
+                <div className="member-add-result__stat member-add-result__stat--added">
+                  <dt>{t("Added")}</dt>
+                  <dd>{memberResult.addedEmails.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("Already here")}</dt>
+                  <dd>{memberResult.alreadyMemberEmails.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("Role mismatch")}</dt>
+                  <dd>{memberResult.roleMismatchEmails.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("Unavailable")}</dt>
+                  <dd>{memberResult.unavailableEmails.length}</dd>
+                </div>
+              </dl>
+              {(memberResult.roleMismatchEmails.length > 0 ||
+                memberResult.unavailableEmails.length > 0) && (
+                <details>
+                  <summary>{t("Review accounts that need attention")}</summary>
+                  {memberResult.roleMismatchEmails.length > 0 && (
+                    <p>
+                      <strong>{t("Wrong Admin-assigned role")}</strong>
+                      {memberResult.roleMismatchEmails.join(", ")}
+                    </p>
+                  )}
+                  {memberResult.unavailableEmails.length > 0 && (
+                    <p>
+                      <strong>{t("Account not found or unavailable")}</strong>
+                      {memberResult.unavailableEmails.join(", ")}
+                    </p>
+                  )}
+                </details>
+              )}
+            </div>
+          )}
+
+          <div className="roster-heading">
+            <div>
+              <p className="eyebrow">{t("Everyone in this class")}</p>
+              <h3>{t("Class roster")}</h3>
+            </div>
+            <span>{members.length}</span>
+          </div>
+          <div className="roster-toolbar">
+            <label className="roster-search">
+              <span>{t("Find a person")}</span>
+              <input
+                onChange={(event) => setRosterQuery(event.target.value)}
+                placeholder={t("Search name, email, or account ID")}
+                type="search"
+                value={rosterQuery}
+              />
+            </label>
+            <label>
+              <span>{t("Show role")}</span>
+              <select
+                onChange={(event) =>
+                  setRosterRole(event.target.value as typeof rosterRole)
+                }
+                value={rosterRole}
+              >
+                <option value="all">{t("Everyone")}</option>
+                <option value="teacher">{t("Teachers")}</option>
+                <option value="student">{t("Students")}</option>
+              </select>
+            </label>
+            <span className="roster-toolbar__result" aria-live="polite">
+              <strong>{visibleMembers.length}</strong>
+              {t("shown")}
+            </span>
+          </div>
+          <div
+            className="class-roster-wrap"
+            role="region"
+            aria-label={t("Class roster")}
+            tabIndex={0}
+          >
+            <table className="knowledge-table">
+              <thead>
+                <tr>
+                  <th>{t("Person")}</th>
+                  <th>{t("Role")}</th>
+                  <th>{t("Account ID")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleMembers.map((member) => (
+                  <tr key={member.userId}>
+                    <td>
+                      <strong>{member.name}</strong>
+                      <small>{member.email}</small>
+                    </td>
+                    <td>
+                      <span
+                        className={`roster-role roster-role--${member.role}`}
+                      >
+                        <i aria-hidden="true" />
+                        {t(
+                          member.role === "participant"
+                            ? "Student"
+                            : member.role === "owner"
+                              ? "Class owner"
+                              : "Teacher",
+                        )}
+                      </span>
+                    </td>
+                    <td>
+                      <code>{member.userId}</code>
+                    </td>
+                  </tr>
+                ))}
+                {visibleMembers.length === 0 && (
+                  <tr>
+                    <td className="roster-empty-row" colSpan={3}>
+                      <strong>{t("No people match this view")}</strong>
+                      <span>{t("Try another name or role.")}</span>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="groups-studio">
+            <div className="groups-studio__heading">
+              <div>
+                <p className="eyebrow">{t("Smaller circles")}</p>
+                <h3>{t("Groups")}</h3>
+                <p>
+                  {t(
+                    "Organize students for focused activities and shared join codes.",
+                  )}
+                </p>
+              </div>
+              <span>{groups.length}</span>
+            </div>
+            <div className="knowledge-create group-create">
+              <label htmlFor="new-group-name">
+                {t("Group name")}
+                <input
+                  id="new-group-name"
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder={t("e.g. Studio A")}
+                  value={groupName}
+                />
+              </label>
+              <button
+                disabled={!groupName.trim()}
+                onClick={() =>
+                  void window.tro
+                    .createKnowledgeGroup({
+                      clientId: randomUUID(),
+                      name: groupName.trim(),
+                      spaceId: space.id,
+                    })
+                    .then(() => {
+                      setGroupName("");
+                      return loadGroups();
+                    })
+                    .catch((cause: unknown) =>
+                      setError(
+                        cause instanceof Error
+                          ? cause.message
+                          : t("Could not create that group."),
+                      ),
+                    )
+                }
+                type="button"
+              >
+                {t("Create group")}
+              </button>
+            </div>
+            <ul className="group-list">
+              {groups.map((group) => (
+                <li key={group.id}>
+                  <span className="group-list__mark" aria-hidden="true">
+                    {group.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div>
+                    <strong>{group.name}</strong>
+                    <span>
+                      {group.participantCount} {t("participants")}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() =>
+                      void window.tro
+                        .createKnowledgeInvite({
+                          clientId: randomUUID(),
+                          expiresAt: new Date(
+                            Date.now() + 7 * 24 * 60 * 60 * 1000,
+                          ).toISOString(),
+                          groupId: group.id,
+                          maxUses: 500,
+                          role: "participant",
+                          spaceId: space.id,
+                        })
+                        .then((invite) => setInviteCode(invite.code))
+                        .catch((cause: unknown) =>
+                          setError(
+                            cause instanceof Error
+                              ? cause.message
+                              : t("Could not create a join code."),
+                          ),
+                        )
+                    }
+                    type="button"
+                  >
+                    {t("Create 7-day Student join code")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {inviteCode && (
+              <div className="invite-code">
+                <span className="invite-code__mark" aria-hidden="true">
+                  #
+                </span>
+                <div>
+                  <strong>{t("Student join code")}</strong>
+                  <code>{inviteCode}</code>
+                  <p>
+                    {t(
+                      "Only an account assigned as Student can use this code.",
                     )}
                   </p>
                 </div>
-                <span className="published-seal">
-                  ✓ {t('Immutable version')}
-                </span>
               </div>
-              <div
-                className="delivery-choice"
-                role="radiogroup"
-                aria-label={t('Delivery method')}
-              >
-                <label className={delivery === 'room' ? 'is-selected' : ''}>
-                  <input
-                    checked={delivery === 'room'}
-                    name="delivery"
-                    onChange={() => setDelivery('room')}
-                    type="radio"
-                  />
-                  <span className="delivery-choice__icon" aria-hidden="true">
-                    ◎
-                  </span>
-                  <strong>{t('Live room')}</strong>
-                  <small>
-                    {t(
-                      'Students join a lobby with one short code. You decide when class starts.',
-                    )}
-                  </small>
-                  <em>{t('Recommended')}</em>
-                </label>
-                <label className={delivery === 'assigned' ? 'is-selected' : ''}>
-                  <input
-                    checked={delivery === 'assigned'}
-                    name="delivery"
-                    onChange={() => setDelivery('assigned')}
-                    type="radio"
-                  />
-                  <span className="delivery-choice__icon" aria-hidden="true">
-                    ↗
-                  </span>
-                  <strong>{t('Direct assignment')}</strong>
-                  <small>
-                    {t('Send to an existing group or a list of account IDs.')}
-                  </small>
-                </label>
-              </div>
-
-              {delivery === 'assigned' && (
-                <div className="run-assignment-options">
-                  {groups.length > 0 && (
-                    <label>
-                      {t('Assign a group')}
-                      <select
-                        onChange={(event) =>
-                          setSelectedGroupId(event.target.value)
-                        }
-                        value={selectedGroupId}
-                      >
-                        <option value="">
-                          {t('Use individual account IDs')}
-                        </option>
-                        {groups.map((group) => (
-                          <option key={group.id} value={group.id}>
-                            {group.name} ({group.participantCount})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {!selectedGroupId && (
-                    <label>
-                      {t('Participant account IDs')}
-                      <textarea
-                        onChange={(event) =>
-                          setParticipants(event.target.value)
-                        }
-                        placeholder={t('One account ID per line')}
-                        rows={4}
-                        value={participants}
-                      />
-                    </label>
-                  )}
-                  <label>
-                    {t('Mode')}
-                    <select
-                      onChange={(event) =>
-                        setMode(event.target.value as typeof mode)
-                      }
-                      value={mode}
-                    >
-                      <option value="live">{t('live')}</option>
-                      <option value="async">{t('async')}</option>
-                      <option value="hybrid">{t('hybrid')}</option>
-                    </select>
-                  </label>
-                </div>
-              )}
-              <button
-                className="primary-button run-launchpad__action"
-                disabled={
-                  creatingRun ||
-                  (delivery === 'assigned' &&
-                    !selectedGroupId &&
-                    participantIds.length === 0)
-                }
-                onClick={() => void createRun()}
-                type="button"
-              >
-                {creatingRun
-                  ? t('Creating…')
-                  : delivery === 'room'
-                    ? t('Create room lobby')
-                    : t('Open assignment')}{' '}
-                →
-              </button>
-            </section>
-          )}
-          {runId && (
-            <FacilitatorRunPage
-              allowedOrigins={
-                publishedDefinition?.sessionPolicy.allowedOrigins ?? []
-              }
-              appLanguage={appLanguage}
-              criteria={publishedDefinition?.criteria ?? []}
-              runId={runId}
-              spaceId={space.id}
-            />
-          )}
-        </>
-      )}
-
-      {tab === 'people' && (
-        <section className="space-panel people-studio">
-          <div className="section-heading-row">
-            <div>
-              <p className="eyebrow">{t('Reusable cohorts')}</p>
-              <h2>{t('People & groups')}</h2>
-              <p className="section-deck">
-                {t(
-                  'Groups are for recurring assignments. Live rooms can admit students without a prebuilt list.',
-                )}
-              </p>
-            </div>
+            )}
           </div>
-          <div className="knowledge-create">
-            <label>
-              {t('Group name')}
-              <input
-                onChange={(event) => setGroupName(event.target.value)}
-                placeholder={t('Tuesday Python cohort')}
-                value={groupName}
-              />
-            </label>
-            <button
-              disabled={!groupName.trim()}
-              onClick={() =>
-                void window.tro
-                  .createKnowledgeGroup({
-                    spaceId: space.id,
-                    clientId: randomUUID(),
-                    name: groupName.trim(),
-                  })
-                  .then(() => {
-                    setGroupName('');
-                    return loadGroups();
-                  })
-                  .catch((cause: unknown) =>
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : t('Could not create that group.'),
-                    ),
-                  )
-              }
-              type="button"
-            >
-              {t('Create group')}
-            </button>
-          </div>
-          <ul className="group-list">
-            {groups.map((group) => (
-              <li key={group.id}>
-                <div>
-                  <strong>{group.name}</strong>
-                  <span>
-                    {group.participantCount} {t('participants')}
-                  </span>
-                </div>
-                <button
-                  onClick={() =>
-                    void window.tro
-                      .createKnowledgeInvite({
-                        spaceId: space.id,
-                        clientId: randomUUID(),
-                        groupId: group.id,
-                        role: 'participant',
-                        maxUses: 500,
-                        expiresAt: new Date(
-                          Date.now() + 7 * 24 * 60 * 60 * 1000,
-                        ).toISOString(),
-                      })
-                      .then((invite) => setInviteCode(invite.code))
-                      .catch((cause: unknown) =>
-                        setError(
-                          cause instanceof Error
-                            ? cause.message
-                            : t('Could not create a join code.'),
-                        ),
-                      )
-                  }
-                  type="button"
-                >
-                  {t('Create 7-day invite')}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {inviteCode && (
-            <div className="invite-code">
-              <span className="eyebrow">{t('Space invite')}</span>
-              <code>{inviteCode}</code>
-              <p>
-                {t(
-                  'Share this longer-lived code only with intended participants.',
-                )}
-              </p>
-            </div>
-          )}
         </section>
       )}
     </section>

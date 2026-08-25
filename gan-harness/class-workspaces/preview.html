@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tro Class workspaces — design proof</title>
+    <link rel="stylesheet" href="../src/index.css" />
+    <style>
+      body {
+        min-width: 0;
+        overflow: auto;
+      }
+
+      .preview-shell {
+        display: grid;
+        min-height: 100vh;
+        background: #f1f0eb;
+        grid-template-columns: 224px minmax(0, 1fr);
+      }
+
+      .preview-sidebar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        height: 100vh;
+        flex-direction: column;
+        gap: 26px;
+        padding: 28px 20px;
+        border-right: 1px solid rgba(39, 39, 34, 0.08);
+      }
+
+      .preview-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-inline: 8px;
+        font-weight: 850;
+      }
+
+      .preview-brand i {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 11px;
+        background: #f2c94c;
+        color: #443400;
+        font-family: Georgia, serif;
+        font-style: normal;
+      }
+
+      .preview-sidebar nav {
+        display: grid;
+        gap: 5px;
+      }
+
+      .preview-sidebar button {
+        display: flex;
+        min-height: 40px;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 11px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: #5d5e57;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .preview-sidebar button[aria-current='page'] {
+        background: rgba(242, 201, 76, 0.28);
+        color: #20211e;
+        font-weight: 800;
+      }
+
+      .preview-note {
+        margin-top: auto;
+        padding: 13px;
+        border: 1px solid rgba(39, 39, 34, 0.12);
+        border-radius: 13px;
+        background: rgba(255, 254, 250, 0.72);
+        color: #7d7e76;
+        font-size: 9px;
+        line-height: 1.55;
+      }
+
+      .preview-main {
+        min-width: 0;
+        margin: 10px 10px 10px 0;
+        border: 1px solid rgba(39, 39, 34, 0.17);
+        border-radius: 22px;
+        background: rgba(255, 254, 250, 0.96);
+      }
+
+      .preview-view[hidden] {
+        display: none;
+      }
+
+      .preview-view .knowledge-page {
+        min-height: calc(100vh - 22px);
+      }
+
+      body[data-active-view='admin'] .preview-shell {
+        display: block;
+      }
+
+      body[data-active-view='admin'] .preview-sidebar {
+        display: none;
+      }
+
+      body[data-active-view='admin'] .preview-main {
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+      }
+
+      .admin-proof-shell {
+        display: grid;
+        min-height: 100vh;
+        background: #f4f5f0;
+        grid-template-columns: 218px minmax(0, 1fr);
+      }
+
+      .admin-proof-sidebar {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        padding: 26px 18px;
+        background: #193222;
+        color: #f5f7f0;
+      }
+
+      .admin-proof-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 38px;
+        font-weight: 780;
+      }
+
+      .admin-proof-brand > span {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 10px;
+        background: #cfe6a9;
+        color: #183421;
+        font-family: Georgia, serif;
+        font-size: 19px;
+      }
+
+      .admin-proof-sidebar nav {
+        display: grid;
+        gap: 5px;
+      }
+
+      .admin-proof-sidebar nav > strong {
+        margin: 0 11px 7px;
+        color: #8da294;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .admin-proof-sidebar a {
+        display: flex;
+        min-height: 40px;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 11px;
+        border-radius: 10px;
+        color: #cfd9d1;
+        font-size: 12px;
+      }
+
+      .admin-proof-sidebar a[aria-current='page'] {
+        background: rgba(207, 230, 169, 0.14);
+        color: #fff;
+        font-weight: 750;
+      }
+
+      .admin-proof-sidebar__foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: auto;
+        padding: 15px 10px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        color: #aebdb1;
+        font-size: 11px;
+      }
+
+      .admin-proof-sidebar__foot i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #9ed49d;
+      }
+
+      .preview-admin {
+        --green: #214b2d;
+        width: min(1180px, calc(100% - 68px));
+        min-height: calc(100vh - 22px);
+        margin: 0 auto;
+        padding: 42px 0 70px;
+        color: #152019;
+      }
+
+      .preview-admin h1 {
+        margin: 4px 0 9px;
+        font-size: 42px;
+        font-weight: 730;
+        letter-spacing: -0.05em;
+      }
+
+      .preview-admin__header,
+      .preview-admin__toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .preview-admin__summary {
+        display: grid;
+        gap: 14px;
+        margin: 28px 0 20px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .preview-admin__summary article {
+        display: grid;
+        min-height: 118px;
+        align-content: space-between;
+        padding: 18px 20px;
+        border: 1px solid #dfe3db;
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .preview-admin__summary strong {
+        font-size: 31px;
+      }
+
+      .preview-admin__summary span,
+      .preview-admin__header p,
+      .preview-admin__toolbar p {
+        margin: 0;
+        color: #7c877e;
+        font-size: 11px;
+      }
+
+      .preview-admin .classroom-flow-note {
+        display: flex;
+        min-height: 74px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        margin: 0 0 20px;
+        padding: 13px 16px;
+        border: 1px solid #d9e1d4;
+        border-radius: 15px;
+        background: linear-gradient(90deg, #fff, #f2f7ed);
+        font-family: Inter, sans-serif;
+      }
+
+      .preview-admin .classroom-flow-note__copy {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .preview-admin .classroom-flow-note__mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 11px;
+        background: #dfead3;
+        color: #315c3b;
+      }
+
+      .preview-admin .classroom-flow-note__copy > div {
+        display: grid;
+        gap: 3px;
+        font-size: 11px;
+      }
+
+      .preview-admin .classroom-flow-note__copy span:last-child {
+        color: #7b867d;
+        font-size: 9px;
+      }
+
+      .preview-admin .classroom-flow-note ol {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        color: #657168;
+        font-size: 9px;
+        list-style: none;
+      }
+
+      .preview-admin .classroom-flow-note li {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+      }
+
+      .preview-admin .classroom-flow-note li > span {
+        display: grid;
+        width: 20px;
+        height: 20px;
+        place-items: center;
+        border: 1px solid #cad4c7;
+        border-radius: 50%;
+        background: #fff;
+      }
+
+      .preview-admin .classroom-role-control {
+        display: inline-flex;
+        min-width: 118px;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 10px;
+        border: 1px solid #d9dfd6;
+        border-radius: 999px;
+        background: #f6f7f4;
+        font-family: Inter, sans-serif;
+        font-size: 10px;
+      }
+
+      .preview-admin .classroom-role-control__mark {
+        color: #8b958d;
+        font-size: 7px;
+      }
+
+      .preview-admin .classroom-role-control--teacher {
+        border-color: #c9d9c3;
+        background: #edf4e9;
+      }
+
+      .preview-admin
+        .classroom-role-control--teacher
+        .classroom-role-control__mark {
+        color: #3f744c;
+      }
+
+      .preview-admin .classroom-role-control--student {
+        border-color: #cadade;
+        background: #ecf3f4;
+      }
+
+      .preview-admin
+        .classroom-role-control--student
+        .classroom-role-control__mark {
+        color: #4d7781;
+      }
+
+      .preview-admin__table {
+        overflow: hidden;
+        border: 1px solid #dfe3db;
+        border-radius: 17px;
+        background: #fff;
+      }
+
+      .preview-admin__toolbar {
+        min-height: 84px;
+        padding: 17px 20px;
+        border-bottom: 1px solid #e8ebe5;
+      }
+
+      .preview-admin__toolbar h2 {
+        margin: 0 0 5px;
+        font-size: 16px;
+      }
+
+      .preview-admin__filters {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+      }
+
+      .preview-admin__filters label {
+        display: grid;
+        gap: 5px;
+        color: #7c877e;
+        font-size: 11px;
+      }
+
+      .preview-admin__filters input,
+      .preview-admin__filters select {
+        min-height: 38px;
+        padding: 0 11px;
+        border: 1px solid #d7ddd4;
+        border-radius: 10px;
+        background: #fff;
+        color: #24352a;
+        font: inherit;
+      }
+
+      .preview-admin__filters input {
+        width: 210px;
+      }
+
+      .preview-admin table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .preview-admin th,
+      .preview-admin td {
+        padding: 14px 17px;
+        border-bottom: 1px solid #edf0ea;
+        color: #4d5a51;
+        font-size: 11px;
+        text-align: left;
+      }
+
+      .preview-admin th {
+        background: #fafbf8;
+        color: #7b867d;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .preview-user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .preview-user > i {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 11px;
+        background: #e8efe1;
+        color: #31533a;
+        font-style: normal;
+        font-weight: 800;
+      }
+
+      .preview-user span {
+        display: grid;
+      }
+
+      .preview-user small {
+        color: #8c958e;
+      }
+
+      .preview-admin .classroom-role-control {
+        font-family: Inter, sans-serif;
+      }
+
+      .preview-admin .classroom-role-control select {
+        min-width: 88px;
+        border: 0;
+        background: transparent;
+        color: #26372c;
+        font: inherit;
+        font-weight: 720;
+        outline: 0;
+      }
+
+      .preview-admin .classroom-role-save-state {
+        display: block;
+        margin: 4px 0 -2px 9px;
+        color: #397248;
+        font-size: 11px;
+        font-weight: 680;
+      }
+
+      .preview-admin .classroom-role-save-state--saving {
+        color: #768079;
+      }
+
+      .preview-admin .classroom-role-save-state--error {
+        color: #a2473b;
+      }
+
+      .preview-status {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: #e5f0df;
+        color: #35643f;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .preview-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .preview-row-actions button {
+        min-height: 30px;
+        padding: 5px 8px;
+        border: 1px solid #dde2da;
+        border-radius: 8px;
+        background: #fff;
+        color: #556159;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 900px) {
+        .preview-shell {
+          grid-template-columns: 72px minmax(0, 1fr);
+        }
+
+        .preview-sidebar {
+          padding-inline: 12px;
+        }
+
+        .preview-brand span,
+        .preview-sidebar button span,
+        .preview-note {
+          display: none;
+        }
+
+        .preview-sidebar button {
+          justify-content: center;
+        }
+
+        .admin-proof-shell {
+          grid-template-columns: 70px minmax(0, 1fr);
+        }
+
+        .admin-proof-sidebar {
+          padding-inline: 11px;
+        }
+
+        .admin-proof-brand {
+          justify-content: center;
+          font-size: 0;
+        }
+
+        .admin-proof-sidebar nav > strong,
+        .admin-proof-sidebar a span,
+        .admin-proof-sidebar__foot span {
+          display: none;
+        }
+
+        .admin-proof-sidebar a {
+          justify-content: center;
+        }
+
+        .preview-admin {
+          width: min(100% - 32px, 1180px);
+          padding-top: 28px;
+        }
+
+        .preview-admin__summary {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .preview-admin__toolbar,
+        .preview-admin__filters,
+        .preview-admin .classroom-flow-note {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .preview-admin__filters input,
+        .preview-admin__filters select {
+          width: 100%;
+        }
+
+        .preview-admin__table {
+          overflow: visible;
+          border: 0;
+          background: transparent;
+        }
+
+        .preview-admin table,
+        .preview-admin tbody {
+          display: block;
+        }
+
+        .preview-admin thead {
+          display: none;
+        }
+
+        .preview-admin tbody tr {
+          display: grid;
+          gap: 10px;
+          margin-top: 10px;
+          padding: 14px;
+          border: 1px solid #dfe3db;
+          border-radius: 13px;
+          background: #fff;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .preview-admin tbody td {
+          position: relative;
+          display: grid;
+          gap: 5px;
+          padding: 0;
+          border: 0;
+        }
+
+        .preview-admin tbody td::before {
+          color: #8a948c;
+          content: attr(data-label);
+          font-size: 10px;
+          font-weight: 760;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+
+        .preview-admin tbody td:first-child,
+        .preview-admin tbody td:nth-child(3),
+        .preview-admin tbody td:last-child {
+          grid-column: 1 / -1;
+        }
+
+        .preview-row-actions {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-shell">
+      <aside class="preview-sidebar">
+        <div class="preview-brand"><i>T</i><span>Tro</span></div>
+        <nav aria-label="Design proof views">
+          <button data-view="overview" type="button">
+            <b>⌂</b><span>Classes</span>
+          </button>
+          <button data-view="people" type="button">
+            <b>◎</b><span>People</span>
+          </button>
+          <button data-view="assigned" type="button">
+            <b>✓</b><span>Assigned</span>
+          </button>
+          <button data-view="admin" type="button">
+            <b>◇</b><span>Admin</span>
+          </button>
+        </nav>
+        <p class="preview-note">
+          GAN iteration 1 · populated teacher and student states
+        </p>
+      </aside>
+      <main class="preview-main">
+        <section class="preview-view" data-preview-view="overview">
+          <div class="knowledge-page knowledge-page--classes">
+            <header class="knowledge-heading class-landing-hero">
+              <div class="class-landing-hero__copy">
+                <p class="eyebrow">Classes</p>
+                <h1>Class workspaces</h1>
+                <p>
+                  Keep each class easy to find, switch between, and manage from
+                  one place.
+                </p>
+              </div>
+              <div class="class-landing-hero__identity">
+                <span class="classroom-role-badge"><i></i>Teacher</span>
+                <span class="class-count"><strong>4</strong> classes</span>
+              </div>
+            </header>
+            <div class="class-entry-grid">
+              <form
+                class="knowledge-create class-entry-card class-entry-card--create"
+              >
+                <div class="class-entry-card__heading">
+                  <span>＋</span>
+                  <div>
+                    <strong>Create a class</strong>
+                    <p>Start a dedicated home for a new group.</p>
+                  </div>
+                </div>
+                <label
+                  >New class workspace<input
+                    value=""
+                    placeholder="Python Foundations, Class 8A, Design Lab…"
+                /></label>
+                <button class="primary-button" type="button">
+                  Create class
+                </button>
+              </form>
+              <form
+                class="knowledge-create class-entry-card class-entry-card--join"
+              >
+                <div class="class-entry-card__heading">
+                  <span>↳</span>
+                  <div>
+                    <strong>Join a class</strong>
+                    <p>Use a code shared for your assigned role.</p>
+                  </div>
+                </div>
+                <label
+                  >Join code<input
+                    value=""
+                    placeholder="Paste a join code that matches your assigned role"
+                /></label>
+                <button type="button">Join class</button>
+              </form>
+            </div>
+            <section class="class-shelf">
+              <header class="class-shelf__heading">
+                <div>
+                  <span class="class-shelf__line"></span>
+                  <h2>Teaching</h2>
+                </div>
+                <span>3</span>
+              </header>
+              <ul class="space-grid">
+                <li>
+                  <button class="class-card class-card--teaching">
+                    <span class="class-card__folio">01</span
+                    ><span class="class-card__mark">PF</span
+                    ><span class="space-role">Class owner</span
+                    ><strong>Python Foundations</strong>
+                    <p>
+                      Build confidence with core programming concepts and small
+                      projects.
+                    </p>
+                    <span class="class-card__open">Open class <i>→</i></span>
+                  </button>
+                </li>
+                <li>
+                  <button class="class-card class-card--teaching">
+                    <span class="class-card__folio">02</span
+                    ><span class="class-card__mark">8A</span
+                    ><span class="space-role">Teacher</span
+                    ><strong>Class 8A · Computing</strong>
+                    <p>
+                      Weekly activities, class resources, and practical
+                      exercises.
+                    </p>
+                    <span class="class-card__open">Open class <i>→</i></span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <section class="preview-view" data-preview-view="people" hidden>
+          <div class="knowledge-page knowledge-page--class-detail">
+            <button class="back-link">← All class workspaces</button>
+            <div class="class-workspace-switcher">
+              <div class="class-workspace-switcher__identity">
+                <span class="class-workspace-switcher__mark">PF</span>
+                <div class="class-workspace-switcher__copy">
+                  <span>Current class</span><strong>Python Foundations</strong>
+                  <p>
+                    Build confidence with core programming concepts and small
+                    projects.
+                  </p>
+                </div>
+              </div>
+              <span class="space-role space-role--teacher"
+                ><i></i> Teacher</span
+              >
+              <label
+                ><span>Switch class</span
+                ><select>
+                  <option>Python Foundations</option>
+                  <option>Class 8A · Computing</option>
+                </select></label
+              >
+            </div>
+            <div class="space-tabs">
+              <button>Library</button><button>Activities</button
+              ><button aria-selected="true">People</button>
+            </div>
+            <section class="space-panel people-panel">
+              <div class="section-heading-row people-panel__heading">
+                <div>
+                  <p class="eyebrow">Class community</p>
+                  <h2>People</h2>
+                  <p>
+                    Add people after their account exists and an administrator
+                    assigns their Teacher or Student role.
+                  </p>
+                </div>
+                <span class="people-panel__total"
+                  ><strong>500</strong>on the roster</span
+                >
+              </div>
+              <div class="people-console">
+                <aside class="people-composition">
+                  <p class="eyebrow">At a glance</p>
+                  <div class="people-composition__total">
+                    <strong>500</strong><span>people</span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>
+                        <i class="role-dot role-dot--teacher"></i>Teachers
+                      </dt>
+                      <dd>12</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <i class="role-dot role-dot--student"></i>Students
+                      </dt>
+                      <dd>488</dd>
+                    </div>
+                  </dl>
+                  <p>Roles are verified before anyone is added.</p>
+                </aside>
+                <div class="member-composer">
+                  <div class="member-composer__heading">
+                    <div>
+                      <p class="eyebrow">Add registered accounts</p>
+                      <h3>Build the roster</h3>
+                    </div>
+                    <span>500<small>/ 500</small></span>
+                  </div>
+                  <div class="class-member-add">
+                    <label
+                      >Registered account emails<textarea rows="6">
+500 registered emails ready to add…</textarea
+                      ><small
+                        >Add up to 500 people per batch. You can repeat as
+                        needed.</small
+                      ></label
+                    >
+                    <div class="member-composer__actions">
+                      <label
+                        >Add as<select>
+                          <option>Student</option>
+                        </select></label
+                      ><button class="primary-button">
+                        Add to class <span>→</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="member-add-result">
+                <div class="member-add-result__heading">
+                  <span>✓</span>
+                  <div>
+                    <strong>Roster update complete</strong>
+                    <p>Every account was checked against its classroom role.</p>
+                  </div>
+                </div>
+                <dl class="member-add-result__stats">
+                  <div class="member-add-result__stat--added">
+                    <dt>Added</dt>
+                    <dd>487</dd>
+                  </div>
+                  <div>
+                    <dt>Already here</dt>
+                    <dd>8</dd>
+                  </div>
+                  <div>
+                    <dt>Role mismatch</dt>
+                    <dd>3</dd>
+                  </div>
+                  <div>
+                    <dt>Unavailable</dt>
+                    <dd>2</dd>
+                  </div>
+                </dl>
+                <details>
+                  <summary>Review accounts that need attention</summary>
+                  <p>
+                    <strong>Wrong Admin-assigned role</strong>
+                    teacher.one@example.edu, teacher.two@example.edu,
+                    pending@example.edu
+                  </p>
+                </details>
+              </div>
+              <div class="roster-heading">
+                <div>
+                  <p class="eyebrow">Everyone in this class</p>
+                  <h3>Class roster</h3>
+                </div>
+                <span>500</span>
+              </div>
+              <div class="roster-toolbar">
+                <label class="roster-search">
+                  <span>Find a person</span>
+                  <input
+                    placeholder="Search name, email, or account ID"
+                    type="search"
+                  />
+                </label>
+                <label>
+                  <span>Show role</span>
+                  <select>
+                    <option>Everyone</option>
+                    <option>Teachers</option>
+                    <option>Students</option>
+                  </select>
+                </label>
+                <span class="roster-toolbar__result"
+                  ><strong>500</strong>shown</span
+                >
+              </div>
+              <div class="class-roster-wrap">
+                <table class="knowledge-table">
+                  <thead>
+                    <tr>
+                      <th>Person</th>
+                      <th>Role</th>
+                      <th>Account ID</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dense-roster-body"></tbody>
+                </table>
+              </div>
+              <div class="groups-studio">
+                <div class="groups-studio__heading">
+                  <div>
+                    <p class="eyebrow">Smaller circles</p>
+                    <h3>Groups</h3>
+                    <p>
+                      Organize students for focused activities and shared join
+                      codes.
+                    </p>
+                  </div>
+                  <span>2</span>
+                </div>
+                <ul class="group-list">
+                  <li>
+                    <span class="group-list__mark">A</span>
+                    <div>
+                      <strong>Studio A</strong><span>12 participants</span>
+                    </div>
+                    <button>Create join code</button>
+                  </li>
+                  <li>
+                    <span class="group-list__mark">B</span>
+                    <div>
+                      <strong>Studio B</strong><span>13 participants</span>
+                    </div>
+                    <button>Create join code</button>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="preview-view" data-preview-view="assigned" hidden>
+          <div class="knowledge-page knowledge-page--assigned">
+            <header class="knowledge-heading assigned-hero">
+              <div class="assigned-hero__copy">
+                <p class="eyebrow">Your work</p>
+                <h1>Assigned Activities</h1>
+                <p>
+                  Start in class, continue later, and keep each Attempt private
+                  across Work Sessions.
+                </p>
+              </div>
+              <label class="assigned-class-filter"
+                ><span>Showing work from</span
+                ><select>
+                  <option>All classes</option>
+                  <option>Python Foundations</option>
+                </select></label
+              >
+            </header>
+            <div class="assignment-folios">
+              <section class="assignment-class-folio">
+                <header class="assignment-class-folio__heading">
+                  <span class="assignment-class-folio__mark">PF</span>
+                  <div>
+                    <p class="eyebrow">Class folio</p>
+                    <h2>Python Foundations</h2>
+                  </div>
+                  <span>3 activities</span>
+                </header>
+                <ul class="assignment-list">
+                  <li>
+                    <button class="assignment-card">
+                      <span class="assignment-card__index">01</span>
+                      <div class="assignment-card__context">
+                        <span class="assignment-card__mode">async</span
+                        ><span class="assignment-state"
+                          ><i></i>in progress</span
+                        >
+                      </div>
+                      <div class="assignment-card__copy">
+                        <strong>Build a number guessing game</strong>
+                        <p>
+                          Use loops and conditions to guide a player toward the
+                          answer, then explain your approach.
+                        </p>
+                      </div>
+                      <span class="assignment-card__open"
+                        ><span>Open activity</span><i>→</i></span
+                      >
+                    </button>
+                  </li>
+                  <li>
+                    <button class="assignment-card">
+                      <span class="assignment-card__index">02</span>
+                      <div class="assignment-card__context">
+                        <span class="assignment-card__mode">live</span
+                        ><span class="assignment-state"><i></i>ready</span>
+                      </div>
+                      <div class="assignment-card__copy">
+                        <strong>Trace a loop by hand</strong>
+                        <p>
+                          Predict each value, then compare your reasoning with
+                          the program output.
+                        </p>
+                      </div>
+                      <span class="assignment-card__open"
+                        ><span>Open activity</span><i>→</i></span
+                      >
+                    </button>
+                  </li>
+                  <li>
+                    <button class="assignment-card">
+                      <span class="assignment-card__index">03</span>
+                      <div class="assignment-card__context">
+                        <span class="assignment-card__mode">async</span
+                        ><span class="assignment-state"><i></i>ready</span>
+                      </div>
+                      <div class="assignment-card__copy">
+                        <strong>Refactor a small program</strong>
+                        <p>
+                          Make a working solution clearer without changing its
+                          behavior.
+                        </p>
+                      </div>
+                      <span class="assignment-card__open"
+                        ><span>Open activity</span><i>→</i></span
+                      >
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="assignment-class-folio">
+                <header class="assignment-class-folio__heading">
+                  <span class="assignment-class-folio__mark">DL</span>
+                  <div>
+                    <p class="eyebrow">Class folio</p>
+                    <h2>Design Lab</h2>
+                  </div>
+                  <span>1 activity</span>
+                </header>
+                <ul class="assignment-list">
+                  <li>
+                    <button class="assignment-card">
+                      <span class="assignment-card__index">01</span>
+                      <div class="assignment-card__context">
+                        <span class="assignment-card__mode">live</span
+                        ><span class="assignment-state"><i></i>ready</span>
+                      </div>
+                      <div class="assignment-card__copy">
+                        <strong>Prototype a helpful class tool</strong>
+                        <p>
+                          Turn one daily classroom frustration into a clear,
+                          testable interface.
+                        </p>
+                      </div>
+                      <span class="assignment-card__open"
+                        ><span>Open activity</span><i>→</i></span
+                      >
+                    </button>
+                  </li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="preview-view" data-preview-view="admin" hidden>
+          <div class="admin-proof-shell">
+            <aside class="admin-proof-sidebar">
+              <div class="admin-proof-brand"><span>T</span>Tro Admin</div>
+              <nav>
+                <strong>Manage</strong>
+                <a aria-current="page">♙ <span>Users</span></a>
+                <a>⌁ <span>Usage</span></a>
+                <a>◇ <span>Access codes</span></a>
+              </nav>
+              <div class="admin-proof-sidebar__foot">
+                <i></i><span>Admin session</span>
+              </div>
+            </aside>
+            <div class="preview-admin">
+              <header class="preview-admin__header">
+                <div>
+                  <p class="eyebrow">Workspace access</p>
+                  <h1>Users</h1>
+                  <p>Assign classroom roles, plans, and product access.</p>
+                </div>
+                <button class="primary-button">＋ New code</button>
+              </header>
+              <section class="preview-admin__summary">
+                <article>
+                  <span>Total users</span><strong>1,284</strong
+                  ><span>All registered accounts</span>
+                </article>
+                <article>
+                  <span>Active</span><strong>1,216</strong
+                  ><span>Can access Tro</span>
+                </article>
+                <article>
+                  <span>Blocked</span><strong>8</strong
+                  ><span>Access disabled</span>
+                </article>
+              </section>
+              <aside class="classroom-flow-note">
+                <div class="classroom-flow-note__copy">
+                  <span class="classroom-flow-note__mark">↗</span>
+                  <div>
+                    <strong>Classroom setup</strong
+                    ><span
+                      >Set a role here before a teacher adds this account to a
+                      class.</span
+                    >
+                  </div>
+                </div>
+                <ol>
+                  <li><span>1</span>Account created</li>
+                  <li><span>2</span>Role assigned</li>
+                  <li><span>3</span>Added to class</li>
+                </ol>
+              </aside>
+              <section class="preview-admin__table">
+                <div class="preview-admin__toolbar">
+                  <div>
+                    <h2>All users</h2>
+                    <p>1,284 matching accounts</p>
+                  </div>
+                  <div class="preview-admin__filters">
+                    <label
+                      ><span>Search</span
+                      ><input placeholder="Search name or email" type="search"
+                    /></label>
+                    <label
+                      ><span>Class role</span
+                      ><select>
+                        <option>All roles</option>
+                        <option>Unassigned</option>
+                        <option>Teacher</option>
+                        <option>Student</option>
+                      </select></label
+                    >
+                    <label
+                      ><span>Status</span
+                      ><select>
+                        <option>All statuses</option>
+                        <option>Active</option>
+                        <option>Blocked</option>
+                      </select></label
+                    >
+                  </div>
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Plan</th>
+                      <th>Classroom role</th>
+                      <th>Access code</th>
+                      <th>Last seen</th>
+                      <th>Status</th>
+                      <th><span class="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td data-label="User">
+                        <div class="preview-user">
+                          <i>MN</i
+                          ><span
+                            ><strong>Mai Nguyen</strong
+                            ><small>mai@example.edu</small></span
+                          >
+                        </div>
+                      </td>
+                      <td data-label="Plan">Pro</td>
+                      <td data-label="Classroom role">
+                        <div
+                          class="classroom-role-control classroom-role-control--teacher"
+                        >
+                          <span class="classroom-role-control__mark">●</span>
+                          <select aria-label="Classroom role for Mai Nguyen">
+                            <option>Unassigned</option>
+                            <option selected>Teacher</option>
+                            <option>Student</option>
+                          </select>
+                        </div>
+                        <span
+                          class="classroom-role-save-state classroom-role-save-state--saved"
+                          >Saved</span
+                        >
+                      </td>
+                      <td data-label="Access code">SCHOOL-2026</td>
+                      <td data-label="Last seen">Today, 09:42</td>
+                      <td data-label="Status">
+                        <span class="preview-status">Active</span>
+                      </td>
+                      <td data-label="Actions">
+                        <div class="preview-row-actions">
+                          <button>Block</button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td data-label="User">
+                        <div class="preview-user">
+                          <i>LT</i
+                          ><span
+                            ><strong>Linh Tran</strong
+                            ><small>linh@example.edu</small></span
+                          >
+                        </div>
+                      </td>
+                      <td data-label="Plan">Free</td>
+                      <td data-label="Classroom role">
+                        <div
+                          class="classroom-role-control classroom-role-control--student"
+                          data-state="saving"
+                        >
+                          <span class="classroom-role-control__mark">●</span>
+                          <select
+                            aria-label="Classroom role for Linh Tran"
+                            disabled
+                          >
+                            <option>Unassigned</option>
+                            <option>Teacher</option>
+                            <option selected>Student</option>
+                          </select>
+                        </div>
+                        <span
+                          class="classroom-role-save-state classroom-role-save-state--saving"
+                          >Saving…</span
+                        >
+                      </td>
+                      <td data-label="Access code">—</td>
+                      <td data-label="Last seen">Yesterday</td>
+                      <td data-label="Status">
+                        <span class="preview-status">Active</span>
+                      </td>
+                      <td data-label="Actions">
+                        <div class="preview-row-actions">
+                          <button>Grant code</button><button>Block</button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td data-label="User">
+                        <div class="preview-user">
+                          <i>AN</i
+                          ><span
+                            ><strong>An Nguyen</strong
+                            ><small>an@example.edu</small></span
+                          >
+                        </div>
+                      </td>
+                      <td data-label="Plan">Free</td>
+                      <td data-label="Classroom role">
+                        <div
+                          class="classroom-role-control classroom-role-control--unassigned"
+                          data-state="error"
+                        >
+                          <span class="classroom-role-control__mark">●</span>
+                          <select aria-label="Classroom role for An Nguyen">
+                            <option selected>Unassigned</option>
+                            <option>Teacher</option>
+                            <option>Student</option>
+                          </select>
+                        </div>
+                        <span
+                          class="classroom-role-save-state classroom-role-save-state--error"
+                          >Not saved</span
+                        >
+                      </td>
+                      <td data-label="Access code">—</td>
+                      <td data-label="Last seen">Aug 22</td>
+                      <td data-label="Status">
+                        <span class="preview-status">Active</span>
+                      </td>
+                      <td data-label="Actions">
+                        <div class="preview-row-actions">
+                          <button>Grant code</button><button>Block</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script>
+      const denseRosterBody = document.querySelector('#dense-roster-body');
+      const familyNames = ['Nguyen', 'Tran', 'Pham', 'Le', 'Vo', 'Hoang'];
+      const givenNames = ['Minh', 'Linh', 'An', 'Mai', 'Bao', 'Thao', 'Duy'];
+      for (let index = 0; index < 500; index += 1) {
+        const row = document.createElement('tr');
+        const isOwner = index === 0;
+        const isTeacher = isOwner || index % 43 === 0;
+        const name = isOwner
+          ? 'Mai Nguyen'
+          : `${givenNames[index % givenNames.length]} ${familyNames[index % familyNames.length]}`;
+        const role = isOwner
+          ? 'Class owner'
+          : isTeacher
+            ? 'Teacher'
+            : 'Student';
+        const roleClass = isTeacher ? 'facilitator' : 'participant';
+        row.innerHTML = `<td><strong>${name}</strong><small>account.${String(index + 1).padStart(3, '0')}@example.edu</small></td><td><span class="roster-role roster-role--${roleClass}"><i></i>${role}</span></td><td><code>usr_${String(index + 1).padStart(4, '0')}…${(9000 + index).toString(16)}</code></td>`;
+        denseRosterBody.append(row);
+      }
+      const buttons = [...document.querySelectorAll('[data-view]')];
+      const views = [...document.querySelectorAll('[data-preview-view]')];
+      function show(view) {
+        document.body.dataset.activeView = view;
+        buttons.forEach((button) =>
+          button.setAttribute(
+            'aria-current',
+            button.dataset.view === view ? 'page' : 'false',
+          ),
+        );
+        views.forEach((section) => {
+          section.hidden = section.dataset.previewView !== view;
+        });
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', view);
+        history.replaceState(null, '', url);
+      }
+      buttons.forEach((button) =>
+        button.addEventListener('click', () => show(button.dataset.view)),
+      );
+      show(
+        new URLSearchParams(window.location.search).get('view') || 'overview',
+      );
+      if (new URLSearchParams(window.location.search).get('lang') === 'vi') {
+        document.documentElement.lang = 'vi';
+        const vietnamese = new Map([
+          ['All class workspaces', 'Tất cả không gian lớp học'],
+          ['Current class', 'Lớp hiện tại'],
+          ['Teacher', 'Giáo viên'],
+          ['Switch class', 'Chuyển lớp'],
+          ['Library', 'Thư viện'],
+          ['Activities', 'Hoạt động'],
+          ['People', 'Mọi người'],
+          ['Class community', 'Cộng đồng lớp học'],
+          ['on the roster', 'trong danh sách lớp'],
+          ['At a glance', 'Tổng quan nhanh'],
+          ['people', 'người'],
+          ['Teachers', 'Giáo viên'],
+          ['Students', 'Học sinh'],
+          ['Add registered accounts', 'Thêm tài khoản đã đăng ký'],
+          ['Build the roster', 'Xây dựng danh sách lớp'],
+          ['Registered account emails', 'Email tài khoản đã đăng ký'],
+          ['Add as', 'Thêm với vai trò'],
+          ['Add to class', 'Thêm vào lớp'],
+          ['Roster update complete', 'Đã cập nhật danh sách lớp'],
+          ['Already here', 'Đã có trong lớp'],
+          ['Role mismatch', 'Sai vai trò'],
+          ['Unavailable', 'Không khả dụng'],
+          ['Everyone in this class', 'Mọi người trong lớp'],
+          ['Class roster', 'Danh sách lớp'],
+          ['Find a person', 'Tìm một người'],
+          ['Show role', 'Hiển thị vai trò'],
+          ['Everyone', 'Tất cả mọi người'],
+          ['shown', 'đang hiển thị'],
+        ]);
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+        );
+        let textNode = walker.nextNode();
+        while (textNode) {
+          const source = textNode.textContent.trim();
+          if (vietnamese.has(source)) {
+            textNode.textContent = vietnamese.get(source);
+          }
+          textNode = walker.nextNode();
+        }
+      }
+    </script>
+  </body>
+</html>

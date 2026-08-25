@@ -20,6 +20,7 @@ function render(role: KnowledgeSpaceSummary['role']): string {
     <SpaceDetailPage
       appLanguage="en"
       onBack={vi.fn()}
+      onOpen={vi.fn()}
       space={{ ...space, role }}
     />,
   );

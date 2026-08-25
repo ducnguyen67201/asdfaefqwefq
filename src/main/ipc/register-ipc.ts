@@ -39,6 +39,7 @@ import {
   PrepareActivityStarterRequestSchema,
   SubmitKnowledgeSelectionRequestSchema,
   CreateKnowledgeGroupRequestSchema,
+  AddKnowledgeSpaceMembersRequestSchema,
   CreateKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteRequestSchema,
   RequestKnowledgeAttemptHelpSchema,
@@ -269,6 +270,8 @@ export function registerIpcHandlers(
     IPC_CHANNELS.submitKnowledgeSelection,
     IPC_CHANNELS.listKnowledgeGroups,
     IPC_CHANNELS.createKnowledgeGroup,
+    IPC_CHANNELS.listKnowledgeMembers,
+    IPC_CHANNELS.addKnowledgeSpaceMembers,
     IPC_CHANNELS.createKnowledgeInvite,
     IPC_CHANNELS.redeemKnowledgeInvite,
     IPC_CHANNELS.requestKnowledgeAttemptHelp,
@@ -482,6 +485,19 @@ export function registerIpcHandlers(
     await assertMembershipAuthorizedSender(event, mainWindow, services);
     return services.knowledgeSpaceClient.createGroup(
       CreateKnowledgeGroupRequestSchema.parse(input),
+    );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.listKnowledgeMembers, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeSpaceIdRequestSchema.parse(input);
+    return services.knowledgeSpaceClient.listMembers(request.spaceId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.addKnowledgeSpaceMembers, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.addMembers(
+      AddKnowledgeSpaceMembersRequestSchema.parse(input),
     );
   });
 

@@ -13,7 +13,7 @@ use sha2::Sha256;
 
 use crate::error::{ApiError, ApiResult};
 
-const ACCESS_VERSION: u8 = 1;
+const SEALED_SECRET_VERSION: u8 = 1;
 const IV_BYTES: usize = 12;
 const TAG_BYTES: usize = 16;
 
@@ -47,44 +47,52 @@ pub fn digest_access_code(value: &str, hmac_key: &str) -> ApiResult<Option<[u8; 
     .map(Some)
 }
 
-fn access_key(hmac_key: &str) -> ApiResult<[u8; 32]> {
+fn secret_key(hmac_key: &str, domain: &[u8]) -> ApiResult<[u8; 32]> {
     if hmac_key.len() < 32 {
         return Err(ApiError::internal(anyhow::anyhow!(
-            "Access code encryption requires a strong server key."
+            "Secret encryption requires a strong server key."
         )));
     }
-    hmac_sha256(
-        hmac_key.as_bytes(),
-        &[b"trocode-access-code-encryption-v1\0"],
-    )
+    hmac_sha256(hmac_key.as_bytes(), &[domain])
 }
 
-pub fn seal_access_code(code: &str, hmac_key: &str, digest: &[u8; 32]) -> ApiResult<Vec<u8>> {
-    let cipher = Aes256Gcm::new_from_slice(&access_key(hmac_key)?).map_err(ApiError::internal)?;
+fn seal_secret(
+    cleartext: &str,
+    hmac_key: &str,
+    digest: &[u8; 32],
+    domain: &[u8],
+) -> ApiResult<Vec<u8>> {
+    let cipher =
+        Aes256Gcm::new_from_slice(&secret_key(hmac_key, domain)?).map_err(ApiError::internal)?;
     let mut iv = [0_u8; IV_BYTES];
     rand::rng().fill_bytes(&mut iv);
     let mut encrypted = cipher
         .encrypt(
             (&iv).into(),
             Payload {
-                msg: code.as_bytes(),
+                msg: cleartext.as_bytes(),
                 aad: digest,
             },
         )
-        .map_err(|_| ApiError::internal(anyhow::anyhow!("Could not encrypt access code.")))?;
+        .map_err(|_| ApiError::internal(anyhow::anyhow!("Could not encrypt secret.")))?;
     let tag = encrypted.split_off(encrypted.len().saturating_sub(TAG_BYTES));
     let mut output = Vec::with_capacity(1 + IV_BYTES + TAG_BYTES + encrypted.len());
-    output.push(ACCESS_VERSION);
+    output.push(SEALED_SECRET_VERSION);
     output.extend_from_slice(&iv);
     output.extend_from_slice(&tag);
     output.extend_from_slice(&encrypted);
     Ok(output)
 }
 
-pub fn open_access_code(sealed: &[u8], hmac_key: &str, digest: &[u8; 32]) -> ApiResult<String> {
-    if sealed.len() < 1 + IV_BYTES + TAG_BYTES + 1 || sealed[0] != ACCESS_VERSION {
+fn open_secret(
+    sealed: &[u8],
+    hmac_key: &str,
+    digest: &[u8; 32],
+    domain: &[u8],
+) -> ApiResult<String> {
+    if sealed.len() < 1 + IV_BYTES + TAG_BYTES + 1 || sealed[0] != SEALED_SECRET_VERSION {
         return Err(ApiError::internal(anyhow::anyhow!(
-            "Could not authenticate access code ciphertext."
+            "Could not authenticate secret ciphertext."
         )));
     }
     let iv = &sealed[1..1 + IV_BYTES];
@@ -92,7 +100,8 @@ pub fn open_access_code(sealed: &[u8], hmac_key: &str, digest: &[u8; 32]) -> Api
     let ciphertext = &sealed[1 + IV_BYTES + TAG_BYTES..];
     let mut combined = Vec::from(ciphertext);
     combined.extend_from_slice(tag);
-    let cipher = Aes256Gcm::new_from_slice(&access_key(hmac_key)?).map_err(ApiError::internal)?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&secret_key(hmac_key, domain)?).map_err(ApiError::internal)?;
     let clear = cipher
         .decrypt(
             iv.into(),
@@ -101,12 +110,44 @@ pub fn open_access_code(sealed: &[u8], hmac_key: &str, digest: &[u8; 32]) -> Api
                 aad: digest,
             },
         )
-        .map_err(|_| {
-            ApiError::internal(anyhow::anyhow!(
-                "Could not authenticate access code ciphertext."
-            ))
-        })?;
+        .map_err(|_| ApiError::internal(anyhow::anyhow!("Could not authenticate secret.")))?;
     String::from_utf8(clear).map_err(ApiError::internal)
+}
+
+pub fn seal_access_code(code: &str, hmac_key: &str, digest: &[u8; 32]) -> ApiResult<Vec<u8>> {
+    seal_secret(
+        code,
+        hmac_key,
+        digest,
+        b"trocode-access-code-encryption-v1\0",
+    )
+}
+
+pub fn open_access_code(sealed: &[u8], hmac_key: &str, digest: &[u8; 32]) -> ApiResult<String> {
+    open_secret(
+        sealed,
+        hmac_key,
+        digest,
+        b"trocode-access-code-encryption-v1\0",
+    )
+}
+
+pub fn seal_invite_code(code: &str, hmac_key: &str, digest: &[u8; 32]) -> ApiResult<Vec<u8>> {
+    seal_secret(
+        code,
+        hmac_key,
+        digest,
+        b"trocode-space-invite-encryption-v1\0",
+    )
+}
+
+pub fn open_invite_code(sealed: &[u8], hmac_key: &str, digest: &[u8; 32]) -> ApiResult<String> {
+    open_secret(
+        sealed,
+        hmac_key,
+        digest,
+        b"trocode-space-invite-encryption-v1\0",
+    )
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -282,6 +323,18 @@ mod tests {
             "TRO-SECRET-CODE"
         );
         assert!(open_access_code(&sealed, key, &[8_u8; 32]).is_err());
+    }
+
+    #[test]
+    fn invite_cipher_round_trips_with_a_separate_key_domain() {
+        let key = "test-space-invite-cipher-key-that-is-at-least-32-characters";
+        let digest = [9_u8; 32];
+        let sealed = seal_invite_code("TROSPACE-SECRET", key, &digest).expect("seal");
+        assert_eq!(
+            open_invite_code(&sealed, key, &digest).expect("open"),
+            "TROSPACE-SECRET"
+        );
+        assert!(open_access_code(&sealed, key, &digest).is_err());
     }
 
     #[test]
