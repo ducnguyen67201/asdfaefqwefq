@@ -1,11 +1,16 @@
-load("@crates//:defs.bzl", "aliases", "all_crate_deps", "crate_edition")
+load("@crates//:defs.bzl", "aliases", "all_crate_deps", "crate_deps", "crate_edition")
 load(
     "@rules_rust//rust:defs.bzl",
     "rust_binary",
     "rust_library",
     "rust_test",
 )
-load("//bazel/rust:defs.bzl", "trocode_rust_checks", "trocode_rust_lint_config")
+load(
+    "//bazel/rust:defs.bzl",
+    "trocode_rust_checks",
+    "trocode_rust_integration_test",
+    "trocode_rust_lint_config",
+)
 
 trocode_rust_lint_config(
     name = "rust_lints",
@@ -25,21 +30,97 @@ rust_library(
     crate_name = "trocode_api",
     edition = crate_edition(),
     lint_config = ":rust_lints",
-    deps = all_crate_deps(normal = True),
     proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = all_crate_deps(normal = True),
 )
 
 rust_binary(
     name = "trocode_api",
     srcs = ["src/main.rs"],
-    aliases = aliases(),
     crate_name = "trocode_api_server",
     edition = crate_edition(),
     lint_config = ":rust_lints",
     visibility = ["//visibility:public"],
-    deps = [":api_lib"] + all_crate_deps(normal = True),
-    proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = [":api_lib"] + crate_deps([
+        "anyhow",
+        "clap",
+        "tokio",
+    ]),
 )
+
+trocode_rust_integration_test(
+    name = "agent_runtime_compat_test",
+    size = "large",
+    src = "tests/agent_runtime_compat.rs",
+    tags = ["requires-postgres"],
+)
+
+trocode_rust_integration_test(
+    name = "contract_corpus_test",
+    size = "small",
+    src = "tests/contract_corpus.rs",
+    compile_data = glob([
+        "migrations/*.sql",
+        "tests/fixtures/*",
+    ]),
+)
+
+trocode_rust_integration_test(
+    name = "google_auth_compat_test",
+    size = "small",
+    src = "tests/google_auth_compat.rs",
+)
+
+trocode_rust_integration_test(
+    name = "http_compat_test",
+    size = "large",
+    src = "tests/http_compat.rs",
+    tags = [
+        "requires-postgres",
+        "requires-s3",
+    ],
+)
+
+trocode_rust_integration_test(
+    name = "ingestion_test",
+    size = "large",
+    src = "tests/ingestion.rs",
+    tags = [
+        "requires-postgres",
+        "requires-s3",
+    ],
+)
+
+trocode_rust_integration_test(
+    name = "parser_properties_test",
+    size = "small",
+    src = "tests/parser_properties.rs",
+)
+
+trocode_rust_integration_test(
+    name = "postgres_compat_test",
+    src = "tests/postgres_compat.rs",
+    tags = ["requires-postgres"],
+)
+
+trocode_rust_integration_test(
+    name = "provider_budget_compat_test",
+    size = "large",
+    src = "tests/provider_budget_compat.rs",
+    tags = ["requires-postgres"],
+)
+
+RUST_TEST_TARGETS = [
+    ":agent_runtime_compat_test",
+    ":api_lib_test",
+    ":contract_corpus_test",
+    ":google_auth_compat_test",
+    ":http_compat_test",
+    ":ingestion_test",
+    ":parser_properties_test",
+    ":postgres_compat_test",
+    ":provider_budget_compat_test",
+]
 
 rust_test(
     name = "api_lib_test",
@@ -50,8 +131,8 @@ rust_test(
     crate = ":api_lib",
     edition = crate_edition(),
     lint_config = ":rust_lints",
-    deps = all_crate_deps(normal_dev = True),
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+    deps = all_crate_deps(normal_dev = True),
 )
 
 trocode_rust_checks(
@@ -61,7 +142,5 @@ trocode_rust_checks(
         ":api_lib",
         ":trocode_api",
     ],
-    test_targets = [
-        ":api_lib_test",
-    ],
+    test_targets = RUST_TEST_TARGETS,
 )
