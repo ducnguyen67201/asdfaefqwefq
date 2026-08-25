@@ -8,6 +8,7 @@ const MIN_SECRET_LENGTH: usize = 32;
 pub struct Config {
     pub admin: AdminConfig,
     pub agent_runtime: AgentRuntimeConfig,
+    pub companion_images: CompanionImageConfig,
     pub cost_guard: CostGuardConfig,
     pub database_pool_max: u32,
     pub database_url: String,
@@ -27,6 +28,14 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct AdminConfig {
     pub access_token: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompanionImageConfig {
+    pub eligible_users: BTreeSet<String>,
+    pub enabled: bool,
+    pub reservation_micro_usd: i64,
+    pub zdr_confirmed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +187,23 @@ impl Config {
             bail!("TROCODE_BUDGET_WARNING_PERCENT must be at most 100.");
         }
 
+        let companion_images_enabled =
+            boolean(environment, "TROCODE_COMPANION_IMAGES_ENABLED", false)?;
+        let companion_images_zdr_confirmed =
+            boolean(environment, "TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED", false)?;
+        let companion_image_eligible_users =
+            comma_separated(environment, "TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS");
+        if companion_images_enabled && !companion_images_zdr_confirmed {
+            bail!(
+                "TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED must be true when companion images are enabled."
+            );
+        }
+        if companion_images_enabled && companion_image_eligible_users.is_empty() {
+            bail!(
+                "TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS is required when companion images are enabled."
+            );
+        }
+
         Ok(Self {
             admin: AdminConfig {
                 access_token: admin_access_token,
@@ -240,6 +266,16 @@ impl Config {
                     "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
                     0,
                 )?,
+            },
+            companion_images: CompanionImageConfig {
+                eligible_users: companion_image_eligible_users,
+                enabled: companion_images_enabled,
+                reservation_micro_usd: positive_i64(
+                    environment,
+                    "TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD",
+                    50_000,
+                )?,
+                zdr_confirmed: companion_images_zdr_confirmed,
             },
             cost_guard: CostGuardConfig {
                 daily_micro_usd: positive_i64(
@@ -427,6 +463,38 @@ mod tests {
         assert_eq!(config.port, 8080);
         assert_eq!(config.agent_runtime.protocol_version, 2);
         assert!(config.openai_models.contains("gpt-5.6-luna"));
+        assert!(!config.companion_images.enabled);
+        assert!(!config.companion_images.zdr_confirmed);
+        assert!(config.companion_images.eligible_users.is_empty());
+        assert_eq!(config.companion_images.reservation_micro_usd, 50_000);
+    }
+
+    #[test]
+    fn companion_images_fail_closed_without_zdr_and_allowlist() {
+        let mut values = environment();
+        values.insert(
+            "TROCODE_COMPANION_IMAGES_ENABLED".to_owned(),
+            "true".to_owned(),
+        );
+        assert!(Config::from_source(&values).is_err());
+
+        values.insert(
+            "TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED".to_owned(),
+            "true".to_owned(),
+        );
+        assert!(Config::from_source(&values).is_err());
+
+        values.insert(
+            "TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS".to_owned(),
+            "student-1, student-2".to_owned(),
+        );
+        let config = Config::from_source(&values).expect("valid companion rollout");
+        assert!(config.companion_images.enabled);
+        assert!(config.companion_images.zdr_confirmed);
+        assert_eq!(
+            config.companion_images.eligible_users,
+            BTreeSet::from(["student-1".to_owned(), "student-2".to_owned()])
+        );
     }
 
     #[test]

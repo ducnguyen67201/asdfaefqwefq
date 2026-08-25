@@ -223,7 +223,7 @@ checks database readiness. Railway starts the API from
 [`services/api`](services/api) and applies its idempotent session migration
 before accepting traffic.
 
-The in-progress Rust replacement builds from the same directory and is kept
+The feature-complete Rust backend builds from the same directory and is kept
 behind the current Node deployment until the parity and rollback gates in the
 [same-service cutover runbook](docs/operations/rust-backend-cutover.md) pass.
 
@@ -296,11 +296,12 @@ Rollback is immediate: set `TROCODE_COMPANION_IMAGES_ENABLED=false`. Existing
 encrypted custom images continue rendering locally, but no new generation is
 available.
 
-The in-place Rust backend candidate does not yet implement the companion quota
-or image-edit routes. Before the Rust same-service cutover, port the companion
-configuration, quota accounting, provider adapter, routes, and parity tests to
-Rust; keep companion generation disabled during Rust canaries until that gate
-passes.
+The in-place Rust backend implements the companion configuration, quota
+accounting, image-token pricing and settlement, provider adapter, and both HTTP
+routes. Keep companion generation disabled during Rust canaries until the ZDR,
+privacy, moderation, billing-reconciliation, and no-sensitive-logging gates
+above pass. The JavaScript implementation remains only as a release-parity and
+rollback oracle until the same-service cutover is approved.
 
 For a user validation pass, open **Settings → Custom companion**, paste/drop or
 choose a PNG/JPEG no larger than 5 MiB, enter a 1–400 character prompt, and make
@@ -651,7 +652,7 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-└── api/              production Node API and in-place Rust replacement candidate
+└── api/              Rust hosted backend plus JavaScript rollback/parity oracle
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```

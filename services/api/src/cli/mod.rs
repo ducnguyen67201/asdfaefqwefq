@@ -128,6 +128,12 @@ mod tests {
                 protocol_version: 2,
                 rollout_percent: 0,
             },
+            companion_images: crate::config::CompanionImageConfig {
+                eligible_users: std::collections::BTreeSet::new(),
+                enabled: false,
+                reservation_micro_usd: 50_000,
+                zdr_confirmed: false,
+            },
             cost_guard: crate::config::CostGuardConfig {
                 daily_micro_usd: 8_000_000,
                 enabled: true,

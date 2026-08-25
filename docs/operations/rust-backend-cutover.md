@@ -19,7 +19,7 @@ ingestion-worker`.
 ## Required pre-deploy evidence
 
 - Back up PostgreSQL and the private object store together, then restore both into an isolated environment.
-- Pass crypto/route fixtures, Rust fmt/clippy/test/audit/release build, desktop `npm run check`, and supported-platform packaging.
+- Pass crypto/route fixtures, companion image provider/quota parity, Rust fmt/clippy/test/audit/release build, desktop `npm run check`, and supported-platform packaging.
 - Run migrations twice against an empty PostgreSQL 17 database and a scrubbed clone initialized by the JavaScript release. The only allowed schema delta is SQLx migration bookkeeping.
 - Pass disposable PostgreSQL/S3 integration tests and the PDF corpus.
 - Rehearse Rust deploy, JavaScript rollback, and Rust roll-forward in staging.
@@ -82,4 +82,4 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or consequential action because local completion is missing.
 7. Preserve logs, diagnostic rows, and backups. Do not delete or manually roll back domain data.
 
-The migration retains all 17 domain migrations without a Rust-only required schema. The JavaScript rollback is expected to ignore SQLx bookkeeping; staging must prove that before production cutover.
+The migration retains all 18 domain migrations without a Rust-only required schema. The JavaScript rollback is expected to ignore SQLx bookkeeping; staging must prove that before production cutover.
