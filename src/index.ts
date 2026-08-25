@@ -14,30 +14,17 @@ import {
 } from 'electron';
 import path from 'node:path';
 
-import type { ActionPreview } from './main/agent/action-preview-policy';
 import { AgentActivityService } from './main/agent/agent-activity-service';
-import { AgentRuntimeFactory } from './main/agent/agent-runtime-factory';
-import { approvalObservationMatches } from './main/agent/approval-observation';
 import { createCuaSemanticToolDefinitions } from './main/agent/cua-semantic-agent-tools';
-import {
-  DesktopObservationSchema,
-  type DesktopCommand,
-  type DesktopObservation,
-} from './main/agent/execution-contracts';
+import type { DesktopCommand } from './main/agent/execution-contracts';
 import {
   TaskExecutionCoordinator,
-  type DesktopPresentation,
-  type GuidancePresentationHandle,
 } from './main/agent/execution-coordinator';
-import {
-  registerGlobalGuidanceShortcuts,
-  type GlobalGuidanceShortcuts,
-} from './main/agent/global-guidance-shortcuts';
 import { registerGlobalTaskCancelShortcut } from './main/agent/global-task-cancel-shortcut';
-import { OpenAIAgentsRuntime } from './main/agent/openai-agents-runtime';
 import {
   defaultRuntimeToolDefinitions,
   RuntimeToolRegistry,
+  type GuidanceToolInput,
 } from './main/agent/runtime-tool-registry';
 import { TaskRuntime } from './main/agent/task-runtime';
 import { requestsGuidedWalkthrough } from './main/agent/walkthrough-policy';
@@ -63,12 +50,10 @@ import {
 import {
   getVirtualDisplayBounds,
   interpolateCompanionPosition,
-  placeCompanionForBrowserNavigation,
   placeCompanionNearCursor,
   placeGuidanceCallout,
   placeGuidanceTargetMarker,
   placeVoiceIsland,
-  resolveDesktopCaptureBounds,
   shouldUseCompanionOverlay,
   type Point,
   type Rectangle,
@@ -82,9 +67,9 @@ import {
   type GlobalNumberedChoiceShortcuts,
 } from './main/companion/global-numbered-choice-shortcuts';
 import { CuaService } from './main/cua/cua-service';
+import { createRustDesktopEngineClient } from './main/engine/rust-desktop-engine-client';
 import { HostedTaskHistoryStore } from './main/history/hosted-task-history-store';
 import { TaskHistoryService } from './main/history/task-history-service';
-import { PostgresTaskHistoryStore } from './main/history/task-history-store';
 import { DesktopToolWorker } from './main/hosted/desktop-tool-worker';
 import { DesktopWorkerClient } from './main/hosted/desktop-worker-client';
 import { desktopWorkerCapabilities } from './main/hosted/desktop-worker-protocol';
@@ -99,7 +84,6 @@ import { ClassroomSessionService } from './main/knowledge/classroom-session-serv
 import { FileSelectionService } from './main/knowledge/file-selection-service';
 import { KnowledgeSpaceClient } from './main/knowledge/knowledge-space-client';
 import { KnowledgeUploadOrchestrator } from './main/knowledge/knowledge-upload-service';
-import { EncryptedMembershipActivationStore } from './main/membership/membership-activation-store';
 import {
   MembershipService,
   membershipRequiredForBuild,
@@ -204,7 +188,6 @@ const companionResponseController = new CompanionResponseController();
 const desktopApplicationLauncher = new DesktopApplicationLauncher({
   openPath: (target) => shell.openPath(target),
 });
-const databaseUrl = process.env.DATABASE_URL?.trim() ?? '';
 const oauthBrowserFlow = new LocalOAuthBrowserFlow({
   openExternal: async (url) => shell.openExternal(url, { activate: true }),
 });
@@ -212,19 +195,22 @@ const trocodeApiBaseUrl =
   process.env.TROCODE_API_BASE_URL?.trim() ||
   process.env.TRO_API_BASE_URL?.trim() ||
   '';
+const repositoryRoot = path.resolve(__dirname, '../..');
+const rustDesktopEngine = createRustDesktopEngineClient({
+  enginePath: process.env.TROCODE_DESKTOP_ENGINE_PATH?.trim() || undefined,
+  isPackaged: app.isPackaged,
+  repositoryRoot,
+  resourcesPath: process.resourcesPath,
+});
 const authSessionStore = new EncryptedAuthSessionStore();
 const authService = new GoogleAuthService({
   apiBaseUrl: trocodeApiBaseUrl,
   browserFlow: oauthBrowserFlow,
   clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+  rustEngine: rustDesktopEngine,
   sessionStore: authSessionStore,
 });
-const hostedRuntimeConfigured =
-  (process.env.TROCODE_BACKEND_AGENT_ENABLED ?? process.env.TROCODE_AGENT_RUNTIME_ENABLED)
-    ?.trim().toLowerCase() === 'true' &&
-  Boolean(trocodeApiBaseUrl);
-let hostedRuntimeAvailable = false;
+const hostedRuntimeConfigured = Boolean(trocodeApiBaseUrl);
 const hostedTaskClient = new HostedTaskClient({
   accessTokenProvider: () => authService.getAccessToken(),
   apiBaseUrl: trocodeApiBaseUrl,
@@ -233,11 +219,7 @@ const taskHistoryService = new TaskHistoryService({
   onError: (error) => {
     console.error('[task-history] durable persistence failed.', error);
   },
-  store: hostedRuntimeConfigured
-    ? new HostedTaskHistoryStore(hostedTaskClient, (run) => projectHostedTask(run))
-    : databaseUrl
-      ? new PostgresTaskHistoryStore(databaseUrl)
-      : null,
+  store: new HostedTaskHistoryStore(hostedTaskClient, (run) => projectHostedTask(run)),
 });
 const usageBudgetService = new UsageBudgetService(
   trocodeApiBaseUrl,
@@ -246,12 +228,10 @@ const usageBudgetService = new UsageBudgetService(
 const membershipService = new MembershipService({
   accessTokenProvider: () => authService.getAccessToken(),
   apiBaseUrl: trocodeApiBaseUrl,
-  publicKey: process.env.TROCODE_MEMBERSHIP_PUBLIC_KEY,
   required: membershipRequiredForBuild({
     apiBaseUrl: trocodeApiBaseUrl,
     isPackaged: app.isPackaged,
   }),
-  store: new EncryptedMembershipActivationStore(),
 });
 const knowledgeSpaceClient = new KnowledgeSpaceClient(
   trocodeApiBaseUrl,
@@ -290,12 +270,7 @@ const runtimeToolRegistry = new RuntimeToolRegistry([
     semanticAvailable: () => cuaService.supportsSemanticFastPath(),
   }),
 ]);
-const taskRuntime = new TaskRuntime({
-  // Only a compatible, canary-authorized hosted contract may grant instruction
-  // authority. The local fallback remains v8 fail-closed.
-  intentAuthorizationEnabled: false,
-  toolRegistry: runtimeToolRegistry,
-});
+const taskRuntime = new TaskRuntime();
 taskRuntime.on('task-update', taskHistoryService.recordTaskUpdate);
 taskRuntime.on('task-update', reportActivityProgress);
 const appPreferencesService = new AppPreferencesService(
@@ -359,6 +334,7 @@ const voiceService = new VoiceService({
   apiBaseUrl: trocodeApiBaseUrl,
   credentialStore: voiceCredentialStore,
   preferencesService: appPreferencesService,
+  rustEngine: rustDesktopEngine,
 });
 const elevenLabsTtsService = new ElevenLabsTtsService({
   accessTokenProvider: () => authService.getAccessToken(),
@@ -368,33 +344,7 @@ const companionNarrationService = new CompanionNarrationService({
   publish: publishCompanionSpeech,
   ttsService: elevenLabsTtsService,
 });
-const agentRuntime = new OpenAIAgentsRuntime({
-  accessTokenProvider: () => authService.getAccessToken(),
-  apiBaseUrl: trocodeApiBaseUrl,
-  responseLanguageProvider: async () => {
-    try {
-      const preferences = await appPreferencesService.get();
-      return preferences.primaryLanguage ?? preferences.appLanguage;
-    } catch {
-      return 'en';
-    }
-  },
-});
-const agentRuntimeFactory = new AgentRuntimeFactory({
-  openaiAgents: agentRuntime,
-});
 const executionCoordinator = new TaskExecutionCoordinator({
-  actionPreviewLanguage: async () => {
-    try {
-      const preferences = await appPreferencesService.get();
-      return preferences.primaryLanguage === 'vi' ||
-        preferences.appLanguage === 'vi'
-        ? 'vi'
-        : 'en';
-    } catch {
-      return 'en';
-    }
-  },
   additionalToolAdapters: [
     ...createActivityToolAdapters(knowledgeSpaceClient),
     ...createWorkspaceRuntimeToolAdapters(),
@@ -403,73 +353,33 @@ const executionCoordinator = new TaskExecutionCoordinator({
     queryVisibleApplicationSurfaces: (application, signal) =>
       cuaService.queryVisibleApplicationSurfaces(application, signal),
   }),
-  agentRuntimeFactory,
-  approvalObservationMatches: (approved, current, command) =>
-    approvalObservationMatches(approved, current, command, (data) => {
-      const image = nativeImage.createFromBuffer(data);
-      const { height, width } = image.getSize();
-      if (image.isEmpty() || height <= 0 || width <= 0) return undefined;
-      return { height, pixels: image.toBitmap(), width };
-    }),
   cua: cuaService,
-  dismissPresentation: dismissCompanionGuidance,
-  onGuidancePlaybackChange: (_taskId, paused) =>
-    updateGuidancePlaybackState(paused),
-  onActivity: (taskId, activity) =>
-    agentActivityService.publish(taskId, activity),
-  onDesktopControlChange: updateDesktopControlIndicator,
-  onGuidanceWaitEnd: deactivateGlobalGuidanceShortcuts,
-  onGuidanceWaitStart: activateGlobalGuidanceShortcuts,
   runtime: taskRuntime,
-  toolRegistry: runtimeToolRegistry,
   openApplication: (application) =>
     desktopApplicationLauncher.launch(application),
+  onDesktopControlChange: updateDesktopControlIndicator,
   openExternal: async (url) => shell.openExternal(url, { activate: true }),
-  prepareDesktop: async () => {
-    const window = mainWindow;
-    if (window && !window.isDestroyed() && window.isVisible()) window.hide();
-
-    const restoreCompanion = Boolean(
-      companionWindow &&
-        !companionWindow.isDestroyed() &&
-        companionWindow.isVisible(),
+  presentGuidance: async (
+    input: GuidanceToolInput,
+    context: { signal: AbortSignal; taskId: string },
+  ) => {
+    const handle = await presentCompanionAction(
+      { kind: 'point', x: input.x, y: input.y },
+      context.signal,
+      {
+        kind: 'guidance',
+        message: input.description,
+        screenPoint: { x: input.x, y: input.y },
+        screenRegion: input.region,
+        taskId: context.taskId,
+        ...(input.target ? { target: input.target } : {}),
+      },
     );
-    if (restoreCompanion) companionWindow?.hide();
-    if (guidanceWindow && !guidanceWindow.isDestroyed()) guidanceWindow.hide();
-    hideGuidanceTargetMarker();
-    const restoreControlIndicator = Boolean(
-      desktopControlIndicatorWindow &&
-        !desktopControlIndicatorWindow.isDestroyed() &&
-        desktopControlIndicatorWindow.isVisible(),
-    );
-    if (restoreControlIndicator) desktopControlIndicatorWindow?.hide();
-    await new Promise<void>((resolve) => setTimeout(resolve, 120));
-
-    return () => {
-      if (
-        restoreCompanion &&
-        companionWindow &&
-        !companionWindow.isDestroyed()
-      ) {
-        companionWindow.showInactive();
-      }
-      if (
-        restoreControlIndicator &&
-        activeDesktopControlTasks.size > 0 &&
-        desktopControlIndicatorWindow &&
-        !desktopControlIndicatorWindow.isDestroyed()
-      ) {
-        desktopControlIndicatorWindow.showInactive();
-      }
-    };
+    await handle?.completion;
   },
-  prepareObservation: attachDesktopCaptureOrigin,
-  presentAction: presentCompanionAction,
-  presentActionPreview: presentCompanionActionPreview,
 });
 const taskApplicationService = new TaskApplicationService(
   taskRuntime,
-  executionCoordinator,
   {
     activityContextService,
     activityProgressReporter,
@@ -477,13 +387,6 @@ const taskApplicationService = new TaskApplicationService(
     appPreferencesService,
     hostedTaskClient,
     onHostedTerminal: (taskId) => executionCoordinator.endHostedTask(taskId),
-    onHostedUpdate: (update) => {
-      taskHistoryService.recordTaskUpdate(update);
-      reportActivityProgress(update);
-      trackTaskAnalytics(update);
-      coordinateTaskPresentation(update);
-    },
-    useHostedRuntime: () => hostedRuntimeAvailable,
     workspaceSelectionService,
   },
 );
@@ -498,6 +401,7 @@ const desktopToolWorker = new DesktopToolWorker({
     dispatch: (invocation, context) =>
       executionCoordinator.dispatchHostedTool(invocation, context),
   },
+  evaluatePolicy: (input) => rustDesktopEngine.evaluateAction(input),
   goalProvider: (runId) => taskApplicationService.hostedGoal(runId),
   interactionProvider: requestHostedInteraction,
   registry: runtimeToolRegistry,
@@ -562,6 +466,21 @@ interface CompanionGlide {
   to: Point;
 }
 
+interface DesktopPresentation {
+  kind?: 'guidance';
+  language?: 'en' | 'vi';
+  message?: string;
+  screenPoint?: Point;
+  screenRegion?: Rectangle;
+  taskId?: string;
+  target?: string;
+}
+
+interface GuidancePresentationHandle {
+  cancel(): void;
+  completion: Promise<unknown>;
+}
+
 let mainWindow: BrowserWindow | null = null;
 let companionWindow: BrowserWindow | null = null;
 let desktopControlIndicatorWindow: BrowserWindow | null = null;
@@ -581,14 +500,12 @@ let activeCompanionInteraction: CompanionInteraction | null = null;
 let activeCompanionResponse: CompanionResponseCard | null = null;
 let activeCompanionSpeech: CompanionSpeech | null = null;
 let companionGuidancePreviousState: CompanionState | null = null;
-let guidancePlaybackPaused = false;
 let lastCompanionPosition: Point | null = null;
 let forcedExitTimer: ReturnType<typeof setTimeout> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let unregisterIpcHandlers: (() => void) | null = null;
 let unregisterGlobalTaskCancelShortcut: (() => void) | null = null;
 let unregisterGlobalVoiceShortcut: (() => void) | null = null;
-let globalGuidanceShortcuts: GlobalGuidanceShortcuts | null = null;
 let globalNumberedChoiceShortcuts: GlobalNumberedChoiceShortcuts | null = null;
 let removeMainWindowCloseBehavior: (() => void) | null = null;
 let backgroundTray: Tray | null = null;
@@ -662,39 +579,6 @@ function getCompanionOverlayBounds(): Rectangle {
   return getVirtualDisplayBounds(
     screen.getAllDisplays().map((display) => display.bounds),
   );
-}
-
-function attachDesktopCaptureOrigin(
-  observation: DesktopObservation,
-): DesktopObservation {
-  const coordinateSpace = observation.coordinateSpace;
-  if (
-    !coordinateSpace ||
-    (coordinateSpace.screenX !== undefined &&
-      coordinateSpace.screenY !== undefined)
-  ) {
-    return observation;
-  }
-
-  const displays = screen.getAllDisplays().map((display) => display.bounds);
-  const captureBounds = resolveDesktopCaptureBounds(
-    {
-      height: coordinateSpace.screenHeight,
-      width: coordinateSpace.screenWidth,
-    },
-    displays,
-    screen.getPrimaryDisplay().bounds,
-  );
-  if (!captureBounds) return observation;
-
-  return DesktopObservationSchema.parse({
-    ...observation,
-    coordinateSpace: {
-      ...coordinateSpace,
-      screenX: coordinateSpace.screenX ?? captureBounds.x,
-      screenY: coordinateSpace.screenY ?? captureBounds.y,
-    },
-  });
 }
 
 async function updateDesktopControlIndicator(
@@ -1137,16 +1021,6 @@ function dismissCompanionGuidance(): void {
   companionGuidancePreviousState = null;
 }
 
-function updateGuidancePlaybackState(paused: boolean): void {
-  guidancePlaybackPaused = paused;
-  if (!activeCompanionGuidance) return;
-  activeCompanionGuidance = CompanionGuidanceSchema.parse({
-    ...activeCompanionGuidance,
-    playback: paused ? 'paused' : 'playing',
-  });
-  sendCompanionGuidance();
-}
-
 function showGuidanceCallout(
   target: Point,
   presentation: DesktopPresentation,
@@ -1174,8 +1048,7 @@ function showGuidanceCallout(
     kind: presentation.kind ?? 'guidance',
     ...(presentation.language ? { language: presentation.language } : {}),
     message: presentation.message,
-    playback: guidancePlaybackPaused ? 'paused' : 'playing',
-    ...(presentation.shortcuts ? { shortcuts: presentation.shortcuts } : {}),
+    playback: 'playing',
     side: position.x < target.x ? 'left' : 'right',
     ...(presentation.target
       ? { target: presentation.target.slice(0, 80) }
@@ -1193,16 +1066,6 @@ function companionTargetForCommand(
   command: DesktopCommand,
   presentation?: DesktopPresentation,
 ): Point | null {
-  if (command.kind === 'open_url') {
-    const cursor = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursor);
-    return placeCompanionForBrowserNavigation(
-      display.workArea,
-      COMPANION_SIZE,
-      COMPANION_GAP,
-    );
-  }
-
   if (
     command.kind !== 'click' &&
     command.kind !== 'point' &&
@@ -1229,8 +1092,7 @@ async function presentCompanionAction(
   presentation?: DesktopPresentation,
 ): Promise<GuidancePresentationHandle | void> {
   const isPointPresentation = command.kind === 'point';
-  const isGuidancePoint =
-    isPointPresentation && presentation?.kind !== 'action_preview';
+  const isGuidancePoint = isPointPresentation;
   if (isPointPresentation) {
     showGuidanceTargetMarker(
       presentation?.screenPoint ?? { x: command.x, y: command.y },
@@ -1291,52 +1153,6 @@ async function presentCompanionAction(
   }
 }
 
-async function presentCompanionActionPreview(
-  preview: ActionPreview,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const point = preview.screenPoint ?? screen.getCursorScreenPoint();
-  const handle = await presentCompanionAction(
-    { kind: 'point', x: point.x, y: point.y },
-    signal,
-    {
-      kind: 'action_preview',
-      language: preview.language,
-      message: preview.message,
-      screenPoint: point,
-      screenRegion: preview.screenRegion ?? {
-        x: point.x - 32,
-        y: point.y - 24,
-        width: 64,
-        height: 48,
-      },
-      taskId: preview.taskId,
-      ...(preview.target ? { target: preview.target } : {}),
-    },
-  );
-  if (!handle) return false;
-  await waitForActionPreviewDwell(preview.dwellMs, signal);
-  return true;
-}
-
-function waitForActionPreviewDwell(
-  dwellMs: number,
-  signal: AbortSignal,
-): Promise<void> {
-  if (signal.aborted) throw createAbortError();
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', handleAbort);
-      resolve();
-    }, dwellMs);
-    const handleAbort = (): void => {
-      clearTimeout(timer);
-      reject(createAbortError());
-    };
-    signal.addEventListener('abort', handleAbort, { once: true });
-  });
-}
-
 function showGuidancePresentation(
   command: Extract<DesktopCommand, { kind: 'point' }>,
   presentation: DesktopPresentation | undefined,
@@ -1383,7 +1199,10 @@ async function startHostedDesktopWorker(): Promise<void> {
     console.error('[desktop-worker] runtime status unavailable.', error);
     return { enabled: false, protocolVersion: 2, workerRequired: false };
   });
-  hostedRuntimeAvailable = status.enabled;
+  if (!status.enabled) {
+    console.error('[desktop-worker] Rust runtime is disabled.');
+    return;
+  }
   if (!status.workerRequired) return;
   await taskApplicationService.restoreHostedRuns().catch((error: unknown) => {
     console.error('[desktop-worker] active task restoration failed.', error);
@@ -1497,7 +1316,6 @@ function disableAuthenticatedAuxiliaryWindows(): void {
   companionState = 'idle';
   activeCompanionVoiceActivity = null;
   companionGuidancePreviousState = null;
-  guidancePlaybackPaused = false;
   clearCompanionInteraction();
   dismissCompanionGuidance();
   clearCompanionResponse();
@@ -1505,7 +1323,6 @@ function disableAuthenticatedAuxiliaryWindows(): void {
   stopCompanionFollowing();
   unregisterGlobalVoiceShortcut?.();
   unregisterGlobalVoiceShortcut = null;
-  globalGuidanceShortcuts?.deactivate();
   globalNumberedChoiceShortcuts?.deactivate();
   activeDesktopControlTasks.clear();
   desktopControlStartedAt.clear();
@@ -1547,8 +1364,6 @@ function prepareApplicationShutdown(): Promise<void> {
   unregisterGlobalTaskCancelShortcut = null;
   unregisterGlobalVoiceShortcut?.();
   unregisterGlobalVoiceShortcut = null;
-  globalGuidanceShortcuts?.dispose();
-  globalGuidanceShortcuts = null;
   globalNumberedChoiceShortcuts?.dispose();
   globalNumberedChoiceShortcuts = null;
   companionNarrationService.shutdown();
@@ -1590,6 +1405,7 @@ function prepareApplicationShutdown(): Promise<void> {
     Promise.allSettled([
       cuaService.shutdown(),
       desktopWorkerClient.stop(),
+      rustDesktopEngine.stop(),
       taskHistoryService.shutdown(),
     ]),
   );
@@ -1944,21 +1760,13 @@ function ensureGlobalTaskCancelShortcut(): void {
 
   unregisterGlobalTaskCancelShortcut = registerGlobalTaskCancelShortcut({
     cancelTask: (taskId) => {
-      executionCoordinator.cancel({ taskId });
+      void taskApplicationService.cancel({ taskId }).catch((error: unknown) => {
+        console.error('[task] Could not cancel hosted task.', error);
+      });
     },
     registry: globalShortcut,
     updates: taskRuntime,
   });
-}
-
-function ensureGlobalGuidanceShortcuts(): GlobalGuidanceShortcuts {
-  globalGuidanceShortcuts ??= registerGlobalGuidanceShortcuts({
-    back: (taskId) => executionCoordinator.previousGuidance(taskId),
-    next: (taskId) => executionCoordinator.nextGuidance(taskId),
-    pause: (taskId) => executionCoordinator.toggleGuidancePause(taskId),
-    registry: globalShortcut,
-  });
-  return globalGuidanceShortcuts;
 }
 
 function companionInteractionShortcutScope(
@@ -2072,17 +1880,6 @@ function syncGlobalNumberedChoiceShortcuts(): void {
   globalNumberedChoiceShortcuts?.deactivate();
 }
 
-function activateGlobalGuidanceShortcuts(
-  taskId: string,
-): CompanionGuidance['shortcuts'] | undefined {
-  if (!auxiliaryWindowsEnabled) return undefined;
-  return ensureGlobalGuidanceShortcuts().activate(taskId);
-}
-
-function deactivateGlobalGuidanceShortcuts(taskId: string): void {
-  globalGuidanceShortcuts?.deactivate(taskId);
-}
-
 function macOSVoiceShortcutHelperPath(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, MACOS_VOICE_SHORTCUT_HELPER_NAME)
@@ -2184,7 +1981,7 @@ const createWindow = (): void => {
     cuaService,
     classroomDirectiveService,
     classroomSessionService,
-    executionCoordinator,
+    cancelActiveTasks: () => taskApplicationService.cancelActiveTasks(),
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,
     handleCompanionResponseAction,
@@ -2198,7 +1995,6 @@ const createWindow = (): void => {
     },
     onAuthSignedOut: async () => {
       disableAuthenticatedAuxiliaryWindows();
-      hostedRuntimeAvailable = false;
       taskHistoryService.setCurrentOwner(null);
       await desktopWorkerClient.stop();
       await systemAudioDuckingService.setActive(false).catch((error: unknown) => {
@@ -2705,6 +2501,7 @@ if (hasSingleInstanceLock) {
     await Promise.all([
       analyticsService.start(),
       cuaService.connectIfPermitted(),
+      rustDesktopEngine.start(),
       taskHistoryService.start(),
     ]);
     const authStatus = await authService.getStatus();

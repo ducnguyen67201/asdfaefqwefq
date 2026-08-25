@@ -89,5 +89,5 @@ diff checks were rerun successfully.
 - `src/main/cua/cua-authorization-broker.ts`
 - `src/main/agent/cua-semantic-agent-tools.ts`
 - `src/main/agent/execution-coordinator.ts`
-- `scripts/cua-fast-path-report.mjs`
+- `services/api/src/cli/reports.rs`
 - `docs/testing/cua-semantic-fast-path.tdd.md`

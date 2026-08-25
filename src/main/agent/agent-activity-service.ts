@@ -6,7 +6,13 @@ import {
   type AgentActivityUpdate,
 } from '../../shared/contracts';
 
-import type { AgentRuntimeActivity } from './agent-runtime';
+interface AgentRuntimeActivity {
+  kind: AgentActivityUpdate['kind'];
+  plan?: AgentActivityUpdate['plan'];
+  summary?: string;
+  textDelta?: string;
+  tool?: AgentActivityUpdate['tool'];
+}
 
 export class AgentActivityService extends EventEmitter {
   private readonly sequences = new Map<string, number>();

@@ -145,6 +145,7 @@ rust_test(
         normal_dev = True,
         proc_macro_dev = True,
     ),
+    compile_data = ["//:test/fixtures/intent-authorization-cases.json"],
     crate = ":api_lib",
     edition = crate_edition(),
     lint_config = ":rust_lints",

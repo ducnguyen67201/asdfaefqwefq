@@ -2,9 +2,10 @@ https://github.com/user-attachments/assets/ab86a7a6-d9e1-4645-bd5e-9090b13950b9
 
 # Tro
 
-Tro is a cross-platform, general-purpose agent foundation. Everyday and
-Workspace tasks run through the OpenAI Agents SDK and Tro's authenticated
-backend. Both stay behind the same trusted host policy and activity stream.
+Tro is a cross-platform, general-purpose agent foundation. Hosted Everyday and
+Workspace tasks run through one Rust agent engine and Tro's authenticated
+backend. The Electron process is a typed UI/native-device adapter; it does not
+replace an unavailable Rust runtime with a second engine.
 
 Read the [privacy policy](PRIVACY.md), [code signing policy](CODE_SIGNING_POLICY.md),
 the [security model](docs/security.md), and the
@@ -30,24 +31,25 @@ Implemented:
   screen observation.
 
 - Secure Electron main/preload/renderer separation.
-- One persistent OpenAI Agents SDK loop for multilingual reasoning, writing,
-  desktop work, and installed tools, with incremental Responses SSE.
-- An explicit Workspace mode backed by a canonical user-selected root and the
-  Agents SDK's local shell and patch tools. Commands and file mutations require
+- One durable Rust model/tool loop for multilingual reasoning, writing,
+  desktop work, and installed tools, with replayable lifecycle events.
+- An explicit Workspace mode backed by a canonical user-selected root and
+  trusted local shell and patch adapters. Commands and file mutations require
   exact, one-use Tro approval; provider credentials remain backend-only.
 - A trusted model-visible tool registry with desktop observation/control,
   public HTTPS navigation, grounded guidance, and user-input adapters.
 - Typed task lifecycle with guarded transitions.
 - Task-scoped clarification replies that continue the same goal conversation.
 - Structured pending interactions and exact, single-use approval decisions.
-- Task steering queued for the next safe Agents SDK model boundary.
-- Concrete tool/operation, target, and approval policy evaluation.
-- Native Google OAuth sign-in with Authorization Code + PKCE, locally verified
-  identity claims, and an operating-system-encrypted, revocable hosted session.
+- Task steering applied by Rust at the next safe model boundary.
+- Rust-owned concrete tool/operation, target, and approval policy evaluation.
+- Native Google OAuth sign-in with Authorization Code + PKCE, Rust-side code
+  exchange, server-verified identity claims, and an operating-system-encrypted,
+  revocable hosted session.
 - Text-first workspace readiness; microphone and computer permissions are
   optional and requested only when their feature is used.
-- Hosted production access for signed-in users; offline builds retain the
-  account-bound, time-limited Ed25519 activation-code fallback.
+- Hosted production access for signed-in users, with membership and plans
+  authorized by the Rust API.
 - Lazy CUA initialization after a model desktop-observation request or an
   explicit user-clicked Connect computer action.
 - Task-scoped CUA sessions with bounded screenshots, typed clicks, text entry,
@@ -58,7 +60,7 @@ Implemented:
   integer micro-USD reservations before any paid provider dispatch.
 - One resized current screenshot per visual sample, bounded context, and a
   4,000-token output ceiling.
-- SDK-owned model → tool → result continuation with host-owned
+- Rust-owned model → tool → result continuation with host-owned
   tool/time limits, cancellation, safe steering, post-action screenshots, and
   no repeat after unknown results.
 - Direct public HTTPS navigation and exact, revalidated approval
@@ -182,11 +184,6 @@ to `gpt-5.6-luna` and never falls back to a second model. See the
 [inference cost lifecycle](docs/inference-cost-lifecycle.md) for the text,
 screen, reservation, settlement, and presentation flow.
 
-During a visible walkthrough, use **Command/Control + Alt + J** for Back,
-**Command/Control + Alt + K** for Pause/Resume, and **Command/Control + Alt + L**
-for Next. Tro registers each shortcut only while a guidance step is waiting
-and hides any shortcut that the operating system would not grant.
-
 Paste the value at Doppler's prompt, then enter a line containing only `.`.
 Doppler injects the public configuration while Electron Forge builds and starts
 the app. Provider keys stay only in the hosted API. A desktop OAuth client
@@ -241,9 +238,10 @@ cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 Run its unit/contract tests with `npm run api:test`, or the complete Electron and
 Rust-backend gate with `npm run check`.
 
-At sign-in, Electron verifies Google's JWT nonce and signature locally, then
-the API verifies it independently and exchanges it for a random opaque device
-session. Tro does not issue a JWT. Only a HMAC digest of the device token is
+At sign-in, the bundled Rust engine exchanges the PKCE code and verifies the
+nonce, then the hosted Rust API independently verifies Google's signed claims
+and exchanges them for a random opaque device session. Tro does not issue a
+JWT. Only a HMAC digest of the device token is
 stored in PostgreSQL, enabling expiration, rotation, and immediate sign-out
 revocation. The desktop stores the token with operating-system encryption.
 
@@ -266,35 +264,19 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-Native computer-use policy remains in the trusted Electron main process.
+Computer-use policy is evaluated by Rust; Electron owns schema validation,
+trusted workspace binding, approval presentation, and exactly-once native
+dispatch.
 
 ### PostgreSQL task history
 
-Local development uses PostgreSQL 17 from [`compose.yaml`](compose.yaml), bound
-only to `127.0.0.1:54320`. `TROCODE_POSTGRES_PASSWORD` and the matching
-`DATABASE_URL` live in Doppler's `tro-app/dev` config; they are injected into
-Compose and Electron only at runtime. The named `trocode_postgres_data` volume
-preserves records, while [`migrations/001_task_history.sql`](migrations/001_task_history.sql)
-initializes a new database. Tro also verifies the schema idempotently when
-it starts and keys every query by the verified Google user ID.
-
-The URL is intentionally not added to Webpack's `DefinePlugin`, so database
-credentials are not compiled into the desktop bundle or exposed through
-preload. Deployment database configuration remains separate from this local
-Compose setup.
-
-On history load, Tro validates every persisted snapshot and performs a
-forward-only read repair for transitional v5 contracts created before runtime,
-profile, autonomy, and workspace fields were introduced. Repairs default to
-the Everyday OpenAI runtime unless a complete trusted workspace identity is
-already present, then write back in bounded, owner-scoped batches guarded by
-the previous JSONB value. Valid legacy contracts remain historical and cannot
-silently gain execution authority.
-
-When `DATABASE_URL` is absent or PostgreSQL cannot initialize, the app remains
-usable and labels History as **Session only**. Task requests, conversation
-messages, goal scope, and lifecycle outcomes are stored; raw screenshots and
-OAuth/model credentials are not part of the task snapshot contract.
+PostgreSQL belongs exclusively to the Rust API. Local development may start the
+PostgreSQL 17 container from [`compose.yaml`](compose.yaml), but Electron never
+opens a database connection and never receives `DATABASE_URL`. The Rust API
+owns migrations, account scoping, encrypted task state, lifecycle events, and
+history projections. If the API or database is unavailable, new tasks fail
+closed and History reports the hosted service as unavailable; there is no
+session-only TypeScript persistence backend.
 
 ### Production access codes
 
@@ -306,8 +288,7 @@ person with a reserved seat joins the organization automatically on their next
 verified Google sign-in and never needs to enter the code. Users can still
 explicitly continue on the Free plan and enter a promo code later from
 Settings. The Free choice is stored per account so it remains complete across
-devices. Packaged builds without the hosted API retain the signed
-activation-code fallback.
+devices. Packaged builds require the hosted API.
 
 Hosted builds configured with `TROCODE_API_BASE_URL` store each account's plan,
 access codes, organizations, reserved seats, and code redemptions in
@@ -404,38 +385,6 @@ explicit `--plan free|basic|pro|max`.
 The API resolves the account plan again before proxying model, voice
 transcription, or speech requests, so bypassing the renderer does not bypass the
 quota.
-
-Packaged builds without `TROCODE_API_BASE_URL` use the offline signed-membership
-fallback and fail closed when `TROCODE_MEMBERSHIP_PUBLIC_KEY` is missing or
-invalid.
-
-Generate the signing keys once. Keep the private key outside this repository
-and never place it in Doppler or the application bundle:
-
-```bash
-npm run membership:keygen -- \
-  --private-key /secure/location/trocode-membership-private.pem \
-  --public-key /secure/location/trocode-membership-public.txt
-```
-
-The command prints `TROCODE_MEMBERSHIP_PUBLIC_KEY=...`. Put that public value in
-the environment used to package the offline build. After a user finishes
-permissions, their membership screen shows a reference such as
-`TRC-AAAA-BBBB-CCCC`. Issue an activation for the desired number of days:
-
-```bash
-npm run membership:issue -- \
-  --private-key /secure/location/trocode-membership-private.pem \
-  --reference TRC-AAAA-BBBB-CCCC \
-  --days 30
-```
-
-Send the printed activation code to that user. It is signed for only that
-Google account reference, is encrypted locally after entry, and stops granting
-task and voice access at its signed expiry. Issued offline codes cannot be
-revoked before expiry; use short durations or replace this verifier with an
-authenticated membership service when immediate revocation or authoritative
-server time is required.
 
 ### Product analytics
 
@@ -601,12 +550,12 @@ React renderer
   -> typed preload API
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
-      -> TaskContract v5 / runtime factory / policy brokers
-      -> OpenAI Agents SDK through the Tro backend
-        -> trusted local Workspace shell/patch tools when explicitly selected
+      -> bundled trocode-api desktop engine (Rust policy + voice transport)
+      -> Rust durable agent runtime through the Tro backend
+        -> trusted local CUA/Workspace adapters when explicitly selected
       -> PostHog analytics service (allowlisted metadata only)
       -> local PCM/VAD voice capture
-        -> bounded GPT Transcribe segments through authenticated IPC/API
+        -> bundled Rust engine -> bounded GPT Transcribe API
       -> CUA service
         -> native CUA runtime
 ```
@@ -625,7 +574,8 @@ Read:
 ```text
 src/
 ├── main/
-│   ├── agent/       runtime boundary, SDK adapter, brokers, policy, coordinator
+│   ├── agent/       hosted-task projection and native tool adapters
+│   ├── engine/      private Rust desktop-engine process bridge
 │   ├── analytics/   privacy-safe PostHog events and durable identity
 │   ├── workspace/   canonical folder selection and opaque root binding
 │   ├── cua/         permission-aware CUA lifecycle

@@ -355,7 +355,7 @@ export const AgentTaskContractV4Schema = z.object({
   }),
 });
 
-export const AgentRuntimeKindSchema = z.literal('openai_agents');
+export const AgentRuntimeKindSchema = z.literal('rust_hosted');
 
 export const ExecutionProfileSchema = z.enum(['everyday', 'workspace']);
 
@@ -1638,6 +1638,27 @@ export const HostedTaskStateSchema = z.enum([
   'expired',
 ]);
 
+export const HostedTaskAuthorityContractSchema = z
+  .object({
+    schemaVersion: z.literal(8),
+    id: z.string().uuid(),
+    originalRequest: z.string().min(2).max(8_000),
+    runtimeKind: z.literal('rust_hosted'),
+    executionProfile: ExecutionProfileSchema,
+    autonomyMode: AutonomyModeSchema,
+    workspaceSelectionId: z.string().uuid().nullable(),
+    activity: ActivityContextSchema.nullable(),
+    outcomeContract: OutcomeContractSchema,
+    intentAuthorization: IntentAuthorizationContractSchema,
+    approvalPolicy: z
+      .object({
+        alwaysConfirmEffects: z.array(HardConfirmEffectKindSchema),
+      })
+      .strict(),
+    limits: AgentTaskContractV4Schema.shape.limits,
+  })
+  .strict();
+
 export const HostedTaskRecordSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
@@ -1653,6 +1674,7 @@ export const HostedTaskRecordSchema = z.object({
   autonomyMode: AutonomyModeSchema.optional(),
   outcomeContract: OutcomeContractSchema.optional(),
   intentAuthorization: IntentAuthorizationContractSchema.optional(),
+  contract: HostedTaskAuthorityContractSchema.optional(),
   activity: ActivityContextSchema.nullable().optional(),
   publicSummary: z.string().max(1_000),
   createdAt: z.string().datetime(),
@@ -2410,6 +2432,9 @@ export type TaskBehavior = z.infer<typeof TaskBehaviorSchema>;
 export type TaskHistory = z.infer<typeof TaskHistorySchema>;
 export type HostedTaskEvent = z.infer<typeof HostedTaskEventSchema>;
 export type HostedTaskRecord = z.infer<typeof HostedTaskRecordSchema>;
+export type HostedTaskAuthorityContract = z.infer<
+  typeof HostedTaskAuthorityContractSchema
+>;
 export type HostedDesktopInvocation = z.infer<typeof HostedDesktopInvocationSchema>;
 export type HostedDesktopResult = z.infer<typeof HostedDesktopResultSchema>;
 export type TaskMessage = z.infer<typeof TaskMessageSchema>;

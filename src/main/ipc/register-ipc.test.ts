@@ -39,8 +39,8 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   };
   event: unknown;
   interactionEvent: unknown;
+  cancelActiveTasks: ReturnType<typeof vi.fn>;
   executionCoordinator: {
-    cancelActiveTasks: ReturnType<typeof vi.fn>;
     resume: ReturnType<typeof vi.fn>;
     start: ReturnType<typeof vi.fn>;
   };
@@ -175,13 +175,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     on: vi.fn(),
   };
   const executionCoordinator = {
-    cancelActiveTasks: vi.fn(() => []),
     resume: vi.fn(),
     start: vi.fn((input: unknown) => {
       void input;
       return { taskId: 'task-id', phase: 'planning' };
     }),
   };
+  const cancelActiveTasks = vi.fn(async () => undefined);
   const taskApplicationService = {
     cancel: vi.fn((input: unknown) => input),
     decideApproval: vi.fn((input: { taskId: string }) => {
@@ -369,7 +369,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     classroomDirectiveService,
     classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
-    executionCoordinator,
+    cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
     handleCompanionResponseAction,
     membershipService,
@@ -421,6 +421,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
 
   return {
     authService,
+    cancelActiveTasks,
     callOrder,
     classroomJoin,
     classroomOpenDirective,
@@ -1119,14 +1120,14 @@ describe('registerIpcHandlers auth boundary', () => {
   });
 
   it('cancels active execution before signing out', async () => {
-    const { event, executionCoordinator, unregister } = setup(true);
+    const { cancelActiveTasks, event, unregister } = setup(true);
     const handler = electronMock.handlers.get(IPC_CHANNELS.signOutGoogle);
 
     await expect(handler?.(event)).resolves.toMatchObject({
       state: 'signed_out',
       user: null,
     });
-    expect(executionCoordinator.cancelActiveTasks).toHaveBeenCalledOnce();
+    expect(cancelActiveTasks).toHaveBeenCalledOnce();
     unregister();
   });
 

@@ -18,6 +18,7 @@ pub mod classroom;
 pub mod cli;
 pub mod config;
 pub mod db;
+pub mod desktop_engine;
 pub mod error;
 pub mod http;
 pub mod knowledge;

@@ -2,26 +2,25 @@
 
 Hosted tasks use replayable, monotonically sequenced backend events. A stream
 disconnect does not cancel the task. Steering is encrypted, attached to a new
-outcome-contract revision, inserted into the durable SDK session once using its
+outcome-contract revision, inserted into the durable Rust session once using its
 source event ID, and acknowledged only after that insertion commits.
 
 Renderer completion is a projection of the backend hard gate, never a local
-guess from assistant prose. Legacy local task snapshots remain readable during
-the rollback window, but new local contracts mirror the same v8 outcome and
-intent predicate.
+guess from assistant prose. Electron requires the complete backend v8 authority
+contract and never compiles a replacement.
 
 TroCode keeps one bounded runtime conversation for each task. A user request is
 not precompiled into answer/guide/act modes. Everyday and explicitly selected
-Workspace tasks are OpenAI Agents SDK runs authenticated through the TroCode
-backend. Tool results, clarification answers, approval decisions, and steering
-continue the same run.
+Workspace tasks are Rust-supervised Responses runs authenticated through the
+TroCode backend. Tool results, clarification answers, approval decisions, and
+steering continue the same run.
 
 ## Core loop
 
 ```mermaid
 flowchart TD
-    USER["User message"] --> RUNTIME{"Host-selected runtime"}
-    RUNTIME -->|"Everyday or Workspace"| MODEL["OpenAI Agents SDK run"]
+    USER["User message"] --> RUNTIME["Rust task supervisor"]
+    RUNTIME -->|"Everyday or Workspace"| MODEL["Responses run"]
     MODEL -->|"Assistant candidate"| REVIEW{"Contextual completion review needed?"}
     REVIEW -->|"No or already reviewed"| DONE["Finished"]
     REVIEW -->|"Yes, once"| CHECK["Trusted GPT completion checkpoint"]
@@ -36,17 +35,13 @@ flowchart TD
     APPROVE --> USER
     EXECUTE --> OUTPUT
     OUTPUT --> MODEL
-    MODEL -->|"Workspace shell or patch"| SDK["Inspectable SDK checkpoint"]
-    SDK --> POLICY
+    MODEL -->|"Workspace shell or patch"| NATIVE["Root-bound native adapter"]
+    NATIVE --> POLICY
 ```
 
-`show_guidance` adds one user-controlled pacing boundary to this loop. The host
-shows and narrates one grounded target, appends the tool output exactly once,
-then holds the next model sample until narration and the dwell interval finish
-or the user presses Next. Back replays earlier saved presentations without a
-model call or new task event. Pause stops both active audio and auto-advance.
-The global controls are Command/Control+Alt+J/K/L and exist only during this
-wait.
+`show_guidance` adds one presentation boundary to this loop. Electron shows and
+narrates one Rust-selected grounded target, reports the tool output exactly
+once, and waits for the bounded narration result before continuing.
 
 There is no special complete function. Self-contained math, explanations,
 translation, writing, code, lyrics, chords, and plans can finish with zero tool
@@ -86,9 +81,9 @@ Approval denial is returned to GPT as a denied tool output so the assistant can
 continue usefully. For desktop work, approval is followed by a fresh screen
 check; changed state invalidates the action instead of guessing.
 
-Workspace calls remain inspectable SDK interruptions. The host programmatically
-resumes only classified safe/read/validation commands and requested reversible
-patches. Other command and patch responses are one-request decisions. Their approval
+Workspace calls remain inspectable native operations. Rust authorizes effects;
+the device adapter separately rejects unsafe shell syntax and root escapes.
+Other command and patch responses are one-request decisions. Their approval
 digest includes the bounded commands or diff, target, operation, and declared
 consequence; there is no session-wide approval. Patch paths must remain within
 the selected canonical root, and the command subprocess receives no provider
@@ -96,15 +91,15 @@ or TroCode secrets.
 
 ## Optional tools and permissions
 
-Text input requires only auth, membership, language setup, and an agent
-credential. Microphone and desktop permissions are independent. Push-to-talk
+Text input requires auth, membership, language setup, and a hosted Rust session.
+Microphone and desktop permissions are independent. Push-to-talk
 requests microphone access when used. Missing CUA permission pauses the held
 observation with Connect computer and Continue without computer choices; only a
 user click starts the OS permission flow.
 
 The shared catalog contains desktop observation/control, public HTTPS
 navigation, grounded visual guidance, and task interaction. Workspace adds
-SDK shell and patch tools only for an explicitly selected folder. Future email,
+native shell and patch tools only for an explicitly selected folder. Future email,
 calendar, image, audio, and music providers register a model
 specification, strict parser, trusted internal identity, policy metadata, and
 executor. Until such a provider exists, GPT must explain the limitation rather
@@ -120,8 +115,8 @@ output, and diffs are dropped. Partial deltas do not enter task history or
 analytics. Unknown effects are reported honestly and their exact action digest
 cannot execute again.
 
-The Agents SDK adapter uses one configured model without a classifier or fallback
-call and applies a 4,000-token output cap. Each hosted sample reserves
+The Rust Responses adapter uses one configured model without a classifier or
+fallback call and applies a 4,000-token output cap. Each hosted sample reserves
 server-priced micro-USD before dispatch and settles provider usage afterward.
 Typed and finalized voice transcripts enter this same task path, so voice does
 not create a second reasoning call.

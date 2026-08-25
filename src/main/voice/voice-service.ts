@@ -6,18 +6,11 @@ import {
   TranscribeVoiceSegmentRequestSchema,
   VoiceSegmentTranscriptionSchema,
   VoiceStatusSchema,
-  type PrimaryLanguage,
   type VoiceSegmentTranscription,
   type VoiceStatus,
 } from '../../shared/contracts';
+import type { RustDesktopEngineClient } from '../engine/rust-desktop-engine-client';
 import type { AppPreferencesService } from '../preferences/app-preferences-service';
-
-const OPENAI_MODEL_URL =
-  `https://api.openai.com/v1/models/${VOICE_TRANSCRIPTION_MODEL}`;
-const OPENAI_TRANSCRIPTIONS_URL =
-  'https://api.openai.com/v1/audio/transcriptions';
-const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_RESPONSE_BYTES = 1_000_000;
 
 const OpenAIErrorResponseSchema = z.object({
   error: z
@@ -30,13 +23,6 @@ const OpenAIErrorResponseSchema = z.object({
 
 const OpenAIModelResponseSchema = z.object({
   id: z.literal(VOICE_TRANSCRIPTION_MODEL),
-});
-
-const OpenAITranscriptionResponseSchema = z.object({
-  languages: z
-    .array(z.object({ code: z.string().trim().min(1).max(32) }))
-    .optional(),
-  text: z.string().trim().max(8_000),
 });
 
 const HostedTranscriptionResponseSchema = VoiceSegmentTranscriptionSchema.omit({
@@ -70,9 +56,12 @@ interface VoiceServiceOptions {
   credentialStore: VoiceCredentialStore;
   diagnosticLogger?: VoiceDiagnosticLogger;
   environmentApiKey?: string;
-  fetchImpl?: typeof fetch;
   logger?: Pick<Console, 'error'>;
   preferencesService?: Pick<AppPreferencesService, 'getPrimaryLanguage'>;
+  rustEngine: Pick<
+    RustDesktopEngineClient,
+    'transcribeVoice' | 'validateVoiceCredential'
+  >;
 }
 
 const SECRET_PATTERN = /\b(?:ek|sk|tro_live)[-_][a-z0-9._-]+/gi;
@@ -106,33 +95,21 @@ function readyStatus(): VoiceStatus {
   });
 }
 
-async function readBoundedJson(response: Response): Promise<unknown> {
-  const declaredLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-    throw new Error('Voice response exceeded the size limit.');
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_RESPONSE_BYTES) {
-    throw new Error('Voice response exceeded the size limit.');
-  }
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
-}
-
 export class VoiceService {
   private readonly accessTokenProvider?: () => Promise<string | null>;
   private readonly apiBaseUrl: string;
   private readonly credentialStore: VoiceCredentialStore;
   private readonly diagnosticLogger: VoiceDiagnosticLogger;
   private readonly environmentApiKey?: string;
-  private readonly fetchImpl: typeof fetch;
   private readonly logger: Pick<Console, 'error'>;
   private readonly preferencesService: Pick<
     AppPreferencesService,
     'getPrimaryLanguage'
+  >;
+
+  private readonly rustEngine: Pick<
+    RustDesktopEngineClient,
+    'transcribeVoice' | 'validateVoiceCredential'
   >;
 
   constructor({
@@ -141,18 +118,18 @@ export class VoiceService {
     credentialStore,
     diagnosticLogger = defaultVoiceDiagnosticLogger,
     environmentApiKey = process.env.OPENAI_API_KEY,
-    fetchImpl = fetch,
     logger = console,
     preferencesService = { getPrimaryLanguage: async () => 'en' },
+    rustEngine,
   }: VoiceServiceOptions) {
     this.accessTokenProvider = accessTokenProvider;
     this.apiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
     this.credentialStore = credentialStore;
     this.diagnosticLogger = diagnosticLogger;
     this.environmentApiKey = environmentApiKey?.trim() || undefined;
-    this.fetchImpl = fetchImpl;
     this.logger = logger;
     this.preferencesService = preferencesService;
+    this.rustEngine = rustEngine;
   }
 
   async getStatus(): Promise<VoiceStatus> {
@@ -215,11 +192,20 @@ export class VoiceService {
       sequence: request.sequence,
     });
 
-    let response: Response;
+    let responseBody: unknown;
+    let responseStatus: number;
     try {
-      response = this.apiBaseUrl
-        ? await this.requestHostedSegment(credential, request, language)
-        : await this.requestLocalSegment(credential, request, language);
+      const rustResponse = await this.rustEngine.transcribeVoice({
+        apiBaseUrl: this.apiBaseUrl,
+        credential,
+        audioBase64: request.audioBase64,
+        clientDurationMs: request.durationMs,
+        language,
+        requestId: request.requestId,
+        utteranceId: request.utteranceId,
+      });
+      responseBody = rustResponse.body;
+      responseStatus = rustResponse.status;
     } catch (error) {
       this.diagnosticLogger(
         'segment.request-failed',
@@ -240,38 +226,15 @@ export class VoiceService {
       );
     }
 
-    let responseBody: unknown;
-    try {
-      responseBody = await readBoundedJson(response);
-    } catch (error) {
-      this.diagnosticLogger(
-        'segment.response-invalid',
-        diagnosticErrorProperties(error),
-      );
-      throw new Error('Voice transcription returned an invalid response.', {
-        cause: error,
-      });
-    }
-    if (!response.ok) {
+    if (responseStatus < 200 || responseStatus >= 300) {
       const detail = apiErrorMessage(responseBody);
-      this.diagnosticLogger('segment.rejected', { status: response.status });
+      this.diagnosticLogger('segment.rejected', { status: responseStatus });
       throw new Error(detail || 'OpenAI rejected the voice segment.');
     }
 
     let parsed: z.infer<typeof HostedTranscriptionResponseSchema>;
     try {
-      parsed = this.apiBaseUrl
-        ? HostedTranscriptionResponseSchema.parse(responseBody)
-        : (() => {
-            const provider =
-              OpenAITranscriptionResponseSchema.parse(responseBody);
-            return {
-              audioDurationMs: request.durationMs,
-              billedSeconds: request.durationMs / 1_000,
-              model: VOICE_TRANSCRIPTION_MODEL,
-              text: provider.text,
-            };
-          })();
+      parsed = HostedTranscriptionResponseSchema.parse(responseBody);
     } catch (error) {
       this.diagnosticLogger(
         'segment.response-invalid',
@@ -318,68 +281,13 @@ export class VoiceService {
   }
 
   private async validateTranscriptionAccess(apiKey: string): Promise<void> {
-    let response: Response;
-    try {
-      response = await this.fetchImpl(OPENAI_MODEL_URL, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        method: 'GET',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-    } catch (error) {
+    const response = await this.rustEngine.validateVoiceCredential(apiKey);
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(
-        error instanceof Error && error.name === 'TimeoutError'
-          ? 'OpenAI voice validation timed out.'
-          : 'Tro could not validate OpenAI GPT Transcribe access.',
+        apiErrorMessage(response.body) || 'OpenAI rejected the voice credential.',
       );
     }
-    const responseBody = await readBoundedJson(response);
-    if (!response.ok) {
-      throw new Error(
-        apiErrorMessage(responseBody) || 'OpenAI rejected the voice credential.',
-      );
-    }
-    OpenAIModelResponseSchema.parse(responseBody);
-  }
-
-  private requestHostedSegment(
-    accessToken: string,
-    request: z.infer<typeof TranscribeVoiceSegmentRequestSchema>,
-    language: PrimaryLanguage,
-  ): Promise<Response> {
-    return this.fetchImpl(`${this.apiBaseUrl}/v1/openai/audio/transcriptions`, {
-      body: JSON.stringify({
-        audioBase64: request.audioBase64,
-        clientDurationMs: request.durationMs,
-        language,
-        utteranceId: request.utteranceId,
-      }),
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-Trocode-Request-Id': request.requestId,
-        'X-Trocode-Transcription-Contract': '2',
-      },
-      method: 'POST',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  }
-
-  private requestLocalSegment(
-    apiKey: string,
-    request: z.infer<typeof TranscribeVoiceSegmentRequestSchema>,
-    language: PrimaryLanguage,
-  ): Promise<Response> {
-    const audio = Uint8Array.from(Buffer.from(request.audioBase64, 'base64'));
-    const form = new FormData();
-    form.set('file', new Blob([audio], { type: 'audio/wav' }), 'segment.wav');
-    form.set('model', VOICE_TRANSCRIPTION_MODEL);
-    form.append('languages[]', language);
-    return this.fetchImpl(OPENAI_TRANSCRIPTIONS_URL, {
-      body: form,
-      headers: { Authorization: `Bearer ${apiKey}` },
-      method: 'POST',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    OpenAIModelResponseSchema.parse(response.body);
   }
 }
 

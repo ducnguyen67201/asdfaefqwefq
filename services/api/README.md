@@ -15,6 +15,9 @@ the Rust provider so the Electron `package.json` does not select Node.
 cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker
 cargo run --manifest-path services/api/Cargo.toml --locked -- access-code create --max-users 10 --plan basic
+cargo run --manifest-path services/api/Cargo.toml --locked -- membership keygen --private-key /secure/private.pem
+cargo run --manifest-path services/api/Cargo.toml --locked -- agent-benchmark --baseline baseline.json --candidate candidate.json
+cargo run --manifest-path services/api/Cargo.toml --locked -- rust-only-check
 cargo run --manifest-path services/api/Cargo.toml --locked -- knowledge-load-report
 cargo run --manifest-path services/api/Cargo.toml --locked -- knowledge-worker-smoke
 ```

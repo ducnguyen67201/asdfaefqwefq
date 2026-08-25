@@ -129,7 +129,7 @@ jobs:
           }
           $version = node -p "require('./package.json').version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node scripts/windows-release-metadata.mjs `
+          npm run windows:release-metadata -- `
             --file $installer.FullName `
             --kind installer `
             --version $version
