@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "migrationCount": 17,
+  "tables": [
+    "users", "device_sessions", "access_codes", "access_code_redemptions",
+    "model_budget_reservations", "model_usage_events", "api_rate_limit_buckets", "agent_turns",
+    "knowledge_spaces", "knowledge_space_members", "knowledge_space_groups", "knowledge_space_group_members",
+    "knowledge_space_invites", "knowledge_space_invite_redemptions", "knowledge_sources",
+    "knowledge_source_versions", "knowledge_source_chunks", "knowledge_ingestion_jobs", "knowledge_activities",
+    "knowledge_activity_draft_sources", "knowledge_activity_versions", "knowledge_activity_version_sources",
+    "knowledge_activity_runs", "knowledge_activity_assignments", "knowledge_activity_attempts",
+    "knowledge_activity_work_sessions", "knowledge_submission_artifacts", "knowledge_activity_evidence",
+    "knowledge_attempt_help_requests", "knowledge_activity_run_events", "admin_audit_events", "agent_runs",
+    "agent_run_events", "agent_session_items", "agent_run_checkpoints", "agent_tool_invocations",
+    "agent_outcome_criteria", "agent_evidence", "agent_worker_sessions"
+  ],
+  "states": {
+    "budgetReservation": ["reserved", "settled", "released", "uncertain"],
+    "agentRun": ["queued", "planning", "awaiting_worker", "awaiting_approval", "executing_tool", "recovering", "verifying", "completed", "blocked", "failed", "cancelled", "expired"],
+    "toolInvocation": ["requested", "delivered", "executing", "confirmed", "failed", "denied", "not_executed", "unknown", "cancelled", "expired"],
+    "ingestion": ["queued", "leased", "retry", "completed", "failed"],
+    "attempt": ["assigned", "in_progress", "blocked", "submitted", "completed", "withdrawn"],
+    "workSession": ["created", "active", "paused", "completed", "cancelled", "failed"]
+  }
+}

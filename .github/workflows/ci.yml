@@ -20,7 +20,7 @@ jobs:
           repository-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
       - run: npm run bazel:check
-      - run: bazel build --config=ci //services/api-rs:trocode_api
+      - run: bazel build --config=ci //services/api:trocode_api
 
   verify:
     strategy:
@@ -34,10 +34,22 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - uses: dopplerhq/cli-action@v4
       - run: npm ci
+      - run: npm --prefix services/api ci
       - run: npm audit --omit=dev
       - run: npm run check
+      - run: npm run api:build
       - run: npm run package
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
