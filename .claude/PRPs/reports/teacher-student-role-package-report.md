@@ -119,5 +119,6 @@ Deploy migration 018 before a desktop/API pair that expects Knowledge contract
 version 2. Administrators should assign all newly created accounts before a
 Teacher attempts to add them. Existing owners/facilitators are backfilled to
 Teacher; participant-only accounts are backfilled to Student. Production
-deployment remains an operator-controlled action and was not performed by this
-implementation change.
+deployment should also include migration 019 so invite creation retries return
+the original encrypted invite code. Deployment remains an operator-controlled
+action and was not performed by this implementation change.

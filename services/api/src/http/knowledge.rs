@@ -896,32 +896,6 @@ async fn create_run(
         }
         (None, users)
     };
-    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_activity_runs WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&state.pool).await?;
-    if active >= plan.active_runs {
-        return Err(ApiError::coded(
-            StatusCode::CONFLICT,
-            "active_run_quota",
-            "This Space reached its active Run limit.",
-        ));
-    }
-    let count = if let Some(group) = group {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(members.user_id)::bigint FROM knowledge_space_groups groups LEFT JOIN knowledge_space_group_members members ON members.group_id=groups.id WHERE groups.id=$1 AND groups.space_id=$2 AND groups.archived_at IS NULL",
-        )
-        .bind(group)
-        .bind(space)
-        .fetch_one(&state.pool)
-        .await?
-    } else {
-        i64::try_from(users.len()).unwrap_or(i64::MAX)
-    };
-    if count > plan.group_participants {
-        return Err(ApiError::coded(
-            StatusCode::CONFLICT,
-            "participant_quota",
-            "This Run has too many participants for the current plan.",
-        ));
-    }
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("run:{space}:{client}"))
@@ -946,6 +920,32 @@ async fn create_run(
             HeaderValue::from_str(&format!("/v1/runs/{id}")).map_err(ApiError::internal)?,
         );
         return Ok(response);
+    }
+    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_activity_runs WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&mut*tx).await?;
+    if active >= plan.active_runs {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "active_run_quota",
+            "This Space reached its active Run limit.",
+        ));
+    }
+    let count = if let Some(group) = group {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(members.user_id)::bigint FROM knowledge_space_groups groups LEFT JOIN knowledge_space_group_members members ON members.group_id=groups.id WHERE groups.id=$1 AND groups.space_id=$2 AND groups.archived_at IS NULL",
+        )
+        .bind(group)
+        .bind(space)
+        .fetch_one(&mut *tx)
+        .await?
+    } else {
+        i64::try_from(users.len()).unwrap_or(i64::MAX)
+    };
+    if count > plan.group_participants {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "participant_quota",
+            "This Run has too many participants for the current plan.",
+        ));
     }
     let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM knowledge_activity_versions versions JOIN knowledge_activities activities ON activities.id=versions.activity_id WHERE versions.id=$1 AND activities.space_id=$2)").bind(version).bind(space).fetch_one(&mut*tx).await?;
     if !valid {

@@ -212,9 +212,11 @@ Doppler `tro-app/prd` is their administrative source.
 The production API runs at
 `https://api-production-3022a.up.railway.app` with a separate Railway
 PostgreSQL service. `GET /healthz` checks process liveness and `GET /readyz`
-checks database readiness. Railway starts the API from
-[`services/api`](services/api) and applies its idempotent session migration
-before accepting traffic.
+checks database readiness. The Railway service Root Directory must be the
+repository root, with its config file path set to
+[`/services/api/railway.json`](services/api/railway.json); the Rust workspace
+lockfile and release artifact are rooted there. Startup applies the embedded,
+idempotent migrations before accepting traffic.
 
 The hosted API is implemented by the Rust `trocode-api` binary from
 [`services/api`](services/api). Production rollout still follows the parity and

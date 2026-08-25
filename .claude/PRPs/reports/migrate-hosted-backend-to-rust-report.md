@@ -33,8 +33,10 @@ The binary exposes `serve`, `ingestion-worker`, `access-code`,
   Node backend tests, and Node backend operator scripts.
 - Removed the Node API suite from root and CI commands.
 - Routed access-code creation through the Rust CLI.
-- Embedded migration 018 in the Rust migrator and advanced the schema corpus to
-  18 migrations and 40 domain tables.
+- Embedded migrations 018 and 019 in the Rust migrator and advanced the schema
+  corpus to 19 migrations and 40 domain tables. Migration 019 adds encrypted
+  invite-code replay data so retried invite creation returns the original,
+  redeemable code.
 - Configured Railway/Railpack to build the locked Rust release binary and start
   `./target/release/trocode-api serve`.
 - Kept the worker as the same artifact with the separate

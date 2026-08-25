@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 18,
+  "migrationCount": 19,
   "tables": [
     "users", "device_sessions", "access_codes", "access_code_redemptions",
     "model_budget_reservations", "model_usage_events", "api_rate_limit_buckets", "agent_turns",

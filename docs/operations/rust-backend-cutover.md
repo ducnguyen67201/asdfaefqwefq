@@ -12,9 +12,12 @@ cargo build --manifest-path services/api/Cargo.toml --release --locked
 ./target/release/trocode-api ingestion-worker
 ```
 
-When Railway's service root is the repository root, the configured paths are
-`./target/release/trocode-api serve` and `./target/release/trocode-api
-ingestion-worker`.
+Railway's service Root Directory must be the repository root, and the config
+file path must be `/services/api/railway.json`. The configured API command is
+`./target/release/trocode-api serve`; the worker command is
+`./target/release/trocode-api ingestion-worker`. A `/services/api` Root
+Directory is invalid for this workspace because it omits the root Cargo
+workspace metadata and lockfile.
 
 ## Required pre-deploy evidence
 

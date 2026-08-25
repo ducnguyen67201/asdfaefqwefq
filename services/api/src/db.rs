@@ -100,6 +100,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "classroom roles",
             include_str!("../migrations/018_classroom_roles.sql"),
         ),
+        migration(
+            19,
+            "invite idempotency",
+            include_str!("../migrations/019_invite_idempotency.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

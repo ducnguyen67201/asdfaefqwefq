@@ -151,6 +151,7 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/016_admin_code_grants.sql"),
         include_str!("../migrations/017_free_plan_onboarding.sql"),
         include_str!("../migrations/018_classroom_roles.sql"),
+        include_str!("../migrations/019_invite_idempotency.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

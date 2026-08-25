@@ -614,17 +614,19 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         StatusCode::OK,
     );
 
+    let space_client_id = Uuid::new_v4();
+    let space_body = json!({
+        "clientId":space_client_id,
+        "description":"Disposable integration space",
+        "name":"HTTP compatibility",
+        "purposeLabel":"migration"
+    });
     let space = send(
         &router,
         Method::POST,
         "/v1/spaces",
         Some(&owner_token),
-        Some(&json!({
-            "clientId":Uuid::new_v4(),
-            "description":"Disposable integration space",
-            "name":"HTTP compatibility",
-            "purposeLabel":"migration"
-        })),
+        Some(&space_body),
     )
     .await;
     assert_status(&space, StatusCode::CREATED);
@@ -632,6 +634,30 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("space id")
         .to_owned();
+    for index in 0..2 {
+        let extra_space = send(
+            &router,
+            Method::POST,
+            "/v1/spaces",
+            Some(&owner_token),
+            Some(&json!({
+                "clientId":Uuid::new_v4(),
+                "name":format!("Quota filler {index}")
+            })),
+        )
+        .await;
+        assert_status(&extra_space, StatusCode::CREATED);
+    }
+    let replayed_space = send(
+        &router,
+        Method::POST,
+        "/v1/spaces",
+        Some(&owner_token),
+        Some(&space_body),
+    )
+    .await;
+    assert_status(&replayed_space, StatusCode::OK);
+    assert_eq!(replayed_space.json()["space"]["id"], space_id);
     for path in [
         "/v1/spaces".to_owned(),
         format!("/v1/spaces/{space_id}"),
@@ -707,7 +733,10 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         Some(&owner_token),
         Some(&json!({
             "clientId":Uuid::new_v4(),
-            "emails":["http-facilitator@example.test"],
+            "emails":[
+                "http-facilitator@example.test",
+                "http-participant@example.test"
+            ],
             "role":"facilitator"
         })),
     )
@@ -716,6 +745,10 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_eq!(
         added_facilitator.json()["addedEmails"],
         json!(["http-facilitator@example.test"])
+    );
+    assert_eq!(
+        added_facilitator.json()["roleMismatchEmails"],
+        json!(["http-participant@example.test"])
     );
     let facilitator_cannot_add_teacher = send(
         &router,
@@ -765,21 +798,34 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .await,
         StatusCode::NOT_FOUND,
     );
+    let invite_client_id = Uuid::new_v4();
+    let invite_body = json!({
+        "clientId":invite_client_id,
+        "groupId":group_id,
+        "maxUses":2,
+        "role":"participant"
+    });
     let invite = send(
         &router,
         Method::POST,
         &format!("/v1/spaces/{space_id}/invites"),
         Some(&owner_token),
-        Some(&json!({
-            "clientId":Uuid::new_v4(),
-            "groupId":group_id,
-            "maxUses":2,
-            "role":"participant"
-        })),
+        Some(&invite_body),
     )
     .await;
     assert_status(&invite, StatusCode::CREATED);
-    let invite_code = invite.json()["code"]
+    let replayed_invite = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/invites"),
+        Some(&owner_token),
+        Some(&invite_body),
+    )
+    .await;
+    assert_status(&replayed_invite, StatusCode::CREATED);
+    assert_eq!(replayed_invite.json()["id"], invite.json()["id"]);
+    assert_eq!(replayed_invite.json()["code"], invite.json()["code"]);
+    let invite_code = replayed_invite.json()["code"]
         .as_str()
         .expect("invite code")
         .to_owned();
@@ -863,6 +909,15 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&run, StatusCode::CREATED);
     let run_id = run.json()["id"].as_str().expect("run id").to_owned();
+    for _ in 0..4 {
+        query("INSERT INTO knowledge_activity_runs(client_id,space_id,activity_version_id,mode,target_kind,insight_policy,created_by)VALUES($1,$2,$3,'live','participants','explicit_and_operational','http-owner')")
+            .bind(Uuid::new_v4())
+            .bind(Uuid::parse_str(&space_id).expect("space UUID"))
+            .bind(Uuid::parse_str(&version_id).expect("version UUID"))
+            .execute(&state.pool)
+            .await
+            .expect("fill active run quota");
+    }
     let repeated_run = send(
         &router,
         Method::POST,

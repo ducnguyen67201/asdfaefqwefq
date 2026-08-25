@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    auth::{open_invite_code, seal_invite_code},
     error::{ApiError, ApiResult},
     knowledge::{
         ClassroomRole, ObjectStore, SpaceRole, can_add_member, classroom_role_allows_space_role,
@@ -22,7 +23,7 @@ use crate::{
 pub struct KnowledgeService {
     pub pool: PgPool,
     pub object_store: Option<ObjectStore>,
-    hmac_key: Vec<u8>,
+    hmac_key: String,
 }
 fn iso(value: Option<OffsetDateTime>) -> Value {
     value.map_or(Value::Null, |value| {
@@ -141,7 +142,7 @@ impl KnowledgeService {
         Self {
             pool,
             object_store,
-            hmac_key: hmac_key.as_bytes().to_vec(),
+            hmac_key: hmac_key.to_owned(),
         }
     }
     pub async fn role(&self, user: &str, space: Uuid, allowed: &[&str]) -> ApiResult<&'static str> {
@@ -244,14 +245,6 @@ impl KnowledgeService {
                 "An administrator must assign the Teacher role before you can create a class.",
             ));
         }
-        let owned:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_spaces WHERE owner_user_id=$1 AND archived_at IS NULL").bind(user).fetch_one(&mut*tx).await?;
-        if owned >= plan.space_count {
-            return Err(ApiError::coded(
-                http::StatusCode::CONFLICT,
-                "space_quota_reached",
-                "This plan reached its Knowledge Space limit.",
-            ));
-        }
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
             .bind(format!("space:{user}:{client_id}"))
             .execute(&mut *tx)
@@ -262,6 +255,14 @@ impl KnowledgeService {
             return Ok((
                 false,
                 json!({"space":{"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":"owner","createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))},"newlyCreated":false}),
+            ));
+        }
+        let owned:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_spaces WHERE owner_user_id=$1 AND archived_at IS NULL").bind(user).fetch_one(&mut*tx).await?;
+        if owned >= plan.space_count {
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "space_quota_reached",
+                "This plan reached its Knowledge Space limit.",
             ));
         }
         let row=sqlx::query("INSERT INTO knowledge_spaces(client_id,owner_user_id,name,description,purpose_label) VALUES($1,$2,$3,$4,$5) RETURNING id,created_at,updated_at").bind(client_id).bind(user).bind(name).bind(description).bind(purpose).fetch_one(&mut*tx).await?;
@@ -482,11 +483,11 @@ impl KnowledgeService {
         tx.commit().await?;
         Ok(result)
     }
-    fn invite_digest(&self, code: &str) -> ApiResult<Vec<u8>> {
-        let mut mac =
-            <Hmac<Sha256> as Mac>::new_from_slice(&self.hmac_key).map_err(ApiError::internal)?;
+    fn invite_digest(&self, code: &str) -> ApiResult<[u8; 32]> {
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.hmac_key.as_bytes())
+            .map_err(ApiError::internal)?;
         mac.update(code.trim().to_uppercase().as_bytes());
-        Ok(mac.finalize().into_bytes().to_vec())
+        Ok(mac.finalize().into_bytes().into())
     }
     pub async fn create_invite(&self, user: &str, space: Uuid, input: &Value) -> ApiResult<Value> {
         if input.as_object().is_none_or(|object| {
@@ -547,7 +548,35 @@ impl KnowledgeService {
                 .encode(random)
                 .to_uppercase()
         );
-        let row=sqlx::query("INSERT INTO knowledge_space_invites(client_id,space_id,group_id,code_digest,role,max_uses,expires_at,created_by)SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE $3::uuid IS NULL OR EXISTS(SELECT 1 FROM knowledge_space_groups WHERE id=$3 AND space_id=$2 AND archived_at IS NULL)ON CONFLICT(space_id,client_id)DO UPDATE SET client_id=EXCLUDED.client_id RETURNING id,role,max_uses,expires_at,created_at").bind(client).bind(space).bind(group).bind(self.invite_digest(&code)?).bind(role).bind(i32::try_from(max).unwrap_or(10_000)).bind(expires).bind(user).fetch_optional(&self.pool).await?.ok_or_else(||ApiError::coded(http::StatusCode::NOT_FOUND,"group_not_found","Group not found in this Space."))?;
+        let digest = self.invite_digest(&code)?;
+        let sealed = seal_invite_code(&code, &self.hmac_key, &digest)?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("invite:{space}:{client}"))
+            .execute(&mut *tx)
+            .await?;
+        let existing=sqlx::query("SELECT id,code_digest,code_ciphertext,role,max_uses,expires_at,created_at FROM knowledge_space_invites WHERE space_id=$1 AND client_id=$2").bind(space).bind(client).fetch_optional(&mut*tx).await?;
+        if let Some(row) = existing {
+            let stored_digest: Vec<u8> = row.get("code_digest");
+            let stored_digest: [u8; 32] = stored_digest.try_into().map_err(|_| {
+                ApiError::internal(anyhow::anyhow!("Stored invite digest is invalid."))
+            })?;
+            let stored_ciphertext: Option<Vec<u8>> = row.get("code_ciphertext");
+            let Some(stored_ciphertext) = stored_ciphertext else {
+                return Err(ApiError::coded(
+                    http::StatusCode::CONFLICT,
+                    "invite_replay_unavailable",
+                    "This older invite cannot be replayed. Create a new invite request.",
+                ));
+            };
+            let stored_code = open_invite_code(&stored_ciphertext, &self.hmac_key, &stored_digest)?;
+            tx.commit().await?;
+            return Ok(
+                json!({"id":row.get::<Uuid,_>("id"),"role":row.get::<String,_>("role"),"maxUses":row.get::<i32,_>("max_uses"),"expiresAt":iso(row.get("expires_at")),"createdAt":iso(Some(row.get("created_at"))),"code":stored_code}),
+            );
+        }
+        let row=sqlx::query("INSERT INTO knowledge_space_invites(client_id,space_id,group_id,code_digest,code_ciphertext,role,max_uses,expires_at,created_by)SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9 WHERE $3::uuid IS NULL OR EXISTS(SELECT 1 FROM knowledge_space_groups WHERE id=$3 AND space_id=$2 AND archived_at IS NULL)RETURNING id,role,max_uses,expires_at,created_at").bind(client).bind(space).bind(group).bind(digest.to_vec()).bind(sealed).bind(role).bind(i32::try_from(max).unwrap_or(10_000)).bind(expires).bind(user).fetch_optional(&mut*tx).await?.ok_or_else(||ApiError::coded(http::StatusCode::NOT_FOUND,"group_not_found","Group not found in this Space."))?;
+        tx.commit().await?;
         Ok(
             json!({"id":row.get::<Uuid,_>("id"),"role":row.get::<String,_>("role"),"maxUses":row.get::<i32,_>("max_uses"),"expiresAt":iso(row.get("expires_at")),"createdAt":iso(Some(row.get("created_at"))),"code":code}),
         )
@@ -556,7 +585,7 @@ impl KnowledgeService {
         let mut tx = self.pool.begin().await?;
         let row =
             sqlx::query("SELECT * FROM knowledge_space_invites WHERE code_digest=$1 FOR UPDATE")
-                .bind(self.invite_digest(code)?)
+                .bind(self.invite_digest(code)?.to_vec())
                 .fetch_optional(&mut *tx)
                 .await?
                 .ok_or_else(|| {
