@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useState } from 'react';
 
 import type {
   AppLanguage,
   KnowledgeSpaceSummary,
   SubmitTaskRequest,
-} from "../shared/contracts";
+} from '../shared/contracts';
 
-import { AssignedActivitiesPage } from "./AssignedActivitiesPage";
-import { AttemptLaunchPage } from "./AttemptLaunchPage";
-import { SpaceDetailPage } from "./SpaceDetailPage";
-import { SpacesPage } from "./SpacesPage";
+import { AssignedActivitiesPage } from './AssignedActivitiesPage';
+import { AttemptLaunchPage } from './AttemptLaunchPage';
+import { SpaceDetailPage } from './SpaceDetailPage';
+import { SpacesPage } from './SpacesPage';
 
 export function KnowledgeHubPage({
   appLanguage,
@@ -20,7 +20,7 @@ export function KnowledgeHubPage({
 }: {
   appLanguage: AppLanguage;
   focusAttemptId?: string | null;
-  mode: "spaces" | "assigned";
+  mode: 'spaces' | 'assigned';
   onAttemptFocusCleared?: () => void;
   onLaunch: (request: SubmitTaskRequest) => Promise<void>;
 }) {
@@ -43,7 +43,7 @@ export function KnowledgeHubPage({
       />
     );
   }
-  if (mode === "assigned") {
+  if (mode === 'assigned') {
     return (
       <AssignedActivitiesPage
         appLanguage={appLanguage}

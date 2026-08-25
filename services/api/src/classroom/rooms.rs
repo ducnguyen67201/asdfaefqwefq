@@ -2,6 +2,7 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::knowledge::{ClassroomRole, SpaceRole, classroom_role_allows_space_role};
 use crate::{Row, postgres::PgRow, query, query_scalar};
 
 use super::directives::directive_from_row;
@@ -157,6 +158,24 @@ impl ClassroomService {
             .bind(format!("live-room-user:{user_id}"))
             .execute(&mut *transaction)
             .await?;
+        let account = query("SELECT classroom_role,blocked_at FROM users WHERE id=$1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+        let account_can_join = account.is_some_and(|account| {
+            account
+                .get::<Option<OffsetDateTime>, _>("blocked_at")
+                .is_none()
+                && ClassroomRole::parse(&account.get::<String, _>("classroom_role")).is_some_and(
+                    |role| classroom_role_allows_space_role(role, SpaceRole::Participant),
+                )
+        });
+        if !account_can_join {
+            return Err(ApiError::forbidden(
+                "classroom_role_mismatch",
+                "Your account role does not allow joining this class room.",
+            ));
+        }
         let room = query(
             r#"SELECT codes.id AS code_id,codes.max_uses,codes.used_count,codes.expires_at,
                       codes.revoked_at,runs.id AS run_id,runs.space_id,runs.activity_version_id,

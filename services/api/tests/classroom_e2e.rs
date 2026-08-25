@@ -68,6 +68,37 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     assert_eq!(repeated_room.body["code"], room_code);
     assert_eq!(repeated_room.body["newlyCreated"], false);
 
+    let unassigned_id = format!("rust-e2e-unassigned-{}", Uuid::new_v4());
+    let unassigned_token = token('u');
+    query(
+        r#"INSERT INTO users (id,email,name,plan,free_access_started_at)
+           VALUES ($1,$2,'Rust E2E unassigned','basic',NOW())"#,
+    )
+    .bind(&unassigned_id)
+    .bind(format!("{unassigned_id}@example.test"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    query(
+        r#"INSERT INTO device_sessions (user_id,token_digest,expires_at)
+           VALUES ($1,$2,NOW()+INTERVAL '1 hour')"#,
+    )
+    .bind(&unassigned_id)
+    .bind(session_digest(&unassigned_token).as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let role_rejected = call(
+        &router,
+        Method::POST,
+        "/v1/live-rooms/join",
+        Some(&unassigned_token),
+        Some(json!({"clientId":Uuid::new_v4(),"code":room_code})),
+    )
+    .await;
+    assert_eq!(role_rejected.status, StatusCode::FORBIDDEN);
+    assert_eq!(role_rejected.body["code"], "classroom_role_mismatch");
+
     let joined = call(
         &router,
         Method::POST,
@@ -417,6 +448,11 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
         .execute(&pool)
         .await
         .unwrap();
+    query("DELETE FROM users WHERE id=$1")
+        .bind(unassigned_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     state.shutdown.cancel();
     state.pool.close().await;
 }
@@ -493,9 +529,10 @@ impl Fixture {
         let teacher_token = token('t');
         let student_token = token('s');
         query(
-            r#"INSERT INTO users (id,email,name,plan,free_access_started_at)
-               VALUES ($1,$2,'Rust E2E teacher','basic',NOW()),
-                      ($3,$4,'Rust E2E student','basic',NOW())"#,
+            r#"INSERT INTO users
+                 (id,email,name,plan,free_access_started_at,classroom_role)
+               VALUES ($1,$2,'Rust E2E teacher','basic',NOW(),'teacher'),
+                      ($3,$4,'Rust E2E student','basic',NOW(),'student')"#,
         )
         .bind(&teacher_id)
         .bind(format!("{teacher_id}@example.test"))
@@ -747,8 +784,9 @@ async fn create_load_users(pool: &PgPool, count: usize) -> Vec<(String, String)>
         .collect();
     let ids: Vec<_> = users.iter().map(|(id, _)| id.clone()).collect();
     query(
-        r#"INSERT INTO users (id,email,name,plan,free_access_started_at)
-           SELECT id,id||'@example.test','Rust load student','basic',NOW()
+        r#"INSERT INTO users
+             (id,email,name,plan,free_access_started_at,classroom_role)
+           SELECT id,id||'@example.test','Rust load student','basic',NOW(),'student'
            FROM UNNEST($1::text[]) AS ids(id)"#,
     )
     .bind(&ids)

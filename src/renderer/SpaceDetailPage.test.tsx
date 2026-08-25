@@ -30,11 +30,11 @@ describe('SpaceDetailPage role presentation', () => {
   it('keeps teacher material and room controls out of the student surface', () => {
     const markup = render('participant');
 
-    expect(markup).toContain('Student access');
-    expect(markup).toContain('Join · Work · Help · Check · Submit');
-    expect(markup).not.toContain('Add class material');
-    expect(markup).not.toContain('Publish Activity');
-    expect(markup).not.toContain('Create live room');
+    expect(markup).toContain('Learning');
+    expect(markup).toContain(
+      'Your Teacher has not shared class resources yet.',
+    );
+    expect(markup).not.toContain('Upload files');
     expect(markup).not.toContain('People');
   });
 
@@ -43,11 +43,10 @@ describe('SpaceDetailPage role presentation', () => {
     (role) => {
       const markup = render(role);
 
-      expect(markup).toContain('Teacher flow: Materials, Activity, Live room');
-      expect(markup).toContain('Materials');
-      expect(markup).toContain('Activities &amp; rooms');
+      expect(markup).toContain('Teaching');
+      expect(markup).toContain('Upload files');
+      expect(markup).toContain('Activities');
       expect(markup).toContain('People');
-      expect(markup).toContain('Add class material');
     },
   );
 });

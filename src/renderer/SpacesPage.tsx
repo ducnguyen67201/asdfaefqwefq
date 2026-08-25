@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from 'react';
 
 import type {
   AppLanguage,
   ClassroomAccountRole,
   KnowledgeSpaceSummary,
-} from "../shared/contracts";
-import { randomUUID } from "../shared/renderer-uuid";
+} from '../shared/contracts';
+import { randomUUID } from '../shared/renderer-uuid';
 
-import { translate } from "./app-language";
+import { translate } from './app-language';
 import {
   canCreateClassWorkspace,
   groupClassWorkspaces,
-} from "./class-workspace";
+} from './class-workspace';
 
 function classInitials(name: string) {
   return name
@@ -19,7 +19,7 @@ function classInitials(name: string) {
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
-    .join("");
+    .join('');
 }
 
 export function SpacesPage({
@@ -32,11 +32,11 @@ export function SpacesPage({
   onOpen: (space: KnowledgeSpaceSummary) => void;
 }) {
   const [classroomRole, setClassroomRole] =
-    useState<ClassroomAccountRole>("unassigned");
+    useState<ClassroomAccountRole>('unassigned');
   const [spaces, setSpaces] = useState<KnowledgeSpaceSummary[]>([]);
-  const [name, setName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
-  const [roomCode, setRoomCode] = useState("");
+  const [name, setName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [roomCode, setRoomCode] = useState('');
   const [autoOpenConsent, setAutoOpenConsent] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -56,7 +56,7 @@ export function SpacesPage({
       setError(
         cause instanceof Error
           ? cause.message
-          : translate(appLanguage, "Class workspaces are unavailable."),
+          : translate(appLanguage, 'Class workspaces are unavailable.'),
       );
     } finally {
       setLoading(false);
@@ -78,7 +78,7 @@ export function SpacesPage({
         setError(
           cause instanceof Error
             ? cause.message
-            : translate(appLanguage, "Class workspaces are unavailable."),
+            : translate(appLanguage, 'Class workspaces are unavailable.'),
         );
       })
       .finally(() => {
@@ -92,8 +92,8 @@ export function SpacesPage({
   const canCreate = canCreateClassWorkspace(classroomRole);
   const groupedSpaces = groupClassWorkspaces(spaces);
   const classGroups = [
-    { items: groupedSpaces.teaching, label: "Teaching", tone: "teaching" },
-    { items: groupedSpaces.learning, label: "Learning", tone: "learning" },
+    { items: groupedSpaces.teaching, label: 'Teaching', tone: 'teaching' },
+    { items: groupedSpaces.learning, label: 'Learning', tone: 'learning' },
   ].filter((group) => group.items.length > 0);
 
   const joinRoom = async () => {
@@ -107,13 +107,13 @@ export function SpacesPage({
         clientId: randomUUID(),
         code,
       });
-      setRoomCode("");
+      setRoomCode('');
       onJoined(session.attemptId);
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
-          : t("Could not join this class room."),
+          : t('Could not join this class room.'),
       );
     } finally {
       setJoiningRoom(false);
@@ -127,11 +127,11 @@ export function SpacesPage({
     >
       <header className="knowledge-heading class-landing-hero">
         <div className="class-landing-hero__copy">
-          <p className="eyebrow">{t("Classes")}</p>
-          <h1 id="spaces-heading">{t("Class workspaces")}</h1>
+          <p className="eyebrow">{t('Classes')}</p>
+          <h1 id="spaces-heading">{t('Class workspaces')}</h1>
           <p>
             {t(
-              "Keep each class easy to find, switch between, and manage from one place.",
+              'Keep each class easy to find, switch between, and manage from one place.',
             )}
           </p>
         </div>
@@ -139,49 +139,49 @@ export function SpacesPage({
           <span className="classroom-role-badge">
             <i aria-hidden="true" />
             {t(
-              classroomRole === "teacher"
-                ? "Teacher"
-                : classroomRole === "student"
-                  ? "Student"
-                  : "Role pending",
+              classroomRole === 'teacher'
+                ? 'Teacher'
+                : classroomRole === 'student'
+                  ? 'Student'
+                  : 'Role pending',
             )}
           </span>
-          {classroomRole !== "unassigned" && (
+          {classroomRole !== 'unassigned' && (
             <span className="class-count">
               <strong>{spaces.length}</strong>
-              {t(spaces.length === 1 ? "class" : "classes")}
+              {t(spaces.length === 1 ? 'class' : 'classes')}
             </span>
           )}
         </div>
       </header>
 
-      {classroomRole === "unassigned" && (
+      {classroomRole === 'unassigned' && (
         <div className="role-pending-card" role="status">
           <span className="role-pending-card__mark" aria-hidden="true">
             01
           </span>
           <div>
-            <p className="eyebrow">{t("Account ready")}</p>
+            <p className="eyebrow">{t('Account ready')}</p>
             <strong>
-              {t("Your classroom role has not been assigned yet.")}
+              {t('Your classroom role has not been assigned yet.')}
             </strong>
             <p>
               {t(
-                "An administrator assigns Teacher or Student after your account is created.",
+                'An administrator assigns Teacher or Student after your account is created.',
               )}
             </p>
           </div>
           <div className="role-pending-card__path" aria-hidden="true">
-            <span>{t("Account")}</span>
+            <span>{t('Account')}</span>
             <i />
-            <span>{t("Role")}</span>
+            <span>{t('Role')}</span>
             <i />
-            <span>{t("Class")}</span>
+            <span>{t('Class')}</span>
           </div>
         </div>
       )}
 
-      {classroomRole === "student" && (
+      {classroomRole === 'student' && (
         <form
           className="classroom-join-card class-room-entry"
           onSubmit={(event) => {
@@ -190,16 +190,16 @@ export function SpacesPage({
           }}
         >
           <div className="classroom-entry-label">
-            <span>{t("Live class")}</span>
-            <small>{t("Takes less than a minute")}</small>
+            <span>{t('Live class')}</span>
+            <small>{t('Takes less than a minute')}</small>
           </div>
-          <h2>{t("Join your class room")}</h2>
+          <h2>{t('Join your class room')}</h2>
           <p>
             {t(
-              "Enter the room code from your teacher. Tro will wait with you until class starts.",
+              'Enter the room code from your teacher. Tro will wait with you until class starts.',
             )}
           </p>
-          <label htmlFor="classroom-room-code">{t("Room code")}</label>
+          <label htmlFor="classroom-room-code">{t('Room code')}</label>
           <div className="classroom-code-entry">
             <input
               autoCapitalize="characters"
@@ -218,7 +218,7 @@ export function SpacesPage({
               disabled={joiningRoom || roomCode.trim().length < 8}
               type="submit"
             >
-              {t(joiningRoom ? "Joining…" : "Join room")}
+              {t(joiningRoom ? 'Joining…' : 'Join room')}
             </button>
           </div>
           <label className="classroom-join-consent">
@@ -228,10 +228,10 @@ export function SpacesPage({
               type="checkbox"
             />
             <span>
-              <strong>{t("Open approved class links automatically")}</strong>
+              <strong>{t('Open approved class links automatically')}</strong>
               <small>
                 {t(
-                  "Optional. Only published HTTPS sites for this Activity; change it anytime.",
+                  'Optional. Only published HTTPS sites for this Activity; change it anytime.',
                 )}
               </small>
             </span>
@@ -239,18 +239,18 @@ export function SpacesPage({
           <div className="classroom-privacy-note">
             <span aria-hidden="true">◌</span>
             <p>
-              <strong>{t("What this session shares")}</strong>
+              <strong>{t('What this session shares')}</strong>
               {t(
-                " Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.",
+                ' Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.',
               )}
             </p>
           </div>
         </form>
       )}
 
-      {classroomRole !== "unassigned" && (
+      {classroomRole !== 'unassigned' && (
         <div
-          className={`class-entry-grid${canCreate ? "" : " class-entry-grid--single"}`}
+          className={`class-entry-grid${canCreate ? '' : ' class-entry-grid--single'}`}
         >
           {canCreate && (
             <form
@@ -263,11 +263,11 @@ export function SpacesPage({
                   .createKnowledgeSpace({
                     clientId: randomUUID(),
                     name: name.trim(),
-                    description: "",
-                    purposeLabel: "Class",
+                    description: '',
+                    purposeLabel: 'Class',
                   })
                   .then((result) => {
-                    setName("");
+                    setName('');
                     onOpen(result.space);
                     return load();
                   })
@@ -275,7 +275,7 @@ export function SpacesPage({
                     setError(
                       cause instanceof Error
                         ? cause.message
-                        : t("Could not create the class workspace."),
+                        : t('Could not create the class workspace.'),
                     ),
                   )
                   .finally(() => setCreating(false));
@@ -284,16 +284,16 @@ export function SpacesPage({
               <div className="class-entry-card__heading">
                 <span aria-hidden="true">＋</span>
                 <div>
-                  <strong>{t("Create a class")}</strong>
-                  <p>{t("Start a dedicated home for a new group.")}</p>
+                  <strong>{t('Create a class')}</strong>
+                  <p>{t('Start a dedicated home for a new group.')}</p>
                 </div>
               </div>
-              <label htmlFor="space-name">{t("New class workspace")}</label>
+              <label htmlFor="space-name">{t('New class workspace')}</label>
               <input
                 id="space-name"
                 maxLength={240}
                 onChange={(event) => setName(event.target.value)}
-                placeholder={t("Python Foundations, Class 8A, Design Lab…")}
+                placeholder={t('Python Foundations, Class 8A, Design Lab…')}
                 value={name}
               />
               <button
@@ -301,7 +301,7 @@ export function SpacesPage({
                 disabled={creating || !name.trim()}
                 type="submit"
               >
-                {t(creating ? "Creating…" : "Create class")}
+                {t(creating ? 'Creating…' : 'Create class')}
               </button>
             </form>
           )}
@@ -314,14 +314,14 @@ export function SpacesPage({
               void window.tro
                 .redeemKnowledgeInvite({ code: inviteCode.trim() })
                 .then(() => {
-                  setInviteCode("");
+                  setInviteCode('');
                   return load();
                 })
                 .catch((cause: unknown) =>
                   setError(
                     cause instanceof Error
                       ? cause.message
-                      : t("Could not join that class."),
+                      : t('Could not join that class.'),
                   ),
                 )
                 .finally(() => setJoining(false));
@@ -330,21 +330,21 @@ export function SpacesPage({
             <div className="class-entry-card__heading">
               <span aria-hidden="true">↳</span>
               <div>
-                <strong>{t("Join a class")}</strong>
-                <p>{t("Use a code shared for your assigned role.")}</p>
+                <strong>{t('Join a class')}</strong>
+                <p>{t('Use a code shared for your assigned role.')}</p>
               </div>
             </div>
-            <label htmlFor="space-invite-code">{t("Join code")}</label>
+            <label htmlFor="space-invite-code">{t('Join code')}</label>
             <input
               id="space-invite-code"
               onChange={(event) => setInviteCode(event.target.value)}
               placeholder={t(
-                "Paste a join code that matches your assigned role",
+                'Paste a join code that matches your assigned role',
               )}
               value={inviteCode}
             />
             <button disabled={joining || !inviteCode.trim()} type="submit">
-              {t(joining ? "Joining…" : "Join class")}
+              {t(joining ? 'Joining…' : 'Join class')}
             </button>
           </form>
         </div>
@@ -356,15 +356,15 @@ export function SpacesPage({
         </div>
       )}
       {loading ? (
-        <p>{t("Loading…")}</p>
+        <p>{t('Loading…')}</p>
       ) : spaces.length === 0 ? (
         <div className="knowledge-empty">
-          <strong>{t("No class workspaces yet")}</strong>
+          <strong>{t('No class workspaces yet')}</strong>
           <p>
             {t(
               canCreate
-                ? "Create a class, then add registered Teachers and Students."
-                : "A Teacher can add your registered account to a class.",
+                ? 'Create a class, then add registered Teachers and Students.'
+                : 'A Teacher can add your registered account to a class.',
             )}
           </p>
         </div>
@@ -390,27 +390,27 @@ export function SpacesPage({
                       type="button"
                     >
                       <span className="class-card__folio" aria-hidden="true">
-                        {String(index + 1).padStart(2, "0")}
+                        {String(index + 1).padStart(2, '0')}
                       </span>
                       <span className="class-card__mark" aria-hidden="true">
-                        {classInitials(space.name) || "C"}
+                        {classInitials(space.name) || 'C'}
                       </span>
                       <span className="space-role">
                         {t(
-                          space.role === "participant"
-                            ? "Student"
-                            : space.role === "owner"
-                              ? "Class owner"
-                              : "Teacher",
+                          space.role === 'participant'
+                            ? 'Student'
+                            : space.role === 'owner'
+                              ? 'Class owner'
+                              : 'Teacher',
                         )}
                       </span>
                       <strong>{space.name}</strong>
                       <p>
                         {space.description ||
-                          t("Class resources and activities")}
+                          t('Class resources and activities')}
                       </p>
                       <span className="class-card__open">
-                        {t("Open class")} <i aria-hidden="true">→</i>
+                        {t('Open class')} <i aria-hidden="true">→</i>
                       </span>
                     </button>
                   </li>

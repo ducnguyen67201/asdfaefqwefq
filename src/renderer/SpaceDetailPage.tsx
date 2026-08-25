@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from 'react';
 
 import type {
   AddKnowledgeSpaceMembersResult,
@@ -8,21 +8,21 @@ import type {
   KnowledgeSpaceMember,
   KnowledgeSpaceSummary,
   SaveKnowledgeActivityRequest,
-} from "../shared/contracts";
-import { randomUUID } from "../shared/renderer-uuid";
+} from '../shared/contracts';
+import { randomUUID } from '../shared/renderer-uuid';
 
-import { ActivityEditorPage } from "./ActivityEditorPage";
-import { translate } from "./app-language";
+import { ActivityEditorPage } from './ActivityEditorPage';
+import { translate } from './app-language';
 import {
   canManageClassPeople,
   parseClassMemberEmails,
   rolesAvailableToMemberManager,
-} from "./class-workspace";
-import { ClassWorkspaceSwitcher } from "./ClassWorkspaceSwitcher";
-import { FacilitatorRunPage } from "./FacilitatorRunPage";
-import { SpaceLibrary } from "./SpaceLibrary";
+} from './class-workspace';
+import { ClassWorkspaceSwitcher } from './ClassWorkspaceSwitcher';
+import { FacilitatorRunPage } from './FacilitatorRunPage';
+import { SpaceLibrary } from './SpaceLibrary';
 
-type Tab = "library" | "activities" | "people";
+type Tab = 'library' | 'activities' | 'people';
 
 export function SpaceDetailPage({
   appLanguage,
@@ -35,34 +35,34 @@ export function SpaceDetailPage({
   onOpen: (space: KnowledgeSpaceSummary) => void;
   space: KnowledgeSpaceSummary;
 }) {
-  const [tab, setTab] = useState<Tab>("library");
-  const [sources, setSources] = useState<KnowledgeSourceList["items"]>([]);
+  const [tab, setTab] = useState<Tab>('library');
+  const [sources, setSources] = useState<KnowledgeSourceList['items']>([]);
   const [groups, setGroups] = useState<KnowledgeGroup[]>([]);
   const [members, setMembers] = useState<KnowledgeSpaceMember[]>([]);
-  const [memberEmails, setMemberEmails] = useState("");
-  const [memberRole, setMemberRole] = useState<"facilitator" | "participant">(
-    "participant",
+  const [memberEmails, setMemberEmails] = useState('');
+  const [memberRole, setMemberRole] = useState<'facilitator' | 'participant'>(
+    'participant',
   );
   const [memberResult, setMemberResult] =
     useState<AddKnowledgeSpaceMembersResult | null>(null);
   const [addingMembers, setAddingMembers] = useState(false);
-  const [rosterQuery, setRosterQuery] = useState("");
-  const [rosterRole, setRosterRole] = useState<"all" | "teacher" | "student">(
-    "all",
+  const [rosterQuery, setRosterQuery] = useState('');
+  const [rosterRole, setRosterRole] = useState<'all' | 'teacher' | 'student'>(
+    'all',
   );
-  const [groupName, setGroupName] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [groupName, setGroupName] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useState('');
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [activityVersionId, setActivityVersionId] = useState<string | null>(
     null,
   );
   const [publishedDefinition, setPublishedDefinition] = useState<
-    SaveKnowledgeActivityRequest["definition"] | null
+    SaveKnowledgeActivityRequest['definition'] | null
   >(null);
   const [runId, setRunId] = useState<string | null>(null);
-  const [participants, setParticipants] = useState("");
-  const [delivery, setDelivery] = useState<"assigned" | "room">("room");
-  const [mode, setMode] = useState<"live" | "async" | "hybrid">("live");
+  const [participants, setParticipants] = useState('');
+  const [delivery, setDelivery] = useState<'assigned' | 'room'>('room');
+  const [mode, setMode] = useState<'live' | 'async' | 'hybrid'>('live');
   const [creatingRun, setCreatingRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = useCallback(
@@ -75,15 +75,15 @@ export function SpaceDetailPage({
   const canFacilitate = canManageClassPeople(space.role);
   const availableMemberRoles = rolesAvailableToMemberManager(space.role);
   const studentCount = members.filter(
-    (member) => member.role === "participant",
+    (member) => member.role === 'participant',
   ).length;
   const teacherCount = members.length - studentCount;
   const normalizedRosterQuery = rosterQuery.trim().toLocaleLowerCase();
   const visibleMembers = members.filter((member) => {
     const roleMatches =
-      rosterRole === "all" ||
-      (rosterRole === "student" && member.role === "participant") ||
-      (rosterRole === "teacher" && member.role !== "participant");
+      rosterRole === 'all' ||
+      (rosterRole === 'student' && member.role === 'participant') ||
+      (rosterRole === 'teacher' && member.role !== 'participant');
     const queryMatches =
       !normalizedRosterQuery ||
       member.name.toLocaleLowerCase().includes(normalizedRosterQuery) ||
@@ -101,7 +101,7 @@ export function SpaceDetailPage({
           setError(
             cause instanceof Error
               ? cause.message
-              : t("Library is unavailable."),
+              : t('Library is unavailable.'),
           ),
         ),
     [space.id, t],
@@ -115,7 +115,7 @@ export function SpaceDetailPage({
           setError(
             cause instanceof Error
               ? cause.message
-              : t("Groups are unavailable."),
+              : t('Groups are unavailable.'),
           ),
         ),
     [space.id, t],
@@ -129,7 +129,7 @@ export function SpaceDetailPage({
           setError(
             cause instanceof Error
               ? cause.message
-              : t("People are unavailable."),
+              : t('People are unavailable.'),
           ),
         ),
     [space.id, t],
@@ -148,11 +148,11 @@ export function SpaceDetailPage({
     .map((value) => value.trim())
     .filter(Boolean);
   const runTarget =
-    delivery === "room"
-      ? { kind: "room" as const }
+    delivery === 'room'
+      ? { kind: 'room' as const }
       : selectedGroupId
-        ? { kind: "group" as const, groupId: selectedGroupId }
-        : { kind: "participants" as const, userIds: participantIds };
+        ? { kind: 'group' as const, groupId: selectedGroupId }
+        : { kind: 'participants' as const, userIds: participantIds };
   const parsedMemberEmails = parseClassMemberEmails(memberEmails);
 
   const addMembers = async () => {
@@ -173,13 +173,13 @@ export function SpaceDetailPage({
         spaceId: space.id,
       });
       setMemberResult(result);
-      if (result.addedEmails.length) setMemberEmails("");
+      if (result.addedEmails.length) setMemberEmails('');
       await loadMembers();
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
-          : t("Could not add those people."),
+          : t('Could not add those people.'),
       );
     } finally {
       setAddingMembers(false);
@@ -195,17 +195,17 @@ export function SpaceDetailPage({
         activityVersionId,
         clientId: randomUUID(),
         closesAt: null,
-        insightPolicy: "explicit_and_operational",
-        mode: delivery === "room" ? "live" : mode,
+        insightPolicy: 'explicit_and_operational',
+        mode: delivery === 'room' ? 'live' : mode,
         opensAt: null,
         spaceId: space.id,
         target: runTarget,
       });
-      if (delivery === "assigned") {
+      if (delivery === 'assigned') {
         await window.tro.setKnowledgeRunState({
           runId: run.id,
           spaceId: space.id,
-          state: "open",
+          state: 'open',
         });
       }
       setRunId(run.id);
@@ -213,7 +213,7 @@ export function SpaceDetailPage({
       setError(
         cause instanceof Error
           ? cause.message
-          : t("Could not create this Run."),
+          : t('Could not create this Run.'),
       );
     } finally {
       setCreatingRun(false);
@@ -221,13 +221,13 @@ export function SpaceDetailPage({
   };
 
   const tabs: Tab[] = canFacilitate
-    ? ["library", "activities", "people"]
-    : ["library", "activities"];
+    ? ['library', 'activities', 'people']
+    : ['library', 'activities'];
 
   return (
     <section className="knowledge-page knowledge-page--class-detail">
       <button className="back-link" onClick={onBack} type="button">
-        ← {t("All class workspaces")}
+        ← {t('All class workspaces')}
       </button>
       <ClassWorkspaceSwitcher
         appLanguage={appLanguage}
@@ -236,11 +236,11 @@ export function SpaceDetailPage({
           setSources([]);
           setGroups([]);
           setMembers([]);
-          setRosterQuery("");
-          setRosterRole("all");
+          setRosterQuery('');
+          setRosterRole('all');
           setError(null);
           setMemberResult(null);
-          setTab("library");
+          setTab('library');
           onOpen(nextSpace);
         }}
       />
@@ -254,12 +254,12 @@ export function SpaceDetailPage({
             onClick={() => setTab(value)}
             onKeyDown={(event) => {
               let nextIndex = index;
-              if (event.key === "ArrowRight")
+              if (event.key === 'ArrowRight')
                 nextIndex = (index + 1) % tabs.length;
-              else if (event.key === "ArrowLeft") {
+              else if (event.key === 'ArrowLeft') {
                 nextIndex = (index - 1 + tabs.length) % tabs.length;
-              } else if (event.key === "Home") nextIndex = 0;
-              else if (event.key === "End") nextIndex = tabs.length - 1;
+              } else if (event.key === 'Home') nextIndex = 0;
+              else if (event.key === 'End') nextIndex = tabs.length - 1;
               else return;
               event.preventDefault();
               const nextTab = tabs[nextIndex];
@@ -276,11 +276,11 @@ export function SpaceDetailPage({
             type="button"
           >
             {t(
-              value === "library"
-                ? "Library"
-                : value === "activities"
-                  ? "Activities"
-                  : "People",
+              value === 'library'
+                ? 'Library'
+                : value === 'activities'
+                  ? 'Activities'
+                  : 'People',
             )}
           </button>
         ))}
@@ -291,7 +291,7 @@ export function SpaceDetailPage({
         </p>
       )}
 
-      {tab === "library" && (
+      {tab === 'library' && (
         <div
           aria-labelledby={`space-tab-${space.id}-library`}
           id={`space-panel-${space.id}-library`}
@@ -308,7 +308,7 @@ export function SpaceDetailPage({
         </div>
       )}
 
-      {tab === "activities" &&
+      {tab === 'activities' &&
         (canFacilitate ? (
           <div
             aria-labelledby={`space-tab-${space.id}-activities`}
@@ -332,66 +332,66 @@ export function SpaceDetailPage({
               >
                 <div className="section-heading-row">
                   <div>
-                    <p className="eyebrow">{t("Published and ready")}</p>
+                    <p className="eyebrow">{t('Published and ready')}</p>
                     <h2 id="run-launch-heading">
-                      {t("How will students begin?")}
+                      {t('How will students begin?')}
                     </h2>
                     <p className="section-deck">
                       {t(
-                        "Open a live room for class, or assign this version for independent work.",
+                        'Open a live room for class, or assign this version for independent work.',
                       )}
                     </p>
                   </div>
                   <span className="published-seal">
-                    ✓ {t("Immutable version")}
+                    ✓ {t('Immutable version')}
                   </span>
                 </div>
                 <div
-                  aria-label={t("Delivery method")}
+                  aria-label={t('Delivery method')}
                   className="delivery-choice"
                   role="radiogroup"
                 >
-                  <label className={delivery === "room" ? "is-selected" : ""}>
+                  <label className={delivery === 'room' ? 'is-selected' : ''}>
                     <input
-                      checked={delivery === "room"}
+                      checked={delivery === 'room'}
                       name="delivery"
-                      onChange={() => setDelivery("room")}
+                      onChange={() => setDelivery('room')}
                       type="radio"
                     />
                     <span className="delivery-choice__icon" aria-hidden="true">
                       ◎
                     </span>
-                    <strong>{t("Live room")}</strong>
+                    <strong>{t('Live room')}</strong>
                     <small>
                       {t(
-                        "Students join a lobby with one short code. You decide when class starts.",
+                        'Students join a lobby with one short code. You decide when class starts.',
                       )}
                     </small>
-                    <em>{t("Recommended")}</em>
+                    <em>{t('Recommended')}</em>
                   </label>
                   <label
-                    className={delivery === "assigned" ? "is-selected" : ""}
+                    className={delivery === 'assigned' ? 'is-selected' : ''}
                   >
                     <input
-                      checked={delivery === "assigned"}
+                      checked={delivery === 'assigned'}
                       name="delivery"
-                      onChange={() => setDelivery("assigned")}
+                      onChange={() => setDelivery('assigned')}
                       type="radio"
                     />
                     <span className="delivery-choice__icon" aria-hidden="true">
                       ↗
                     </span>
-                    <strong>{t("Direct assignment")}</strong>
+                    <strong>{t('Direct assignment')}</strong>
                     <small>
-                      {t("Send to an existing group or a list of account IDs.")}
+                      {t('Send to an existing group or a list of account IDs.')}
                     </small>
                   </label>
                 </div>
-                {delivery === "assigned" && (
+                {delivery === 'assigned' && (
                   <div className="run-assignment-options">
                     {groups.length > 0 && (
                       <label>
-                        {t("Assign a group")}
+                        {t('Assign a group')}
                         <select
                           onChange={(event) =>
                             setSelectedGroupId(event.target.value)
@@ -399,7 +399,7 @@ export function SpaceDetailPage({
                           value={selectedGroupId}
                         >
                           <option value="">
-                            {t("Use individual account IDs")}
+                            {t('Use individual account IDs')}
                           </option>
                           {groups.map((group) => (
                             <option key={group.id} value={group.id}>
@@ -411,28 +411,28 @@ export function SpaceDetailPage({
                     )}
                     {!selectedGroupId && (
                       <label>
-                        {t("Participant account IDs")}
+                        {t('Participant account IDs')}
                         <textarea
                           onChange={(event) =>
                             setParticipants(event.target.value)
                           }
-                          placeholder={t("One account ID per line")}
+                          placeholder={t('One account ID per line')}
                           rows={4}
                           value={participants}
                         />
                       </label>
                     )}
                     <label>
-                      {t("Mode")}
+                      {t('Mode')}
                       <select
                         onChange={(event) =>
                           setMode(event.target.value as typeof mode)
                         }
                         value={mode}
                       >
-                        <option value="live">{t("live")}</option>
-                        <option value="async">{t("async")}</option>
-                        <option value="hybrid">{t("hybrid")}</option>
+                        <option value="live">{t('live')}</option>
+                        <option value="async">{t('async')}</option>
+                        <option value="hybrid">{t('hybrid')}</option>
                       </select>
                     </label>
                   </div>
@@ -441,7 +441,7 @@ export function SpaceDetailPage({
                   className="primary-button run-launchpad__action"
                   disabled={
                     creatingRun ||
-                    (delivery === "assigned" &&
+                    (delivery === 'assigned' &&
                       !selectedGroupId &&
                       participantIds.length === 0)
                   }
@@ -449,10 +449,10 @@ export function SpaceDetailPage({
                   type="button"
                 >
                   {creatingRun
-                    ? t("Creating…")
-                    : delivery === "room"
-                      ? t("Create room lobby")
-                      : t("Open assignment")}{" "}
+                    ? t('Creating…')
+                    : delivery === 'room'
+                      ? t('Create room lobby')
+                      : t('Open assignment')}{' '}
                   →
                 </button>
               </section>
@@ -477,15 +477,15 @@ export function SpaceDetailPage({
             tabIndex={0}
           >
             <div className="knowledge-empty">
-              <strong>{t("Assigned Activities")}</strong>
+              <strong>{t('Assigned Activities')}</strong>
               <p>
-                {t("Your Teacher-published work appears in the Assigned view.")}
+                {t('Your Teacher-published work appears in the Assigned view.')}
               </p>
             </div>
           </div>
         ))}
 
-      {tab === "people" && canFacilitate && (
+      {tab === 'people' && canFacilitate && (
         <section
           aria-labelledby={`space-tab-${space.id}-people`}
           className="space-panel people-panel"
@@ -495,29 +495,29 @@ export function SpaceDetailPage({
         >
           <div className="section-heading-row people-panel__heading">
             <div>
-              <p className="eyebrow">{t("Class community")}</p>
-              <h2>{t("People")}</h2>
+              <p className="eyebrow">{t('Class community')}</p>
+              <h2>{t('People')}</h2>
               <p>
                 {t(
-                  "Add people after their account exists and an administrator assigns their Teacher or Student role.",
+                  'Add people after their account exists and an administrator assigns their Teacher or Student role.',
                 )}
               </p>
             </div>
             <span className="people-panel__total">
               <strong>{members.length}</strong>
-              {t("on the roster")}
+              {t('on the roster')}
             </span>
           </div>
 
           <div className="people-console">
             <aside
               className="people-composition"
-              aria-label={t("Roster composition")}
+              aria-label={t('Roster composition')}
             >
-              <p className="eyebrow">{t("At a glance")}</p>
+              <p className="eyebrow">{t('At a glance')}</p>
               <div className="people-composition__total">
                 <strong>{members.length}</strong>
-                <span>{t("people")}</span>
+                <span>{t('people')}</span>
               </div>
               <dl>
                 <div>
@@ -526,7 +526,7 @@ export function SpaceDetailPage({
                       className="role-dot role-dot--teacher"
                       aria-hidden="true"
                     />
-                    {t("Teachers")}
+                    {t('Teachers')}
                   </dt>
                   <dd>{teacherCount}</dd>
                 </div>
@@ -536,19 +536,19 @@ export function SpaceDetailPage({
                       className="role-dot role-dot--student"
                       aria-hidden="true"
                     />
-                    {t("Students")}
+                    {t('Students')}
                   </dt>
                   <dd>{studentCount}</dd>
                 </div>
               </dl>
-              <p>{t("Roles are verified before anyone is added.")}</p>
+              <p>{t('Roles are verified before anyone is added.')}</p>
             </aside>
 
             <div className="member-composer">
               <div className="member-composer__heading">
                 <div>
-                  <p className="eyebrow">{t("Add registered accounts")}</p>
-                  <h3>{t("Build the roster")}</h3>
+                  <p className="eyebrow">{t('Add registered accounts')}</p>
+                  <h3>{t('Build the roster')}</h3>
                 </div>
                 <span>
                   {parsedMemberEmails.emails.length}
@@ -557,33 +557,33 @@ export function SpaceDetailPage({
               </div>
               <div className="class-member-add">
                 <label>
-                  {t("Registered account emails")}
+                  {t('Registered account emails')}
                   <textarea
                     onChange={(event) => setMemberEmails(event.target.value)}
-                    placeholder={t("One email per line, comma, or space")}
+                    placeholder={t('One email per line, comma, or space')}
                     rows={6}
                     value={memberEmails}
                   />
                   <small>
                     {t(
-                      "Add up to 500 people per batch. You can repeat as needed.",
+                      'Add up to 500 people per batch. You can repeat as needed.',
                     )}
                   </small>
                 </label>
                 <div className="member-composer__actions">
                   <label>
-                    {t("Add as")}
+                    {t('Add as')}
                     <select
                       onChange={(event) =>
                         setMemberRole(
-                          event.target.value as "facilitator" | "participant",
+                          event.target.value as 'facilitator' | 'participant',
                         )
                       }
                       value={memberRole}
                     >
                       {availableMemberRoles.map((role) => (
                         <option key={role} value={role}>
-                          {t(role === "facilitator" ? "Teacher" : "Student")}
+                          {t(role === 'facilitator' ? 'Teacher' : 'Student')}
                         </option>
                       ))}
                     </select>
@@ -599,7 +599,7 @@ export function SpaceDetailPage({
                     onClick={() => void addMembers()}
                     type="button"
                   >
-                    {t(addingMembers ? "Adding…" : "Add to class")}
+                    {t(addingMembers ? 'Adding…' : 'Add to class')}
                     {!addingMembers && <span aria-hidden="true">→</span>}
                   </button>
                 </div>
@@ -608,13 +608,13 @@ export function SpaceDetailPage({
           </div>
           {parsedMemberEmails.invalid.length > 0 && (
             <p className="form-error" role="alert">
-              {t("Check these email entries")}:{" "}
-              {parsedMemberEmails.invalid.join(", ")}
+              {t('Check these email entries')}:{' '}
+              {parsedMemberEmails.invalid.join(', ')}
             </p>
           )}
           {parsedMemberEmails.emails.length > 500 && (
             <p className="form-error" role="alert">
-              {t("Use 500 or fewer emails in each batch.")}
+              {t('Use 500 or fewer emails in each batch.')}
             </p>
           )}
           {memberResult && (
@@ -622,44 +622,44 @@ export function SpaceDetailPage({
               <div className="member-add-result__heading">
                 <span aria-hidden="true">✓</span>
                 <div>
-                  <strong>{t("Roster update complete")}</strong>
+                  <strong>{t('Roster update complete')}</strong>
                   <p>
-                    {t("Every account was checked against its classroom role.")}
+                    {t('Every account was checked against its classroom role.')}
                   </p>
                 </div>
               </div>
               <dl className="member-add-result__stats">
                 <div className="member-add-result__stat member-add-result__stat--added">
-                  <dt>{t("Added")}</dt>
+                  <dt>{t('Added')}</dt>
                   <dd>{memberResult.addedEmails.length}</dd>
                 </div>
                 <div>
-                  <dt>{t("Already here")}</dt>
+                  <dt>{t('Already here')}</dt>
                   <dd>{memberResult.alreadyMemberEmails.length}</dd>
                 </div>
                 <div>
-                  <dt>{t("Role mismatch")}</dt>
+                  <dt>{t('Role mismatch')}</dt>
                   <dd>{memberResult.roleMismatchEmails.length}</dd>
                 </div>
                 <div>
-                  <dt>{t("Unavailable")}</dt>
+                  <dt>{t('Unavailable')}</dt>
                   <dd>{memberResult.unavailableEmails.length}</dd>
                 </div>
               </dl>
               {(memberResult.roleMismatchEmails.length > 0 ||
                 memberResult.unavailableEmails.length > 0) && (
                 <details>
-                  <summary>{t("Review accounts that need attention")}</summary>
+                  <summary>{t('Review accounts that need attention')}</summary>
                   {memberResult.roleMismatchEmails.length > 0 && (
                     <p>
-                      <strong>{t("Wrong Admin-assigned role")}</strong>
-                      {memberResult.roleMismatchEmails.join(", ")}
+                      <strong>{t('Wrong Admin-assigned role')}</strong>
+                      {memberResult.roleMismatchEmails.join(', ')}
                     </p>
                   )}
                   {memberResult.unavailableEmails.length > 0 && (
                     <p>
-                      <strong>{t("Account not found or unavailable")}</strong>
-                      {memberResult.unavailableEmails.join(", ")}
+                      <strong>{t('Account not found or unavailable')}</strong>
+                      {memberResult.unavailableEmails.join(', ')}
                     </p>
                   )}
                 </details>
@@ -669,51 +669,51 @@ export function SpaceDetailPage({
 
           <div className="roster-heading">
             <div>
-              <p className="eyebrow">{t("Everyone in this class")}</p>
-              <h3>{t("Class roster")}</h3>
+              <p className="eyebrow">{t('Everyone in this class')}</p>
+              <h3>{t('Class roster')}</h3>
             </div>
             <span>{members.length}</span>
           </div>
           <div className="roster-toolbar">
             <label className="roster-search">
-              <span>{t("Find a person")}</span>
+              <span>{t('Find a person')}</span>
               <input
                 onChange={(event) => setRosterQuery(event.target.value)}
-                placeholder={t("Search name, email, or account ID")}
+                placeholder={t('Search name, email, or account ID')}
                 type="search"
                 value={rosterQuery}
               />
             </label>
             <label>
-              <span>{t("Show role")}</span>
+              <span>{t('Show role')}</span>
               <select
                 onChange={(event) =>
                   setRosterRole(event.target.value as typeof rosterRole)
                 }
                 value={rosterRole}
               >
-                <option value="all">{t("Everyone")}</option>
-                <option value="teacher">{t("Teachers")}</option>
-                <option value="student">{t("Students")}</option>
+                <option value="all">{t('Everyone')}</option>
+                <option value="teacher">{t('Teachers')}</option>
+                <option value="student">{t('Students')}</option>
               </select>
             </label>
             <span className="roster-toolbar__result" aria-live="polite">
               <strong>{visibleMembers.length}</strong>
-              {t("shown")}
+              {t('shown')}
             </span>
           </div>
           <div
             className="class-roster-wrap"
             role="region"
-            aria-label={t("Class roster")}
+            aria-label={t('Class roster')}
             tabIndex={0}
           >
             <table className="knowledge-table">
               <thead>
                 <tr>
-                  <th>{t("Person")}</th>
-                  <th>{t("Role")}</th>
-                  <th>{t("Account ID")}</th>
+                  <th>{t('Person')}</th>
+                  <th>{t('Role')}</th>
+                  <th>{t('Account ID')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -729,11 +729,11 @@ export function SpaceDetailPage({
                       >
                         <i aria-hidden="true" />
                         {t(
-                          member.role === "participant"
-                            ? "Student"
-                            : member.role === "owner"
-                              ? "Class owner"
-                              : "Teacher",
+                          member.role === 'participant'
+                            ? 'Student'
+                            : member.role === 'owner'
+                              ? 'Class owner'
+                              : 'Teacher',
                         )}
                       </span>
                     </td>
@@ -745,8 +745,8 @@ export function SpaceDetailPage({
                 {visibleMembers.length === 0 && (
                   <tr>
                     <td className="roster-empty-row" colSpan={3}>
-                      <strong>{t("No people match this view")}</strong>
-                      <span>{t("Try another name or role.")}</span>
+                      <strong>{t('No people match this view')}</strong>
+                      <span>{t('Try another name or role.')}</span>
                     </td>
                   </tr>
                 )}
@@ -757,11 +757,11 @@ export function SpaceDetailPage({
           <div className="groups-studio">
             <div className="groups-studio__heading">
               <div>
-                <p className="eyebrow">{t("Smaller circles")}</p>
-                <h3>{t("Groups")}</h3>
+                <p className="eyebrow">{t('Smaller circles')}</p>
+                <h3>{t('Groups')}</h3>
                 <p>
                   {t(
-                    "Organize students for focused activities and shared join codes.",
+                    'Organize students for focused activities and shared join codes.',
                   )}
                 </p>
               </div>
@@ -769,11 +769,11 @@ export function SpaceDetailPage({
             </div>
             <div className="knowledge-create group-create">
               <label htmlFor="new-group-name">
-                {t("Group name")}
+                {t('Group name')}
                 <input
                   id="new-group-name"
                   onChange={(event) => setGroupName(event.target.value)}
-                  placeholder={t("e.g. Studio A")}
+                  placeholder={t('e.g. Studio A')}
                   value={groupName}
                 />
               </label>
@@ -787,20 +787,20 @@ export function SpaceDetailPage({
                       spaceId: space.id,
                     })
                     .then(() => {
-                      setGroupName("");
+                      setGroupName('');
                       return loadGroups();
                     })
                     .catch((cause: unknown) =>
                       setError(
                         cause instanceof Error
                           ? cause.message
-                          : t("Could not create that group."),
+                          : t('Could not create that group.'),
                       ),
                     )
                 }
                 type="button"
               >
-                {t("Create group")}
+                {t('Create group')}
               </button>
             </div>
             <ul className="group-list">
@@ -812,7 +812,7 @@ export function SpaceDetailPage({
                   <div>
                     <strong>{group.name}</strong>
                     <span>
-                      {group.participantCount} {t("participants")}
+                      {group.participantCount} {t('participants')}
                     </span>
                   </div>
                   <button
@@ -825,7 +825,7 @@ export function SpaceDetailPage({
                           ).toISOString(),
                           groupId: group.id,
                           maxUses: 500,
-                          role: "participant",
+                          role: 'participant',
                           spaceId: space.id,
                         })
                         .then((invite) => setInviteCode(invite.code))
@@ -833,13 +833,13 @@ export function SpaceDetailPage({
                           setError(
                             cause instanceof Error
                               ? cause.message
-                              : t("Could not create a join code."),
+                              : t('Could not create a join code.'),
                           ),
                         )
                     }
                     type="button"
                   >
-                    {t("Create 7-day Student join code")}
+                    {t('Create 7-day Student join code')}
                   </button>
                 </li>
               ))}
@@ -850,11 +850,11 @@ export function SpaceDetailPage({
                   #
                 </span>
                 <div>
-                  <strong>{t("Student join code")}</strong>
+                  <strong>{t('Student join code')}</strong>
                   <code>{inviteCode}</code>
                   <p>
                     {t(
-                      "Only an account assigned as Student can use this code.",
+                      'Only an account assigned as Student can use this code.',
                     )}
                   </p>
                 </div>
