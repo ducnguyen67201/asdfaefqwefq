@@ -7,6 +7,18 @@ load(
 )
 load("//bazel/rust:defs.bzl", "trocode_rust_checks", "trocode_rust_lint_config")
 
+_INTEGRATION_TESTS = [
+    "agent_runtime_compat",
+    "classroom_e2e",
+    "contract_corpus",
+    "google_auth_compat",
+    "http_compat",
+    "ingestion",
+    "parser_properties",
+    "postgres_compat",
+    "provider_budget_compat",
+]
+
 trocode_rust_lint_config(
     name = "rust_lints",
 )
@@ -54,19 +66,26 @@ rust_test(
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),
 )
 
-rust_test(
-    name = "classroom_e2e_test",
-    srcs = ["tests/classroom_e2e.rs"],
-    aliases = aliases(
-        normal_dev = True,
-        proc_macro_dev = True,
-    ),
-    crate_name = "classroom_e2e_test",
-    edition = crate_edition(),
-    lint_config = ":rust_lints",
-    deps = [":api_lib"] + all_crate_deps(normal = True) + all_crate_deps(normal_dev = True),
-    proc_macro_deps = all_crate_deps(proc_macro = True) + all_crate_deps(proc_macro_dev = True),
-)
+[
+    rust_test(
+        name = test_name + "_test",
+        srcs = ["tests/" + test_name + ".rs"],
+        aliases = aliases(
+            normal_dev = True,
+            proc_macro_dev = True,
+        ),
+        compile_data = glob([
+            "migrations/*.sql",
+            "tests/fixtures/*.json",
+        ]),
+        crate_name = test_name + "_test",
+        edition = crate_edition(),
+        lint_config = ":rust_lints",
+        deps = [":api_lib"] + all_crate_deps(normal = True) + all_crate_deps(normal_dev = True),
+        proc_macro_deps = all_crate_deps(proc_macro = True) + all_crate_deps(proc_macro_dev = True),
+    )
+    for test_name in _INTEGRATION_TESTS
+]
 
 trocode_rust_checks(
     clippy_name = "clippy",
@@ -77,6 +96,5 @@ trocode_rust_checks(
     ],
     test_targets = [
         ":api_lib_test",
-        ":classroom_e2e_test",
-    ],
+    ] + [":" + test_name + "_test" for test_name in _INTEGRATION_TESTS],
 )

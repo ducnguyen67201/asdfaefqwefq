@@ -219,13 +219,19 @@ Doppler `tro-app/prd` is their administrative source.
 The production API runs at
 `https://api-production-3022a.up.railway.app` with a separate Railway
 PostgreSQL service. `GET /healthz` checks process liveness and `GET /readyz`
-checks database readiness. Railway starts the API from
-[`services/api`](services/api) and applies its idempotent session migration
-before accepting traffic.
+checks database readiness. Railway builds from the repository root so Railpack
+can read the shared Cargo workspace, then uses
+[`services/api/railway.json`](services/api/railway.json) to start the API and
+apply its idempotent migrations before accepting traffic. The root
+[`railpack.json`](railpack.json) forces Rust provider selection even though the
+Electron frontend keeps its root `package.json`.
 
-The in-progress Rust replacement builds from the same directory and is kept
-behind the current Node deployment until the parity and rollback gates in the
-[same-service cutover runbook](docs/operations/rust-backend-cutover.md) pass.
+The hosted backend is the locked Rust `trocode-api` binary. Railway's checked-in
+service configuration starts `./bin/trocode-api serve`; the ingestion service
+uses [the worker configuration](services/api/railway.worker.json) to start the
+same artifact with the `ingestion-worker` command. Deployment and rollback gates
+are documented in the
+[same-service runbook](docs/operations/rust-backend-cutover.md).
 
 Run the backend locally with:
 
@@ -233,8 +239,8 @@ Run the backend locally with:
 cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 ```
 
-Run its unit/contract tests with `npm run api:test`, or the complete desktop,
-Node-oracle, and Rust-candidate gate with `npm run check`.
+Run its unit/contract tests with `npm run api:test`, or the complete Electron and
+Rust-backend gate with `npm run check`.
 
 At sign-in, Electron verifies Google's JWT nonce and signature locally, then
 the API verifies it independently and exchanges it for a random opaque device
@@ -313,12 +319,12 @@ doppler run --project tro-app --config prd -- \
   --label "Private beta batch A"
 ```
 
-Omit `--code CODEA` to generate a strong random code. The command applies
-pending API migrations, stores only a keyed HMAC digest of the code, and prints
-the code once for secure distribution. `CODEA --max-users 10` admits at most ten
-distinct Google accounts. Each account is permanently linked to its first code;
-when a code is full, existing linked accounts retain access while new accounts
-are rejected.
+Omit `--code CODEA` to generate a strong random code. The Rust command applies
+pending API migrations, stores a keyed HMAC digest plus an encrypted retrieval
+copy, and prints the code once for secure distribution. `CODEA --max-users 10`
+admits at most ten distinct Google accounts. Each account is permanently linked
+to its first code; when a code is full, existing linked accounts retain access
+while new accounts are rejected.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
@@ -604,7 +610,7 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-└── api/              Node compatibility oracle and in-place Rust backend candidate
+└── api/              Rust API, worker, migrations, commands, and contract tests
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```

@@ -25,7 +25,7 @@
     "make:dev": "doppler run --project tro-app --config dev -- npm exec -- electron-forge make",
     "publish": "doppler run --project tro-app --config prd -- npm exec -- electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "access-code:create": "node scripts/access-codes.mjs create",
+    "access-code:create": "cargo run --manifest-path services/api/Cargo.toml --locked --bin trocode-api -- access-code create",
     "membership:keygen": "node scripts/membership-codes.mjs keygen",
     "membership:issue": "node scripts/membership-codes.mjs issue",
     "typecheck": "tsc --noEmit",
@@ -34,7 +34,7 @@
     "api:test": "cargo test --manifest-path services/api/Cargo.toml --all-features --locked",
     "api:audit": "cargo audit --file Cargo.lock",
     "api:build": "cargo build --manifest-path services/api/Cargo.toml --release --locked",
-    "test": "vitest run && node --test scripts/access-codes.test.mjs scripts/windows-release-metadata.test.mjs scripts/cua-fast-path-report.test.mjs scripts/agent-reliability-benchmark.test.mjs && npm --prefix services/api test && npm run api:test",
+    "test": "vitest run && node --test scripts/windows-release-metadata.test.mjs scripts/cua-fast-path-report.test.mjs scripts/agent-reliability-benchmark.test.mjs && npm run api:test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "npm run agent:runtime-versions && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"

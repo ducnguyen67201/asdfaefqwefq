@@ -52,7 +52,7 @@ fn hex(value: &[u8]) -> String {
 }
 
 #[test]
-fn opens_javascript_crypto_fixtures() {
+fn opens_stable_crypto_fixtures() {
     let value = fixture("crypto");
     let access = &value["accessCode"];
     let key = access["hmacKey"].as_str().expect("key");

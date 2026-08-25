@@ -55,21 +55,20 @@ Submission is a separate participant action. The renderer previews relative path
 
 ## Deployment and rollback
 
-Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configuring private bucket credentials. Run `npm --prefix services/api run start:worker` as a separate Railway worker process. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied.
+Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configuring private bucket credentials. Run `./bin/trocode-api ingestion-worker` as a separate Railway worker process, or `cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker` locally. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied.
 
-The Rust API can receive the complete live-room, directive, assessment, and
-dashboard route families after migration 018 is applied. It uses the same
-PostgreSQL rows, HMAC-authenticated `tro_live_` sessions, and desktop response
-contracts as Node; it does not apply migrations or own material ingestion.
-Cut over whole route families at ingress, never individual requests in a
-mutation family. A Rust startup with the flag enabled fails closed if its
-database, HMAC key, or migration 018 tables are unavailable.
+The Rust API owns the complete live-room, directive, assessment, and dashboard
+route families. It applies migration 018, uses HMAC-authenticated `tro_live_`
+sessions, and preserves the installed Electron response contracts. The same
+binary owns material ingestion through its worker command. Startup with the
+feature enabled fails closed if its database, HMAC key, object store, or
+migration 018 tables are unavailable.
 
 Back up PostgreSQL metadata and object storage together. Retention deletion must remove metadata and objects through an audited job; never infer object keys in desktop code. To roll back, disable the feature flag first, stop the worker after its current lease, and retain both stores. Disabling the flag hides desktop navigation and rejects feature routes without deleting data.
 
-During a Rust classroom rollback, route the classroom families back to Node
-before disabling the Rust flag. Because both implementations share the schema
-and wire contract, rollback requires no row conversion or destructive SQL.
+During rollback, redeploy the recorded last-known-good whole backend before
+disabling the feature flag. Never split one mutation family across deployments;
+rollback requires no row conversion or destructive SQL.
 
 The operational load script covers 200/500-row dashboard projection. With
 `TEST_DATABASE_URL`, the PostgreSQL integration suite also admits 200 students

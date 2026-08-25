@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
                     max_users,
                     plan,
                 },
-        } => cli::create_access_code(&Config::from_env()?, code, label, max_users, &plan).await,
+        } => cli::create_access_code(code, label, max_users, &plan).await,
         Command::KnowledgeLoadReport => {
             cli::knowledge_load_report();
             Ok(())
