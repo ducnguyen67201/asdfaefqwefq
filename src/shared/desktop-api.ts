@@ -71,6 +71,21 @@ import type {
   RedeemKnowledgeInviteRequest,
   RedeemKnowledgeInviteResponse,
   RequestKnowledgeAttemptHelp,
+  ClassroomDirective,
+  ClassroomDirectiveNotice,
+  ClassroomSessionProjection,
+  CreateClassroomDirectiveRequest,
+  CreateKnowledgeRoomCodeRequest,
+  JoinClassroomSessionRequest,
+  KnowledgeAttemptMutationRequest,
+  KnowledgeAttemptTransition,
+  KnowledgeRoomCode,
+  KnowledgeRoomRevocation,
+  OpenClassroomDirectiveRequest,
+  ResolveKnowledgeAttemptHelpRequest,
+  ReviewKnowledgeAttemptRequest,
+  RevokeKnowledgeRoomCodeRequest,
+  SetClassroomLinkConsentRequest,
 } from './contracts';
 
 export const IPC_CHANNELS = {
@@ -146,6 +161,21 @@ export const IPC_CHANNELS = {
   createKnowledgeInvite: 'knowledge:invites:create',
   redeemKnowledgeInvite: 'knowledge:invites:redeem',
   requestKnowledgeAttemptHelp: 'knowledge:attempt:help',
+  createKnowledgeRoomCode: 'classroom:room-code:create',
+  revokeKnowledgeRoomCode: 'classroom:room-code:revoke',
+  joinKnowledgeRoom: 'classroom:join',
+  restoreClassroomSession: 'classroom:restore',
+  getClassroomSession: 'classroom:session:get',
+  classroomSessionChanged: 'classroom:session:changed',
+  leaveClassroomSession: 'classroom:leave',
+  setClassroomLinkConsent: 'classroom:link-consent:set',
+  createClassroomDirective: 'classroom:directive:create',
+  classroomDirectiveChanged: 'classroom:directive:changed',
+  openClassroomDirective: 'classroom:directive:open',
+  dismissClassroomDirective: 'classroom:directive:dismiss',
+  readyKnowledgeAttempt: 'classroom:attempt:ready',
+  reviewKnowledgeAttempt: 'classroom:attempt:review',
+  resolveKnowledgeAttemptHelp: 'classroom:attempt:help-resolve',
 } as const;
 
 export interface DesktopApi {
@@ -194,6 +224,21 @@ export interface DesktopApi {
   createKnowledgeInvite(request: CreateKnowledgeInviteRequest): Promise<KnowledgeInvite>;
   redeemKnowledgeInvite(request: RedeemKnowledgeInviteRequest): Promise<RedeemKnowledgeInviteResponse>;
   requestKnowledgeAttemptHelp(request: RequestKnowledgeAttemptHelp): Promise<void>;
+  createKnowledgeRoomCode(request: CreateKnowledgeRoomCodeRequest): Promise<KnowledgeRoomCode>;
+  revokeKnowledgeRoomCode(request: RevokeKnowledgeRoomCodeRequest): Promise<KnowledgeRoomRevocation>;
+  joinKnowledgeRoom(request: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection>;
+  restoreClassroomSession(): Promise<ClassroomSessionProjection | null>;
+  getClassroomSession(): Promise<ClassroomSessionProjection | null>;
+  leaveClassroomSession(request: KnowledgeAttemptMutationRequest): Promise<void>;
+  setClassroomLinkConsent(request: SetClassroomLinkConsentRequest): Promise<ClassroomSessionProjection | null>;
+  createClassroomDirective(request: CreateClassroomDirectiveRequest): Promise<ClassroomDirective>;
+  openClassroomDirective(request: OpenClassroomDirectiveRequest): Promise<void>;
+  dismissClassroomDirective(directiveId: string): Promise<void>;
+  readyKnowledgeAttempt(request: KnowledgeAttemptMutationRequest): Promise<KnowledgeAttemptTransition>;
+  reviewKnowledgeAttempt(request: ReviewKnowledgeAttemptRequest): Promise<KnowledgeAttemptTransition>;
+  resolveKnowledgeAttemptHelp(request: ResolveKnowledgeAttemptHelpRequest): Promise<KnowledgeAttemptTransition>;
+  onClassroomSessionChanged(listener: (session: ClassroomSessionProjection | null) => void): () => void;
+  onClassroomDirectiveChanged(listener: (notice: ClassroomDirectiveNotice | null) => void): () => void;
   onTaskUpdate(listener: (update: TaskUpdate) => void): () => void;
   onTaskComposerFocusRequested(
     listener: (taskId: string) => void,

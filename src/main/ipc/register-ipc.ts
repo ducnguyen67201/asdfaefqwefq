@@ -43,6 +43,18 @@ import {
   CreateKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteRequestSchema,
   RequestKnowledgeAttemptHelpSchema,
+  ClassroomDirectiveNoticeSchema,
+  ClassroomSessionProjectionSchema,
+  CreateClassroomDirectiveRequestSchema,
+  CreateKnowledgeRoomCodeRequestSchema,
+  DismissClassroomDirectiveRequestSchema,
+  JoinClassroomSessionRequestSchema,
+  KnowledgeAttemptMutationRequestSchema,
+  OpenClassroomDirectiveRequestSchema,
+  ResolveKnowledgeAttemptHelpRequestSchema,
+  ReviewKnowledgeAttemptRequestSchema,
+  RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomLinkConsentRequestSchema,
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
@@ -55,6 +67,8 @@ import type { CuaService } from '../cua/cua-service';
 import type { TaskHistoryService } from '../history/task-history-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
 import type { ActivityWorkspacePreparationService } from '../knowledge/activity-workspace-preparation-service';
+import type { ClassroomDirectiveService } from '../knowledge/classroom-directive-service';
+import type { ClassroomSessionService } from '../knowledge/classroom-session-service';
 import type { FileSelectionService } from '../knowledge/file-selection-service';
 import type { KnowledgeSpaceClient } from '../knowledge/knowledge-space-client';
 import type { KnowledgeUploadOrchestrator } from '../knowledge/knowledge-upload-service';
@@ -113,6 +127,8 @@ interface IpcServices {
   knowledgeUploadOrchestrator: KnowledgeUploadOrchestrator;
   activityProgressReporter: Pick<ActivityProgressReporter, 'clear'>;
   activityWorkspacePreparationService: Pick<ActivityWorkspacePreparationService, 'prepare'>;
+  classroomDirectiveService: Pick<ClassroomDirectiveService, 'dismiss' | 'onNotice' | 'open'>;
+  classroomSessionService: Pick<ClassroomSessionService, 'clear' | 'get' | 'join' | 'leave' | 'onChange' | 'restore' | 'setAutoOpenConsent'>;
 }
 
 async function assertAuthorizedSender(
@@ -259,6 +275,19 @@ export function registerIpcHandlers(
     IPC_CHANNELS.createKnowledgeInvite,
     IPC_CHANNELS.redeemKnowledgeInvite,
     IPC_CHANNELS.requestKnowledgeAttemptHelp,
+    IPC_CHANNELS.createKnowledgeRoomCode,
+    IPC_CHANNELS.revokeKnowledgeRoomCode,
+    IPC_CHANNELS.joinKnowledgeRoom,
+    IPC_CHANNELS.restoreClassroomSession,
+    IPC_CHANNELS.getClassroomSession,
+    IPC_CHANNELS.leaveClassroomSession,
+    IPC_CHANNELS.setClassroomLinkConsent,
+    IPC_CHANNELS.createClassroomDirective,
+    IPC_CHANNELS.openClassroomDirective,
+    IPC_CHANNELS.dismissClassroomDirective,
+    IPC_CHANNELS.readyKnowledgeAttempt,
+    IPC_CHANNELS.reviewKnowledgeAttempt,
+    IPC_CHANNELS.resolveKnowledgeAttemptHelp,
   ];
 
   for (const channel of channels) ipcMain.removeHandler(channel);
@@ -308,6 +337,7 @@ export function registerIpcHandlers(
     const status = await services.authService.signOut();
     services.fileSelectionService?.clear();
     services.activityProgressReporter?.clear();
+    services.classroomSessionService.clear();
     await services.onAuthSignedOut?.();
     return status;
   });
@@ -491,6 +521,78 @@ export function registerIpcHandlers(
       request.attemptId,
       request.clientId,
     );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createKnowledgeRoomCode, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.createRoomCode(CreateKnowledgeRoomCodeRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.revokeKnowledgeRoomCode, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.revokeRoomCode(RevokeKnowledgeRoomCodeRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.joinKnowledgeRoom, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.join(JoinClassroomSessionRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.restoreClassroomSession, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.restore();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getClassroomSession, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.get();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.leaveClassroomSession, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    const current = services.classroomSessionService.get();
+    if (!current || current.attemptId !== request.attemptId) throw new Error('The requested class session is not active.');
+    await services.classroomSessionService.leave();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.setClassroomLinkConsent, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = SetClassroomLinkConsentRequestSchema.parse(input);
+    return services.classroomSessionService.setAutoOpenConsent(request.consent);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.createDirective(CreateClassroomDirectiveRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    await services.classroomDirectiveService.open(request.directive);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.dismissClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = DismissClassroomDirectiveRequestSchema.parse(input);
+    services.classroomDirectiveService.dismiss(request.directiveId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.readyKnowledgeAttempt, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    return services.knowledgeSpaceClient.readyAttempt(request.attemptId, request.clientId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.reviewKnowledgeAttempt, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.reviewAttempt(ReviewKnowledgeAttemptRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.resolveKnowledgeAttemptHelp, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.resolveHelp(ResolveKnowledgeAttemptHelpRequestSchema.parse(input));
   });
 
   ipcMain.handle(
@@ -721,6 +823,20 @@ export function registerIpcHandlers(
     mainWindow.webContents.send(IPC_CHANNELS.agentActivity, activity);
   };
   services.agentActivityService.on('activity', forwardAgentActivity);
+  const stopForwardingClassroomSession = services.classroomSessionService.onChange((session) => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send(
+      IPC_CHANNELS.classroomSessionChanged,
+      ClassroomSessionProjectionSchema.nullable().parse(session),
+    );
+  });
+  const stopForwardingClassroomDirective = services.classroomDirectiveService.onNotice((notice) => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send(
+      IPC_CHANNELS.classroomDirectiveChanged,
+      ClassroomDirectiveNoticeSchema.nullable().parse(notice),
+    );
+  });
   const stopForwardingAppUpdateStatus = services.appUpdateService.onStatusChange(
     (status) => {
       if (mainWindow.isDestroyed()) return;
@@ -729,6 +845,8 @@ export function registerIpcHandlers(
   );
 
   return () => {
+    stopForwardingClassroomDirective();
+    stopForwardingClassroomSession();
     stopForwardingAppUpdateStatus();
     services.agentActivityService.off('activity', forwardAgentActivity);
     services.taskRuntime.off('task-update', forwardTaskUpdate);

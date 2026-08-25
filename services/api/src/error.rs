@@ -48,6 +48,35 @@ impl ApiError {
     }
 
     #[must_use]
+    pub const fn bad_request(code: &'static str, message: &'static str) -> Self {
+        Self::coded(StatusCode::BAD_REQUEST, code, message)
+    }
+
+    #[must_use]
+    pub const fn conflict(code: &'static str, message: &'static str) -> Self {
+        Self::coded(StatusCode::CONFLICT, code, message)
+    }
+
+    #[must_use]
+    pub const fn forbidden(code: &'static str, message: &'static str) -> Self {
+        Self::coded(StatusCode::FORBIDDEN, code, message)
+    }
+
+    #[must_use]
+    pub const fn not_found(code: &'static str, message: &'static str) -> Self {
+        Self::coded(StatusCode::NOT_FOUND, code, message)
+    }
+
+    #[must_use]
+    pub const fn rate_limited(
+        code: &'static str,
+        message: &'static str,
+        retry_after_seconds: u64,
+    ) -> Self {
+        Self::coded(StatusCode::TOO_MANY_REQUESTS, code, message).retry_after(retry_after_seconds)
+    }
+
+    #[must_use]
     pub fn internal(error: impl Into<anyhow::Error>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,

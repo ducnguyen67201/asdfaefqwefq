@@ -14,6 +14,7 @@ pub mod postgres {
 pub mod agent;
 pub mod app;
 pub mod auth;
+pub mod classroom;
 pub mod cli;
 pub mod config;
 pub mod db;

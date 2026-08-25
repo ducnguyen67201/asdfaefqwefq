@@ -7,6 +7,7 @@ import type {
   KnowledgeSourceList,
   KnowledgeSpaceMember,
   KnowledgeSpaceSummary,
+  SaveKnowledgeActivityRequest,
 } from '../shared/contracts';
 import { randomUUID } from '../shared/renderer-uuid';
 
@@ -55,9 +56,14 @@ export function SpaceDetailPage({
   const [activityVersionId, setActivityVersionId] = useState<string | null>(
     null,
   );
+  const [publishedDefinition, setPublishedDefinition] = useState<
+    SaveKnowledgeActivityRequest['definition'] | null
+  >(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [participants, setParticipants] = useState('');
+  const [delivery, setDelivery] = useState<'assigned' | 'room'>('room');
   const [mode, setMode] = useState<'live' | 'async' | 'hybrid'>('live');
+  const [creatingRun, setCreatingRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = useCallback(
     (
@@ -141,9 +147,12 @@ export function SpaceDetailPage({
     .split(/\r?\n/u)
     .map((value) => value.trim())
     .filter(Boolean);
-  const runTarget = selectedGroupId
-    ? { kind: 'group' as const, groupId: selectedGroupId }
-    : { kind: 'participants' as const, userIds: participantIds };
+  const runTarget =
+    delivery === 'room'
+      ? { kind: 'room' as const }
+      : selectedGroupId
+        ? { kind: 'group' as const, groupId: selectedGroupId }
+        : { kind: 'participants' as const, userIds: participantIds };
   const parsedMemberEmails = parseClassMemberEmails(memberEmails);
 
   const addMembers = async () => {
@@ -174,6 +183,40 @@ export function SpaceDetailPage({
       );
     } finally {
       setAddingMembers(false);
+    }
+  };
+
+  const createRun = async () => {
+    if (!activityVersionId) return;
+    setCreatingRun(true);
+    setError(null);
+    try {
+      const run = await window.tro.createKnowledgeRun({
+        activityVersionId,
+        clientId: randomUUID(),
+        closesAt: null,
+        insightPolicy: 'explicit_and_operational',
+        mode: delivery === 'room' ? 'live' : mode,
+        opensAt: null,
+        spaceId: space.id,
+        target: runTarget,
+      });
+      if (delivery === 'assigned') {
+        await window.tro.setKnowledgeRunState({
+          runId: run.id,
+          spaceId: space.id,
+          state: 'open',
+        });
+      }
+      setRunId(run.id);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : t('Could not create this Run.'),
+      );
+    } finally {
+      setCreatingRun(false);
     }
   };
 
@@ -275,102 +318,152 @@ export function SpaceDetailPage({
           >
             <ActivityEditorPage
               appLanguage={appLanguage}
-              onPublished={setActivityVersionId}
+              onPublished={(versionId, definition) => {
+                setActivityVersionId(versionId);
+                setPublishedDefinition(definition);
+              }}
               sources={sources}
               spaceId={space.id}
             />
-            {activityVersionId && (
-              <section className="space-panel">
-                <h2>{t('Create a Run')}</h2>
-                <p>
-                  {t(
-                    'A Run snapshots who is assigned. Choose live, async, or hybrid delivery.',
-                  )}
-                </p>
-                {groups.length > 0 && (
-                  <label>
-                    {t('Assign a group')}
-                    <select
-                      onChange={(event) =>
-                        setSelectedGroupId(event.target.value)
-                      }
-                      value={selectedGroupId}
-                    >
-                      <option value="">
-                        {t('Use individual account IDs')}
-                      </option>
-                      {groups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.name} ({group.participantCount})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {!selectedGroupId && (
-                  <label>
-                    {t('Participant account IDs')}
-                    <textarea
-                      onChange={(event) => setParticipants(event.target.value)}
-                      placeholder={t('One account ID per line')}
-                      rows={4}
-                      value={participants}
+            {activityVersionId && !runId && (
+              <section
+                aria-labelledby="run-launch-heading"
+                className="space-panel run-launchpad"
+              >
+                <div className="section-heading-row">
+                  <div>
+                    <p className="eyebrow">{t('Published and ready')}</p>
+                    <h2 id="run-launch-heading">
+                      {t('How will students begin?')}
+                    </h2>
+                    <p className="section-deck">
+                      {t(
+                        'Open a live room for class, or assign this version for independent work.',
+                      )}
+                    </p>
+                  </div>
+                  <span className="published-seal">
+                    ✓ {t('Immutable version')}
+                  </span>
+                </div>
+                <div
+                  aria-label={t('Delivery method')}
+                  className="delivery-choice"
+                  role="radiogroup"
+                >
+                  <label className={delivery === 'room' ? 'is-selected' : ''}>
+                    <input
+                      checked={delivery === 'room'}
+                      name="delivery"
+                      onChange={() => setDelivery('room')}
+                      type="radio"
                     />
+                    <span className="delivery-choice__icon" aria-hidden="true">
+                      ◎
+                    </span>
+                    <strong>{t('Live room')}</strong>
+                    <small>
+                      {t(
+                        'Students join a lobby with one short code. You decide when class starts.',
+                      )}
+                    </small>
+                    <em>{t('Recommended')}</em>
                   </label>
-                )}
-                <label>
-                  {t('Mode')}
-                  <select
-                    onChange={(event) =>
-                      setMode(event.target.value as typeof mode)
-                    }
-                    value={mode}
+                  <label
+                    className={delivery === 'assigned' ? 'is-selected' : ''}
                   >
-                    <option value="live">{t('live')}</option>
-                    <option value="async">{t('async')}</option>
-                    <option value="hybrid">{t('hybrid')}</option>
-                  </select>
-                </label>
+                    <input
+                      checked={delivery === 'assigned'}
+                      name="delivery"
+                      onChange={() => setDelivery('assigned')}
+                      type="radio"
+                    />
+                    <span className="delivery-choice__icon" aria-hidden="true">
+                      ↗
+                    </span>
+                    <strong>{t('Direct assignment')}</strong>
+                    <small>
+                      {t('Send to an existing group or a list of account IDs.')}
+                    </small>
+                  </label>
+                </div>
+                {delivery === 'assigned' && (
+                  <div className="run-assignment-options">
+                    {groups.length > 0 && (
+                      <label>
+                        {t('Assign a group')}
+                        <select
+                          onChange={(event) =>
+                            setSelectedGroupId(event.target.value)
+                          }
+                          value={selectedGroupId}
+                        >
+                          <option value="">
+                            {t('Use individual account IDs')}
+                          </option>
+                          {groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name} ({group.participantCount})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {!selectedGroupId && (
+                      <label>
+                        {t('Participant account IDs')}
+                        <textarea
+                          onChange={(event) =>
+                            setParticipants(event.target.value)
+                          }
+                          placeholder={t('One account ID per line')}
+                          rows={4}
+                          value={participants}
+                        />
+                      </label>
+                    )}
+                    <label>
+                      {t('Mode')}
+                      <select
+                        onChange={(event) =>
+                          setMode(event.target.value as typeof mode)
+                        }
+                        value={mode}
+                      >
+                        <option value="live">{t('live')}</option>
+                        <option value="async">{t('async')}</option>
+                        <option value="hybrid">{t('hybrid')}</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
                 <button
-                  className="primary-button"
-                  disabled={!selectedGroupId && participantIds.length === 0}
-                  onClick={() =>
-                    void window.tro
-                      .createKnowledgeRun({
-                        activityVersionId,
-                        clientId: randomUUID(),
-                        closesAt: null,
-                        insightPolicy: 'explicit_and_operational',
-                        mode,
-                        opensAt: null,
-                        spaceId: space.id,
-                        target: runTarget,
-                      })
-                      .then(async (run) => {
-                        await window.tro.setKnowledgeRunState({
-                          runId: run.id,
-                          spaceId: space.id,
-                          state: 'open',
-                        });
-                        setRunId(run.id);
-                      })
-                      .catch((cause: unknown) =>
-                        setError(
-                          cause instanceof Error
-                            ? cause.message
-                            : t('Could not open this Run.'),
-                        ),
-                      )
+                  className="primary-button run-launchpad__action"
+                  disabled={
+                    creatingRun ||
+                    (delivery === 'assigned' &&
+                      !selectedGroupId &&
+                      participantIds.length === 0)
                   }
+                  onClick={() => void createRun()}
                   type="button"
                 >
-                  {t('Open Run')}
+                  {creatingRun
+                    ? t('Creating…')
+                    : delivery === 'room'
+                      ? t('Create room lobby')
+                      : t('Open assignment')}{' '}
+                  →
                 </button>
               </section>
             )}
             {runId && (
               <FacilitatorRunPage
+                allowedOrigins={
+                  publishedDefinition?.sessionPolicy.allowedOrigins ?? []
+                }
                 appLanguage={appLanguage}
+                criteria={publishedDefinition?.criteria ?? []}
                 runId={runId}
                 spaceId={space.id}
               />

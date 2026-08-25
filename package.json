@@ -25,7 +25,7 @@
     "make:dev": "doppler run --project tro-app --config dev -- npm exec -- electron-forge make",
     "publish": "doppler run --project tro-app --config prd -- npm exec -- electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "access-code:create": "cargo run --manifest-path services/api/Cargo.toml --locked -- access-code create",
+    "access-code:create": "cargo run --manifest-path services/api/Cargo.toml --locked --bin trocode-api -- access-code create",
     "membership:keygen": "node scripts/membership-codes.mjs keygen",
     "membership:issue": "node scripts/membership-codes.mjs issue",
     "typecheck": "tsc --noEmit",

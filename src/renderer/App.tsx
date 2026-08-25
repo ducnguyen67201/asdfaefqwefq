@@ -37,6 +37,7 @@ import { navigationTitle, type ActiveView } from './app-navigation';
 import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
+import { ClassroomSessionBar } from './ClassroomSessionBar';
 import { HistoryPage } from './HistoryPage';
 import { InsightsPage } from './InsightsPage';
 import { KnowledgeHubPage } from './KnowledgeHubPage';
@@ -835,6 +836,7 @@ export function App({
 }) {
   const [activeView, setActiveView] = useState<ActiveView>('agent');
   const [knowledgeSpacesEnabled, setKnowledgeSpacesEnabled] = useState(false);
+  const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -1514,6 +1516,7 @@ export function App({
           recordSnapshot(null);
           nextSnapshot = await window.tro.submitTask({
             activityAttemptId: null,
+            activityIntent: 'work',
             executionProfile,
             text: normalizedRequest,
             workspaceSelectionId:
@@ -2026,20 +2029,20 @@ export function App({
                 </span>
               </button>
               <button
-                aria-label={t('Assigned Activities')}
+                aria-label={t('Classwork')}
                 aria-current={activeView === 'assigned' ? 'page' : undefined}
                 className={`nav-item ${
                   activeView === 'assigned' ? 'nav-item--active' : ''
                 }`}
                 onClick={() => setActiveView('assigned')}
                 title={
-                  isSidebarCollapsed ? t('Assigned Activities') : undefined
+                  isSidebarCollapsed ? t('Classwork') : undefined
                 }
                 type="button"
               >
                 <NavigationIcon name="assigned" />
                 <span className="sidebar-item-label">
-                  {t('Assigned Activities')}
+                  {t('Classwork')}
                 </span>
               </button>
             </>
@@ -2184,10 +2187,23 @@ export function App({
           </div>
         </header>
 
+        {knowledgeSpacesEnabled && (
+          <ClassroomSessionBar
+            appLanguage={appLanguageDraft}
+            onLaunch={launchKnowledgeActivity}
+            onOpenClasswork={(attemptId) => {
+              setClassroomAttemptFocus(attemptId);
+              setActiveView('assigned');
+            }}
+          />
+        )}
+
         {activeView === 'spaces' || activeView === 'assigned' ? (
           <KnowledgeHubPage
             appLanguage={appLanguageDraft}
+            focusAttemptId={activeView === 'assigned' ? classroomAttemptFocus : null}
             mode={activeView}
+            onAttemptFocusCleared={() => setClassroomAttemptFocus(null)}
             onLaunch={launchKnowledgeActivity}
           />
         ) : activeView === 'history' ? (

@@ -1,4 +1,3 @@
-
 https://github.com/user-attachments/assets/ab86a7a6-d9e1-4645-bd5e-9090b13950b9
 
 # Tro
@@ -22,6 +21,13 @@ Implemented:
   Attempts, starter Workspaces, scoped source search, explicit submissions,
   and evidence-based facilitator dashboards. PostgreSQL is authoritative; no
   manifest or Firebase is required.
+
+- Live classroom rooms built on the same Run and Attempt model: teacher-only
+  material publishing, short-lived room admission, lobby/start/end lifecycle,
+  typed exercise and safe-link broadcasts, sticky student Activity context,
+  explicit Help/Check/Ready/Submit actions, and teacher Complete/Return review.
+  This release records lifecycle facts only—no cursor, typing, or continuous
+  screen observation.
 
 - Secure Electron main/preload/renderer separation.
 - One persistent OpenAI Agents SDK loop for multilingual reasoning, writing,
@@ -212,16 +218,19 @@ Doppler `tro-app/prd` is their administrative source.
 The production API runs at
 `https://api-production-3022a.up.railway.app` with a separate Railway
 PostgreSQL service. `GET /healthz` checks process liveness and `GET /readyz`
-checks database readiness. The Railway service Root Directory must be the
-repository root, with its config file path set to
-[`/services/api/railway.json`](services/api/railway.json); the Rust workspace
-lockfile and release artifact are rooted there. Startup applies the embedded,
-idempotent migrations before accepting traffic.
+checks database readiness. Railway builds from the repository root so Railpack
+can read the shared Cargo workspace, then uses
+[`services/api/railway.json`](services/api/railway.json) to start the API and
+apply its idempotent migrations before accepting traffic. The root
+[`railpack.json`](railpack.json) forces Rust provider selection even though the
+Electron frontend keeps its root `package.json`.
 
-The hosted API is implemented by the Rust `trocode-api` binary from
-[`services/api`](services/api). Production rollout still follows the parity and
-rollback gates in the
-[same-service cutover runbook](docs/operations/rust-backend-cutover.md).
+The hosted backend is the locked Rust `trocode-api` binary. Railway's checked-in
+service configuration starts `./bin/trocode-api serve`; the ingestion service
+uses [the worker configuration](services/api/railway.worker.json) to start the
+same artifact with the `ingestion-worker` command. Deployment and rollback gates
+are documented in the
+[same-service runbook](docs/operations/rust-backend-cutover.md).
 
 Run the backend locally with:
 
@@ -229,8 +238,8 @@ Run the backend locally with:
 cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 ```
 
-Run its unit/contract tests with `npm run api:test`, or the complete desktop
-and Rust backend gate with `npm run check`.
+Run its unit/contract tests with `npm run api:test`, or the complete Electron and
+Rust-backend gate with `npm run check`.
 
 At sign-in, Electron verifies Google's JWT nonce and signature locally, then
 the API verifies it independently and exchanges it for a random opaque device
@@ -309,21 +318,21 @@ doppler run --project tro-app --config prd -- \
   --label "Private beta batch A"
 ```
 
-Omit `--code CODEA` to generate a strong random code. The command applies
-pending API migrations, stores only a keyed HMAC digest of the code, and prints
-the code once for secure distribution. `CODEA --max-users 10` admits at most ten
-distinct Google accounts. Each account is permanently linked to its first code;
-when a code is full, existing linked accounts retain access while new accounts
-are rejected.
+Omit `--code CODEA` to generate a strong random code. The Rust command applies
+pending API migrations, stores a keyed HMAC digest plus an encrypted retrieval
+copy, and prints the code once for secure distribution. `CODEA --max-users 10`
+admits at most ten distinct Google accounts. Each account is permanently linked
+to its first code; when a code is full, existing linked accounts retain access
+while new accounts are rejected.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
-| Plan | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM |
-|---|---:|---:|---:|---:|
-| Free | $0 | 25 | $1 | 15 |
-| Basic | $20 | 300 | $8 | 30 |
-| Pro | $50 | 750 | $20 | 45 |
-| Max | $100 | 1,875 | $45 | 60 |
+| Plan  | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM |
+| ----- | ----------------: | ------------------: | ----------------------: | ------------: |
+| Free  |                $0 |                  25 |                      $1 |            15 |
+| Basic |               $20 |                 300 |                      $8 |            30 |
+| Pro   |               $50 |                 750 |                     $20 |            45 |
+| Max   |              $100 |               1,875 |                     $45 |            60 |
 
 #### Admin dashboard
 
@@ -445,8 +454,8 @@ authenticated and proxied by Railway.
    computer** if CUA is not ready.
 2. Sign in to Gmail yourself. Tro will not type passwords.
 3. Enter a complete bounded request, for example: `Open Gmail, compose an
-   email from my work account to me@example.com with subject "Tro test"
-   and body "The desktop loop works", then send it after I approve.`
+email from my work account to me@example.com with subject "Tro test"
+and body "The desktop loop works", then send it after I approve.`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
@@ -464,9 +473,9 @@ npm run package
 npm run bazel:check
 ```
 
-`npm run bazel:check` builds, tests, formats, and lints the non-production Rust
-backend candidate. Run it for Rust or Bazel changes; it is intentionally not
-part of the Electron `npm run check` or release workflow.
+`npm run bazel:check` builds, tests, formats, and lints the in-place Rust backend
+candidate, including the live-classroom route family. Run it for Rust or Bazel
+changes; it is intentionally not part of the Electron release workflow.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject
@@ -600,7 +609,7 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-└── api/              production Node API and in-place Rust replacement candidate
+└── api/              Rust API, worker, migrations, commands, and contract tests
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```

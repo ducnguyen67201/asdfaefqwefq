@@ -56,6 +56,13 @@ trocode_rust_integration_test(
 )
 
 trocode_rust_integration_test(
+    name = "classroom_e2e_test",
+    size = "large",
+    src = "tests/classroom_e2e.rs",
+    tags = ["requires-postgres"],
+)
+
+trocode_rust_integration_test(
     name = "contract_corpus_test",
     size = "small",
     src = "tests/contract_corpus.rs",
@@ -100,6 +107,7 @@ trocode_rust_integration_test(
 trocode_rust_integration_test(
     name = "postgres_compat_test",
     src = "tests/postgres_compat.rs",
+    compile_data = glob(["migrations/*.sql"]),
     tags = ["requires-postgres"],
 )
 
@@ -113,6 +121,7 @@ trocode_rust_integration_test(
 RUST_TEST_TARGETS = [
     ":agent_runtime_compat_test",
     ":api_lib_test",
+    ":classroom_e2e_test",
     ":contract_corpus_test",
     ":google_auth_compat_test",
     ":http_compat_test",

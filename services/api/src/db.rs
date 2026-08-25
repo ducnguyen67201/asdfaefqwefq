@@ -105,6 +105,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "invite idempotency",
             include_str!("../migrations/019_invite_idempotency.sql"),
         ),
+        migration(
+            20,
+            "live classroom room flow",
+            include_str!("../migrations/020_live_classroom_room_flow.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

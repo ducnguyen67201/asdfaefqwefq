@@ -49,6 +49,11 @@ The optional Activity field is host-resolved from a private Attempt and pins an
 immutable definition, evidence policy, compact source catalog, and bounded prior
 progress. Normal tasks carry `activity: null` and receive no knowledge/evidence
 tools. See [Knowledge Spaces](knowledge-spaces.md).
+For a joined classroom, Electron main—not the renderer—owns the active Attempt,
+latest ordered directive, and local safe-link consent. Help and Check create
+purpose-specific Work Sessions, while the API re-resolves the Attempt and Run
+before adding Activity context to a hosted v8 contract. Closing the Run removes
+sticky task inheritance without restricting unrelated Tro tasks.
 Workspace additionally receives local tools only after the main-process
 directory picker canonicalizes and records the selected root. Patch operations
 are root-confined; the explicitly approved local shell starts at that root but
@@ -226,8 +231,11 @@ Build ownership is intentionally split. npm, Webpack, and Electron Forge own
 the renderer, preload, Electron main process, native CUA staging, signing, and
 desktop installers. Bazel owns only the Rust targets under `services/api`,
 using the root Cargo workspace as its dependency source. The Rust backend owns
-the hosted `/v1` contracts and runs as a hosted service artifact; no Rust binary
-is bundled into the desktop application.
+the hosted `/v1` contracts, including live-room admission, class directives,
+participant help and review transitions, and teacher dashboard projections. It
+also owns database migrations, ingestion, and backend operator commands.
+Railway launches that same binary for the API and worker; no Rust binary is
+bundled into the Electron application.
 
 The local PostgreSQL task-history adapter remains a development foundation. The
 hosted PostgreSQL database stores users, revocable device-session digests, cost

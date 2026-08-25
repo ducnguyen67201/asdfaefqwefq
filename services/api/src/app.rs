@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     agent::AgentService,
     auth::{AccessCodeRepository, AgentStateCrypto, GoogleVerifier, SessionRepository},
+    classroom::ClassroomService,
     config::Config,
     db,
     error::ApiError,
@@ -27,6 +28,7 @@ pub struct AppState {
     pub transcription: TranscriptionService,
     pub google: GoogleVerifier,
     pub knowledge: KnowledgeService,
+    pub classroom: ClassroomService,
     pub agent: Option<AgentService>,
     pub shutdown: CancellationToken,
 }
@@ -47,6 +49,7 @@ impl AppState {
             None => None,
         };
         let knowledge = KnowledgeService::new(pool.clone(), store, &config.session_token_hmac_key);
+        let classroom = ClassroomService::new(pool.clone(), &config.session_token_hmac_key);
         let agent = match &config.agent_runtime.encryption_keys {
             Some(keys) => Some(AgentService::new(
                 pool.clone(),
@@ -78,6 +81,7 @@ impl AppState {
             budget,
             responses,
             knowledge,
+            classroom,
             agent,
             shutdown: CancellationToken::new(),
         })

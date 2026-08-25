@@ -72,7 +72,7 @@ async fn reset_database(database_url: &str) {
         .connect(database_url)
         .await
         .expect("connect to disposable PostgreSQL");
-    query("DROP SCHEMA public CASCADE")
+    query("DROP SCHEMA IF EXISTS public CASCADE")
         .execute(&pool)
         .await
         .expect("drop disposable schema");
@@ -862,6 +862,10 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
                 "instructions":"Exercise the Rust backend contract.",
                 "launchTarget":"none",
                 "objective":"Prove the hosted backend contract remains compatible.",
+                "sessionPolicy":{
+                    "allowRoomJoin":true,
+                    "allowedOrigins":["https://class.example"]
+                },
                 "title":"Migration parity",
                 "criteria":[{
                     "id":"rust-router",
@@ -891,6 +895,36 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("activity version id")
         .to_owned();
+    let room_run = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/runs"),
+        Some(&owner_token),
+        Some(&json!({
+            "activityVersionId":version_id,
+            "clientId":Uuid::new_v4(),
+            "insightPolicy":"explicit_and_operational",
+            "mode":"live",
+            "target":{"kind":"room"}
+        })),
+    )
+    .await;
+    assert_status(&room_run, StatusCode::CREATED);
+    let room_run_id = room_run.json()["id"]
+        .as_str()
+        .expect("room run id")
+        .to_owned();
+    assert_status(
+        &send(
+            &router,
+            Method::POST,
+            &format!("/v1/spaces/{space_id}/runs/{room_run_id}/room-code"),
+            Some(&owner_token),
+            Some(&json!({"clientId":Uuid::new_v4(),"expiresAt":null,"maxUses":200})),
+        )
+        .await,
+        StatusCode::CREATED,
+    );
     let run_client_id = Uuid::new_v4();
     let run_body = json!({
         "activityVersionId":version_id,
@@ -1140,6 +1174,17 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
             .filter(|kind| **kind == "work_session_created")
             .count(),
         1
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/spaces/{space_id}/runs/{run_id}/dashboard?sinceSequence=0.0"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::OK,
     );
     assert_status(
         &send(

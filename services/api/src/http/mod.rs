@@ -1,5 +1,6 @@
 mod admin;
 mod agent_runtime;
+mod classroom;
 mod core;
 mod knowledge;
 mod middleware;
