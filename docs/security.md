@@ -42,10 +42,11 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   the revocable Google-backed device session and fail closed when the service
   is unavailable; Electron has no offline membership verifier.
 - Organization-managed access is authorized entirely by the hosted service.
-  The renderer sees only its current organization summary and receives
-  organizer controls only when the server returns `role: organizer`; every
-  list, add, and cancel request repeats session, active-access, role, code-state,
-  and capacity checks. The preload exposes four fixed schema-parsed methods,
+  Every member sees only the current organization's bounded summary (identity,
+  plan, role, and seat capacity) and receives organizer controls only when the
+  server returns `role: organizer`; every rename, list, add, and cancel request
+  repeats session, active-access, role, code-state, and capacity checks. The
+  preload exposes five fixed schema-parsed methods,
   never a generic REST or IPC bridge, plaintext access code, platform admin
   token, or arbitrary organization-ID authority.
 - An organizer reserves a seat by normalized email without looking up or
@@ -55,10 +56,12 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   PostgreSQL transaction; an expected existing-entitlement conflict leaves the
   reservation untouched while sign-in still succeeds. Access-code row locks
   serialize capacity changes, and pending seats count toward the limit.
-- Organization audit details contain IDs and seat counts only. Request logs do
-  not contain email addresses, names, request bodies, bearer tokens, or
-  plaintext access codes. Active members cannot be removed through the
-  organizer API; only pending reservations can be cancelled.
+- Organization audit details contain IDs and seat counts only. The
+  `organization.profile_updated` event records `{}` and never stores the old or
+  new organization name. Request logs do not contain email addresses, names,
+  request bodies, bearer tokens, or plaintext access codes. Active members
+  cannot be removed through the organizer API; only pending reservations can
+  be cancelled.
 - Assistant text and tool calls share one model session. A model tool call is a
   proposal, not permission or proof that an effect occurred.
 - Approval requirement and consequence are separate. In Balanced mode,

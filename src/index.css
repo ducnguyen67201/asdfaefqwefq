@@ -4059,13 +4059,82 @@ h1 {
 }
 
 .organization-capacity,
+.organization-profile,
+.organization-managed-access,
 .organization-add-member,
 .organization-members,
+.organization-class-next-step,
 .organization-empty {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow-soft);
+}
+
+.organization-role-badge--member {
+  background: rgba(49, 111, 206, 0.1);
+  color: #316fce;
+}
+
+.organization-profile {
+  display: grid;
+  align-items: end;
+  gap: 18px;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1fr) auto;
+  margin-bottom: 18px;
+  padding: 20px 22px;
+}
+
+.organization-profile label,
+.organization-add-member__heading h2,
+.organization-managed-access h2,
+.organization-class-next-step h2 {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.organization-profile__controls {
+  display: grid;
+  gap: 6px;
+}
+
+.organization-profile input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.organization-profile input:focus {
+  border-color: var(--accent-strong);
+  outline: 3px solid rgba(242, 201, 76, 0.16);
+}
+
+.organization-profile__count {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.organization-managed-access {
+  margin-bottom: 18px;
+  padding: 22px;
+}
+
+.organization-managed-access p:last-child,
+.organization-add-member__heading p:last-child,
+.organization-class-next-step p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .organization-capacity {
@@ -4111,6 +4180,10 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto;
   margin-top: 18px;
   padding: 20px 22px;
+}
+
+.organization-add-member__heading {
+  grid-column: 1 / -1;
 }
 
 .organization-add-member label {
@@ -4250,6 +4323,23 @@ h1 {
   margin: 18px auto 0;
 }
 
+.organization-class-next-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 18px;
+  padding: 22px;
+}
+
+.organization-class-next-step > div {
+  max-width: 680px;
+}
+
+.organization-class-next-step .secondary-button {
+  flex: 0 0 auto;
+}
+
 .organization-empty {
   margin-top: 20px;
   padding: 48px;
@@ -4297,6 +4387,37 @@ h1 {
 
 .settings-membership-card {
   margin-bottom: 20px;
+}
+
+.settings-organization-card {
+  margin-bottom: 20px;
+}
+
+.settings-organization-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.settings-organization-summary > div {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.settings-organization-summary dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.settings-organization-summary dd {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .settings-promo-form {
@@ -5734,16 +5855,24 @@ h1 {
   .organization-heading,
   .organization-capacity__copy,
   .organization-members__heading,
-  .organization-member-list li {
+  .organization-member-list li,
+  .organization-class-next-step {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .organization-add-member {
+  .organization-profile,
+  .organization-add-member,
+  .settings-organization-summary {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .organization-profile .primary-button,
   .organization-add-member .primary-button {
+    width: 100%;
+  }
+
+  .organization-class-next-step .secondary-button {
     width: 100%;
   }
 

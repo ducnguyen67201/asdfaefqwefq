@@ -134,6 +134,15 @@ pub fn normalize_organization_email(value: &str) -> Option<(String, String)> {
     Some((email.to_owned(), email.to_lowercase()))
 }
 
+pub fn normalize_organization_name(value: &str) -> Option<String> {
+    let name = value.trim();
+    let character_count = name.chars().count();
+    if !(1..=100).contains(&character_count) || name.chars().any(char::is_control) {
+        return None;
+    }
+    Some(name.to_owned())
+}
+
 impl OrganizationRepository {
     #[must_use]
     pub fn new(pool: PgPool) -> Self {
@@ -146,6 +155,51 @@ impl OrganizationRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.as_ref().map(|value| summary(value, None)))
+    }
+
+    pub async fn update_name(
+        &self,
+        user_id: &str,
+        name_value: &str,
+    ) -> ApiResult<OrganizationSummary> {
+        let Some(name) = normalize_organization_name(name_value) else {
+            return Err(ApiError::coded(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "A valid organization name is required.",
+            ));
+        };
+        let mut tx = self.pool.begin().await?;
+        let current = sqlx::query(CURRENT_MEMBERSHIP)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(current) = current.filter(|row| row.get::<String, _>("role") == "organizer")
+        else {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                StatusCode::FORBIDDEN,
+                "organization_organizer_required",
+                "Organization organizer access is required.",
+            ));
+        };
+        let organization_id: Uuid = current.get("organization_id");
+        let updated_name: String = sqlx::query_scalar(
+            "UPDATE organizations SET name=$2,updated_at=NOW() WHERE id=$1 RETURNING name",
+        )
+        .bind(organization_id)
+        .bind(name)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("INSERT INTO organization_audit_events(organization_id,actor_user_id,action,detail)VALUES($1,$2,'organization.profile_updated','{}'::jsonb)")
+            .bind(organization_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        let mut organization = summary(&current, None);
+        organization.name = updated_name;
+        Ok(organization)
     }
 
     pub async fn list_members(

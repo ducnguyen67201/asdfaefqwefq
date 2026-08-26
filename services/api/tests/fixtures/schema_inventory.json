@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 21,
+  "migrationCount": 22,
   "tables": [
     "users",
     "device_sessions",

@@ -1,7 +1,11 @@
 use std::time::Duration;
 
 use trocode_api::{
-    auth::{OrganizationRepository, normalize_organization_email, organization_capacity},
+    Row,
+    auth::{
+        OrganizationRepository, normalize_organization_email, normalize_organization_name,
+        organization_capacity,
+    },
     db,
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -10,6 +14,7 @@ use url::Url;
 use uuid::Uuid;
 
 const MIGRATION: &str = include_str!("../migrations/021_organization_managed_access.sql");
+const PROFILE_MIGRATION: &str = include_str!("../migrations/022_organization_profile_settings.sql");
 
 fn disposable_database_url() -> String {
     let value = std::env::var("TEST_DATABASE_URL")
@@ -43,6 +48,22 @@ fn normalizes_verified_email_without_changing_its_display_form() {
     ] {
         assert_eq!(normalize_organization_email(invalid), None, "{invalid}");
     }
+}
+
+#[test]
+fn normalizes_bounded_organization_names_without_storing_controls() {
+    assert_eq!(
+        normalize_organization_name("  Greenfield School  "),
+        Some("Greenfield School".to_owned()),
+    );
+    assert_eq!(normalize_organization_name(""), None);
+    assert_eq!(normalize_organization_name("   "), None);
+    assert_eq!(normalize_organization_name(&"a".repeat(101)), None);
+    assert_eq!(normalize_organization_name("Greenfield\nSchool"), None);
+    assert_eq!(
+        normalize_organization_name(&"a".repeat(100)),
+        Some("a".repeat(100))
+    );
 }
 
 #[test]
@@ -83,6 +104,147 @@ fn migration_preserves_shared_rollback_and_organization_invariants() {
             MIGRATION.contains(required),
             "missing migration invariant: {required}"
         );
+    }
+    for required in [
+        "organization_audit_events_action_check",
+        "organization.profile_updated",
+        "organization.pending_cancelled",
+    ] {
+        assert!(
+            PROFILE_MIGRATION.contains(required),
+            "missing profile migration invariant: {required}"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn organization_profile_updates_require_organizer_authority_and_hide_name_from_audit() {
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(&disposable_database_url())
+        .await
+        .expect("connect to disposable PostgreSQL");
+    db::migrate(&pool).await.expect("apply migrations");
+
+    let nonce = Uuid::new_v4();
+    let organizer_id = format!("organization-profile-organizer-{nonce}");
+    let organizer_email = format!("profile-organizer-{nonce}@example.test");
+    let member_id = format!("organization-profile-member-{nonce}");
+    let member_email = format!("profile-member-{nonce}@example.test");
+    for (user_id, email, name) in [
+        (&organizer_id, &organizer_email, "Organizer"),
+        (&member_id, &member_email, "Member"),
+    ] {
+        query("INSERT INTO users(id,email,name)VALUES($1,$2,$3)")
+            .bind(user_id)
+            .bind(email)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .expect("insert organization profile user");
+    }
+
+    let mut digest = Vec::with_capacity(32);
+    digest.extend_from_slice(nonce.as_bytes());
+    digest.extend_from_slice(nonce.as_bytes());
+    let access_code_id: Uuid = query_scalar("INSERT INTO access_codes(code_digest,label,max_users,plan,distribution_mode)VALUES($1,'Profile settings',2,'pro','organization')RETURNING id")
+        .bind(digest)
+        .fetch_one(&pool)
+        .await
+        .expect("insert organization profile access code");
+    let organization_id: Uuid = query_scalar(
+        "INSERT INTO organizations(access_code_id,name)VALUES($1,'Profile settings')RETURNING id",
+    )
+    .bind(access_code_id)
+    .fetch_one(&pool)
+    .await
+    .expect("insert organization profile");
+    for (user_id, email, role) in [
+        (&organizer_id, &organizer_email, "organizer"),
+        (&member_id, &member_email, "member"),
+    ] {
+        query("INSERT INTO organization_memberships(organization_id,email,email_normalized,user_id,role,invited_by_user_id,joined_at)VALUES($1,$2,LOWER($2),$3,$4,$5,NOW())")
+            .bind(organization_id)
+            .bind(email)
+            .bind(user_id)
+            .bind(role)
+            .bind(&organizer_id)
+            .execute(&pool)
+            .await
+            .expect("insert active organization membership");
+        query("INSERT INTO access_code_redemptions(user_id,access_code_id)VALUES($1,$2)")
+            .bind(user_id)
+            .bind(access_code_id)
+            .execute(&pool)
+            .await
+            .expect("insert organization profile redemption");
+    }
+
+    let repository = OrganizationRepository::new(pool.clone());
+    let updated = repository
+        .update_name(&organizer_id, "  Greenfield School  ")
+        .await
+        .expect("organizer updates organization name");
+    assert_eq!(updated.name, "Greenfield School");
+    let stored_name: String = query_scalar("SELECT name FROM organizations WHERE id=$1")
+        .bind(organization_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read updated organization name");
+    assert_eq!(stored_name, "Greenfield School");
+    let audit = query("SELECT action,detail FROM organization_audit_events WHERE organization_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1")
+        .bind(organization_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read organization profile audit");
+    assert_eq!(
+        audit.get::<String, _>("action"),
+        "organization.profile_updated"
+    );
+    assert_eq!(
+        audit.get::<serde_json::Value, _>("detail"),
+        serde_json::json!({})
+    );
+
+    let member_error = repository
+        .update_name(&member_id, "Member rename")
+        .await
+        .expect_err("member cannot update organization name");
+    assert_eq!(member_error.code, Some("organization_organizer_required"));
+
+    query("DELETE FROM organization_audit_events WHERE organization_id=$1")
+        .bind(organization_id)
+        .execute(&pool)
+        .await
+        .expect("clean organization profile audits");
+    query("DELETE FROM access_code_redemptions WHERE access_code_id=$1")
+        .bind(access_code_id)
+        .execute(&pool)
+        .await
+        .expect("clean organization profile redemptions");
+    query("DELETE FROM organization_memberships WHERE organization_id=$1")
+        .bind(organization_id)
+        .execute(&pool)
+        .await
+        .expect("clean organization profile memberships");
+    query("DELETE FROM organizations WHERE id=$1")
+        .bind(organization_id)
+        .execute(&pool)
+        .await
+        .expect("clean organization profile");
+    query("DELETE FROM access_codes WHERE id=$1")
+        .bind(access_code_id)
+        .execute(&pool)
+        .await
+        .expect("clean organization profile access code");
+    for user_id in [&organizer_id, &member_id] {
+        query("DELETE FROM users WHERE id=$1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("clean organization profile user");
     }
 }
 

@@ -18,6 +18,6 @@ pub use google::GoogleVerifier;
 pub use organizations::{
     AddOrganizationMember, CancelOrganizationMember, OrganizationMember, OrganizationMemberList,
     OrganizationRepository, OrganizationSummary, normalize_organization_email,
-    organization_capacity,
+    normalize_organization_name, organization_capacity,
 };
 pub use sessions::{DeviceSession, SessionRepository, User};

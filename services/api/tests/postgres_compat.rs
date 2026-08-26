@@ -91,7 +91,7 @@ async fn rust_migrations_are_idempotent_on_an_empty_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(sqlx_count, 21);
+    assert_eq!(sqlx_count, 22);
     assert_eq!(table_count, 49, "48 domain tables plus SQLx bookkeeping");
 }
 
@@ -128,5 +128,5 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
         .fetch_one(&pool)
         .await
         .expect("SQLx bookkeeping count");
-    assert_eq!(sqlx_count, 21);
+    assert_eq!(sqlx_count, 22);
 }

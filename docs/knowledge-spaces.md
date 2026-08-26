@@ -29,6 +29,15 @@ as often as needed. Missing, blocked, ambiguous, or incorrectly assigned account
 are not added and are reported separately. Join codes remain supported, but
 redemption must match the administrator-assigned account role.
 
+Organization access and class enrollment are separate steps. An organization
+organizer first reserves a seat using the student's exact Google email from
+**Settings → Organization settings**. The student then receives plan access
+automatically when signing in with that verified account, without entering a
+code and without Tro sending an invitation email. This does not assign the
+Student role or enroll a class. After registration and administrator role
+assignment, a Teacher opens **Class workspaces → class → People** and adds that
+registered Student to the specific class.
+
 Class workspaces are navigation over existing Spaces, not trusted local folders
 and not a second lifecycle/session system. Switching class changes only the
 current classroom surface.
