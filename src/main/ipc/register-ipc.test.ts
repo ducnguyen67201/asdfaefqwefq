@@ -53,6 +53,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   checkForUpdates: ReturnType<typeof vi.fn>;
   companionCustomizationService: {
     activateCandidate: ReturnType<typeof vi.fn>;
+    activateSaved: ReturnType<typeof vi.fn>;
     generate: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
     useDefault: ReturnType<typeof vi.fn>;
@@ -289,11 +290,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       remaining: 5,
       used: 0,
     },
+    savedCompanions: [],
     state: 'available' as const,
     summary: 'Ready.',
   };
   const companionCustomizationService = {
     activateCandidate: vi.fn(async () => companionStatus),
+    activateSaved: vi.fn(async () => companionStatus),
     generate: vi.fn(async () => companionStatus),
     getStatus: vi.fn(async () => companionStatus),
     useDefault: vi.fn(async () => companionStatus),
@@ -504,6 +507,9 @@ describe('registerIpcHandlers auth boundary', () => {
     const activateRequest = {
       candidateId: '22222222-2222-4222-8222-222222222222',
     } as const;
+    const activateSavedRequest = {
+      companionId: 'a'.repeat(64),
+    } as const;
 
     await expect(
       electronMock.handlers
@@ -521,6 +527,11 @@ describe('registerIpcHandlers auth boundary', () => {
         ?.(event, activateRequest),
     ).resolves.toMatchObject({ state: 'available' });
     await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionActivateSaved)
+        ?.(event, activateSavedRequest),
+    ).resolves.toMatchObject({ state: 'available' });
+    await expect(
       electronMock.handlers.get(IPC_CHANNELS.companionUseDefault)?.(event),
     ).resolves.toMatchObject({ state: 'available' });
     expect(companionCustomizationService.generate).toHaveBeenCalledWith(
@@ -529,7 +540,10 @@ describe('registerIpcHandlers auth boundary', () => {
     expect(companionCustomizationService.activateCandidate).toHaveBeenCalledWith(
       activateRequest,
     );
-    expect(membershipService.assertActive).toHaveBeenCalledTimes(4);
+    expect(companionCustomizationService.activateSaved).toHaveBeenCalledWith(
+      activateSavedRequest,
+    );
+    expect(membershipService.assertActive).toHaveBeenCalledTimes(5);
 
     await expect(
       electronMock.handlers

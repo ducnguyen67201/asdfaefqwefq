@@ -1606,6 +1606,35 @@ export function App({
     }
   }, []);
 
+  const activateSavedCompanion = useCallback(async (companionId: string) => {
+    if (companionActionInFlightRef.current) return;
+    companionActionInFlightRef.current = true;
+    companionRefreshIdRef.current += 1;
+    setCompanionBusy('selecting');
+    setCompanionError(null);
+    try {
+      setCompanionStatus(
+        await window.tro.activateSavedCompanion({ companionId }),
+      );
+    } catch (activationError) {
+      setCompanionError(
+        activationError instanceof Error
+          ? activationError.message
+          : 'Tro could not activate this saved companion.',
+      );
+      try {
+        setCompanionStatus(
+          await window.tro.getCompanionCustomizationStatus(),
+        );
+      } catch {
+        // Preserve the activation error when the saved library cannot refresh.
+      }
+    } finally {
+      companionActionInFlightRef.current = false;
+      setCompanionBusy(null);
+    }
+  }, []);
+
   const useDefaultCompanion = useCallback(async () => {
     if (companionActionInFlightRef.current) return;
     companionActionInFlightRef.current = true;
@@ -2557,6 +2586,7 @@ export function App({
             membershipError={membershipError}
             membershipStatus={membershipStatus}
             onActivateCompanion={activateCompanion}
+            onActivateSavedCompanion={activateSavedCompanion}
             organization={organization}
             organizationError={organizationError}
             isLoadingOrganization={isLoadingOrganization}

@@ -632,8 +632,18 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro’s default companion is active.':
     'Bạn đồng hành mặc định của Tro đang hoạt động.',
   'Use default companion': 'Dùng bạn đồng hành mặc định',
-  'Using the default removes this account’s encrypted custom image from this device.':
-    'Dùng hình mặc định sẽ xóa ảnh tùy chỉnh được mã hóa của tài khoản này khỏi thiết bị.',
+  'Your companions': 'Bạn đồng hành của bạn',
+  'Choose any companion you created before. Switching does not use a preview.':
+    'Chọn bất kỳ bạn đồng hành nào bạn đã tạo. Việc chuyển đổi không tốn lượt xem trước.',
+  '{count} saved': 'Đã lưu {count}',
+  'Saved companion {number}': 'Bạn đồng hành đã lưu {number}',
+  '{name}, active': '{name}, đang dùng',
+  'Use {name}': 'Dùng {name}',
+  'Created {date}': 'Đã tạo {date}',
+  'Switching…': 'Đang chuyển…',
+  Use: 'Dùng',
+  'Saved companions stay encrypted on this device.':
+    'Các bạn đồng hành đã lưu được mã hóa trên thiết bị này.',
   'Restoring…': 'Đang khôi phục…',
   'Generation unavailable': 'Không thể tạo hình',
   'Add a source image': 'Thêm ảnh nguồn',

@@ -13,7 +13,13 @@ function renderCard(
   status: CompanionCustomizationStatus,
   options: {
     appLanguage?: 'en' | 'vi';
-    busy?: 'loading' | 'generating' | 'activating' | 'resetting' | null;
+    busy?:
+      | 'loading'
+      | 'generating'
+      | 'activating'
+      | 'selecting'
+      | 'resetting'
+      | null;
     error?: string | null;
   } = {},
 ): string {
@@ -23,6 +29,7 @@ function renderCard(
       busy: options.busy ?? null,
       error: options.error ?? null,
       onActivate: vi.fn(),
+      onActivateSaved: vi.fn(),
       onGenerate: vi.fn(),
       onUseDefault: vi.fn(),
       status,
@@ -43,6 +50,7 @@ function availableStatus(
       remaining: 3,
       used: 2,
     },
+    savedCompanions: [],
     state: 'available',
     summary: 'Companion generation is available.',
     ...overrides,
@@ -76,6 +84,37 @@ describe('CompanionCustomizationCard', () => {
     expect(markup).toContain('Meet your new companion');
     expect(markup).toContain('Nothing changes until you choose to use it.');
     expect(markup).toContain('Use this companion');
+  });
+
+  it('offers previously created companions without using another preview', () => {
+    const markup = renderCard(
+      availableStatus({
+        appearance: {
+          assetUrl: ACTIVE_ASSET,
+          kind: 'custom',
+          revision: 'a'.repeat(64),
+        },
+        savedCompanions: [
+          {
+            assetUrl: ACTIVE_ASSET,
+            createdAt: '2026-08-24T00:00:00.000Z',
+            id: 'a'.repeat(64),
+          },
+          {
+            assetUrl: `trocode-companion://asset/active/${'b'.repeat(64)}`,
+            createdAt: '2026-08-23T00:00:00.000Z',
+            id: 'b'.repeat(64),
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain('Your companions');
+    expect(markup).toContain('Switching does not use a preview.');
+    expect(markup).toContain('2 saved');
+    expect(markup).toContain('Saved companion 2');
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('Saved companions stay encrypted on this device.');
   });
 
   it('disables generation after the monthly limit is exhausted', () => {
@@ -123,6 +162,7 @@ describe('CompanionCustomizationCard', () => {
       },
       candidate: null,
       quota: null,
+      savedCompanions: [],
       state: 'unavailable',
       summary: 'Companion image generation is disabled.',
     });

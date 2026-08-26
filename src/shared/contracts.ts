@@ -1964,6 +1964,12 @@ export const ActivateCompanionCandidateRequestSchema = z
   })
   .strict();
 
+export const ActivateSavedCompanionRequestSchema = z
+  .object({
+    companionId: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict();
+
 export const CompanionGenerationQuotaSchema = z
   .object({
     limit: z.literal(5),
@@ -2034,11 +2040,29 @@ export const CompanionCandidateSchema = z
   })
   .strict();
 
+export const SavedCompanionSchema = z
+  .object({
+    assetUrl: CompanionAssetUrlSchema,
+    createdAt: z.string().datetime(),
+    id: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict()
+  .superRefine((companion, context) => {
+    if (new URL(companion.assetUrl).pathname !== `/active/${companion.id}`) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A saved companion asset must match its identifier.',
+        path: ['assetUrl'],
+      });
+    }
+  });
+
 export const CompanionCustomizationStatusSchema = z
   .object({
     appearance: CompanionAppearanceSchema,
     candidate: CompanionCandidateSchema.nullable(),
     quota: CompanionGenerationQuotaSchema.nullable(),
+    savedCompanions: z.array(SavedCompanionSchema).max(50),
     state: z.enum(['available', 'unavailable', 'error']),
     summary: z.string().trim().min(1).max(1_000),
   })
@@ -2049,6 +2073,26 @@ export const CompanionCustomizationStatusSchema = z
         code: 'custom',
         message: 'Available companion customization requires a quota.',
         path: ['quota'],
+      });
+    }
+    const savedIds = new Set(
+      status.savedCompanions.map((companion) => companion.id),
+    );
+    if (savedIds.size !== status.savedCompanions.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Saved companion identifiers must be unique.',
+        path: ['savedCompanions'],
+      });
+    }
+    if (
+      status.appearance.kind === 'custom' &&
+      !savedIds.has(status.appearance.revision)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The active custom companion must be in the saved library.',
+        path: ['appearance'],
       });
     }
   });
@@ -2492,6 +2536,9 @@ export type CompanionPosition = z.infer<typeof CompanionPositionSchema>;
 export type ActivateCompanionCandidateRequest = z.infer<
   typeof ActivateCompanionCandidateRequestSchema
 >;
+export type ActivateSavedCompanionRequest = z.infer<
+  typeof ActivateSavedCompanionRequestSchema
+>;
 export type CompanionAppearance = z.infer<typeof CompanionAppearanceSchema>;
 export type CompanionCandidate = z.infer<typeof CompanionCandidateSchema>;
 export type CompanionCustomizationStatus = z.infer<
@@ -2506,6 +2553,7 @@ export type CompanionImageMimeType = z.infer<
 export type GenerateCompanionImageRequest = z.infer<
   typeof GenerateCompanionImageRequestSchema
 >;
+export type SavedCompanion = z.infer<typeof SavedCompanionSchema>;
 export type CompanionGuidanceVisual = z.infer<
   typeof CompanionGuidanceVisualSchema
 >;

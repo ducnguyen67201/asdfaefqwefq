@@ -14,6 +14,7 @@ export type CompanionCustomizationBusy =
   | 'loading'
   | 'generating'
   | 'activating'
+  | 'selecting'
   | 'resetting'
   | null;
 
@@ -22,6 +23,7 @@ interface CompanionCustomizationCardProps {
   busy: CompanionCustomizationBusy;
   error: string | null;
   onActivate(candidateId: string): Promise<void>;
+  onActivateSaved(companionId: string): Promise<void>;
   onGenerate(request: GenerateCompanionImageRequest): Promise<boolean>;
   onUseDefault(): Promise<void>;
   status: CompanionCustomizationStatus | null;
@@ -133,6 +135,7 @@ export function CompanionCustomizationCard({
   busy,
   error,
   onActivate,
+  onActivateSaved,
   onGenerate,
   onUseDefault,
   status,
@@ -306,6 +309,82 @@ export function CompanionCustomizationCard({
               )}
             </div>
           </div>
+
+          {status.savedCompanions.length > 0 && (
+            <section
+              aria-labelledby="saved-companions-heading"
+              className="companion-customization-library"
+            >
+              <div className="companion-customization-library__heading">
+                <div>
+                  <h3 id="saved-companions-heading">{t('Your companions')}</h3>
+                  <p>
+                    {t(
+                      'Choose any companion you created before. Switching does not use a preview.',
+                    )}
+                  </p>
+                </div>
+                <span>
+                  {t('{count} saved', {
+                    count: status.savedCompanions.length,
+                  })}
+                </span>
+              </div>
+              <div className="companion-customization-library__grid">
+                {status.savedCompanions.map((companion, index) => {
+                  const isActive =
+                    status.appearance.kind === 'custom' &&
+                    status.appearance.revision === companion.id;
+                  const label = t('Saved companion {number}', {
+                    number: index + 1,
+                  });
+                  return (
+                    <button
+                      aria-label={
+                        isActive
+                          ? t('{name}, active', { name: label })
+                          : t('Use {name}', { name: label })
+                      }
+                      aria-pressed={isActive}
+                      className={`companion-customization-library__item${isActive ? ' is-active' : ''}`}
+                      disabled={isBusy || isActive}
+                      key={companion.id}
+                      onClick={() => void onActivateSaved(companion.id)}
+                      type="button"
+                    >
+                      <span className="companion-customization-library__preview">
+                        <img alt="" src={companion.assetUrl} />
+                      </span>
+                      <span className="companion-customization-library__copy">
+                        <strong>{label}</strong>
+                        <small>
+                          {t('Created {date}', {
+                            date: new Intl.DateTimeFormat(
+                              appLocale(appLanguage),
+                              {
+                                dateStyle: 'medium',
+                                timeZone: 'UTC',
+                              },
+                            ).format(new Date(companion.createdAt)),
+                          })}
+                        </small>
+                      </span>
+                      <span className="companion-customization-library__action">
+                        {isActive
+                          ? t('Active')
+                          : busy === 'selecting'
+                            ? t('Switching…')
+                            : t('Use')}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="companion-customization-library__privacy">
+                {t('Saved companions stay encrypted on this device.')}
+              </p>
+            </section>
+          )}
 
           {status.state !== 'available' ? (
             <div

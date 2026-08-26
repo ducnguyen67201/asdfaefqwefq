@@ -3,6 +3,7 @@ import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import {
   ActivateMembershipRequestSchema,
   ActivateCompanionCandidateRequestSchema,
+  ActivateSavedCompanionRequestSchema,
   AgentActivityUpdateSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
@@ -101,7 +102,11 @@ interface IpcServices {
   authService: GoogleAuthService;
   companionCustomizationService: Pick<
     CompanionCustomizationService,
-    'activateCandidate' | 'generate' | 'getStatus' | 'useDefault'
+    | 'activateCandidate'
+    | 'activateSaved'
+    | 'generate'
+    | 'getStatus'
+    | 'useDefault'
   >;
   cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
@@ -471,6 +476,16 @@ export function registerIpcHandlers(
       await assertMembershipAuthorizedSender(event, mainWindow, services);
       return services.companionCustomizationService.activateCandidate(
         ActivateCompanionCandidateRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.companionActivateSaved,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.companionCustomizationService.activateSaved(
+        ActivateSavedCompanionRequestSchema.parse(input),
       );
     },
   );

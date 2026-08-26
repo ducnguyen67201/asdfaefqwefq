@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ActivateCompanionCandidateRequestSchema,
+  ActivateSavedCompanionRequestSchema,
   ActivateMembershipRequestSchema,
   ActionEffectSchema,
   AgentActivityUpdateSchema,
@@ -33,6 +34,7 @@ import {
   UpdateOrganizationRequestSchema,
   UpdateOrganizationResponseSchema,
   PlanIdSchema,
+  SavedCompanionSchema,
   SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
   MAX_COMPANION_IMAGE_BYTES,
@@ -141,8 +143,30 @@ describe('companion customization contracts', () => {
         appearance: { kind: 'default' },
         candidate: null,
         quota: null,
+        savedCompanions: [],
         state: 'available',
         summary: 'Ready.',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('binds saved companion selection and asset URLs to one hash', () => {
+    const companionId = 'a'.repeat(64);
+    expect(
+      ActivateSavedCompanionRequestSchema.parse({ companionId }),
+    ).toEqual({ companionId });
+    expect(
+      SavedCompanionSchema.safeParse({
+        assetUrl: `trocode-companion://asset/active/${companionId}`,
+        createdAt: '2026-08-25T00:00:00.000Z',
+        id: companionId,
+      }).success,
+    ).toBe(true);
+    expect(
+      SavedCompanionSchema.safeParse({
+        assetUrl: `trocode-companion://asset/active/${'b'.repeat(64)}`,
+        createdAt: '2026-08-25T00:00:00.000Z',
+        id: companionId,
       }).success,
     ).toBe(false);
   });
