@@ -29,6 +29,7 @@ interface SettingsPageProps {
   appLanguage: AppLanguage;
   appUpdateError: string | null;
   appUpdateStatus: AppUpdateStatus | null;
+  classroomPetEnabled: boolean;
   companionBusy: CompanionCustomizationBusy;
   companionError: string | null;
   companionStatus: CompanionCustomizationStatus | null;
@@ -48,6 +49,7 @@ interface SettingsPageProps {
   onActivateCompanion(candidateId: string): Promise<void>;
   onActivateSavedCompanion(companionId: string): Promise<void>;
   onCheckForUpdates(): void;
+  onClassroomPetEnabledChange(enabled: boolean): void;
   onGenerateCompanion(
     request: GenerateCompanionImageRequest,
   ): Promise<boolean>;
@@ -99,6 +101,7 @@ export function SettingsPage({
   appLanguage,
   appUpdateError,
   appUpdateStatus,
+  classroomPetEnabled,
   companionBusy,
   companionError,
   companionStatus,
@@ -118,6 +121,7 @@ export function SettingsPage({
   onActivateSavedCompanion,
   onAppLanguageChange,
   onCheckForUpdates,
+  onClassroomPetEnabledChange,
   onGenerateCompanion,
   onLanguageChange,
   onActivateMembership,
@@ -376,6 +380,25 @@ export function SettingsPage({
             'Choose the language used for navigation, settings, and other Tro controls.',
           )}
         </p>
+
+        <label className="settings-toggle" htmlFor="settings-classroom-pet-enabled">
+          <input
+            checked={classroomPetEnabled}
+            id="settings-classroom-pet-enabled"
+            onChange={(event) =>
+              onClassroomPetEnabledChange(event.target.checked)
+            }
+            type="checkbox"
+          />
+          <span>
+            <strong>{t('Classroom pet messages')}</strong>
+            <small>
+              {t(
+                'During a live class, Tro can show occasional local encouragement. It does not watch apps, websites, cursor activity, or share pet messages with teachers.',
+              )}
+            </small>
+          </span>
+        </label>
 
         <div className="settings-section-divider" />
 

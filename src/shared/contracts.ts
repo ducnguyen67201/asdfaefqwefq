@@ -1855,6 +1855,7 @@ export const AppLanguageSchema = z.enum(['en', 'vi']);
 export const AppPreferencesSchema = z.object({
   appLanguage: AppLanguageSchema.default('en'),
   autonomyMode: AutonomyModeSchema.default('balanced'),
+  classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema.nullable(),
 });
@@ -1862,6 +1863,7 @@ export const AppPreferencesSchema = z.object({
 export const UpdateAppPreferencesRequestSchema = z.object({
   appLanguage: AppLanguageSchema.default('en'),
   autonomyMode: AutonomyModeSchema.default('balanced'),
+  classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema,
 });
@@ -2225,6 +2227,25 @@ export const CompanionGuidanceSchema = z.object({
   target: z.string().trim().min(1).max(80).optional(),
 });
 
+export const CompanionPetMoodSchema = z.enum([
+  'encouraging',
+  'waiting',
+  'celebrating',
+]);
+
+export const CompanionPetNudgeDraftSchema = z
+  .object({
+    id: z.string().uuid(),
+    language: AppLanguageSchema,
+    message: z.string().trim().min(1).max(160),
+    mood: CompanionPetMoodSchema,
+  })
+  .strict();
+
+export const CompanionPetNudgeSchema = CompanionPetNudgeDraftSchema.extend({
+  side: z.enum(['left', 'right']),
+}).strict();
+
 export const CompanionResponseCardSchema = z
   .object({
     cardId: z.string().uuid(),
@@ -2571,6 +2592,11 @@ export type CompanionVoiceActivity = z.infer<
   typeof CompanionVoiceActivitySchema
 >;
 export type CompanionGuidance = z.infer<typeof CompanionGuidanceSchema>;
+export type CompanionPetMood = z.infer<typeof CompanionPetMoodSchema>;
+export type CompanionPetNudgeDraft = z.infer<
+  typeof CompanionPetNudgeDraftSchema
+>;
+export type CompanionPetNudge = z.infer<typeof CompanionPetNudgeSchema>;
 export type CompanionResponseCard = z.infer<
   typeof CompanionResponseCardSchema
 >;

@@ -81,6 +81,14 @@ Work Session, explicit Help, Ready, Submit, Return, Complete, and Leave facts.
 It does not collect cursor motion, typing speed, screen history, attention, or
 an inferred “stuck” state.
 
+The Classroom pet uses only the current local Run and Attempt projection while
+an open Run is live. Its curated, local messages may celebrate only explicit
+Ready, Submit, or Complete states, and are not persisted as class evidence.
+Tro does not inspect YouTube, other applications or websites, screen contents,
+cursor motion, typing, attention, or idle time for this feature. Pet messages,
+display state, and the local preference are not sent to the teacher dashboard
+or application analytics.
+
 ## Launch context and performance
 
 An Activity launch combines a compact immutable definition with fresh work context. Workspace Activities use one explicitly trusted local folder. Current-screen Activities force one fresh CUA observation; the semantic route is preferred when available and the existing screenshot route remains the fallback. Uploaded books and course material are not inserted wholesale. The task gets a title/role catalog and an Attempt-scoped `search_activity_knowledge` tool capped at six results and 12,000 characters.

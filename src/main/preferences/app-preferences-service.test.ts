@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -36,6 +36,7 @@ describe('AppPreferencesService', () => {
     await expect(service.get()).resolves.toEqual({
       appLanguage: 'en',
       autonomyMode: 'balanced',
+      classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: null,
     });
@@ -51,17 +52,21 @@ describe('AppPreferencesService', () => {
       }),
     };
     const service = new AppPreferencesService(store);
+    const listener = vi.fn();
+    service.onChange(listener);
 
     await expect(
       service.update({
         appLanguage: 'vi',
         autonomyMode: 'strict',
+        classroomPetEnabled: false,
         muteSystemAudioWhileSpeaking: true,
         primaryLanguage: 'vi',
       }),
     ).resolves.toEqual({
       appLanguage: 'vi',
       autonomyMode: 'strict',
+      classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
     });
@@ -69,9 +74,34 @@ describe('AppPreferencesService', () => {
     expect(store.write).toHaveBeenCalledWith({
       appLanguage: 'vi',
       autonomyMode: 'strict',
+      classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
     });
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      appLanguage: 'vi',
+      autonomyMode: 'strict',
+      classroomPetEnabled: false,
+      muteSystemAudioWhileSpeaking: true,
+      primaryLanguage: 'vi',
+    });
+  });
+
+  it('does not emit when persistence fails', async () => {
+    const service = new AppPreferencesService({
+      read: vi.fn(async () => null),
+      write: vi.fn(async () => {
+        throw new Error('disk unavailable');
+      }),
+    });
+    const listener = vi.fn();
+    service.onChange(listener);
+
+    await expect(
+      service.update({ classroomPetEnabled: false, primaryLanguage: 'en' }),
+    ).rejects.toThrow('disk unavailable');
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported language codes before writing', async () => {
@@ -110,6 +140,7 @@ describe('FileAppPreferencesStore', () => {
     await store.write({
       appLanguage: 'vi',
       autonomyMode: 'strict',
+      classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
     });
@@ -117,6 +148,7 @@ describe('FileAppPreferencesStore', () => {
     await expect(store.read()).resolves.toEqual({
       appLanguage: 'vi',
       autonomyMode: 'strict',
+      classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
     });
@@ -127,11 +159,17 @@ describe('FileAppPreferencesStore', () => {
       '"autonomyMode": "strict"',
     );
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
+      '"classroomPetEnabled": false',
+    );
+    await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"muteSystemAudioWhileSpeaking": true',
     );
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"primaryLanguage": "en"',
     );
+    if (process.platform !== 'win32') {
+      expect((await stat(filePath)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('loads preferences saved before app language was introduced', async () => {
@@ -143,6 +181,7 @@ describe('FileAppPreferencesStore', () => {
     await expect(service.get()).resolves.toEqual({
       appLanguage: 'en',
       autonomyMode: 'balanced',
+      classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
     });

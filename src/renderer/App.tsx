@@ -907,6 +907,8 @@ export function App({
     useState<AppLanguage>('en');
   const [autonomyModeDraft, setAutonomyModeDraft] =
     useState<AutonomyMode>('balanced');
+  const [classroomPetEnabledDraft, setClassroomPetEnabledDraft] =
+    useState(true);
   const [executionProfile, setExecutionProfile] =
     useState<ExecutionProfile>('everyday');
   const [workspaceRuntime, setWorkspaceRuntime] =
@@ -1245,6 +1247,7 @@ export function App({
         setAppPreferences(preferences);
         setAppLanguageDraft(preferences.appLanguage);
         setAutonomyModeDraft(preferences.autonomyMode);
+        setClassroomPetEnabledDraft(preferences.classroomPetEnabled);
         setMuteSystemAudioWhileSpeakingDraft(
           preferences.muteSystemAudioWhileSpeaking,
         );
@@ -1727,6 +1730,7 @@ export function App({
       const preferences = await window.tro.updateAppPreferences({
         appLanguage: appLanguageDraft,
         autonomyMode: autonomyModeDraft,
+        classroomPetEnabled: classroomPetEnabledDraft,
         muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
         primaryLanguage: languageDraft,
       });
@@ -1756,6 +1760,7 @@ export function App({
   }, [
     appLanguageDraft,
     autonomyModeDraft,
+    classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
   ]);
@@ -2106,6 +2111,7 @@ export function App({
         const preferences = await window.tro.updateAppPreferences({
           appLanguage: appLanguageDraft,
           autonomyMode: autonomyModeDraft,
+          classroomPetEnabled: classroomPetEnabledDraft,
           muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
           primaryLanguage: languageDraft,
         });
@@ -2126,6 +2132,7 @@ export function App({
   }, [
     appLanguageDraft,
     autonomyModeDraft,
+    classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
   ]);
@@ -2660,6 +2667,7 @@ export function App({
             autonomyMode={autonomyModeDraft}
             appUpdateError={appUpdateError}
             appUpdateStatus={appUpdateStatus}
+            classroomPetEnabled={classroomPetEnabledDraft}
             companionBusy={companionBusy}
             companionError={companionError}
             companionStatus={companionStatus}
@@ -2667,6 +2675,8 @@ export function App({
             hasChanges={
               appPreferences?.appLanguage !== appLanguageDraft ||
               appPreferences?.autonomyMode !== autonomyModeDraft ||
+              appPreferences?.classroomPetEnabled !==
+                classroomPetEnabledDraft ||
               appPreferences?.muteSystemAudioWhileSpeaking !==
                 muteSystemAudioWhileSpeakingDraft ||
               appPreferences?.primaryLanguage !== languageDraft
@@ -2692,6 +2702,11 @@ export function App({
               setSettingsSaveMessage(null);
             }}
             onCheckForUpdates={() => void checkForAppUpdates()}
+            onClassroomPetEnabledChange={(enabled) => {
+              setClassroomPetEnabledDraft(enabled);
+              setSettingsError(null);
+              setSettingsSaveMessage(null);
+            }}
             onGenerateCompanion={generateCompanion}
             onLanguageChange={(language) => {
               setLanguageDraft(language);

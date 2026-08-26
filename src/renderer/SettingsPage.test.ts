@@ -42,6 +42,7 @@ function renderSettings(
   appUpdateStatus: AppUpdateStatus,
   options: {
     appLanguage?: AppLanguage;
+    classroomPetEnabled?: boolean;
     isLoadingOrganization?: boolean;
     organization?: OrganizationSummary | null;
     organizationError?: string | null;
@@ -53,6 +54,7 @@ function renderSettings(
       autonomyMode: 'balanced',
       appUpdateError: null,
       appUpdateStatus,
+      classroomPetEnabled: options.classroomPetEnabled ?? true,
       companionBusy: null,
       companionError: null,
       companionStatus: COMPANION_STATUS,
@@ -81,6 +83,7 @@ function renderSettings(
       onAppLanguageChange: vi.fn(),
       onAutonomyModeChange: vi.fn(),
       onCheckForUpdates: vi.fn(),
+      onClassroomPetEnabledChange: vi.fn(),
       onGenerateCompanion: vi.fn(),
       onLanguageChange: vi.fn(),
       onMuteSystemAudioWhileSpeakingChange: vi.fn(),
@@ -162,6 +165,7 @@ describe('SettingsPage app language', () => {
           phase: 'up_to_date',
           targetVersion: null,
         },
+        classroomPetEnabled: true,
         companionBusy: null,
         companionError: null,
         companionStatus: COMPANION_STATUS,
@@ -189,6 +193,7 @@ describe('SettingsPage app language', () => {
         onAppLanguageChange: vi.fn(),
         onAutonomyModeChange: vi.fn(),
         onCheckForUpdates: vi.fn(),
+        onClassroomPetEnabledChange: vi.fn(),
         onGenerateCompanion: vi.fn(),
         onLanguageChange: vi.fn(),
         onMuteSystemAudioWhileSpeakingChange: vi.fn(),
@@ -209,6 +214,8 @@ describe('SettingsPage app language', () => {
     expect(markup).toContain('Lưu tùy chọn');
     expect(markup).toContain('Tắt âm thanh khác khi đang nói');
     expect(markup).toContain('Bạn đồng hành tùy chỉnh');
+    expect(markup).toContain('Tin nhắn từ thú cưng lớp học');
+    expect(markup).toContain('Tro không theo dõi ứng dụng');
     expect(markup).toContain('Còn 5 trên 5 trong tháng này');
     expect(markup).not.toContain('Custom companion');
   });
@@ -226,6 +233,41 @@ describe('SettingsPage voice audio preference', () => {
     expect(markup).toContain('Mute other audio while speaking');
     expect(markup).toContain('restore its previous mute state');
     expect(markup).toContain('type="checkbox"');
+  });
+});
+
+describe('SettingsPage classroom pet preference', () => {
+  const updateStatus: AppUpdateStatus = {
+    currentVersion: '0.1.0',
+    message: 'No updates found.',
+    phase: 'up_to_date',
+    targetVersion: null,
+  };
+
+  it('shows the explicit local-only privacy explanation', () => {
+    const markup = renderSettings(updateStatus);
+
+    expect(markup).toContain('Classroom pet messages');
+    expect(markup).toContain(
+      'During a live class, Tro can show occasional local encouragement.',
+    );
+    expect(markup).toContain(
+      'It does not watch apps, websites, cursor activity, or share pet messages with teachers.',
+    );
+    expect(markup).toMatch(
+      /id="settings-classroom-pet-enabled"[^>]*checked=""/u,
+    );
+  });
+
+  it('renders the controlled disabled state without checking the toggle', () => {
+    const markup = renderSettings(updateStatus, {
+      classroomPetEnabled: false,
+    });
+
+    expect(markup).toMatch(/id="settings-classroom-pet-enabled"/u);
+    expect(markup).not.toMatch(
+      /id="settings-classroom-pet-enabled"[^>]*checked=""/u,
+    );
   });
 });
 

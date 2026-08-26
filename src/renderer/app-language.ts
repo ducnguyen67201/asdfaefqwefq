@@ -72,6 +72,12 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Checking your membership…': 'Đang kiểm tra tư cách thành viên…',
   'Choose the language used for navigation, settings, and other Tro controls.':
     'Chọn ngôn ngữ dùng cho điều hướng, cài đặt và các thành phần điều khiển khác của Tro.',
+  'Classroom pet messages': 'Tin nhắn từ thú cưng lớp học',
+  'During a live class, Tro can show occasional local encouragement. It does not watch apps, websites, cursor activity, or share pet messages with teachers.':
+    'Trong lớp học trực tiếp, Tro có thể thỉnh thoảng gửi lời động viên ngay trên thiết bị. Tro không theo dõi ứng dụng, trang web, hoạt động con trỏ hoặc chia sẻ tin nhắn thú cưng với giáo viên.',
+  'Keep going': 'Tiếp tục nhé',
+  'While you wait': 'Trong lúc chờ',
+  'Nice work': 'Làm tốt lắm',
   'Choose how you talk with Tro': 'Chọn cách bạn trò chuyện với Tro',
   'Choose your spoken language, then give Tro the macOS permissions it needs to hear your request, use the computer, and confirm the result. You stay in control and can revoke permissions in System Settings at any time.':
     'Chọn ngôn ngữ nói, sau đó cấp cho Tro các quyền macOS cần thiết để nghe yêu cầu, sử dụng máy tính và xác nhận kết quả. Bạn luôn nắm quyền kiểm soát và có thể thu hồi quyền trong Cài đặt hệ thống bất cứ lúc nào.',

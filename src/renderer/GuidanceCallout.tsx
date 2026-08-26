@@ -10,11 +10,13 @@ import {
 import type {
   CompanionGuidance,
   CompanionInteraction,
+  CompanionPetNudge,
   CompanionResponseAction,
   CompanionResponseCard as CompanionResponse,
   CompanionSpeech,
 } from '../shared/contracts';
 
+import { ClassroomPetNudge as ClassroomPetNudgeCard } from './ClassroomPetNudge';
 import {
   getFocusedApprovalShortcut,
   isApprovalExpired,
@@ -102,6 +104,7 @@ export function GuidanceCallout() {
   const [error, setError] = useState<string | null>(null);
   const [guidance, setGuidance] = useState<CompanionGuidance | null>(null);
   const [response, setResponse] = useState<CompanionResponse | null>(null);
+  const [petNudge, setPetNudge] = useState<CompanionPetNudge | null>(null);
   const [interaction, setInteraction] =
     useState<CompanionInteraction | null>(null);
   const [approvalExpired, setApprovalExpired] = useState(false);
@@ -137,6 +140,10 @@ export function GuidanceCallout() {
     [],
   );
   useEffect(
+    () => window.troCompanion.onPetNudgeChange(setPetNudge),
+    [],
+  );
+  useEffect(
     () =>
       window.troCompanion.onSpeechChange((nextSpeech) => {
         setAudioStatus(null);
@@ -151,7 +158,9 @@ export function GuidanceCallout() {
       ? `${guidance.kind}:${guidance.target ?? ''}\u0000${guidance.message}`
       : response
         ? `response:${response.cardId}`
-        : null;
+        : petNudge
+          ? `pet:${petNudge.id}`
+          : null;
 
   useEffect(() => {
     if (presentationIdentityRef.current === presentationIdentity) return;
@@ -345,6 +354,7 @@ export function GuidanceCallout() {
   const calloutKind = getCompanionCalloutKind({
     hasGuidance: guidance !== null,
     hasInteraction: interaction !== null,
+    hasPetNudge: petNudge !== null,
     hasResponse: response !== null,
   });
   if (!calloutKind) return null;
@@ -532,6 +542,8 @@ export function GuidanceCallout() {
           onAction={(action) => void performResponseAction(action)}
           response={response}
         />
+      ) : calloutKind === 'pet_nudge' && petNudge ? (
+        <ClassroomPetNudgeCard nudge={petNudge} />
       ) : null}
     </>
   );

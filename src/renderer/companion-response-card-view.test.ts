@@ -45,6 +45,7 @@ describe('companion response card view', () => {
       getCompanionCalloutKind({
         hasGuidance: true,
         hasInteraction: true,
+        hasPetNudge: true,
         hasResponse: true,
       }),
     ).toBe('interaction');
@@ -52,6 +53,7 @@ describe('companion response card view', () => {
       getCompanionCalloutKind({
         hasGuidance: true,
         hasInteraction: false,
+        hasPetNudge: true,
         hasResponse: true,
       }),
     ).toBe('guidance');
@@ -59,9 +61,18 @@ describe('companion response card view', () => {
       getCompanionCalloutKind({
         hasGuidance: false,
         hasInteraction: false,
+        hasPetNudge: true,
         hasResponse: true,
       }),
     ).toBe('response');
+    expect(
+      getCompanionCalloutKind({
+        hasGuidance: false,
+        hasInteraction: false,
+        hasPetNudge: true,
+        hasResponse: false,
+      }),
+    ).toBe('pet_nudge');
   });
 
   it('announces streaming responses in a labelled, polite region', () => {

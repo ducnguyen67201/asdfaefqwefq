@@ -17,6 +17,7 @@ export type CompanionOverlayMode =
   | 'interaction'
   | 'guidance'
   | 'response'
+  | 'pet_nudge'
   | 'activity'
   | 'hidden';
 
@@ -24,6 +25,7 @@ export interface CompanionOverlayCandidates {
   activity?: unknown;
   guidance?: unknown;
   interaction?: unknown;
+  petNudge?: unknown;
   response?: CompanionResponseCard | null;
 }
 
@@ -38,6 +40,7 @@ export function selectCompanionOverlayMode(
   if (candidates.interaction) return 'interaction';
   if (candidates.guidance) return 'guidance';
   if (candidates.response) return 'response';
+  if (candidates.petNudge) return 'pet_nudge';
   if (candidates.activity) return 'activity';
   return 'hidden';
 }

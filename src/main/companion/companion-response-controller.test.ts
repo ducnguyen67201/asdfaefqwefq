@@ -191,12 +191,14 @@ describe('companion overlay selection', () => {
         activity: {},
         guidance: {},
         interaction: {},
+        petNudge: {},
         response: RESPONSE_CARD,
       },
     ],
-    ['guidance', { activity: {}, guidance: {}, response: RESPONSE_CARD }],
-    ['response', { activity: {}, response: RESPONSE_CARD }],
-    ['activity', { activity: {} }],
+    ['guidance', { activity: {}, guidance: {}, petNudge: {}, response: RESPONSE_CARD }],
+    ['response', { activity: {}, petNudge: {}, response: RESPONSE_CARD }],
+    ['pet_nudge', { activity: {}, petNudge: {} }],
+    ['activity', { activity: {}, petNudge: null }],
     ['hidden', {}],
   ] as const)('selects %s using strict overlay precedence', (mode, input) => {
     expect(selectCompanionOverlayMode(input)).toBe(mode);
