@@ -78,7 +78,7 @@ Generated contract identity:
 3. Live PostgreSQL testing found the v3 migration missing from the embedded migrator; it is now included as migration 025 after integrating `main`'s migration 024.
 4. Live durable-agent testing found the generic operation selector treated file content as an operation. Presence-based selectors now resolve their declared `presentValue`; a regression covers workspace writes.
 5. The existing v2 fake provider used obsolete generic function names/arguments. It now exercises the exact catalog schemas while preserving v2 worker/read compatibility.
-6. Windows CI exposed locale-dependent key ordering in the generator. Canonicalization now uses ordinal code-unit ordering so JSON bytes and digests are identical across runner platforms.
+6. Windows CI exposed locale-dependent key ordering and CRLF checkout conversion in generated artifacts. Canonicalization now uses ordinal code-unit ordering, and `.gitattributes` pins canonical JSON to LF so bytes and digests are identical across runner platforms.
 
 ## Tests Written
 
