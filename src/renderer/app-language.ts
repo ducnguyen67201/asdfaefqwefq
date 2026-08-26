@@ -772,6 +772,32 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'After the account exists and has the Student role, open Class workspaces, choose the class, then use People to add them.':
     'Sau khi tài khoản tồn tại và có vai trò Học sinh, hãy mở Không gian lớp học, chọn lớp rồi dùng mục Mọi người để thêm họ.',
   'Open Class workspaces': 'Mở Không gian lớp học',
+  'Home announcement': 'Thông báo trang chủ',
+  'Organization home banner': 'Biểu ngữ trang chủ của tổ chức',
+  'Upload one image for your organization. It replaces the Tro artwork when members open the Agent home screen, and the default returns whenever you remove it.':
+    'Tải lên một hình ảnh cho tổ chức. Hình này thay thế hình Tro khi thành viên mở trang chủ Trợ lý; hình mặc định sẽ trở lại khi bạn xóa hình tùy chỉnh.',
+  'PNG, JPEG, or WebP · maximum 750 KB':
+    'PNG, JPEG hoặc WebP · tối đa 750 KB',
+  'Organization home banner preview':
+    'Bản xem trước biểu ngữ trang chủ của tổ chức',
+  'Default Tro banner': 'Biểu ngữ Tro mặc định',
+  'Choose another image': 'Chọn hình ảnh khác',
+  'Choose an image': 'Chọn hình ảnh',
+  'Save banner': 'Lưu biểu ngữ',
+  'Saving banner…': 'Đang lưu biểu ngữ…',
+  'Use default Tro banner': 'Dùng biểu ngữ Tro mặc định',
+  'Choose a PNG, JPEG, or WebP image no larger than 750 KB.':
+    'Chọn ảnh PNG, JPEG hoặc WebP không lớn hơn 750 KB.',
+  'Home banner saved for this organization.':
+    'Đã lưu biểu ngữ trang chủ cho tổ chức này.',
+  'The default Tro banner is active.': 'Biểu ngữ Tro mặc định đang được dùng.',
+  'Home banner was not saved': 'Chưa lưu được biểu ngữ trang chủ',
+  'Tro could not save the home banner.':
+    'Tro không thể lưu biểu ngữ trang chủ.',
+  'Tro could not restore the default banner.':
+    'Tro không thể khôi phục biểu ngữ mặc định.',
+  'Announcement from {organization}': 'Thông báo từ {organization}',
+  'your organization': 'tổ chức của bạn',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

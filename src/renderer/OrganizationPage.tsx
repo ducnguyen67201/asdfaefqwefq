@@ -1,14 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import type {
   AppLanguage,
   OrganizationMember,
   OrganizationSummary,
 } from '../shared/contracts';
+import {
+  MAX_ORGANIZATION_HOME_BANNER_BYTES,
+  OrganizationHomeBannerImageDataUrlSchema,
+} from '../shared/contracts';
 
 import { appLocale, translate } from './app-language';
 
 const MEMBERS_PAGE_SIZE = 50;
+
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Tro could not read this image.'));
+    reader.onload = () => {
+      const result = OrganizationHomeBannerImageDataUrlSchema.safeParse(
+        reader.result,
+      );
+      if (!result.success) {
+        reject(new Error('Tro could not read this image.'));
+        return;
+      }
+      resolve(result.data);
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function formatJoinedDate(value: string, appLanguage: AppLanguage): string {
   return new Intl.DateTimeFormat(appLocale(appLanguage), {
@@ -35,6 +57,7 @@ export function OrganizationPage({
   onRefresh: () => Promise<OrganizationSummary | null | void>;
   organization: OrganizationSummary | null;
 }) {
+  const bannerInputId = useId();
   const [email, setEmail] = useState('');
   const [organizationNameDraft, setOrganizationNameDraft] = useState(
     organization?.name ?? '',
@@ -47,6 +70,11 @@ export function OrganizationPage({
   const [isAdding, setIsAdding] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerDraft, setBannerDraft] = useState<string | null>(
+    organization?.homeBanner?.imageDataUrl ?? null,
+  );
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
   const [cancellingMemberId, setCancellingMemberId] = useState<string | null>(
     null,
   );
@@ -142,6 +170,19 @@ export function OrganizationPage({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
+      setBannerDraft(organization?.homeBanner?.imageDataUrl ?? null);
+      setBannerError(null);
+      setIsSavingBanner(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [organization?.homeBanner?.imageDataUrl, organization?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setMembers([]);
       setMemberCount(0);
       setNotice(null);
@@ -197,6 +238,80 @@ export function OrganizationPage({
       }
     }
   }, [isOrganizer, onOrganizationChange, organization, organizationNameDraft, t]);
+
+  const selectBannerImage = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      if (
+        !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+        file.size < 1 ||
+        file.size > MAX_ORGANIZATION_HOME_BANNER_BYTES
+      ) {
+        setBannerError(
+          t('Choose a PNG, JPEG, or WebP image no larger than 750 KB.'),
+        );
+        return;
+      }
+      setBannerError(null);
+      setNotice(null);
+      try {
+        setBannerDraft(await readImageAsDataUrl(file));
+      } catch (readError) {
+        setBannerError(
+          readError instanceof Error
+            ? t(readError.message)
+            : t('Tro could not read this image.'),
+        );
+      }
+    },
+    [t],
+  );
+
+  const saveHomeBanner = useCallback(async () => {
+    if (!organization || !isOrganizer || !bannerDraft) return;
+    setIsSavingBanner(true);
+    setBannerError(null);
+    setNotice(null);
+    try {
+      const response = await window.tro.updateOrganization({
+        homeBannerImageDataUrl: bannerDraft,
+      });
+      onOrganizationChange(response.organization);
+      setBannerDraft(response.organization.homeBanner?.imageDataUrl ?? null);
+      setNotice(t('Home banner saved for this organization.'));
+    } catch (saveError) {
+      setBannerError(
+        saveError instanceof Error
+          ? saveError.message
+          : t('Tro could not save the home banner.'),
+      );
+    } finally {
+      setIsSavingBanner(false);
+    }
+  }, [bannerDraft, isOrganizer, onOrganizationChange, organization, t]);
+
+  const restoreDefaultHomeBanner = useCallback(async () => {
+    if (!organization || !isOrganizer) return;
+    setIsSavingBanner(true);
+    setBannerError(null);
+    setNotice(null);
+    try {
+      const response = await window.tro.updateOrganization({
+        homeBannerImageDataUrl: null,
+      });
+      onOrganizationChange(response.organization);
+      setBannerDraft(null);
+      setNotice(t('The default Tro banner is active.'));
+    } catch (saveError) {
+      setBannerError(
+        saveError instanceof Error
+          ? saveError.message
+          : t('Tro could not restore the default banner.'),
+      );
+    } finally {
+      setIsSavingBanner(false);
+    }
+  }, [isOrganizer, onOrganizationChange, organization, t]);
 
   const addMember = useCallback(async () => {
     if (!organization || organization.capacity.state === 'full') return;
@@ -333,6 +448,12 @@ export function OrganizationPage({
           <span>{profileError}</span>
         </div>
       )}
+      {bannerError && (
+        <div className="organization-alert organization-alert--error" role="alert">
+          <strong>{t('Home banner was not saved')}</strong>
+          <span>{bannerError}</span>
+        </div>
+      )}
       {isOrganizer && capacityFull && (
         <div className="organization-alert organization-alert--full" role="alert">
           <strong>{t('All seats are assigned')}</strong>
@@ -410,6 +531,78 @@ export function OrganizationPage({
               'You joined automatically with your verified Google email. You do not need to enter the organization code.',
             )}
           </p>
+        </section>
+      )}
+
+      {isOrganizer && (
+        <section
+          aria-labelledby="organization-home-banner-heading"
+          className="organization-home-banner"
+        >
+          <div className="organization-home-banner__copy">
+            <p className="eyebrow">{t('Home announcement')}</p>
+            <h2 id="organization-home-banner-heading">
+              {t('Organization home banner')}
+            </h2>
+            <p>
+              {t(
+                'Upload one image for your organization. It replaces the Tro artwork when members open the Agent home screen, and the default returns whenever you remove it.',
+              )}
+            </p>
+            <small>{t('PNG, JPEG, or WebP · maximum 750 KB')}</small>
+          </div>
+          <div className="organization-home-banner__preview">
+            {bannerDraft ? (
+              <img
+                alt={t('Organization home banner preview')}
+                src={bannerDraft}
+              />
+            ) : (
+              <div className="organization-home-banner__default">
+                <span aria-hidden="true">✦</span>
+                <strong>{t('Default Tro banner')}</strong>
+              </div>
+            )}
+          </div>
+          <div className="organization-home-banner__actions">
+            <label className="secondary-button" htmlFor={bannerInputId}>
+              {bannerDraft ? t('Choose another image') : t('Choose an image')}
+            </label>
+            <input
+              accept="image/png,image/jpeg,image/webp"
+              disabled={isSavingBanner}
+              id={bannerInputId}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] ?? null;
+                event.currentTarget.value = '';
+                void selectBannerImage(file);
+              }}
+              type="file"
+            />
+            <button
+              className="primary-button"
+              disabled={
+                isSavingBanner ||
+                !bannerDraft ||
+                bannerDraft === organization.homeBanner?.imageDataUrl
+              }
+              onClick={() => void saveHomeBanner()}
+              type="button"
+            >
+              {isSavingBanner ? t('Saving banner…') : t('Save banner')}
+            </button>
+            <button
+              className="organization-home-banner__reset"
+              disabled={
+                isSavingBanner ||
+                (organization.homeBanner === null && bannerDraft === null)
+              }
+              onClick={() => void restoreDefaultHomeBanner()}
+              type="button"
+            >
+              {t('Use default Tro banner')}
+            </button>
+          </div>
         </section>
       )}
 

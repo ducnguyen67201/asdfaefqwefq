@@ -3344,6 +3344,27 @@ h1 {
   box-shadow: 0 0 0 5px rgba(242, 201, 76, 0.16);
 }
 
+.agent-stage.agent-stage--organization-banner {
+  display: block;
+  height: 326px;
+  min-height: 326px;
+  padding: 0;
+  border-color: var(--border-strong);
+  background: var(--text);
+}
+
+.agent-stage.agent-stage--organization-banner::before,
+.agent-stage.agent-stage--organization-banner::after {
+  display: none;
+}
+
+.agent-stage__organization-banner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .task-composer,
 .conversation-card,
 .interaction-card,
@@ -4139,6 +4160,7 @@ h1 {
 
 .organization-capacity,
 .organization-profile,
+.organization-home-banner,
 .organization-managed-access,
 .organization-add-member,
 .organization-members,
@@ -4200,6 +4222,112 @@ h1 {
   color: var(--muted);
   font-size: 11px;
   text-align: right;
+}
+
+.organization-home-banner {
+  display: grid;
+  align-items: center;
+  gap: 20px;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 0.9fr);
+  margin-bottom: 18px;
+  padding: 22px;
+}
+
+.organization-home-banner__copy h2 {
+  margin: 4px 0 8px;
+  font-size: 18px;
+}
+
+.organization-home-banner__copy p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.organization-home-banner__copy small {
+  display: block;
+  margin-top: 10px;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.organization-home-banner__preview {
+  min-height: 146px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.organization-home-banner__preview img {
+  display: block;
+  width: 100%;
+  height: 146px;
+  object-fit: cover;
+}
+
+.organization-home-banner__default {
+  display: grid;
+  min-height: 146px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  background:
+    linear-gradient(105deg, rgba(22, 22, 20, 0.97), rgba(62, 50, 19, 0.9)),
+    var(--text);
+  color: #fffefa;
+  text-align: center;
+}
+
+.organization-home-banner__default span {
+  color: var(--accent);
+  font-size: 24px;
+}
+
+.organization-home-banner__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  grid-column: 1 / -1;
+}
+
+.organization-home-banner__actions input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.organization-home-banner__actions label.secondary-button {
+  cursor: pointer;
+}
+
+.organization-home-banner__reset {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.organization-home-banner__reset:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.organization-home-banner__reset:disabled,
+.organization-home-banner__actions label:has(+ input:disabled) {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .organization-managed-access {
@@ -6757,9 +6885,14 @@ h1 {
   }
 
   .organization-profile,
+  .organization-home-banner,
   .organization-add-member,
   .settings-organization-summary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .organization-home-banner__actions {
+    grid-column: 1;
   }
 
   .organization-profile .primary-button,

@@ -135,6 +135,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "canonical agent runtime contract v3",
             include_str!("../migrations/025_agent_runtime_contract_v3.sql"),
         ),
+        migration(
+            26,
+            "organization home banners",
+            include_str!("../migrations/026_organization_home_banners.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

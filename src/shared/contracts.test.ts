@@ -175,6 +175,8 @@ describe('companion customization contracts', () => {
 });
 
 describe('organization management contracts', () => {
+  const bannerDataUrl =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   const organization = {
     capacity: {
       assignedSeats: 10,
@@ -182,6 +184,7 @@ describe('organization management contracts', () => {
       remainingSeats: 0,
       state: 'full',
     },
+    homeBanner: null,
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Math Teachers',
     plan: 'pro',
@@ -253,6 +256,38 @@ describe('organization management contracts', () => {
       UpdateOrganizationRequestSchema.safeParse({
         name: 'Greenfield School',
         organizationId: organization.id,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts an image-only home banner or a default-banner reset', () => {
+    expect(
+      UpdateOrganizationRequestSchema.parse({
+        homeBannerImageDataUrl: bannerDataUrl,
+      }),
+    ).toEqual({ homeBannerImageDataUrl: bannerDataUrl });
+    expect(
+      UpdateOrganizationRequestSchema.parse({
+        homeBannerImageDataUrl: null,
+      }),
+    ).toEqual({ homeBannerImageDataUrl: null });
+    expect(
+      OrganizationCurrentResponseSchema.parse({
+        organization: {
+          ...organization,
+          homeBanner: { imageDataUrl: bannerDataUrl },
+        },
+      }).organization?.homeBanner,
+    ).toEqual({ imageDataUrl: bannerDataUrl });
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({
+        homeBannerImageDataUrl: 'data:image/svg+xml;base64,PHN2Zz4=',
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({
+        name: 'Math Teachers',
+        homeBannerImageDataUrl: bannerDataUrl,
       }).success,
     ).toBe(false);
   });

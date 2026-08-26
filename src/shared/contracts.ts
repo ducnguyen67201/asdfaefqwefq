@@ -2451,6 +2451,19 @@ export const ActivateMembershipRequestSchema = z.object({
 
 export const OrganizationRoleSchema = z.enum(['organizer', 'member']);
 
+export const MAX_ORGANIZATION_HOME_BANNER_BYTES = 750_000;
+const MAX_ORGANIZATION_HOME_BANNER_DATA_URL_CHARACTERS = 1_000_032;
+
+export const OrganizationHomeBannerImageDataUrlSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ORGANIZATION_HOME_BANNER_DATA_URL_CHARACTERS)
+  .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/u);
+
+export const OrganizationHomeBannerSchema = z
+  .object({ imageDataUrl: OrganizationHomeBannerImageDataUrlSchema })
+  .strict();
+
 export const OrganizationCapacitySchema = z
   .object({
     assignedSeats: z.number().int().nonnegative(),
@@ -2463,6 +2476,7 @@ export const OrganizationCapacitySchema = z
 export const OrganizationSummarySchema = z
   .object({
     capacity: OrganizationCapacitySchema,
+    homeBanner: OrganizationHomeBannerSchema.nullable(),
     id: z.string().uuid(),
     name: z.string().min(1).max(100),
     plan: PlanIdSchema,
@@ -2474,9 +2488,15 @@ export const OrganizationCurrentResponseSchema = z
   .object({ organization: OrganizationSummarySchema.nullable() })
   .strict();
 
-export const UpdateOrganizationRequestSchema = z
-  .object({ name: z.string().trim().min(1).max(100) })
-  .strict();
+export const UpdateOrganizationRequestSchema = z.union([
+  z.object({ name: z.string().trim().min(1).max(100) }).strict(),
+  z
+    .object({
+      homeBannerImageDataUrl:
+        OrganizationHomeBannerImageDataUrlSchema.nullable(),
+    })
+    .strict(),
+]);
 
 export const UpdateOrganizationResponseSchema = z
   .object({ organization: OrganizationSummarySchema })
@@ -2648,6 +2668,9 @@ export type InteractionMode = z.infer<typeof InteractionModeSchema>;
 export type AgentActivityKind = z.infer<typeof AgentActivityKindSchema>;
 export type AgentActivityUpdate = z.infer<typeof AgentActivityUpdateSchema>;
 export type MembershipStatus = z.infer<typeof MembershipStatusSchema>;
+export type OrganizationHomeBanner = z.infer<
+  typeof OrganizationHomeBannerSchema
+>;
 export type OrganizationSummary = z.infer<typeof OrganizationSummarySchema>;
 export type OrganizationCurrentResponse = z.infer<
   typeof OrganizationCurrentResponseSchema

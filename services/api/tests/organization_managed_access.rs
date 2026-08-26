@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 const MIGRATION: &str = include_str!("../migrations/021_organization_managed_access.sql");
 const PROFILE_MIGRATION: &str = include_str!("../migrations/022_organization_profile_settings.sql");
+const BANNER_MIGRATION: &str = include_str!("../migrations/026_organization_home_banners.sql");
 
 fn disposable_database_url() -> String {
     let value = std::env::var("TEST_DATABASE_URL")
@@ -115,6 +116,17 @@ fn migration_preserves_shared_rollback_and_organization_invariants() {
             "missing profile migration invariant: {required}"
         );
     }
+    for required in [
+        "home_banner_mime_type",
+        "home_banner_bytes",
+        "OCTET_LENGTH(home_banner_bytes) BETWEEN 1 AND 750000",
+        "organization.home_banner_updated",
+    ] {
+        assert!(
+            BANNER_MIGRATION.contains(required),
+            "missing banner migration invariant: {required}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -208,11 +220,65 @@ async fn organization_profile_updates_require_organizer_authority_and_hide_name_
         serde_json::json!({})
     );
 
+    let banner_data_url = "data:image/png;base64,iVBORw0KGgo=";
+    let updated_banner = repository
+        .update_home_banner(&organizer_id, Some(banner_data_url))
+        .await
+        .expect("organizer updates organization home banner");
+    assert_eq!(
+        updated_banner
+            .home_banner
+            .expect("custom banner summary")
+            .image_data_url,
+        banner_data_url
+    );
+    let stored_banner =
+        query("SELECT home_banner_mime_type,home_banner_bytes FROM organizations WHERE id=$1")
+            .bind(organization_id)
+            .fetch_one(&pool)
+            .await
+            .expect("read updated organization banner");
+    assert_eq!(
+        stored_banner.get::<Option<String>, _>("home_banner_mime_type"),
+        Some("image/png".to_owned())
+    );
+    assert_eq!(
+        stored_banner.get::<Option<Vec<u8>>, _>("home_banner_bytes"),
+        Some(vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a])
+    );
+    let banner_audit = query("SELECT action,detail FROM organization_audit_events WHERE organization_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1")
+        .bind(organization_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read organization banner audit");
+    assert_eq!(
+        banner_audit.get::<String, _>("action"),
+        "organization.home_banner_updated"
+    );
+    assert_eq!(
+        banner_audit.get::<serde_json::Value, _>("detail"),
+        serde_json::json!({"custom":true,"byteSize":8})
+    );
+
     let member_error = repository
         .update_name(&member_id, "Member rename")
         .await
         .expect_err("member cannot update organization name");
     assert_eq!(member_error.code, Some("organization_organizer_required"));
+    let member_banner_error = repository
+        .update_home_banner(&member_id, Some(banner_data_url))
+        .await
+        .expect_err("member cannot update organization home banner");
+    assert_eq!(
+        member_banner_error.code,
+        Some("organization_organizer_required")
+    );
+
+    let reset = repository
+        .update_home_banner(&organizer_id, None)
+        .await
+        .expect("organizer restores default banner");
+    assert!(reset.home_banner.is_none());
 
     query("DELETE FROM organization_audit_events WHERE organization_id=$1")
         .bind(organization_id)
