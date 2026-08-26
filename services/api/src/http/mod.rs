@@ -1,6 +1,7 @@
 mod admin;
 mod agent_runtime;
 mod classroom;
+mod connectors;
 mod core;
 mod knowledge;
 mod middleware;
@@ -35,6 +36,9 @@ async fn dispatch(
     body: Bytes,
 ) -> ApiResult<Response> {
     let path = uri.path();
+    if let Some(response) = connectors::handle_public(&state, &method, &uri).await? {
+        return Ok(response);
+    }
     if let Some(response) = admin::handle(&state, &method, &uri, &headers, &body).await? {
         return Ok(response);
     }
@@ -43,6 +47,11 @@ async fn dispatch(
             http::StatusCode::FORBIDDEN,
             "Browser-origin requests are not allowed.",
         ));
+    }
+    if let Some(response) =
+        connectors::handle_authenticated(&state, &method, &uri, &headers, &body).await?
+    {
+        return Ok(response);
     }
     if let Some(response) = organization::handle(&state, &method, &uri, &headers, &body).await? {
         return Ok(response);

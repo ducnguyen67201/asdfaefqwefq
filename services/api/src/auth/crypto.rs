@@ -168,6 +168,27 @@ pub struct AgentStateCrypto {
     keys: BTreeMap<u32, [u8; 32]>,
 }
 
+/// Connector credentials use the same versioned AES-GCM envelope primitive as
+/// agent state, but callers must bind every value to connector-specific AAD.
+/// Keeping a distinct type prevents connector tokens from being accidentally
+/// decrypted through a different trust domain.
+#[derive(Clone)]
+pub struct ConnectorTokenCrypto(AgentStateCrypto);
+
+impl ConnectorTokenCrypto {
+    pub fn parse(value: &str, current_version: u32) -> ApiResult<Self> {
+        AgentStateCrypto::parse(value, current_version).map(Self)
+    }
+
+    pub fn encrypt_json(&self, value: &Value, metadata: &Value) -> ApiResult<AgentEnvelope> {
+        self.0.encrypt_json(value, metadata)
+    }
+
+    pub fn decrypt_json(&self, envelope: &AgentEnvelope, metadata: &Value) -> ApiResult<Value> {
+        self.0.decrypt_json(envelope, metadata)
+    }
+}
+
 impl AgentStateCrypto {
     pub fn parse(value: &str, current_version: u32) -> ApiResult<Self> {
         let mut keys = BTreeMap::new();
@@ -344,5 +365,19 @@ mod tests {
             stable_json(&value).expect("json"),
             "{\"a\":{\"b\":3,\"d\":2},\"z\":1}"
         );
+    }
+
+    #[test]
+    fn connector_cipher_is_bound_to_connector_metadata() {
+        let crypto =
+            ConnectorTokenCrypto::parse("1:eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=", 1)
+                .expect("connector key");
+        let first = serde_json::json!({"kind":"connector_tokens","connectionId":"one"});
+        let second = serde_json::json!({"kind":"connector_tokens","connectionId":"two"});
+        let envelope = crypto
+            .encrypt_json(&serde_json::json!({"accessToken":"secret"}), &first)
+            .expect("encrypt");
+        assert!(crypto.decrypt_json(&envelope, &first).is_ok());
+        assert!(crypto.decrypt_json(&envelope, &second).is_err());
     }
 }

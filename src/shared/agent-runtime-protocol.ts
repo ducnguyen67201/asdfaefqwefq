@@ -185,6 +185,29 @@ export const ActionEffectV3Schema = z
   .strict()
   .meta({ id: 'ActionEffectV3' });
 
+export const ProposedActionV3Schema = z
+  .object({
+    action: z.enum([
+      'login', 'send', 'submit', 'upload', 'download', 'delete', 'purchase',
+      'install', 'run_command', 'write_file', 'system_permission', 'answer',
+      'guide', 'observe_screen', 'open_application', 'open_url', 'click_element',
+      'type_text', 'press_key', 'scroll', 'drag', 'read_file',
+      'record_activity_signal',
+    ]),
+    toolId: z.string().trim().min(3).max(100)
+      .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u).optional(),
+    operation: z.string().trim().min(1).max(100).optional(),
+    effect: ActionEffectV3Schema.optional(),
+    description: z.string().min(1).max(2_000),
+    target: z.string().max(2_000).optional(),
+    parameters: z.record(
+      z.string().min(1).max(100),
+      z.union([z.string().max(100_000), z.array(z.string().max(8_000)).max(100)]),
+    ).refine((parameters) => Object.keys(parameters).length <= 64),
+  })
+  .strict()
+  .meta({ id: 'ProposedActionV3' });
+
 export const WaitingOnV3Schema = z
   .discriminatedUnion('kind', [
     z
@@ -216,6 +239,7 @@ export const WaitingOnV3Schema = z
         kind: z.literal('approval'),
         interactionId: UuidSchema,
         actionDigest: DigestSchema,
+        action: ProposedActionV3Schema,
         consequence: z.string().min(1).max(2_000),
         expiresAt: TimestampSchema,
         since: TimestampSchema,
@@ -491,6 +515,17 @@ export const PermissionDecisionRequestV3Schema = z
   .strict()
   .meta({ id: 'PermissionDecisionRequestV3' });
 
+export const ApprovalDecisionRequestV3Schema = z
+  .object({
+    interactionId: UuidSchema,
+    actionDigest: DigestSchema,
+    expectedRunVersion: z.number().int().positive(),
+    clientCommandId: UuidSchema,
+    decision: z.enum(['approve', 'deny']),
+  })
+  .strict()
+  .meta({ id: 'ApprovalDecisionRequestV3' });
+
 export const AgentRuntimeErrorV3Schema = z
   .object({
     code: AgentRuntimeErrorCodeV3Schema,
@@ -517,6 +552,7 @@ export const AgentRuntimeProtocolDocumentV3Schema = z
     desktopResult: DesktopResultV3Schema,
     permissionWaitRequest: PermissionWaitRequestV3Schema,
     permissionDecisionRequest: PermissionDecisionRequestV3Schema,
+    approvalDecisionRequest: ApprovalDecisionRequestV3Schema,
     error: AgentRuntimeErrorV3Schema,
   })
   .strict()
@@ -534,6 +570,7 @@ export type DesktopInvocationV3 = z.infer<typeof DesktopInvocationV3Schema>;
 export type DesktopResultV3 = z.infer<typeof DesktopResultV3Schema>;
 export type PermissionWaitRequestV3 = z.infer<typeof PermissionWaitRequestV3Schema>;
 export type PermissionDecisionRequestV3 = z.infer<typeof PermissionDecisionRequestV3Schema>;
+export type ApprovalDecisionRequestV3 = z.infer<typeof ApprovalDecisionRequestV3Schema>;
 
 const terminalStates = new Set<AgentRunProjectionV3['state']>([
   'completed',
@@ -558,6 +595,12 @@ export function validateAgentRunProjectionV3(
     (parsed.waitingOn?.kind === 'permission')
   ) {
     throw new Error('Permission wait metadata does not match run state.');
+  }
+  if (
+    (parsed.state === 'awaiting_approval') !==
+    (parsed.waitingOn?.kind === 'approval')
+  ) {
+    throw new Error('Approval wait metadata does not match run state.');
   }
   return parsed;
 }

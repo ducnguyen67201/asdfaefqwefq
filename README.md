@@ -106,7 +106,8 @@ Not implemented yet:
 
 - Production application allowlists beyond current-window selection and the
   explicit exclusion of Tro's own windows.
-- Direct Gmail/Calendar connectors and app-specific independent verifiers.
+- Calendar and general third-party connector catalog expansion beyond the
+  canary Gmail MCP pilot.
 - Persistent screenshot-rich execution trajectory storage.
 - General-purpose media/music generation providers and release-credential
   provisioning. Custom cursor companion edits are the only implemented media
@@ -273,6 +274,9 @@ The API requires these production variables:
 - optional server-owned budget overrides documented in `.env.example`
 - optional `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and
   `ELEVENLABS_MODEL_ID`
+- optional canary-only connector configuration documented in
+  `docs/connectors.md`; connector OAuth credentials and encryption keys are
+  separate from Google identity sign-in and agent-state encryption
 
 Provider endpoints require the opaque session, atomically reserve spend before
 dispatch, enforce per-user message/task/day/month limits and bounded bodies,

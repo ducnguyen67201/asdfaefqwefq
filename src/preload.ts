@@ -31,6 +31,11 @@ import {
   DictationCommitResultSchema,
   TranscribeVoiceSegmentRequestSchema,
   CuaStatusSchema,
+  ConnectConnectorRequestSchema,
+  ConnectorAttemptRequestSchema,
+  ConnectorAttemptStatusSchema,
+  ConnectorListSchema,
+  DisconnectConnectorRequestSchema,
   DecideApprovalRequestSchema,
   MembershipStatusSchema,
   AddOrganizationMemberRequestSchema,
@@ -656,6 +661,29 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.getComputerStatus,
     );
     return CuaStatusSchema.parse(response);
+  },
+
+  async listConnectors() {
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listConnectors);
+    return ConnectorListSchema.parse(response);
+  },
+
+  async connectConnector(input) {
+    const request = ConnectConnectorRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.connectConnector, request);
+    return ConnectorAttemptStatusSchema.parse(response);
+  },
+
+  async getConnectorAttempt(input) {
+    const request = ConnectorAttemptRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getConnectorAttempt, request);
+    return ConnectorAttemptStatusSchema.parse(response);
+  },
+
+  async disconnectConnector(input) {
+    const request = DisconnectConnectorRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.disconnectConnector, request);
+    return ConnectorListSchema.parse(response);
   },
 
   async connectComputer() {

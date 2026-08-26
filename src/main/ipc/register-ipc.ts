@@ -16,6 +16,9 @@ import {
   DictationCommitResultSchema,
   GenerateCompanionImageRequestSchema,
   DecideApprovalRequestSchema,
+  ConnectConnectorRequestSchema,
+  ConnectorAttemptRequestSchema,
+  DisconnectConnectorRequestSchema,
   GetUsageBudgetRequestSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
@@ -76,6 +79,7 @@ import type { TaskApplicationService } from '../application/task-application-ser
 import type { GoogleAuthService } from '../auth/google-auth-service';
 import type { UsageBudgetService } from '../budget/usage-budget-service';
 import type { CompanionCustomizationService } from '../companion/companion-customization-service';
+import type { ConnectorClient } from '../connectors/connector-client';
 import type { CuaService } from '../cua/cua-service';
 import type { TaskHistoryService } from '../history/task-history-service';
 import type { ComputerPermissionCoordinator } from '../hosted/computer-permission-coordinator';
@@ -117,6 +121,7 @@ interface IpcServices {
   cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
   dictationService: Pick<DictationService, 'begin' | 'cancel' | 'commit'>;
+  connectorClient: ConnectorClient;
   computerPermissionCoordinator: Pick<
     ComputerPermissionCoordinator,
     'continueWithout' | 'openSettings' | 'refresh'
@@ -255,6 +260,8 @@ export function registerIpcHandlers(
     IPC_CHANNELS.configureVoice,
     IPC_CHANNELS.commitDictation,
     IPC_CHANNELS.connectComputer,
+    IPC_CHANNELS.connectConnector,
+    IPC_CHANNELS.disconnectConnector,
     IPC_CHANNELS.companionReportSpeechPlayback,
     IPC_CHANNELS.companionActivateCandidate,
     IPC_CHANNELS.companionCustomizationStatus,
@@ -267,6 +274,8 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getAppPreferences,
     IPC_CHANNELS.getAppUpdateStatus,
     IPC_CHANNELS.getComputerStatus,
+    IPC_CHANNELS.getConnectorAttempt,
+    IPC_CHANNELS.listConnectors,
     IPC_CHANNELS.getAuthStatus,
     IPC_CHANNELS.getMembershipStatus,
     IPC_CHANNELS.getOrganization,
@@ -419,6 +428,29 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.getOrganization, async (event) => {
     await assertMembershipAuthorizedSender(event, mainWindow, services);
     return services.organizationClient.getCurrent();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.listConnectors, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.connectorClient.list();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.connectConnector, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = ConnectConnectorRequestSchema.parse(input);
+    return services.connectorClient.connect(request.catalogKey);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getConnectorAttempt, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = ConnectorAttemptRequestSchema.parse(input);
+    return services.connectorClient.attempt(request.attemptId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.disconnectConnector, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = DisconnectConnectorRequestSchema.parse(input);
+    return services.connectorClient.disconnect(request.connectionId);
   });
 
   ipcMain.handle(

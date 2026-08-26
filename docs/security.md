@@ -113,6 +113,15 @@ a least-privilege database role, access controls, and an explicit retention
 policy. Rich screenshot or document trajectory storage remains out of scope and
 should be opt-in and encrypted.
 
+Connected-application OAuth tokens are a separate secret class. The Rust API
+stores them in connector-specific, versioned AES-GCM envelopes whose
+authenticated metadata binds the user, connection, catalog entry, and schema
+version. Connector tokens, OAuth codes, client secrets, arguments, and results
+must never enter renderer IPC or logs. Private MCP results are treated as
+untrusted external content and require an exact approval before they are added
+to model context. See `docs/connectors.md` for the rollout and unknown-outcome
+policy.
+
 Knowledge Spaces are the intentional exception for user-uploaded reusable
 Source content and structured Activity/evidence data. Source bytes are stored in
 a private S3-compatible bucket and extracted bounded chunks in PostgreSQL.

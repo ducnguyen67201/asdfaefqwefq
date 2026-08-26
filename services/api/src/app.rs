@@ -6,11 +6,12 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     agent::AgentService,
     auth::{
-        AccessCodeRepository, AgentStateCrypto, GoogleVerifier, OrganizationRepository,
-        SessionRepository,
+        AccessCodeRepository, AgentStateCrypto, ConnectorTokenCrypto, GoogleVerifier,
+        OrganizationRepository, SessionRepository,
     },
     classroom::ClassroomService,
     config::Config,
+    connectors::ConnectorService,
     db,
     error::ApiError,
     http,
@@ -34,6 +35,7 @@ pub struct AppState {
     pub google: GoogleVerifier,
     pub knowledge: KnowledgeService,
     pub classroom: ClassroomService,
+    pub connectors: Option<ConnectorService>,
     pub agent: Option<AgentService>,
     pub shutdown: CancellationToken,
 }
@@ -57,6 +59,19 @@ impl AppState {
         };
         let knowledge = KnowledgeService::new(pool.clone(), store, &config.session_token_hmac_key);
         let classroom = ClassroomService::new(pool.clone(), &config.session_token_hmac_key);
+        let connectors = match &config.connectors.encryption_keys {
+            Some(keys) => Some(ConnectorService::new(
+                pool.clone(),
+                ConnectorTokenCrypto::parse(
+                    keys,
+                    config.connectors.current_encryption_key_version,
+                )?,
+                client.clone(),
+                config.connectors.clone(),
+                &config.session_token_hmac_key,
+            )?),
+            None => None,
+        };
         let agent = match &config.agent_runtime.encryption_keys {
             Some(keys) => Some(AgentService::new(
                 pool.clone(),
@@ -66,6 +81,7 @@ impl AppState {
                 &config.session_token_hmac_key,
                 &config.openai_models,
                 config.cost_guard.mode,
+                connectors.clone(),
             )),
             None => None,
         };
@@ -91,6 +107,7 @@ impl AppState {
             responses,
             knowledge,
             classroom,
+            connectors,
             agent,
             shutdown: CancellationToken::new(),
         })
@@ -119,6 +136,19 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}}}
+            }
+        });
+    }
+    if let Some(connectors) = state.connectors.clone() {
+        let token = cancel.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                Duration::from_secs(60),
+            );
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=connectors.maintain().await{tracing::error!(event="connector.maintenance.failed",error=%error);}}}
             }
         });
     }

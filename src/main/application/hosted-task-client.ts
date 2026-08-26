@@ -68,6 +68,24 @@ export function projectHostedTask(
         evidence: previous?.outcomes?.evidence ?? [],
       }
     : previous?.outcomes ?? null;
+  const approvalWait = lifecycle?.waitingOn?.kind === 'approval'
+    ? lifecycle.waitingOn
+    : null;
+  const pendingInteraction = approvalWait
+    ? {
+        id: approvalWait.interactionId,
+        taskId: run.taskId,
+        kind: 'approval' as const,
+        prompt: approvalWait.consequence,
+        consequence: approvalWait.consequence,
+        actionDigest: approvalWait.actionDigest,
+        action: approvalWait.action,
+        createdAt: approvalWait.since,
+        expiresAt: approvalWait.expiresAt,
+      }
+    : previous?.pendingInteraction?.kind === 'approval'
+      ? null
+      : previous?.pendingInteraction ?? null;
   return TaskSnapshotSchema.parse({
     taskId: run.taskId,
     request: run.request,
@@ -75,7 +93,7 @@ export function projectHostedTask(
     lifecycle,
     goal: previous?.goal ?? null,
     messages: withFinal.slice(-200),
-    pendingInteraction: previous?.pendingInteraction ?? null,
+    pendingInteraction,
     approvalGrant: null,
     progress: previous?.progress ?? null,
     outcomes,
@@ -352,10 +370,16 @@ export class HostedTaskClient {
   async decideApproval(
     runId: string,
     input: { interactionId: string; actionDigest: string; decision: 'approve' | 'deny' },
+    expectedRunVersion?: number,
   ): Promise<void> {
-    await this.json(`/v1/tasks/${runId}/approval`, {
+    const v3 = this.v3RunIds.has(runId) && expectedRunVersion;
+    await this.json(`${v3 ? '/v1/agent-runtime/v3/tasks' : '/v1/tasks'}/${runId}/approval`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify(v3 ? {
+        ...input,
+        clientCommandId: randomUUID(),
+        expectedRunVersion,
+      } : input),
     });
   }
 

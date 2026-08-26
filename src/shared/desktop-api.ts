@@ -27,6 +27,11 @@ import type {
   ConfigureVoiceRequest,
   CommitDictationRequest,
   DictationCommitResult,
+  ConnectConnectorRequest,
+  ConnectorAttemptRequest,
+  ConnectorAttemptStatus,
+  ConnectorList,
+  DisconnectConnectorRequest,
   TranscribeVoiceSegmentRequest,
   CuaStatus,
   DecideApprovalRequest,
@@ -140,11 +145,15 @@ export const IPC_CHANNELS = {
   commitDictation: 'voice:dictation:commit',
   configureVoice: 'voice:configure',
   connectComputer: 'cua:connect',
+  connectConnector: 'connectors:connect',
+  disconnectConnector: 'connectors:disconnect',
   transcribeVoiceSegment: 'voice:transcribe-segment',
   decideApproval: 'task:decide-approval',
   getAppPreferences: 'preferences:get',
   getAppUpdateStatus: 'update:status',
   getComputerStatus: 'cua:status',
+  getConnectorAttempt: 'connectors:attempt',
+  listConnectors: 'connectors:list',
   getAuthStatus: 'auth:status',
   getMembershipStatus: 'membership:status',
   getOrganization: 'organization:get',
@@ -233,6 +242,8 @@ export interface DesktopApi {
     request: CommitDictationRequest,
   ): Promise<DictationCommitResult>;
   connectComputer(): Promise<CuaStatus>;
+  connectConnector(request: ConnectConnectorRequest): Promise<ConnectorAttemptStatus>;
+  disconnectConnector(request: DisconnectConnectorRequest): Promise<ConnectorList>;
   transcribeVoiceSegment(
     request: TranscribeVoiceSegmentRequest,
   ): Promise<VoiceSegmentTranscription>;
@@ -249,6 +260,8 @@ export interface DesktopApi {
   getAppPreferences(): Promise<AppPreferences>;
   getAppUpdateStatus(): Promise<AppUpdateStatus>;
   getComputerStatus(): Promise<CuaStatus>;
+  getConnectorAttempt(request: ConnectorAttemptRequest): Promise<ConnectorAttemptStatus>;
+  listConnectors(): Promise<ConnectorList>;
   getCompanionCustomizationStatus(): Promise<CompanionCustomizationStatus>;
   getMembershipStatus(): Promise<MembershipStatus>;
   getOrganization(): Promise<OrganizationCurrentResponse>;

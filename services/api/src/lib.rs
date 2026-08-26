@@ -17,6 +17,7 @@ pub mod auth;
 pub mod classroom;
 pub mod cli;
 pub mod config;
+pub mod connectors;
 pub mod db;
 pub mod desktop_engine;
 pub mod error;

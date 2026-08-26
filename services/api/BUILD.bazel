@@ -83,6 +83,13 @@ trocode_rust_integration_test(
 )
 
 trocode_rust_integration_test(
+    name = "connectors_compat_test",
+    size = "small",
+    src = "tests/connectors_compat.rs",
+    compile_data = glob(["tests/fixtures/connectors/*"]),
+)
+
+trocode_rust_integration_test(
     name = "google_auth_compat_test",
     size = "small",
     src = "tests/google_auth_compat.rs",
@@ -145,6 +152,7 @@ RUST_TEST_TARGETS = [
     ":api_lib_test",
     ":classroom_e2e_test",
     ":contract_corpus_test",
+    ":connectors_compat_test",
     ":google_auth_compat_test",
     ":http_compat_test",
     ":ingestion_test",
@@ -160,7 +168,7 @@ rust_test(
         normal_dev = True,
         proc_macro_dev = True,
     ),
-    compile_data = ["//:test/fixtures/intent-authorization-cases.json"],
+    compile_data = ["//:test/fixtures/intent-authorization-cases.json"] + glob(["tests/fixtures/**/*"]),
     crate = ":api_lib",
     edition = crate_edition(),
     lint_config = ":rust_lints",

@@ -81,8 +81,19 @@ such as browser navigation therefore do not acquire computer-use permissions.
 
 If a consequential operation begins and connectivity is lost, the result is
 unknown and is never retried. Exact approval is bound to the full normalized
-action digest and is consumed once. Clarification and approval cards are local
-presentation state; their answers return to the same Rust run.
+action digest and is consumed once. Clarification cards and desktop-action
+approval cards are local presentation state. Connector approval waits are
+durable Rust projections so they survive an Electron reconnect; all answers
+return to the same Rust run.
+
+User connectors are a second executor beside the desktop worker. The Rust API
+owns the verified catalog, separate OAuth credentials, encrypted user tokens,
+remote Streamable HTTP MCP client, immutable schema snapshots, exact approval,
+and one-call execution receipt. Responses receives only small deferred
+namespaces plus `tool_search`; it never receives the MCP authorization token.
+The renderer sees safe connection status through a narrow main-process client,
+and personal connector namespaces are omitted from every classroom
+Activity/Attempt run. See `docs/connectors.md`.
 
 ## Provider and persistence ownership
 

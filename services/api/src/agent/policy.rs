@@ -56,12 +56,18 @@ static SAFE_DEFAULTS_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         .expect("valid safe-defaults pattern")
 });
 static CREATE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:add|book|build|create|draft|make|schedule|write)\b")
+    Regex::new(r"(?i)\b(?:add|book|build|create|make|schedule|write)\b")
         .expect("valid create pattern")
 });
+static DRAFT_EMAIL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bdraft\s+(?:(?:a|an|the|my)\s+)?(?:email|mail|message|reply)\b")
+        .expect("valid draft-email pattern")
+});
 static UPDATE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:change|edit|fill|fix|implement|modify|refactor|replace|update)\b")
-        .expect("valid update pattern")
+    Regex::new(
+        r"(?i)\b(?:change|edit|fill|fix|implement|label|modify|organize|refactor|replace|update)\b",
+    )
+    .expect("valid update pattern")
 });
 static RENAME_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\brename\b").expect("valid rename pattern"));
@@ -139,7 +145,7 @@ pub enum SensitiveDataTransfer {
     Unknown(String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProposedAction {
     pub action: String,
@@ -277,7 +283,7 @@ pub fn compile_intent_authorization(
     };
     let permits_safe_defaults = SAFE_DEFAULTS_PATTERN.is_match(request);
     let mut grants = Vec::new();
-    if CREATE_PATTERN.is_match(request) {
+    if CREATE_PATTERN.is_match(request) || DRAFT_EMAIL_PATTERN.is_match(request) {
         add_grant(
             &mut grants,
             "create_resource",
@@ -487,6 +493,10 @@ fn resource_kinds_for(request: &str) -> Vec<String> {
         (
             "calendar_event",
             r"(?i)\b(?:appointment|calendar|event|meeting)\b",
+        ),
+        (
+            "email",
+            r"(?i)\b(?:draft|email|gmail|inbox|mail|message|thread)\b",
         ),
         ("spreadsheet_row", r"(?i)\b(?:row|rows)\b"),
         ("spreadsheet", r"(?i)\b(?:sheet|spreadsheet|workbook)\b"),
@@ -1099,6 +1109,9 @@ fn hosted_tool_supports(action: &ProposedAction) -> bool {
     let (Some(tool), Some(operation)) = (&action.tool_id, &action.operation) else {
         return false;
     };
+    if tool == "connector.gmail" {
+        return crate::connectors::catalog::tool("gmail", operation).is_some();
+    }
     tool_catalog::by_id(tool)
         .is_some_and(|candidate| candidate.operations.iter().any(|value| value == operation))
 }

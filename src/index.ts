@@ -73,6 +73,7 @@ import {
   registerGlobalNumberedChoiceShortcuts,
   type GlobalNumberedChoiceShortcuts,
 } from './main/companion/global-numbered-choice-shortcuts';
+import { ConnectorClient } from './main/connectors/connector-client';
 import { CuaService } from './main/cua/cua-service';
 import { createRustDesktopEngineClient } from './main/engine/rust-desktop-engine-client';
 import { HostedTaskHistoryStore } from './main/history/hosted-task-history-store';
@@ -260,6 +261,11 @@ const knowledgeSpaceClient = new KnowledgeSpaceClient(
 const organizationClient = new OrganizationClient(
   trocodeApiBaseUrl,
   () => authService.getAccessToken(),
+);
+const connectorClient = new ConnectorClient(
+  trocodeApiBaseUrl,
+  () => authService.getAccessToken(),
+  (url) => shell.openExternal(url, { activate: true }),
 );
 const activityContextService = new ActivityContextService(knowledgeSpaceClient);
 const activityProgressReporter = new ActivityProgressReporter(knowledgeSpaceClient);
@@ -2121,6 +2127,7 @@ const createWindow = (): void => {
     companionCustomizationService,
     cuaService,
     dictationService,
+    connectorClient,
     classroomDirectiveService,
     classroomSessionService,
     cancelActiveTasks: () => taskApplicationService.cancelActiveTasks(),

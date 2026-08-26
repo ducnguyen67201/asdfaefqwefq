@@ -1,0 +1,15 @@
+{
+  "name": "label_message",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "messageId": { "type": "string" },
+      "labelIds": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "newRequiredField": { "type": "string" }
+    },
+    "required": ["messageId", "labelIds", "newRequiredField"]
+  }
+}
