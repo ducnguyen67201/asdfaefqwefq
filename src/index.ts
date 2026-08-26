@@ -41,7 +41,11 @@ import { TaskApplicationService } from './main/application/task-application-serv
 import { EncryptedAuthSessionStore } from './main/auth/auth-session-store';
 import { GoogleAuthService } from './main/auth/google-auth-service';
 import { LocalOAuthBrowserFlow } from './main/auth/local-oauth-browser-flow';
-import { keepWindowAliveForBackgroundVoice } from './main/background-app-lifecycle';
+import {
+  configureMacOSDock,
+  keepWindowAliveForBackgroundVoice,
+  registerBackgroundTrayActivation,
+} from './main/background-app-lifecycle';
 import { UsageBudgetService } from './main/budget/usage-budget-service';
 import { CompanionCustomizationService } from './main/companion/companion-customization-service';
 import {
@@ -1751,14 +1755,6 @@ function configureMicrophonePermissions(trustedWindow: BrowserWindow): void {
   );
 }
 
-function configureDock(): void {
-  const dock = app.dock;
-  if (process.platform !== 'darwin' || !dock) return;
-
-  void dock.show();
-  dock.setIcon(runtimeAppIconPath());
-}
-
 function runtimeAppIconPath(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'trocode-app-icon.png')
@@ -1930,27 +1926,27 @@ function ensureBackgroundTray(): void {
     .resize({ height: 18, width: 18 });
   backgroundTray = new Tray(trayIcon);
   backgroundTray.setToolTip('Tro');
-  backgroundTray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            revealWindow(mainWindow);
-            return;
-          }
-          createWindow();
-        },
-        label: 'Show Tro',
-      },
-      { type: 'separator' },
-      {
-        click: () => beginShutdown(),
-        label: 'Quit Tro',
-      },
-    ]),
-  );
-  backgroundTray.on('double-click', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) revealWindow(mainWindow);
+  const revealMainWindow = (): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      revealWindow(mainWindow);
+      return;
+    }
+    createWindow();
+  };
+  const backgroundMenu = Menu.buildFromTemplate([
+    {
+      click: revealMainWindow,
+      label: 'Show Tro',
+    },
+    { type: 'separator' },
+    {
+      click: () => beginShutdown(),
+      label: 'Quit Tro',
+    },
+  ]);
+  registerBackgroundTrayActivation(backgroundTray, backgroundMenu, {
+    platform: process.platform,
+    reveal: revealMainWindow,
   });
 }
 
@@ -1999,7 +1995,10 @@ const createWindow = (): void => {
   removeMainWindowCloseBehavior?.();
   removeMainWindowCloseBehavior = keepWindowAliveForBackgroundVoice(
     nextMainWindow,
-    { isShuttingDown: () => isShuttingDown },
+    {
+      isShuttingDown: () => isShuttingDown,
+      platform: process.platform,
+    },
   );
 
   unregisterIpcHandlers?.();
@@ -2513,7 +2512,7 @@ const createGuidanceWindow = (): void => {
 // Some APIs can only be used after this event occurs.
 if (hasSingleInstanceLock) {
   void app.whenReady().then(async () => {
-    configureDock();
+    await configureMacOSDock(app, process.platform, runtimeAppIconPath());
     registerCompanionAudioProtocol();
     registerCompanionImageProtocol();
     appUpdateService.start();
