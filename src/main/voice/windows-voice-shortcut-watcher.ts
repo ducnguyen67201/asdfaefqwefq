@@ -4,6 +4,25 @@ import type { VoiceShortcutEvent } from '../../shared/contracts';
 
 import { parseMacOSVoiceShortcutOutput } from './macos-voice-shortcut-watcher';
 
+export const WINDOWS_VOICE_SHORTCUT_ACTIVE_POLL_INTERVAL_MS = 20;
+export const WINDOWS_VOICE_SHORTCUT_IDLE_POLL_INTERVAL_MS = 100;
+
+interface WindowsVoiceShortcutPollState {
+  leftAltDown: boolean;
+  leftControlDown: boolean;
+  wasDown: boolean;
+}
+
+export function windowsVoiceShortcutPollInterval({
+  leftAltDown,
+  leftControlDown,
+  wasDown,
+}: WindowsVoiceShortcutPollState): number {
+  return leftAltDown || leftControlDown || wasDown
+    ? WINDOWS_VOICE_SHORTCUT_ACTIVE_POLL_INTERVAL_MS
+    : WINDOWS_VOICE_SHORTCUT_IDLE_POLL_INTERVAL_MS;
+}
+
 const WATCH_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -26,8 +45,13 @@ while ($true) {
     [Console]::Out.WriteLine('released')
     [Console]::Out.Flush()
   }
+  $pollInterval = if ($leftControlDown -or $leftAltDown -or $wasDown) {
+    ${WINDOWS_VOICE_SHORTCUT_ACTIVE_POLL_INTERVAL_MS}
+  } else {
+    ${WINDOWS_VOICE_SHORTCUT_IDLE_POLL_INTERVAL_MS}
+  }
   $wasDown = $isDown
-  Start-Sleep -Milliseconds 20
+  Start-Sleep -Milliseconds $pollInterval
 }
 `;
 

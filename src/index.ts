@@ -44,6 +44,7 @@ import { LocalOAuthBrowserFlow } from './main/auth/local-oauth-browser-flow';
 import { keepWindowAliveForBackgroundVoice } from './main/background-app-lifecycle';
 import { UsageBudgetService } from './main/budget/usage-budget-service';
 import { CompanionCustomizationService } from './main/companion/companion-customization-service';
+import { nextCompanionFollowSchedule } from './main/companion/companion-follow-policy';
 import {
   isAuthenticatedCompanionSession,
   toCompanionInteraction,
@@ -189,8 +190,6 @@ const hasSingleInstanceLock = initializeSingleInstance(app, () => {
   if (app.isReady()) {
     createWindow();
     createCompanionWindow();
-    createGuidanceWindow();
-    createVoiceIslandWindow();
   }
 });
 
@@ -465,7 +464,6 @@ const appUpdateService = new AppUpdateService({
 const COMPANION_SIZE = { height: 44, width: 44 } as const;
 const COMPANION_GAP = 8;
 const COMPANION_GLIDE_DURATION_MS = 360;
-const COMPANION_FOLLOW_INTERVAL_MS = 16;
 const GUIDANCE_CALLOUT_SIZE = { height: 176, width: 380 } as const;
 const GUIDANCE_TARGET_MARKER_SIZE = { height: 76, width: 76 } as const;
 const RESPONSE_CALLOUT_SIZE = { height: 360, width: 420 } as const;
@@ -486,6 +484,11 @@ interface CompanionGlide {
   signal: AbortSignal;
   startedAt: number;
   to: Point;
+}
+
+interface CompanionFollowActivity {
+  cursorMoved: boolean;
+  gliding: boolean;
 }
 
 interface DesktopPresentation {
@@ -513,9 +516,11 @@ let companionState: CompanionState = 'idle';
 let activeCompanionVoiceActivity: CompanionVoiceActivity | null = null;
 const activeDesktopControlTasks = new Set<string>();
 const desktopControlStartedAt = new Map<string, number>();
-let companionFollowTimer: ReturnType<typeof setInterval> | null = null;
+let companionFollowTimer: ReturnType<typeof setTimeout> | null = null;
 let companionGlide: CompanionGlide | null = null;
 let companionPinnedPosition: Point | null = null;
+let companionFollowActiveUntil = 0;
+let lastObservedCursor: Point | null = null;
 let activeGuidanceTargetBounds: Rectangle | null = null;
 let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
@@ -549,10 +554,12 @@ const companionCustomizationService = new CompanionCustomizationService({
 });
 
 function stopCompanionFollowing(): void {
-  if (companionFollowTimer) clearInterval(companionFollowTimer);
+  if (companionFollowTimer) clearTimeout(companionFollowTimer);
   companionFollowTimer = null;
   cancelCompanionGlide(isShuttingDown ? createAbortError() : undefined);
   companionPinnedPosition = null;
+  companionFollowActiveUntil = 0;
+  lastObservedCursor = null;
   lastCompanionPosition = null;
 }
 
@@ -591,14 +598,19 @@ function updateCompanionVoiceActivity(
   activeCompanionVoiceActivity = activity;
   presentationCoordinator.handleVoiceActivity(activity);
   if (!auxiliaryWindowsEnabled) return;
-  if (!voiceIslandWindow || voiceIslandWindow.isDestroyed()) return;
-
-  sendCompanionVoiceActivity();
   if (!activity) {
-    voiceIslandWindow.hide();
+    if (voiceIslandWindow && !voiceIslandWindow.isDestroyed()) {
+      sendCompanionVoiceActivity();
+      voiceIslandWindow.hide();
+    }
+    return;
+  }
+  if (!voiceIslandWindow || voiceIslandWindow.isDestroyed()) {
+    createVoiceIslandWindow();
     return;
   }
 
+  sendCompanionVoiceActivity();
   positionVoiceIsland();
   voiceIslandWindow.showInactive();
 }
@@ -1193,6 +1205,7 @@ async function presentCompanionAction(
     };
     signal.addEventListener('abort', abortListener, { once: true });
     positionCompanion();
+    wakeCompanionFollowing();
   });
 
   if (isPointPresentation) {
@@ -1350,10 +1363,6 @@ function enableAuthenticatedAuxiliaryWindows(): void {
   if (isShuttingDown) return;
   auxiliaryWindowsEnabled = true;
   createCompanionWindow();
-  createDesktopControlIndicatorWindow();
-  createGuidanceWindow();
-  createGuidanceTargetWindow();
-  createVoiceIslandWindow();
   ensureGlobalVoiceShortcut();
 }
 
@@ -2162,25 +2171,28 @@ function applyCompanionScreenPosition(position: Point): void {
   sendCompanionGuidanceVisual(position);
 }
 
-function positionCompanion(): void {
-  if (!companionWindow || companionWindow.isDestroyed()) return;
+function positionCompanion(now = Date.now()): CompanionFollowActivity {
+  if (!companionWindow || companionWindow.isDestroyed()) {
+    return { cursorMoved: false, gliding: false };
+  }
 
   const glide = companionGlide;
   if (glide) {
-    const progress =
-      (Date.now() - glide.startedAt) / COMPANION_GLIDE_DURATION_MS;
+    const progress = (now - glide.startedAt) / COMPANION_GLIDE_DURATION_MS;
     const position = interpolateCompanionPosition(glide.from, glide.to, progress);
     applyCompanionScreenPosition(position);
     if (progress >= 1) settleCompanionGlide();
-    return;
+    return { cursorMoved: false, gliding: progress < 1 };
   }
 
   if (companionPinnedPosition) {
     applyCompanionScreenPosition(companionPinnedPosition);
-    return;
+    return { cursorMoved: false, gliding: false };
   }
 
   const cursor = screen.getCursorScreenPoint();
+  const cursorMoved = !pointEqual(lastObservedCursor, cursor);
+  lastObservedCursor = cursor;
   const display = screen.getDisplayNearestPoint(cursor);
   applyCompanionScreenPosition(
     placeCompanionNearCursor(
@@ -2190,6 +2202,33 @@ function positionCompanion(): void {
       COMPANION_GAP,
     ),
   );
+  return { cursorMoved, gliding: false };
+}
+
+function scheduleCompanionFollowing(delayMs: number): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+
+  companionFollowTimer = setTimeout(runCompanionFollowLoop, delayMs);
+}
+
+function runCompanionFollowLoop(): void {
+  companionFollowTimer = null;
+  const now = Date.now();
+  const activity = positionCompanion(now);
+  const schedule = nextCompanionFollowSchedule({
+    activeUntil: companionFollowActiveUntil,
+    cursorMoved: activity.cursorMoved,
+    gliding: activity.gliding,
+    now,
+  });
+  companionFollowActiveUntil = schedule.activeUntil;
+  scheduleCompanionFollowing(schedule.delayMs);
+}
+
+function wakeCompanionFollowing(): void {
+  if (companionFollowTimer) clearTimeout(companionFollowTimer);
+  companionFollowTimer = null;
+  scheduleCompanionFollowing(0);
 }
 
 function createDesktopControlIndicatorWindow(): void {
@@ -2318,10 +2357,7 @@ const createCompanionWindow = (): void => {
 
   void companionWindow.loadURL(companionUrl.toString());
   positionCompanion();
-  companionFollowTimer = setInterval(
-    positionCompanion,
-    COMPANION_FOLLOW_INTERVAL_MS,
-  );
+  wakeCompanionFollowing();
 };
 
 function positionVoiceIsland(): void {
@@ -2567,8 +2603,6 @@ if (hasSingleInstanceLock) {
     // dock icon is clicked and there are no other windows open.
     createWindow();
     createCompanionWindow();
-    createGuidanceWindow();
-    createVoiceIslandWindow();
   });
 
   const exitDevelopmentProcess = (): void => {
