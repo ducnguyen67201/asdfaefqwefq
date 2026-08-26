@@ -45,16 +45,18 @@ describe('registerGlobalVoiceShortcut', () => {
       },
     });
 
-    listener?.({ action: 'pressed', source: 'global' });
-    listener?.({ action: 'released', source: 'global' });
+    listener?.({ action: 'pressed', mode: 'task', source: 'global' });
+    listener?.({ action: 'released', mode: 'task', source: 'global' });
 
     expect(registry.register).not.toHaveBeenCalled();
     expect(send).toHaveBeenNthCalledWith(1, IPC_CHANNELS.voiceShortcut, {
       action: 'pressed',
+      mode: 'task',
       source: 'global',
     });
     expect(send).toHaveBeenNthCalledWith(2, IPC_CHANNELS.voiceShortcut, {
       action: 'released',
+      mode: 'task',
       source: 'global',
     });
     unregister();
@@ -73,13 +75,14 @@ describe('registerGlobalVoiceShortcut', () => {
     };
     const send = vi.fn();
     const waitForRelease = vi.fn(() => release.promise);
+    const logger = { warn: vi.fn() };
     const unregister = registerGlobalVoiceShortcut({
       getTarget: () => ({
         isDestroyed: () => false,
         isFocused: () => false,
         webContents: { send },
       }),
-      logger: { warn: vi.fn() },
+      logger,
       platform: 'win32',
       registry,
       waitForRelease,
@@ -89,12 +92,16 @@ describe('registerGlobalVoiceShortcut', () => {
       WINDOWS_GLOBAL_VOICE_SHORTCUT,
       expect.any(Function),
     );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('global Task shortcut is disabled'),
+    );
 
     callbacks.get(WINDOWS_GLOBAL_VOICE_SHORTCUT)?.();
     callbacks.get(WINDOWS_GLOBAL_VOICE_SHORTCUT)?.();
 
     expect(send).toHaveBeenCalledWith(IPC_CHANNELS.voiceShortcut, {
       action: 'pressed',
+      mode: 'dictation',
       source: 'global',
     });
     expect(send).toHaveBeenCalledTimes(1);
@@ -106,6 +113,7 @@ describe('registerGlobalVoiceShortcut', () => {
 
     expect(send).toHaveBeenLastCalledWith(IPC_CHANNELS.voiceShortcut, {
       action: 'released',
+      mode: 'dictation',
       source: 'global',
     });
 
@@ -113,6 +121,39 @@ describe('registerGlobalVoiceShortcut', () => {
     expect(registry.unregister).toHaveBeenCalledWith(
       WINDOWS_GLOBAL_VOICE_SHORTCUT,
     );
+  });
+
+  it('uses the Dictation-only fallback when the Windows watcher cannot start', () => {
+    const callbacks = new Map<string, () => void>();
+    const registry = {
+      register: vi.fn((accelerator: string, callback: () => void) => {
+        callbacks.set(accelerator, callback);
+        return true;
+      }),
+      unregister: vi.fn(),
+    };
+    const send = vi.fn();
+    const unregister = registerGlobalVoiceShortcut({
+      getTarget: () => ({
+        isDestroyed: () => false,
+        isFocused: () => false,
+        webContents: { send },
+      }),
+      logger: { warn: vi.fn() },
+      platform: 'win32',
+      registry,
+      waitForRelease: vi.fn(() => new Promise<void>(() => undefined)),
+      watchForWindowsShortcut: () => undefined,
+    });
+
+    callbacks.get(WINDOWS_GLOBAL_VOICE_SHORTCUT)?.();
+
+    expect(send).toHaveBeenCalledWith(IPC_CHANNELS.voiceShortcut, {
+      action: 'pressed',
+      mode: 'dictation',
+      source: 'global',
+    });
+    unregister();
   });
 
   it('lets the focused renderer handle voice shortcuts locally', () => {
@@ -210,15 +251,17 @@ describe('registerGlobalVoiceShortcut', () => {
     expect(registry.register).not.toHaveBeenCalled();
     expect(watchForMacOSShortcut).toHaveBeenCalledOnce();
 
-    shortcutListeners[0]?.({ action: 'pressed', source: 'global' });
-    shortcutListeners[0]?.({ action: 'released', source: 'global' });
+    shortcutListeners[0]?.({ action: 'pressed', mode: 'task', source: 'global' });
+    shortcutListeners[0]?.({ action: 'released', mode: 'task', source: 'global' });
 
     expect(send).toHaveBeenNthCalledWith(1, IPC_CHANNELS.voiceShortcut, {
       action: 'pressed',
+      mode: 'task',
       source: 'global',
     });
     expect(send).toHaveBeenNthCalledWith(2, IPC_CHANNELS.voiceShortcut, {
       action: 'released',
+      mode: 'task',
       source: 'global',
     });
 
@@ -255,16 +298,26 @@ describe('registerGlobalVoiceShortcut', () => {
       watchForMacOSShortcut,
     });
 
-    shortcutListeners[0]?.({ action: 'pressed', source: 'global' });
+    shortcutListeners[0]?.({
+      action: 'pressed',
+      mode: 'dictation',
+      source: 'global',
+    });
     isFocused = true;
-    shortcutListeners[0]?.({ action: 'released', source: 'global' });
+    shortcutListeners[0]?.({
+      action: 'released',
+      mode: 'dictation',
+      source: 'global',
+    });
 
     expect(send).toHaveBeenNthCalledWith(1, IPC_CHANNELS.voiceShortcut, {
       action: 'pressed',
+      mode: 'dictation',
       source: 'global',
     });
     expect(send).toHaveBeenNthCalledWith(2, IPC_CHANNELS.voiceShortcut, {
       action: 'released',
+      mode: 'dictation',
       source: 'global',
     });
   });

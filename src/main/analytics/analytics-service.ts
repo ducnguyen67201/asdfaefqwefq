@@ -163,13 +163,16 @@ export class AnalyticsService {
   }
 
   async trackVoiceTranscript(input: unknown): Promise<void> {
-    const transcript = RecordVoiceTranscriptRequestSchema.parse(input);
+    const result = RecordVoiceTranscriptRequestSchema.parse(input);
     if (!this.client) return;
     await this.start();
     if (!this.identity) return;
 
     this.capture('voice transcription completed', {
-      character_count: transcript.text.length,
+      character_count: result.characterCount,
+      destination: result.destination,
+      disposition: result.disposition,
+      mode: result.mode,
     });
   }
 

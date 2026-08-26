@@ -61,7 +61,7 @@ interface GlobalVoiceShortcutOptions {
 type VoiceShortcutReleaseWatcher = (signal: AbortSignal) => Promise<void>;
 type VoiceShortcutWatcher = (
   listener: (event: VoiceShortcutEvent) => void,
-) => () => void;
+) => (() => void) | undefined;
 
 function encodedPowerShellCommand(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
@@ -149,22 +149,30 @@ export function registerGlobalVoiceShortcut({
       return () => undefined;
     }
 
-    return watchForMacOSShortcut((event) => {
+    const stopWatching = watchForMacOSShortcut((event) => {
       sendVoiceShortcutEvent(event, {
         allowFocused: event.action === 'released',
       });
     });
+    if (stopWatching) return stopWatching;
+    logger.warn('[voice] macOS global voice shortcut helper could not start.');
+    return () => undefined;
   }
 
   if (platform !== 'win32') return () => undefined;
 
   if (watchForWindowsShortcut) {
-    return watchForWindowsShortcut((event) => {
+    const stopWatching = watchForWindowsShortcut((event) => {
       sendVoiceShortcutEvent(event, {
         allowFocused: event.action === 'released',
       });
     });
+    if (stopWatching) return stopWatching;
   }
+
+  logger.warn(
+    '[voice] Native Windows shortcut watcher is unavailable; global Task shortcut is disabled and the Dictation-only fallback will be used.',
+  );
 
   let releaseController: AbortController | null = null;
 
@@ -174,6 +182,7 @@ export function registerGlobalVoiceShortcut({
     const sent = sendVoiceShortcutEvent(
       {
         action: 'pressed',
+        mode: 'dictation',
         source: 'global',
       },
       { allowFocused: false },
@@ -205,6 +214,7 @@ export function registerGlobalVoiceShortcut({
         sendVoiceShortcutEvent(
           {
             action: 'released',
+            mode: 'dictation',
             source: 'global',
           },
           { allowFocused: true },

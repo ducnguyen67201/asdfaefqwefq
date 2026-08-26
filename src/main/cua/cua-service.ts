@@ -25,10 +25,14 @@ import type { ImageEvidencePolicy } from '../inference/image-evidence-policy';
 import { CuaAuthorizationBroker } from './cua-authorization-broker';
 import {
   CuaDriverMetadataSchema,
+  CuaWindowListSchema,
   CuaSemanticCapabilitiesSchema,
   deriveCuaSemanticCapabilities,
+  normalizedCuaActionEffect,
+  parseCuaStructuredResult,
   type CuaOpenToolResult,
   type CuaSemanticCapabilities,
+  type CuaWindow,
   type TrustedApplicationIdentity,
   type VisibleApplicationSurface,
 } from './cua-semantic-contracts';
@@ -161,12 +165,28 @@ export function getCuaModuleSpecifier(
   return resourcePathToFileUrl(resourcesPath, modulePath);
 }
 
-function getSupportedPlatform(): CuaStatus['platform'] {
-  if (process.platform === 'darwin') return 'darwin';
-  if (process.platform === 'win32') return 'win32';
-  if (process.platform === 'linux') return 'linux';
+function getSupportedPlatform(
+  platform: NodeJS.Platform = process.platform,
+): CuaStatus['platform'] {
+  if (platform === 'darwin') return 'darwin';
+  if (platform === 'win32') return 'win32';
+  if (platform === 'linux') return 'linux';
   return 'unsupported';
 }
+
+export interface CuaDictationStatus {
+  reason?: 'accessibility' | 'driver' | 'platform';
+  state: 'disconnected' | 'error' | 'permission_required' | 'ready' | 'unavailable';
+  summary: string;
+}
+
+export interface CuaDictationDeliveryResult {
+  effect: 'confirmed' | 'delivery_unverified' | 'refused_before_execution';
+  errorCode?: string;
+}
+
+const CUA_REFUSED_BEFORE_EXECUTION_PATTERN =
+  /(?:stale|not[_ -]?found|invalid[_ -]?(?:ref|token)|owner_pid_mismatch|permission_required|refus)/iu;
 
 export function pasteShortcutForPlatform(
   platform: NodeJS.Platform,
@@ -259,6 +279,7 @@ export function shouldAutoConnect(status: CuaStatus): boolean {
 export class CuaService {
   private cuaModule: CuaModule | null = null;
   private driver: Driver | null = null;
+  private driverInitialization: Promise<void> | null = null;
   private driverVersion: string | undefined;
 
   private semanticCapabilityState: CuaSemanticCapabilities =
@@ -328,13 +349,13 @@ export class CuaService {
   }
 
   async getStatus(): Promise<CuaStatus> {
-    const platform = getSupportedPlatform();
+    const platform = getSupportedPlatform(this.platform);
     if (platform === 'unsupported') {
       return {
         state: 'error',
         available: false,
         platform,
-        summary: `CUA does not support ${process.platform}.`,
+        summary: `CUA does not support ${this.platform}.`,
         nextActions: ['Use macOS, Windows, or Linux.'],
       };
     }
@@ -406,35 +427,137 @@ export class CuaService {
     return this.initializeDriver(false);
   }
 
-  async startTaskSession(taskId: string, signal?: AbortSignal): Promise<void> {
-    if (this.activeSessions.has(taskId)) return;
+  async getDictationStatus(): Promise<CuaDictationStatus> {
+    const platform = getSupportedPlatform(this.platform);
+    if (platform === 'unsupported') {
+      return {
+        reason: 'platform',
+        state: 'unavailable',
+        summary: `Voice dictation does not support ${this.platform}.`,
+      };
+    }
+    try {
+      const cua = await this.loadModule();
+      if (platform === 'darwin') {
+        const permissions = cua.currentMacOsPermissionStatus();
+        if (!permissions.accessibility) {
+          return {
+            reason: 'accessibility',
+            state: 'permission_required',
+            summary: 'Accessibility permission is required for system-wide dictation.',
+          };
+        }
+      }
+      if (!this.driver) {
+        return {
+          state: 'disconnected',
+          summary: 'The dictation runtime is ready to initialize.',
+        };
+      }
+      if (!this.driver.isAvailable()) {
+        return {
+          reason: 'driver',
+          state: 'error',
+          summary: 'The dictation runtime is not available.',
+        };
+      }
+      return {
+        state: 'ready',
+        summary: 'System-wide dictation is ready.',
+      };
+    } catch (error) {
+      return {
+        reason: 'driver',
+        state: 'error',
+        summary: errorMessage(error),
+      };
+    }
+  }
 
-    const cua = await this.loadModule();
-    const driver = this.requireDriver();
-    const started = await driver.startSession(
-      cua.StartSessionInput.new({
-        session: taskId,
-        captureScope: cua.CaptureScope.Auto,
-      }),
-      signal ? { signal } : undefined,
-    );
-    if (!started.active) {
-      throw new Error(`CUA did not activate task session ${taskId}.`);
+  async connectForDictation(): Promise<CuaDictationStatus> {
+    const status = await this.getDictationStatus();
+    if (status.state !== 'disconnected') return status;
+    try {
+      const cua = await this.loadModule();
+      await this.ensureDriverInitialized(cua);
+      return this.getDictationStatus();
+    } catch (error) {
+      return {
+        reason: 'driver',
+        state: 'error',
+        summary: errorMessage(error),
+      };
     }
-    if (started.state.effectiveScope === cua.EffectiveScope.Desktop) {
-      this.desktopScopeSessions.add(taskId);
-    }
-    console.info(
-      '[cua] session.started',
-      JSON.stringify({
-        taskId,
-        captureScope: started.state?.captureScope ?? null,
-        effectiveScope: started.state?.effectiveScope ?? null,
-        desktopUnlocked: started.state?.desktopUnlocked ?? null,
-        revived: started.revived ?? null,
-      }),
+  }
+
+  async startTaskSession(taskId: string, signal?: AbortSignal): Promise<void> {
+    return this.startSession(taskId, signal);
+  }
+
+  async startDictationSession(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.startSession(sessionId, signal);
+  }
+
+  async listDictationWindows(signal?: AbortSignal): Promise<CuaWindow[]> {
+    const result = await this.callOpenTool(
+      'list_windows',
+      { on_screen_only: true },
+      signal,
     );
-    this.activeSessions.add(taskId);
+    if (result.isError) {
+      throw new Error(
+        result.errorCode || result.text || 'CUA could not list application windows.',
+      );
+    }
+    return parseCuaStructuredResult(result, CuaWindowListSchema).windows;
+  }
+
+  async typeDictationText(
+    input: {
+      processId: number;
+      sessionId: string;
+      text: string;
+      windowId: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<CuaDictationDeliveryResult> {
+    this.assertActiveSession(input.sessionId);
+    const result = await this.callOpenTool(
+      'type_text',
+      {
+        delivery_mode: 'background',
+        pid: input.processId,
+        session: input.sessionId,
+        text: input.text,
+        window_id: input.windowId,
+      },
+      signal,
+    );
+    const effect = normalizedCuaActionEffect(result);
+    const refusedBeforeExecution =
+      effect === 'refused' ||
+      CUA_REFUSED_BEFORE_EXECUTION_PATTERN.test(
+        `${result.errorCode ?? ''} ${result.text}`.slice(0, 4_000),
+      );
+    if (refusedBeforeExecution) {
+      return {
+        effect: 'refused_before_execution',
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      };
+    }
+    if (!result.isError && effect === 'confirmed') {
+      return {
+        effect: 'confirmed',
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      };
+    }
+    return {
+      effect: 'delivery_unverified',
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    };
   }
 
   async observe(
@@ -908,10 +1031,57 @@ export class CuaService {
     this.latestCoordinateSpaces.delete(taskId);
     this.windowsBottomEdgeAwaitingObservation.delete(taskId);
     this.windowsBottomEdgeReadyUntil.delete(taskId);
-    if (!this.activeSessions.delete(taskId)) return;
+    await this.endSession(taskId, signal);
+  }
+
+  async endDictationSession(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.endSession(sessionId, signal);
+  }
+
+  private async startSession(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (this.activeSessions.has(sessionId)) return;
+    const cua = await this.loadModule();
+    const started = await this.requireDriver().startSession(
+      cua.StartSessionInput.new({
+        session: sessionId,
+        captureScope: cua.CaptureScope.Auto,
+      }),
+      signal ? { signal } : undefined,
+    );
+    if (!started.active) {
+      throw new Error('CUA did not activate the requested session.');
+    }
+    if (started.state.effectiveScope === cua.EffectiveScope.Desktop) {
+      this.desktopScopeSessions.add(sessionId);
+    }
+    console.info(
+      '[cua] session.started',
+      JSON.stringify({
+        sessionKind: sessionId.startsWith('dictation:') ? 'dictation' : 'task',
+        captureScope: started.state?.captureScope ?? null,
+        effectiveScope: started.state?.effectiveScope ?? null,
+        desktopUnlocked: started.state?.desktopUnlocked ?? null,
+        revived: started.revived ?? null,
+      }),
+    );
+    this.activeSessions.add(sessionId);
+  }
+
+  private async endSession(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.desktopScopeSessions.delete(sessionId);
+    if (!this.activeSessions.delete(sessionId)) return;
     const cua = await this.loadModule();
     await this.requireDriver().endSession(
-      cua.EndSessionInput.new({ session: taskId }),
+      cua.EndSessionInput.new({ session: sessionId }),
       signal ? { signal } : undefined,
     );
   }
@@ -919,7 +1089,7 @@ export class CuaService {
   private async initializeDriver(
     requestMissingPermissions: boolean,
   ): Promise<CuaStatus> {
-    const platform = getSupportedPlatform();
+    const platform = getSupportedPlatform(this.platform);
 
     try {
       const cua = await this.loadModule();
@@ -945,68 +1115,7 @@ export class CuaService {
         }
       }
 
-      if (!this.driver) {
-        const authorizationBroker = new CuaAuthorizationBroker({
-          allow: cua.DriverAuthorizationAction.Allow,
-          cancel: cua.DriverAuthorizationAction.Cancel,
-          deny: cua.DriverAuthorizationAction.Deny,
-        });
-        const configuredOptions = cua.ConfiguredDriverOptions.new({
-          claudeCodeCompatibility: false,
-          authorization: cua.RuntimeAuthorizationOptions.new({
-            allowedModes: [cua.SessionPermissionMode.Standard],
-            compatibilityMode: cua.SessionPermissionMode.Standard,
-            unrestrictedAcknowledged: false,
-            maxSessionTtlSeconds: 7_200n,
-            maxIdleTtlSeconds: 900n,
-          }),
-        });
-        this.driver = cua.CuaDriver.createConfiguredWithHostIntegrations(
-          configuredOptions,
-          authorizationBroker,
-          {
-            onActivity: (event) => {
-              console.info(
-                '[cua] activity',
-                JSON.stringify({
-                  kind: event.kind,
-                  toolName: event.toolName,
-                  riskClass: event.riskClass,
-                  refusalCode: event.refusalCode ?? null,
-                }),
-              );
-            },
-          },
-        ) as Driver;
-        const metadata = CuaDriverMetadataSchema.parse(
-          await this.driver.metadata(),
-        );
-        if (
-          metadata.driverVersion !== '0.19.3' ||
-          metadata.contractVersion !== '0.6.0' ||
-          metadata.toolsListSchemaVersion !== '1'
-        ) {
-          throw new Error(
-            'CUA runtime does not match Tro supported contract 0.19.3/0.6.0.',
-          );
-        }
-        this.driverVersion = metadata.driverVersion;
-        try {
-          this.semanticCapabilityState = deriveCuaSemanticCapabilities(
-            JSON.parse(await this.driver.listToolsJson()),
-          );
-        } catch {
-          this.semanticCapabilityState = NO_SEMANTIC_CAPABILITIES;
-        }
-        this.authorizationBroker = authorizationBroker;
-        this.surfaceRouter = new CuaSurfaceRouter({
-          authorizationBroker,
-          callTool: (name, argumentsValue, signal) =>
-            this.callOpenTool(name, argumentsValue, signal),
-          capabilities: () => this.semanticCapabilityState,
-          now: this.now,
-        });
-      }
+      await this.ensureDriverInitialized(cua);
 
       return this.getStatus();
     } catch (error) {
@@ -1023,7 +1132,97 @@ export class CuaService {
     }
   }
 
+  private async ensureDriverInitialized(cua: CuaModule): Promise<void> {
+    if (this.driverInitialization) {
+      await this.driverInitialization;
+      return;
+    }
+    if (this.driver) return;
+    const initialization = this.initializeDriverInstance(cua);
+    this.driverInitialization = initialization;
+    try {
+      await initialization;
+    } finally {
+      if (this.driverInitialization === initialization) {
+        this.driverInitialization = null;
+      }
+    }
+  }
+
+  private async initializeDriverInstance(cua: CuaModule): Promise<void> {
+    const authorizationBroker = new CuaAuthorizationBroker({
+      allow: cua.DriverAuthorizationAction.Allow,
+      cancel: cua.DriverAuthorizationAction.Cancel,
+      deny: cua.DriverAuthorizationAction.Deny,
+    });
+    const configuredOptions = cua.ConfiguredDriverOptions.new({
+      claudeCodeCompatibility: false,
+      authorization: cua.RuntimeAuthorizationOptions.new({
+        allowedModes: [cua.SessionPermissionMode.Standard],
+        compatibilityMode: cua.SessionPermissionMode.Standard,
+        unrestrictedAcknowledged: false,
+        maxSessionTtlSeconds: 7_200n,
+        maxIdleTtlSeconds: 900n,
+      }),
+    });
+    const driver = cua.CuaDriver.createConfiguredWithHostIntegrations(
+      configuredOptions,
+      authorizationBroker,
+      {
+        onActivity: (event) => {
+          console.info(
+            '[cua] activity',
+            JSON.stringify({
+              kind: event.kind,
+              toolName: event.toolName,
+              riskClass: event.riskClass,
+              refusalCode: event.refusalCode ?? null,
+            }),
+          );
+        },
+      },
+    ) as Driver;
+    this.driver = driver;
+    try {
+      const metadata = CuaDriverMetadataSchema.parse(await driver.metadata());
+      if (
+        metadata.driverVersion !== '0.19.3' ||
+        metadata.contractVersion !== '0.6.0' ||
+        metadata.toolsListSchemaVersion !== '1'
+      ) {
+        throw new Error(
+          'CUA runtime does not match Tro supported contract 0.19.3/0.6.0.',
+        );
+      }
+      this.driverVersion = metadata.driverVersion;
+      try {
+        this.semanticCapabilityState = deriveCuaSemanticCapabilities(
+          JSON.parse(await driver.listToolsJson()),
+        );
+      } catch {
+        this.semanticCapabilityState = NO_SEMANTIC_CAPABILITIES;
+      }
+      this.authorizationBroker = authorizationBroker;
+      this.surfaceRouter = new CuaSurfaceRouter({
+        authorizationBroker,
+        callTool: (name, argumentsValue, signal) =>
+          this.callOpenTool(name, argumentsValue, signal),
+        capabilities: () => this.semanticCapabilityState,
+        now: this.now,
+      });
+    } catch (error) {
+      this.driver = null;
+      try {
+        await driver.shutdown();
+      } finally {
+        driver.uniffiDestroy();
+      }
+      throw error;
+    }
+  }
+
   async shutdown(): Promise<void> {
+    await this.driverInitialization?.catch(() => undefined);
     const driver = this.driver;
     this.driver = null;
     this.driverVersion = undefined;

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import type { VoiceShortcutEvent } from '../../shared/contracts';
+import { VOICE_SHORTCUT_MODE_SETTLE_MS } from '../../shared/voice-mode';
 
 export const MACOS_VOICE_SHORTCUT_HELPER_NAME =
   'trocode-macos-voice-shortcut';
@@ -26,9 +27,13 @@ export function parseMacOSVoiceShortcutOutput(
 
   for (const line of lines) {
     const eventName = line.endsWith('\r') ? line.slice(0, -1) : line;
-    if (eventName === 'pressed' || eventName === 'released') {
-      events.push({ action: eventName, source: 'global' });
-    }
+    const match = /^(pressed|released):(dictation|task)$/u.exec(eventName);
+    if (!match) continue;
+    events.push({
+      action: match[1] as VoiceShortcutEvent['action'],
+      mode: match[2] as VoiceShortcutEvent['mode'],
+      source: 'global',
+    });
   }
 
   return { events, remainder };
@@ -39,9 +44,13 @@ export function watchMacOSGlobalVoiceShortcut({
   logger = console,
   onEvent,
 }: MacOSVoiceShortcutWatcherOptions): () => void {
-  const child = spawn(executablePath, [], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = spawn(
+    executablePath,
+    [String(VOICE_SHORTCUT_MODE_SETTLE_MS)],
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
   let outputRemainder = '';
   let stopped = false;
   let stderr = '';

@@ -9,7 +9,9 @@ import {
   shouldFinishVoiceOnLocalRelease,
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
-  VOICE_TRANSCRIPT_CONFIRMATION_MS,
+  VOICE_TASK_CONFIRMATION_MS,
+  type VoiceAttemptDecision,
+  type VoiceTurnContext,
   voiceConnectionErrorMessage,
 } from './use-push-to-talk';
 
@@ -46,8 +48,8 @@ async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
 }
 
-async function finishTranscriptConfirmation(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(VOICE_TRANSCRIPT_CONFIRMATION_MS);
+async function finishTaskConfirmation(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(VOICE_TASK_CONFIRMATION_MS);
   await flushMicrotasks();
 }
 
@@ -65,7 +67,7 @@ function emitFrames(count: number, amplitude: number): void {
   }
 }
 
-function pressShortcut(target: EventTarget): void {
+function pressShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task'): void {
   target.dispatchEvent(
     Object.assign(new Event('keydown'), {
       code: 'MetaLeft',
@@ -80,13 +82,36 @@ function pressShortcut(target: EventTarget): void {
       repeat: false,
     }),
   );
+  if (mode === 'task') {
+    target.dispatchEvent(
+      Object.assign(new Event('keydown'), {
+        code: 'ShiftLeft',
+        key: 'Shift',
+        repeat: false,
+      }),
+    );
+  }
 }
 
-function releaseShortcut(target: EventTarget): void {
+function releaseShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task'): void {
+  if (mode === 'task') {
+    target.dispatchEvent(
+      Object.assign(new Event('keyup'), {
+        code: 'ShiftLeft',
+        key: 'Shift',
+      }),
+    );
+  }
   target.dispatchEvent(
     Object.assign(new Event('keyup'), {
       code: 'ControlLeft',
       key: 'Control',
+    }),
+  );
+  target.dispatchEvent(
+    Object.assign(new Event('keyup'), {
+      code: 'MetaLeft',
+      key: 'Meta',
     }),
   );
 }
@@ -112,10 +137,19 @@ function setup(upload = vi.fn()) {
     });
   }
   const callbacks = {
-    onAttemptStart: vi.fn(),
+    onAttemptStart: vi.fn(
+      async (context: VoiceTurnContext): Promise<VoiceAttemptDecision> => ({
+        accepted: true,
+        destination:
+          context.mode === 'task'
+            ? { kind: 'task', label: 'Tro task' }
+            : { kind: 'tro_composer', label: 'Tro composer' },
+      }),
+    ),
     onError: vi.fn(),
     onTranscriptChange: vi.fn(),
-    onTranscriptSubmit: vi.fn(),
+    onTranscriptReady: vi.fn(async () => undefined),
+    onTurnEnd: vi.fn(),
   };
   // The lightweight test harness invokes the hook with mocked React primitives.
   // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -144,6 +178,100 @@ describe('segmented push-to-talk lifecycle', () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
+  it('rejects preflight before opening the microphone', async () => {
+    const { callbacks, fakeWindow, upload } = setup(vi.fn());
+    callbacks.onAttemptStart.mockResolvedValueOnce({
+      accepted: false,
+      destination: { kind: 'application', label: 'Current application' },
+    });
+
+    pressShortcut(fakeWindow);
+    await flushMicrotasks();
+
+    expect(captureHarness.open).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'preflight_rejected',
+    );
+  });
+
+  it('cancels a local Dictation gesture during the settle interval', async () => {
+    const { callbacks, fakeWindow } = setup(vi.fn());
+    pressShortcut(fakeWindow, 'dictation');
+    fakeWindow.dispatchEvent(
+      Object.assign(new Event('keydown'), {
+        code: 'Escape',
+        key: 'Escape',
+        repeat: false,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(120);
+    await flushMicrotasks();
+
+    expect(callbacks.onAttemptStart).not.toHaveBeenCalled();
+    expect(captureHarness.open).not.toHaveBeenCalled();
+  });
+
+  it('commits Dictation immediately without the Task confirmation delay', async () => {
+    const upload = vi.fn(async (request) => ({
+      audioDurationMs: request.durationMs,
+      billedSeconds: request.durationMs / 1_000,
+      model: VOICE_TRANSCRIPTION_MODEL,
+      sequence: request.sequence,
+      text: 'dictated words',
+      utteranceId: request.utteranceId,
+    }));
+    const { callbacks, fakeWindow } = setup(upload);
+
+    pressShortcut(fakeWindow, 'dictation');
+    await vi.advanceTimersByTimeAsync(120);
+    await flushMicrotasks();
+    emitFrames(15, 0.1);
+    emitFrames(35, 0);
+    await flushMicrotasks();
+    releaseShortcut(fakeWindow, 'dictation');
+    await flushMicrotasks();
+
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'dictation' }),
+      'dictated words',
+    );
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+  });
+
+  it('cleans a preflight that resolves after physical release exactly once', async () => {
+    let resolvePreflight: (decision: {
+      accepted: boolean;
+      destination: { kind: 'task'; label: string };
+    }) => void = () => undefined;
+    const { callbacks, fakeWindow } = setup(vi.fn());
+    callbacks.onAttemptStart.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreflight = resolve;
+        }),
+    );
+
+    pressShortcut(fakeWindow);
+    await flushMicrotasks();
+    releaseShortcut(fakeWindow);
+    resolvePreflight({
+      accepted: true,
+      destination: { kind: 'task', label: 'Tro task' },
+    });
+    await flushMicrotasks();
+
+    expect(captureHarness.open).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'cancelled',
+    );
+  });
+
   it('shows a completed phrase before release but submits only after release', async () => {
     const upload = vi.fn(async (request) => ({
       audioDurationMs: request.durationMs,
@@ -161,15 +289,25 @@ describe('segmented push-to-talk lifecycle', () => {
     await flushMicrotasks();
 
     expect(upload).toHaveBeenCalledOnce();
-    expect(callbacks.onTranscriptChange).toHaveBeenCalledWith('open YouTube');
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
+    expect(callbacks.onTranscriptChange).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'open YouTube',
+    );
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
 
     releaseShortcut(fakeWindow);
     await flushMicrotasks();
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
-    await finishTranscriptConfirmation();
-    expect(callbacks.onTranscriptSubmit).toHaveBeenCalledOnce();
-    expect(callbacks.onTranscriptSubmit).toHaveBeenCalledWith('open YouTube');
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
+    await finishTaskConfirmation();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledWith(
+      expect.objectContaining({ activation: 'local_hold', mode: 'task' }),
+      'open YouTube',
+    );
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'completed',
+    );
   });
 
   it('waits for out-of-order segments and submits one ordered transcript', async () => {
@@ -203,7 +341,7 @@ describe('segmented push-to-talk lifecycle', () => {
       utteranceId: second?.utteranceId,
     });
     await flushMicrotasks();
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
     resolvers.get(0)?.({
       audioDurationMs: 300,
       billedSeconds: 0.3,
@@ -214,14 +352,16 @@ describe('segmented push-to-talk lifecycle', () => {
     });
     await flushMicrotasks();
     expect(callbacks.onTranscriptChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mode: 'task' }),
       'open YouTube and search',
     );
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
-    await finishTranscriptConfirmation();
-    expect(callbacks.onTranscriptSubmit).toHaveBeenCalledWith(
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
+    await finishTaskConfirmation();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
       'open YouTube and search',
     );
-    expect(callbacks.onTranscriptSubmit).toHaveBeenCalledOnce();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
   });
 
   it('prevents submission when any segment fails', async () => {
@@ -247,9 +387,47 @@ describe('segmented push-to-talk lifecycle', () => {
     releaseShortcut(fakeWindow);
     await flushMicrotasks();
 
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
     expect(callbacks.onError).toHaveBeenCalledWith(
       'A part of this recording could not be transcribed. Review it or record again.',
+    );
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'partial_failure',
+    );
+  });
+
+  it('ends a no-speech turn exactly once without provider work', async () => {
+    const { callbacks, fakeWindow, upload } = setup(vi.fn());
+    pressShortcut(fakeWindow, 'dictation');
+    await vi.advanceTimersByTimeAsync(120);
+    await flushMicrotasks();
+
+    releaseShortcut(fakeWindow, 'dictation');
+    await flushMicrotasks();
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'dictation' }),
+      'no_speech',
+    );
+  });
+
+  it('ends a microphone failure exactly once', async () => {
+    captureHarness.open.mockRejectedValueOnce(
+      new DOMException('Permission denied', 'NotAllowedError'),
+    );
+    const { callbacks, fakeWindow, upload } = setup(vi.fn());
+    pressShortcut(fakeWindow);
+    await flushMicrotasks();
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'failed',
     );
   });
 
@@ -263,7 +441,7 @@ describe('segmented push-to-talk lifecycle', () => {
           resolveCapture = resolve;
         }),
     );
-    const { fakeWindow, upload } = setup(vi.fn());
+    const { callbacks, fakeWindow, upload } = setup(vi.fn());
     pressShortcut(fakeWindow);
     await flushMicrotasks();
     releaseShortcut(fakeWindow);
@@ -271,6 +449,11 @@ describe('segmented push-to-talk lifecycle', () => {
     await flushMicrotasks();
     expect(captureHarness.stop).toHaveBeenCalled();
     expect(upload).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'task' }),
+      'cancelled',
+    );
   });
 
   it('cancellation ignores late transcription results', async () => {
@@ -297,7 +480,8 @@ describe('segmented push-to-talk lifecycle', () => {
       utteranceId: crypto.randomUUID(),
     });
     await flushMicrotasks();
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
+    expect(callbacks.onTurnEnd).toHaveBeenCalledOnce();
   });
 
   it('stops at 60 seconds but waits for physical release before submitting', async () => {
@@ -319,13 +503,13 @@ describe('segmented push-to-talk lifecycle', () => {
     expect(callbacks.onError).toHaveBeenCalledWith(
       'Voice input reached 60 seconds. Release the shortcut to finish.',
     );
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
 
     releaseShortcut(fakeWindow);
     await flushMicrotasks();
-    expect(callbacks.onTranscriptSubmit).not.toHaveBeenCalled();
-    await finishTranscriptConfirmation();
-    expect(callbacks.onTranscriptSubmit).toHaveBeenCalledOnce();
+    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
+    await finishTaskConfirmation();
+    expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
   });
 });
 
@@ -351,13 +535,13 @@ describe('push-to-talk helpers', () => {
     const beginListening = vi.fn();
     const finishListening = vi.fn();
     handleVoiceShortcutEvent(
-      { action: 'pressed', source: 'global' },
+      { action: 'pressed', mode: 'task', source: 'global' },
       { beginListening, finishListening, isListening: false },
     );
     expect(beginListening).toHaveBeenCalledOnce();
     expect(
       shouldFinishVoiceOnLocalRelease({
-        activationMode: 'global-hold',
+        activationMode: 'global_hold',
         isListening: true,
         isLocalChordHeld: false,
       }),

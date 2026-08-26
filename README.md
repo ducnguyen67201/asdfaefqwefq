@@ -65,9 +65,11 @@ Implemented:
   no repeat after unknown results.
 - Direct public HTTPS navigation and exact, revalidated approval
   before consequential CUA actions such as Send.
-- Focused-window push-to-talk plus system-wide background voice shortcuts with
-  local VAD, bounded PCM WAV segments, and upload-based `gpt-transcribe`
-  transcription. Voice enabled while idle creates no provider audio session.
+- Explicit Dictation and Task push-to-talk modes with local VAD, bounded PCM
+  WAV segments, and upload-based `gpt-transcribe` transcription. Dictation
+  inserts text without sending; the Shift-modified Task gesture submits through
+  the existing task pipeline. Voice enabled while idle creates no provider
+  audio session.
 - Every grounded `show_guidance` step has one narration attempt. Optional
   ElevenLabs `eleven_flash_v2_5` audio streams progressively through a private,
   one-time Electron media URL; unavailable or slow startup falls back once to
@@ -149,10 +151,12 @@ between container restarts. Use `npm run db:down` to stop the container without
 deleting its data.
 
 On first launch, sign in with Google and choose a language. Text work is then
-available immediately. Push-to-talk requests microphone access when used;
-desktop work pauses with a Connect computer choice when Accessibility or Screen
-Recording is missing. System Settings opens only from that user action, and the
-app rechecks grants when it regains focus.
+available immediately. Push-to-talk requests microphone access when used.
+System-wide Dictation needs Accessibility so Tro can insert text into the
+frontmost external window; it does not need Screen Recording. Full computer use
+continues to require Accessibility and Screen Recording. System Settings opens
+only from an explicit user action, and the app rechecks grants when it regains
+focus.
 
 The registration attempt is controlled by the trusted Electron main process. It
 creates a hidden, sandboxed renderer with its own in-memory session, starts a
@@ -430,9 +434,10 @@ Electron main bundle only; the preload and renderer cannot access them.
 
 Tro records `application opened`, `application closed`, task funnel events,
 non-sensitive goal metadata, and a `voice transcription completed` event that
-contains only the transcript character count. A durable anonymous installation
-ID powers DAU before sign-in; authenticated identity is associated with the
-same installation and its count-only voice events.
+contains only character count, mode, destination category, and result
+disposition. A durable anonymous installation ID powers DAU before sign-in;
+authenticated identity is associated with the same installation and its
+content-free voice events.
 
 Typed task text, messages, voice transcript content, screenshots, URLs,
 document contents, file paths, credentials, and approval descriptions are not
@@ -444,16 +449,26 @@ press **Command+Q** on macOS, to stop the cursor companion, shut down CUA, and
 exit. If native shutdown does not respond, Tro forces a process exit after
 a short grace period.
 
-With the Tro window focused, hold **Command + Control** on macOS or the
-physical **left Alt + left Control** keys on Windows. Release either key to
-finish the transcript and submit it through the same bounded task pipeline as
-typed input. The same **Command + Control** hold gesture works system-wide on
-macOS; on Windows, hold **Ctrl + Alt + Space** globally and release it to finish.
-The cursor companion shows audio bars while listening and a processing spinner
-after release until the transcript returns. When Tro has asked a
-clarification, the next transcript answers that same task rather than creating
-another one. Short pending prompts use local system speech; ElevenLabs
-narration is reserved for grounded walkthrough steps.
+Use one of two explicit hold gestures:
+
+| Mode | macOS | Windows |
+|---|---|---|
+| Dictation | **Command + Control** | physical **left Control + left Alt** |
+| Task | **Command + Control + Shift** | physical **left Control + left Alt + left Shift** |
+
+The mode locks for the full turn. Dictation adds text at the saved selection in
+Tro, or inserts once into the frontmost external window after release. The
+non-focusable Voice Island shows the locked mode, icon, destination, and
+teal Dictation or yellow Task accent; Tro does not recolor the operating-system
+cursor. Dictation never presses Enter, clicks, submits a form, or starts a task.
+If the external target
+changes or insertion cannot be verified, Tro does not retry; it keeps a recovery
+copy in the Tro composer. External targeting is window-level in this release,
+so place the text caret in the intended field before holding the shortcut. Task
+retains a one-second Escape window and then sends the transcript through the
+same bounded task, clarification, or steering path as typed input. Audio is sent
+to the configured GPT Transcribe provider. Linux does not provide a global
+voice shortcut in this version.
 
 When `TROCODE_API_BASE_URL` is compiled into a production build, Tro enables
 agent and voice access from the signed-in device session. The renderer and
@@ -472,7 +487,7 @@ and body "The desktop loop works", then send it after I approve.`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
-   window or with the system-wide voice shortcut.
+   window or with the Shift-modified system-wide Task shortcut.
 6. Before Send, confirm the approval card's account, recipients, subject, body,
    target, and exact command. Send is dispatched once only after the button is
    approved and the latest observation produces the same payload.

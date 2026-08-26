@@ -40,9 +40,38 @@ describe('presentation projection', () => {
     expect(
       derivePresentationState({
         task: task('planning'),
-        voice: { appLanguage: 'en', phase: 'listening', transcript: '' },
+        voice: {
+          appLanguage: 'en',
+          destination: { kind: 'task', label: 'Tro task' },
+          mode: 'task',
+          phase: 'listening',
+          transcript: '',
+        },
       }),
     ).toBe('listening');
+    expect(
+      derivePresentationState({
+        voice: {
+          appLanguage: 'en',
+          destination: { kind: 'application', label: 'Editor' },
+          message: 'Text kept in your Tro draft.',
+          mode: 'dictation',
+          phase: 'error',
+          transcript: '',
+        },
+      }),
+    ).toBe('error');
+    expect(
+      derivePresentationState({
+        voice: {
+          appLanguage: 'en',
+          destination: { kind: 'application', label: 'Editor' },
+          mode: 'dictation',
+          phase: 'complete',
+          transcript: '',
+        },
+      }),
+    ).toBe('done');
     expect(derivePresentationState({ task: task('acting') })).toBe('working');
   });
 

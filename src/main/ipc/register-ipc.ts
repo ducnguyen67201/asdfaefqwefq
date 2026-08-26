@@ -5,10 +5,15 @@ import {
   ActivateCompanionCandidateRequestSchema,
   ActivateSavedCompanionRequestSchema,
   AgentActivityUpdateSchema,
+  BeginDictationRequestSchema,
+  BeginDictationResultSchema,
+  CancelDictationRequestSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionStateSchema,
   CompanionVoiceActivitySchema,
+  CommitDictationRequestSchema,
+  DictationCommitResultSchema,
   GenerateCompanionImageRequestSchema,
   DecideApprovalRequestSchema,
   GetUsageBudgetRequestSchema,
@@ -85,6 +90,7 @@ import type { MembershipService } from '../membership/membership-service';
 import type { OrganizationClient } from '../organization/organization-client';
 import type { AppPreferencesService } from '../preferences/app-preferences-service';
 import type { AppUpdateService } from '../update/app-update-service';
+import type { DictationService } from '../voice/dictation-service';
 import type { SystemAudioDuckingService } from '../voice/system-audio-ducking-service';
 import type { VoiceService } from '../voice/voice-service';
 import type { WorkspaceSelectionService } from '../workspace/workspace-selection-service';
@@ -110,6 +116,7 @@ interface IpcServices {
   >;
   cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
+  dictationService: Pick<DictationService, 'begin' | 'cancel' | 'commit'>;
   computerPermissionCoordinator: Pick<
     ComputerPermissionCoordinator,
     'continueWithout' | 'openSettings' | 'refresh'
@@ -241,9 +248,12 @@ export function registerIpcHandlers(
 ): () => void {
   const channels = [
     IPC_CHANNELS.activateMembership,
+    IPC_CHANNELS.beginDictation,
+    IPC_CHANNELS.cancelDictation,
     IPC_CHANNELS.checkForAppUpdates,
     IPC_CHANNELS.cancelTask,
     IPC_CHANNELS.configureVoice,
+    IPC_CHANNELS.commitDictation,
     IPC_CHANNELS.connectComputer,
     IPC_CHANNELS.companionReportSpeechPlayback,
     IPC_CHANNELS.companionActivateCandidate,
@@ -885,6 +895,37 @@ export function registerIpcHandlers(
     await assertAuthorizedSender(event, mainWindow, services.authService);
     return services.voiceService.getStatus();
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.beginDictation,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = BeginDictationRequestSchema.parse(input);
+      return BeginDictationResultSchema.parse(
+        await services.dictationService.begin(request.turnId),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.commitDictation,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = CommitDictationRequestSchema.parse(input);
+      return DictationCommitResultSchema.parse(
+        await services.dictationService.commit(request.turnId, request.text),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.cancelDictation,
+    async (event, input: unknown) => {
+      assertTrustedSender(event, mainWindow);
+      const request = CancelDictationRequestSchema.parse(input);
+      await services.dictationService.cancel(request.turnId);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.configureVoice, async (event, input: unknown) => {
     await assertMembershipAuthorizedSender(event, mainWindow, services);

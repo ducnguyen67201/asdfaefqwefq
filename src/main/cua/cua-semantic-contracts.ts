@@ -186,6 +186,40 @@ export interface CuaOpenToolResult {
   text: string;
 }
 
+export type NormalizedCuaActionEffect =
+  | 'confirmed'
+  | 'partial'
+  | 'unverifiable'
+  | 'suspected_noop'
+  | 'refused';
+
+export function normalizedCuaActionEffect(
+  result: CuaOpenToolResult,
+): NormalizedCuaActionEffect | undefined {
+  if (result.structuredJson || result.rawJson) {
+    try {
+      const effect = parseCuaStructuredResult(
+        result,
+        CuaActionStructuredSchema,
+      ).effect;
+      if (effect) return effect;
+    } catch {
+      // Fall through to the generated numeric ActionEffect contract.
+    }
+  }
+  return result.action?.effect === 0
+    ? 'confirmed'
+    : result.action?.effect === 1
+      ? 'partial'
+      : result.action?.effect === 2
+        ? 'unverifiable'
+        : result.action?.effect === 3
+          ? 'suspected_noop'
+          : result.action?.effect === 4
+            ? 'refused'
+            : undefined;
+}
+
 export function parseCuaStructuredResult<T>(
   result: Pick<CuaOpenToolResult, 'rawJson' | 'structuredJson'>,
   schema: z.ZodType<T>,

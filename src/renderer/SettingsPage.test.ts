@@ -234,6 +234,11 @@ describe('SettingsPage voice audio preference', () => {
     expect(markup).toContain('Mute other audio while speaking');
     expect(markup).toContain('restore its previous mute state');
     expect(markup).toContain('type="checkbox"');
+    expect(markup).toContain('Dictation');
+    expect(markup).toContain('Command + Control');
+    expect(markup).toContain('left Control + left Alt');
+    expect(markup).toContain('Add Shift');
+    expect(markup).toContain('without sending');
   });
 });
 

@@ -59,7 +59,19 @@ export function derivePresentationState(input: {
   ) {
     return 'needs_attention';
   }
-  if (input.voice) return 'listening';
+  if (input.voice?.phase === 'error') return 'error';
+  if (
+    input.voice &&
+    [
+      'requesting_permission',
+      'listening',
+      'processing',
+      'committing',
+    ].includes(input.voice.phase)
+  ) {
+    return 'listening';
+  }
+  if (input.voice?.phase === 'complete') return 'done';
   if (input.task?.phase === 'completed') return 'done';
   if (input.task && THINKING_PHASES.has(input.task.phase)) return 'thinking';
   if (input.task && WORKING_PHASES.has(input.task.phase)) return 'working';

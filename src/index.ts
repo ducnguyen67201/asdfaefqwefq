@@ -115,6 +115,7 @@ import {
 import { systemPermissionSettingsUrl } from './main/system-permission-settings';
 import { AppUpdateService } from './main/update/app-update-service';
 import { CompanionNarrationService } from './main/voice/companion-narration-service';
+import { DictationService } from './main/voice/dictation-service';
 import { ElevenLabsTtsService } from './main/voice/elevenlabs-tts-service';
 import { registerGlobalVoiceShortcut } from './main/voice/global-voice-shortcut';
 import {
@@ -281,6 +282,7 @@ const cuaService = new CuaService({
     void analyticsService?.trackCuaPerformance(metric);
   },
 });
+const dictationService = new DictationService({ cua: cuaService });
 const runtimeToolRegistry = new RuntimeToolRegistry([
   ...defaultRuntimeToolDefinitions(),
   ...createCuaSemanticToolDefinitions({
@@ -1557,14 +1559,15 @@ function prepareApplicationShutdown(): Promise<void> {
 
   const analyticsShutdown = analyticsService?.shutdown() ?? Promise.resolve();
   const systemAudioShutdown = systemAudioDuckingService.setActive(false);
-  const executionShutdown = executionCoordinator.shutdown().finally(() =>
-    Promise.allSettled([
+  const executionShutdown = executionCoordinator.shutdown().finally(async () => {
+    await dictationService.shutdown();
+    await Promise.allSettled([
       cuaService.shutdown(),
       desktopWorkerClient.stop(),
       rustDesktopEngine.stop(),
       taskHistoryService.shutdown(),
-    ]),
-  );
+    ]);
+  });
   shutdownPromise = Promise.allSettled([
     executionShutdown,
     analyticsShutdown,
@@ -2117,6 +2120,7 @@ const createWindow = (): void => {
     authService,
     companionCustomizationService,
     cuaService,
+    dictationService,
     classroomDirectiveService,
     classroomSessionService,
     cancelActiveTasks: () => taskApplicationService.cancelActiveTasks(),
@@ -2134,6 +2138,7 @@ const createWindow = (): void => {
       enableAuthenticatedAuxiliaryWindows();
     },
     onAuthSignedOut: async () => {
+      await dictationService.shutdown();
       await companionCustomizationService.setCurrentOwner(null);
       disableAuthenticatedAuxiliaryWindows();
       taskHistoryService.setCurrentOwner(null);
@@ -2184,6 +2189,11 @@ const createWindow = (): void => {
     mainWindow = null;
     unregisterIpcHandlers?.();
     unregisterIpcHandlers = null;
+    void dictationService.shutdown().catch((error: unknown) => {
+      console.error('[voice] Could not clear dictation after closing.', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
     void systemAudioDuckingService.setActive(false).catch((error: unknown) => {
       console.error('[voice] Could not restore system audio after closing.', error);
     });

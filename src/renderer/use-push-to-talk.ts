@@ -2,10 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   VoiceDiagnostic,
+  VoiceMode,
   VoiceShortcutEvent,
 } from '../shared/contracts';
 
-import { detectPushToTalkPlatform, isPushToTalkChord, pushToTalkShortcutName, type PushToTalkPlatform } from './push-to-talk';
+import {
+  detectPushToTalkPlatform,
+  INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
+  isVoiceShortcutModifierCode,
+  pushToTalkShortcutName,
+  transitionVoiceShortcutArbiter,
+  type PushToTalkPlatform,
+  type VoiceShortcutArbiterState,
+} from './push-to-talk';
 import { openVoiceCapture, type VoiceCapturePipeline } from './voice-capture';
 import {
   encodePcm16Wav,
@@ -20,47 +29,75 @@ export type VoiceInputStatus =
   | 'idle'
   | 'listening'
   | 'processing'
+  | 'committing'
   | 'requesting_permission'
   | 'unavailable';
 
 export type VoiceConnectionStep = VoiceDiagnostic['step'];
-type VoiceActivationMode = 'global-hold' | 'local-hold';
+export type VoiceActivationMode = 'global_hold' | 'local_hold';
 
-export const VOICE_TRANSCRIPT_CONFIRMATION_MS = 1_000;
+export interface VoiceTurnContext {
+  activation: VoiceActivationMode;
+  mode: VoiceMode;
+  turnId: string;
+}
 
-interface UsePushToTalkOptions {
+export interface VoiceAttemptDecision {
+  accepted: boolean;
+  destination: {
+    kind: 'application' | 'tro_composer' | 'task';
+    label: string;
+  };
+}
+
+export type VoiceTurnEndReason =
+  | 'cancelled'
+  | 'completed'
+  | 'failed'
+  | 'no_speech'
+  | 'partial_failure'
+  | 'preflight_rejected';
+
+export const VOICE_TASK_CONFIRMATION_MS = 1_000;
+
+export interface UsePushToTalkOptions {
   disabled?: boolean;
   enabled?: boolean;
-  onAttemptStart(): void;
+  onAttemptStart(context: VoiceTurnContext): Promise<VoiceAttemptDecision>;
   onError(message: string): void;
-  onTranscriptChange(transcript: string): void;
-  onTranscriptSubmit(transcript: string): void;
+  onTranscriptChange(context: VoiceTurnContext, transcript: string): void;
+  onTranscriptReady(
+    context: VoiceTurnContext,
+    transcript: string,
+  ): Promise<void>;
+  onTurnEnd(context: VoiceTurnContext, reason: VoiceTurnEndReason): void;
 }
 
 interface PushToTalkState {
   cancel(): void;
   isHolding: boolean;
+  mode: VoiceMode | null;
   platform: PushToTalkPlatform;
   status: VoiceInputStatus;
 }
 
 interface ActiveVoiceTurn {
   abortController: AbortController;
-  activationMode: VoiceActivationMode;
   assembler: OrderedTranscriptAssembler;
   attempt: number;
   cancelled: boolean;
   capture: VoiceCapturePipeline | null;
-  confirmationTimer: ReturnType<typeof setTimeout> | null;
+  completionTimer: ReturnType<typeof setTimeout> | null;
+  context: VoiceTurnContext;
+  endNotified: boolean;
   expectedSegmentCount: number | null;
+  finalizing: boolean;
   limitReached: boolean;
   queue: SegmentUploadQueue<FinalizedVoiceSegment, void>;
   released: boolean;
   releasedAt: number | null;
   segmentCount: number;
   segmenter: VoiceSegmenter;
-  submitted: boolean;
-  utteranceId: string;
 }
 
 interface PushToTalkAttemptReadiness {
@@ -72,8 +109,8 @@ interface PushToTalkAttemptReadiness {
 }
 
 interface VoiceShortcutEventHandlers {
-  beginListening(): unknown;
-  finishListening(): void;
+  beginListening(mode: VoiceMode): unknown;
+  finishListening(mode: VoiceMode): void;
   isListening: boolean;
 }
 
@@ -111,10 +148,10 @@ export function handleVoiceShortcutEvent(
   { beginListening, finishListening, isListening }: VoiceShortcutEventHandlers,
 ): void {
   if (event.action === 'pressed') {
-    if (!isListening) beginListening();
+    if (!isListening) beginListening(event.mode);
     return;
   }
-  if (event.action === 'released' && isListening) finishListening();
+  if (event.action === 'released' && isListening) finishListening(event.mode);
 }
 
 export function shouldFinishVoiceOnLocalRelease({
@@ -122,7 +159,7 @@ export function shouldFinishVoiceOnLocalRelease({
   isListening,
   isLocalChordHeld,
 }: LocalVoiceReleaseState): boolean {
-  return activationMode === 'local-hold' && isListening && !isLocalChordHeld;
+  return activationMode === 'local_hold' && isListening && !isLocalChordHeld;
 }
 
 export function shouldMuteSystemAudioForVoice(
@@ -192,25 +229,34 @@ export function usePushToTalk({
   onAttemptStart,
   onError,
   onTranscriptChange,
-  onTranscriptSubmit,
+  onTranscriptReady,
+  onTurnEnd,
 }: UsePushToTalkOptions): PushToTalkState {
   const [platform] = useState<PushToTalkPlatform>(getPushToTalkPlatform);
   const [status, setStatus] = useState<VoiceInputStatus>(() =>
     enabled && platform !== 'unsupported' ? 'idle' : 'unavailable',
   );
   const [isHolding, setIsHolding] = useState(false);
+  const [mode, setMode] = useState<VoiceMode | null>(null);
   const activeTurnRef = useRef<ActiveVoiceTurn | null>(null);
   const activationModeRef = useRef<VoiceActivationMode | null>(null);
   const attemptRef = useRef(0);
   const chordHeldRef = useRef(false);
   const disabledRef = useRef(disabled);
   const enabledRef = useRef(enabled);
+  const localArbiterRef = useRef<VoiceShortcutArbiterState>(
+    INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
+  );
+  const localSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressedCodesRef = useRef(new Set<string>());
   const onAttemptStartRef = useRef(onAttemptStart);
   const onErrorRef = useRef(onError);
   const onTranscriptChangeRef = useRef(onTranscriptChange);
-  const onTranscriptSubmitRef = useRef(onTranscriptSubmit);
-  const finishListeningRef = useRef<() => void>(() => undefined);
+  const onTranscriptReadyRef = useRef(onTranscriptReady);
+  const onTurnEndRef = useRef(onTurnEnd);
+  const finishListeningRef = useRef<(mode?: VoiceMode) => void>(
+    () => undefined,
+  );
 
   useEffect(() => {
     disabledRef.current = disabled;
@@ -218,32 +264,104 @@ export function usePushToTalk({
     onAttemptStartRef.current = onAttemptStart;
     onErrorRef.current = onError;
     onTranscriptChangeRef.current = onTranscriptChange;
-    onTranscriptSubmitRef.current = onTranscriptSubmit;
-  }, [disabled, enabled, onAttemptStart, onError, onTranscriptChange, onTranscriptSubmit]);
+    onTranscriptReadyRef.current = onTranscriptReady;
+    onTurnEndRef.current = onTurnEnd;
+  }, [
+    disabled,
+    enabled,
+    onAttemptStart,
+    onError,
+    onTranscriptChange,
+    onTranscriptReady,
+    onTurnEnd,
+  ]);
+
+  const notifyTurnEnd = useCallback(
+    (turn: ActiveVoiceTurn, reason: VoiceTurnEndReason): void => {
+      if (turn.endNotified) return;
+      turn.endNotified = true;
+      onTurnEndRef.current(turn.context, reason);
+    },
+    [],
+  );
 
   const closeTurn = useCallback(async (turn: ActiveVoiceTurn): Promise<void> => {
     turn.abortController.abort();
     const capture = turn.capture;
     turn.capture = null;
-    await capture?.stop();
+    await capture?.stop().catch(() => undefined);
   }, []);
 
-  const resetTurnState = useCallback((turn: ActiveVoiceTurn): void => {
-    if (turn.confirmationTimer) clearTimeout(turn.confirmationTimer);
-    turn.confirmationTimer = null;
-    if (activeTurnRef.current === turn) activeTurnRef.current = null;
-    activationModeRef.current = null;
-    chordHeldRef.current = false;
-    pressedCodesRef.current.clear();
-    setIsHolding(false);
-    setStatus(
-      enabledRef.current &&
-        !disabledRef.current &&
-        platform !== 'unsupported'
-        ? 'idle'
-        : 'unavailable',
-    );
-  }, [platform]);
+  const resetTurnState = useCallback(
+    (turn: ActiveVoiceTurn): void => {
+      if (turn.completionTimer) clearTimeout(turn.completionTimer);
+      turn.completionTimer = null;
+      if (activeTurnRef.current === turn) activeTurnRef.current = null;
+      activationModeRef.current = null;
+      chordHeldRef.current = false;
+      setIsHolding(false);
+      setMode(null);
+      setStatus(
+        enabledRef.current &&
+          !disabledRef.current &&
+          platform !== 'unsupported'
+          ? 'idle'
+          : 'unavailable',
+      );
+    },
+    [platform],
+  );
+
+  const finishTerminalTurn = useCallback(
+    (turn: ActiveVoiceTurn, reason: VoiceTurnEndReason): void => {
+      resetTurnState(turn);
+      void closeTurn(turn);
+      notifyTurnEnd(turn, reason);
+    },
+    [closeTurn, notifyTurnEnd, resetTurnState],
+  );
+
+  const commitTranscript = useCallback(
+    async (
+      turn: ActiveVoiceTurn,
+      transcript: string,
+      releaseToFinalMs: number,
+    ): Promise<void> => {
+      if (activeTurnRef.current !== turn || turn.cancelled) return;
+      setStatus('committing');
+      try {
+        await onTranscriptReadyRef.current(turn.context, transcript);
+        if (activeTurnRef.current !== turn || turn.cancelled) return;
+        voiceTurnDiagnostic('completed', {
+          activation: turn.context.activation,
+          attempt: turn.attempt,
+          characters: transcript.length,
+          disposition: 'completed',
+          mode: turn.context.mode,
+          releaseToFinalMs,
+          segmentCount: turn.expectedSegmentCount ?? 0,
+        });
+        finishTerminalTurn(turn, 'completed');
+      } catch (error) {
+        if (activeTurnRef.current !== turn || turn.cancelled) return;
+        voiceTurnDiagnostic('completed', {
+          activation: turn.context.activation,
+          attempt: turn.attempt,
+          disposition: 'delivery_failed',
+          mode: turn.context.mode,
+          releaseToFinalMs,
+          segmentCount: turn.expectedSegmentCount ?? 0,
+        });
+        finishTerminalTurn(turn, 'failed');
+        onErrorRef.current(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Tro could not finish voice input.',
+        );
+      }
+    },
+    [finishTerminalTurn],
+  );
 
   const maybeFinishTurn = useCallback(
     (turn: ActiveVoiceTurn): void => {
@@ -253,12 +371,12 @@ export function usePushToTalk({
         !turn.released ||
         turn.expectedSegmentCount === null ||
         turn.assembler.outcomes.size < turn.expectedSegmentCount ||
-        turn.submitted
+        turn.finalizing
       ) {
         return;
       }
 
-      turn.submitted = true;
+      turn.finalizing = true;
       const transcript = turn.assembler.completeTranscript(
         turn.expectedSegmentCount,
       );
@@ -268,72 +386,75 @@ export function usePushToTalk({
         Date.now() - (turn.releasedAt ?? Date.now()),
       );
       if (turn.expectedSegmentCount === 0) {
-        resetTurnState(turn);
-        void closeTurn(turn);
+        finishTerminalTurn(turn, 'no_speech');
         voiceTurnDiagnostic('completed', {
+          activation: turn.context.activation,
           attempt: turn.attempt,
           disposition: 'no_speech',
+          mode: turn.context.mode,
           releaseToFinalMs,
-          segmentCount: 0,
+          segmentCount: turn.expectedSegmentCount,
         });
         onErrorRef.current(
-          `No speech was detected. Hold ${pushToTalkShortcutName(platform)} and try again.`,
+          `No speech was detected. Hold ${pushToTalkShortcutName(platform, turn.context.mode)} and try again.`,
         );
         return;
       }
       if (transcript === null) {
-        resetTurnState(turn);
-        void closeTurn(turn);
+        if (provisional) {
+          onTranscriptChangeRef.current(turn.context, provisional);
+        }
+        finishTerminalTurn(turn, 'partial_failure');
         voiceTurnDiagnostic('completed', {
+          activation: turn.context.activation,
           attempt: turn.attempt,
           disposition: 'partial_failure',
+          mode: turn.context.mode,
           releaseToFinalMs,
           segmentCount: turn.expectedSegmentCount,
         });
-        if (provisional) onTranscriptChangeRef.current(provisional);
         onErrorRef.current(
           'A part of this recording could not be transcribed. Review it or record again.',
         );
         return;
       }
-      if (transcript.trim().length < 2) {
-        resetTurnState(turn);
-        void closeTurn(turn);
+      if (!transcript.trim()) {
+        finishTerminalTurn(turn, 'no_speech');
         voiceTurnDiagnostic('completed', {
+          activation: turn.context.activation,
           attempt: turn.attempt,
           disposition: 'no_speech',
+          mode: turn.context.mode,
           releaseToFinalMs,
           segmentCount: turn.expectedSegmentCount,
         });
         onErrorRef.current(
-          `No speech was detected. Hold ${pushToTalkShortcutName(platform)} and try again.`,
+          `No speech was detected. Hold ${pushToTalkShortcutName(platform, turn.context.mode)} and try again.`,
         );
         return;
       }
 
+      const confirmationMs =
+        turn.context.mode === 'task' ? VOICE_TASK_CONFIRMATION_MS : 0;
       voiceTurnDiagnostic('transcript-ready', {
+        activation: turn.context.activation,
         attempt: turn.attempt,
         characters: transcript.length,
-        confirmationMs: VOICE_TRANSCRIPT_CONFIRMATION_MS,
+        confirmationMs,
+        mode: turn.context.mode,
         releaseToFinalMs,
         segmentCount: turn.expectedSegmentCount,
       });
-      onTranscriptChangeRef.current(transcript);
-      turn.confirmationTimer = setTimeout(() => {
-        if (activeTurnRef.current !== turn || turn.cancelled) return;
-        resetTurnState(turn);
-        void closeTurn(turn);
-        voiceTurnDiagnostic('completed', {
-          attempt: turn.attempt,
-          characters: transcript.length,
-          disposition: 'submitted',
-          releaseToFinalMs,
-          segmentCount: turn.expectedSegmentCount ?? 0,
-        });
-        onTranscriptSubmitRef.current(transcript);
-      }, VOICE_TRANSCRIPT_CONFIRMATION_MS);
+      onTranscriptChangeRef.current(turn.context, transcript);
+      if (confirmationMs === 0) {
+        void commitTranscript(turn, transcript, releaseToFinalMs);
+        return;
+      }
+      turn.completionTimer = setTimeout(() => {
+        void commitTranscript(turn, transcript, releaseToFinalMs);
+      }, confirmationMs);
     },
-    [closeTurn, platform, resetTurnState],
+    [commitTranscript, finishTerminalTurn, platform],
   );
 
   const dispatchSegment = useCallback(
@@ -342,6 +463,7 @@ export function usePushToTalk({
       voiceTurnDiagnostic('segment-finalized', {
         boundary: segment.boundary,
         durationMs: Math.round(segment.durationMs),
+        mode: turn.context.mode,
         overlap: segment.overlapWithPrevious,
         sequence: segment.sequence,
       });
@@ -356,31 +478,34 @@ export function usePushToTalk({
     if (turn) {
       turn.cancelled = true;
       voiceTurnDiagnostic('completed', {
+        activation: turn.context.activation,
         attempt: turn.attempt,
         disposition: 'cancelled',
+        mode: turn.context.mode,
         segmentCount: turn.segmentCount,
       });
       turn.queue.cancelPending();
-      resetTurnState(turn);
-      void closeTurn(turn);
-      onTranscriptChangeRef.current('');
-    } else {
-      activationModeRef.current = null;
-      chordHeldRef.current = false;
-      pressedCodesRef.current.clear();
-      setIsHolding(false);
-      setStatus(
-        enabledRef.current &&
-          !disabledRef.current &&
-          platform !== 'unsupported'
-          ? 'idle'
-          : 'unavailable',
-      );
+      finishTerminalTurn(turn, 'cancelled');
+      return;
     }
-  }, [closeTurn, platform, resetTurnState]);
+    activationModeRef.current = null;
+    chordHeldRef.current = false;
+    setIsHolding(false);
+    setMode(null);
+    setStatus(
+      enabledRef.current &&
+        !disabledRef.current &&
+        platform !== 'unsupported'
+        ? 'idle'
+        : 'unavailable',
+    );
+  }, [finishTerminalTurn, platform]);
 
   const beginListening = useCallback(
-    async (activationMode: VoiceActivationMode = 'local-hold') => {
+    async (
+      activation: VoiceActivationMode = 'local_hold',
+      voiceMode: VoiceMode = 'dictation',
+    ) => {
       if (
         !beginPushToTalkAttemptIfValid(
           {
@@ -390,7 +515,7 @@ export function usePushToTalk({
             isChordHeld: chordHeldRef.current,
             platform,
           },
-          () => onAttemptStartRef.current(),
+          () => undefined,
         )
       ) {
         return;
@@ -401,6 +526,11 @@ export function usePushToTalk({
       const abortController = new AbortController();
       const assembler = new OrderedTranscriptAssembler();
       const segmenter = new VoiceSegmenter();
+      const context: VoiceTurnContext = {
+        activation,
+        mode: voiceMode,
+        turnId: crypto.randomUUID(),
+      };
       const turn = {} as ActiveVoiceTurn;
       const queue = new SegmentUploadQueue<FinalizedVoiceSegment, void>(
         async (segment) => {
@@ -411,8 +541,11 @@ export function usePushToTalk({
             voiceTurnDiagnostic('segment-normalized', {
               gain: Number(normalized.gain.toFixed(2)),
               inputDbfs: Number(
-                (20 * Math.log10(Math.max(normalized.inputRms, 0.000_001))).toFixed(1),
+                (
+                  20 * Math.log10(Math.max(normalized.inputRms, 0.000_001))
+                ).toFixed(1),
               ),
+              mode: turn.context.mode,
               sequence: segment.sequence,
             });
           } catch (error) {
@@ -437,6 +570,7 @@ export function usePushToTalk({
           voiceTurnDiagnostic('segment-dispatched', {
             byteCount: encoded.bytes.byteLength,
             durationMs: Math.round(encoded.durationMs),
+            mode: turn.context.mode,
             requestId,
             sequence: segment.sequence,
           });
@@ -446,12 +580,13 @@ export function usePushToTalk({
               durationMs: Math.round(encoded.durationMs),
               requestId,
               sequence: segment.sequence,
-              utteranceId: turn.utteranceId,
+              utteranceId: turn.context.turnId,
             });
             if (activeTurnRef.current !== turn || turn.cancelled) return;
             voiceTurnDiagnostic('segment-completed', {
               billedSeconds: result.billedSeconds,
               latencyMs: Date.now() - segmentStartedAt,
+              mode: turn.context.mode,
               requestId,
               sequence: segment.sequence,
             });
@@ -461,12 +596,15 @@ export function usePushToTalk({
               text: result.text,
             });
             const provisional = assembler.provisionalTranscript();
-            if (provisional) onTranscriptChangeRef.current(provisional);
+            if (provisional) {
+              onTranscriptChangeRef.current(turn.context, provisional);
+            }
             if (turn.released) maybeFinishTurn(turn);
           } catch (error) {
             if (activeTurnRef.current !== turn || turn.cancelled) return;
             voiceTurnDiagnostic('segment-uncertain', {
               latencyMs: Date.now() - segmentStartedAt,
+              mode: turn.context.mode,
               requestId,
               sequence: segment.sequence,
             });
@@ -486,41 +624,63 @@ export function usePushToTalk({
       );
       Object.assign(turn, {
         abortController,
-        activationMode,
         assembler,
         attempt,
         cancelled: false,
         capture: null,
-        confirmationTimer: null,
+        completionTimer: null,
+        context,
+        endNotified: false,
         expectedSegmentCount: null,
+        finalizing: false,
         limitReached: false,
         queue,
         released: false,
         releasedAt: null,
         segmentCount: 0,
         segmenter,
-        submitted: false,
-        utteranceId: crypto.randomUUID(),
       } satisfies ActiveVoiceTurn);
       activeTurnRef.current = turn;
-      activationModeRef.current = activationMode;
+      activationModeRef.current = activation;
       chordHeldRef.current = true;
       setIsHolding(true);
+      setMode(voiceMode);
       setStatus('requesting_permission');
-      voiceTurnDiagnostic('started', { activationMode, attempt, platform });
+      voiceTurnDiagnostic('started', {
+        activation,
+        attempt,
+        mode: voiceMode,
+        platform,
+      });
 
       try {
+        const decision = await onAttemptStartRef.current(context);
+        if (activeTurnRef.current !== turn || turn.cancelled || turn.released) {
+          if (!turn.endNotified) notifyTurnEnd(turn, 'cancelled');
+          return;
+        }
+        if (!decision.accepted) {
+          finishTerminalTurn(turn, 'preflight_rejected');
+          return;
+        }
+
         const capture = await openVoiceCapture({
           onFrame: (frame) => {
-            if (activeTurnRef.current !== turn || turn.cancelled || turn.released) {
+            if (
+              activeTurnRef.current !== turn ||
+              turn.cancelled ||
+              turn.limitReached ||
+              turn.released
+            ) {
               return;
             }
             const update = segmenter.push(frame);
-            for (const segment of update.segments) dispatchSegment(turn, segment);
+            for (const segment of update.segments) {
+              dispatchSegment(turn, segment);
+            }
             if (update.limitReached && !turn.limitReached) {
               turn.limitReached = true;
-              void turn.capture?.stop();
-              turn.capture = null;
+              void turn.capture?.stop().catch(() => undefined);
               onErrorRef.current(
                 'Voice input reached 60 seconds. Release the shortcut to finish.',
               );
@@ -534,11 +694,14 @@ export function usePushToTalk({
         }
         turn.capture = capture;
         setStatus('listening');
-        voiceTurnDiagnostic('listening', { attempt });
+        voiceTurnDiagnostic('listening', {
+          activation,
+          attempt,
+          mode: voiceMode,
+        });
       } catch (error) {
         if (turn.cancelled || abortController.signal.aborted) return;
-        resetTurnState(turn);
-        void closeTurn(turn);
+        finishTerminalTurn(turn, 'failed');
         logVoiceConnectionFailure('microphone', error);
         void window.tro
           .reportVoiceDiagnostic(
@@ -548,30 +711,50 @@ export function usePushToTalk({
         onErrorRef.current(voiceConnectionErrorMessage(error));
       }
     },
-    [closeTurn, dispatchSegment, maybeFinishTurn, platform, resetTurnState],
+    [
+      dispatchSegment,
+      finishTerminalTurn,
+      maybeFinishTurn,
+      notifyTurnEnd,
+      platform,
+    ],
   );
 
-  const finishListening = useCallback((): void => {
-    const turn = activeTurnRef.current;
-    if (!turn || turn.cancelled || turn.released) return;
-    turn.released = true;
-    turn.releasedAt = Date.now();
-    chordHeldRef.current = false;
-    setIsHolding(false);
-    setStatus('processing');
-    const capture = turn.capture;
-    turn.capture = null;
-    void capture?.stop();
-    turn.abortController.abort();
-    const finalUpdate = turn.segmenter.finish();
-    for (const segment of finalUpdate.segments) dispatchSegment(turn, segment);
-    turn.expectedSegmentCount = turn.segmentCount;
-    voiceTurnDiagnostic('released', {
-      attempt: turn.attempt,
-      segmentCount: turn.expectedSegmentCount,
-    });
-    maybeFinishTurn(turn);
-  }, [dispatchSegment, maybeFinishTurn]);
+  const finishListening = useCallback(
+    (releasedMode?: VoiceMode): void => {
+      const turn = activeTurnRef.current;
+      if (!turn || turn.cancelled || turn.released) return;
+      if (releasedMode && releasedMode !== turn.context.mode) return;
+      if (!turn.capture) {
+        turn.cancelled = true;
+        turn.queue.cancelPending();
+        finishTerminalTurn(turn, 'cancelled');
+        return;
+      }
+      turn.released = true;
+      turn.releasedAt = Date.now();
+      chordHeldRef.current = false;
+      setIsHolding(false);
+      setStatus('processing');
+      const capture = turn.capture;
+      turn.capture = null;
+      void capture.stop().catch(() => undefined);
+      turn.abortController.abort();
+      const finalUpdate = turn.segmenter.finish();
+      for (const segment of finalUpdate.segments) {
+        dispatchSegment(turn, segment);
+      }
+      turn.expectedSegmentCount = turn.segmentCount;
+      voiceTurnDiagnostic('released', {
+        activation: turn.context.activation,
+        attempt: turn.attempt,
+        mode: turn.context.mode,
+        segmentCount: turn.expectedSegmentCount,
+      });
+      maybeFinishTurn(turn);
+    },
+    [dispatchSegment, finishTerminalTurn, maybeFinishTurn],
+  );
 
   useEffect(() => {
     finishListeningRef.current = finishListening;
@@ -593,54 +776,96 @@ export function usePushToTalk({
   }, [cancel, disabled, enabled, platform]);
 
   useEffect(() => {
+    const clearLocalSettleTimer = (): void => {
+      if (localSettleTimerRef.current) {
+        clearTimeout(localSettleTimerRef.current);
+        localSettleTimerRef.current = null;
+      }
+    };
+    const processLocalShortcut = (nowMs: number): void => {
+      clearLocalSettleTimer();
+      const transition = transitionVoiceShortcutArbiter(
+        localArbiterRef.current,
+        platform,
+        pressedCodesRef.current,
+        nowMs,
+      );
+      localArbiterRef.current = transition.state;
+      for (const shortcutEvent of transition.events) {
+        if (shortcutEvent.action === 'pressed') {
+          void beginListening('local_hold', shortcutEvent.mode);
+        } else {
+          finishListeningRef.current(shortcutEvent.mode);
+        }
+      }
+      if (
+        transition.state.phase === 'settling' &&
+        transition.state.deadlineMs !== null
+      ) {
+        const delay = Math.max(0, transition.state.deadlineMs - performance.now());
+        localSettleTimerRef.current = setTimeout(
+          () => processLocalShortcut(transition.state.deadlineMs ?? performance.now()),
+          delay,
+        );
+      }
+    };
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && activeTurnRef.current) {
-        cancel();
+      if (event.key === 'Escape') {
+        if (activeTurnRef.current) {
+          event.preventDefault();
+          cancel();
+          return;
+        }
+        if (localArbiterRef.current.phase === 'settling') {
+          event.preventDefault();
+          clearLocalSettleTimer();
+          localArbiterRef.current = {
+            deadlineMs: null,
+            phase: 'await_all_released',
+          };
+        }
         return;
       }
-      if (event.repeat) return;
+      if (event.repeat || !isVoiceShortcutModifierCode(event.code)) return;
       pressedCodesRef.current.add(event.code);
-      const isChordHeld = isPushToTalkChord(platform, pressedCodesRef.current);
-      if (isChordHeld && !chordHeldRef.current) {
-        void beginListening('local-hold');
-      }
+      processLocalShortcut(performance.now());
+      if (localArbiterRef.current.phase !== 'idle') event.preventDefault();
     };
     const handleKeyUp = (event: KeyboardEvent): void => {
+      if (!isVoiceShortcutModifierCode(event.code)) return;
       pressedCodesRef.current.delete(event.code);
-      const isChordHeld = isPushToTalkChord(platform, pressedCodesRef.current);
-      if (
-        shouldFinishVoiceOnLocalRelease({
-          activationMode: activationModeRef.current,
-          isListening: Boolean(activeTurnRef.current),
-          isLocalChordHeld: isChordHeld,
-        })
-      ) {
-        finishListeningRef.current();
-      }
+      processLocalShortcut(performance.now());
     };
     const handleBlur = (): void => {
+      clearLocalSettleTimer();
       if (activeTurnRef.current) cancel();
       pressedCodesRef.current.clear();
+      localArbiterRef.current = INITIAL_VOICE_SHORTCUT_ARBITER_STATE;
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);
     return () => {
+      clearLocalSettleTimer();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
   }, [beginListening, cancel, platform]);
 
-  useEffect(() =>
-    window.tro.onVoiceShortcut((event) => {
-      handleVoiceShortcutEvent(event, {
-        beginListening: () => beginListening('global-hold'),
-        finishListening: () => finishListeningRef.current(),
-        isListening: Boolean(activeTurnRef.current),
-      });
-    }),
-  [beginListening]);
+  useEffect(
+    () =>
+      window.tro.onVoiceShortcut((event) => {
+        handleVoiceShortcutEvent(event, {
+          beginListening: (eventMode) =>
+            beginListening('global_hold', eventMode),
+          finishListening: (eventMode) =>
+            finishListeningRef.current(eventMode),
+          isListening: Boolean(activeTurnRef.current),
+        });
+      }),
+    [beginListening],
+  );
 
   useEffect(
     () => () => {
@@ -649,11 +874,12 @@ export function usePushToTalk({
       turn.cancelled = true;
       turn.queue.cancelPending();
       turn.abortController.abort();
-      void turn.capture?.stop();
+      void turn.capture?.stop().catch(() => undefined);
+      notifyTurnEnd(turn, 'cancelled');
       activeTurnRef.current = null;
     },
-    [],
+    [notifyTurnEnd],
   );
 
-  return { cancel, isHolding, platform, status };
+  return { cancel, isHolding, mode, platform, status };
 }
