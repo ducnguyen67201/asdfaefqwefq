@@ -140,6 +140,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "organization home banners",
             include_str!("../migrations/026_organization_home_banners.sql"),
         ),
+        migration(
+            27,
+            "verified MCP connectors",
+            include_str!("../migrations/027_mcp_connectors.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

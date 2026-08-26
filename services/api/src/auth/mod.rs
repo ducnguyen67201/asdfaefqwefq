@@ -11,8 +11,9 @@ pub use admin_session::{
     issue_admin_session, set_admin_session_cookie, verify_admin_session,
 };
 pub use crypto::{
-    AgentEnvelope, AgentStateCrypto, digest_access_code, normalize_access_code, open_access_code,
-    open_invite_code, seal_access_code, seal_invite_code, stable_json,
+    AgentEnvelope, AgentStateCrypto, ConnectorTokenCrypto, digest_access_code,
+    normalize_access_code, open_access_code, open_invite_code, seal_access_code, seal_invite_code,
+    stable_json,
 };
 pub use google::GoogleVerifier;
 pub use organizations::{

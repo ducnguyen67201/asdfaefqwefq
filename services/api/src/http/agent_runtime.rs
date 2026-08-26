@@ -172,6 +172,26 @@ pub async fn handle(
                 .ok_or_else(not_found)?;
             return Ok(Some(json_response(StatusCode::OK, run)?));
         }
+        if method == Method::POST && operation == Some("approval") {
+            let input = read_json(headers, body, 16_000)?;
+            let typed: protocol::ApprovalDecisionRequestV3 = serde_json::from_value(input)
+                .map_err(|_| {
+                    ApiError::bad_request(
+                        "invalid_agent_runtime_request",
+                        "Request data is invalid.",
+                    )
+                })?;
+            let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
+            agent
+                .control(&current.user.id, run_id, "approval", &input)
+                .await?
+                .ok_or_else(not_found)?;
+            let run = agent
+                .get_v3(&current.user.id, run_id)
+                .await?
+                .ok_or_else(not_found)?;
+            return Ok(Some(json_response(StatusCode::OK, run)?));
+        }
     }
 
     if method == Method::GET && path == "/v1/tasks" {

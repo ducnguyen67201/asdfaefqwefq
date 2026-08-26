@@ -173,6 +173,7 @@ async fn setup(server: &MockServer) -> (trocode_api::PgPool, AgentService) {
         "durable_agent_hmac_key_0123456789abcdef",
         &models,
         CostGuardMode::Enforce,
+        None,
     );
     (pool, agent)
 }

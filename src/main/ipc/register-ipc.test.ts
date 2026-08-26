@@ -79,6 +79,12 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     listMembers: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  connectorClient: {
+    attempt: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    list: ReturnType<typeof vi.fn>;
+  };
   onAuthSignedIn: ReturnType<typeof vi.fn>;
   restartAndInstallUpdate: ReturnType<typeof vi.fn>;
   setVoiceAudioDucking: ReturnType<typeof vi.fn>;
@@ -419,6 +425,12 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       }),
     ),
   };
+  const connectorClient = {
+    attempt: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    list: vi.fn(),
+  };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
     appUpdateService: {
@@ -437,6 +449,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
     dictationService,
+    connectorClient,
     cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
     handleCompanionResponseAction,
@@ -508,6 +521,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
+    connectorClient,
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,

@@ -1,0 +1,22 @@
+{
+  "catalogKey": "gmail",
+  "endpoint": "https://gmailmcp.googleapis.com/mcp/v1",
+  "maturity": "developer_preview",
+  "namespaces": {
+    "gmail_read": [
+      "get_message",
+      "get_thread",
+      "list_drafts",
+      "list_labels",
+      "search_threads"
+    ],
+    "gmail_organize": [
+      "create_draft",
+      "label_message",
+      "label_thread",
+      "unlabel_message",
+      "unlabel_thread"
+    ]
+  },
+  "forbiddenNameFragments": ["send", "delete", "trash"]
+}

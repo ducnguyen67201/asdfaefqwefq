@@ -205,12 +205,28 @@ export class TaskApplicationService {
     return this.runtime.respondToInteraction(request);
   }
 
-  decideApproval(input: unknown): TaskSnapshot {
+  async decideApproval(input: unknown): Promise<TaskSnapshot> {
     const request = DecideApprovalRequestSchema.parse(input);
-    if (!this.hostedByTask.has(request.taskId)) {
+    const hosted = this.hostedByTask.get(request.taskId);
+    if (!hosted) {
       throw new Error('The task is not owned by the Rust runtime.');
     }
-    return this.runtime.decideApproval(request);
+    if (!this.options.hostedTaskClient) {
+      return this.runtime.decideApproval(request);
+    }
+    await this.options.hostedTaskClient.decideApproval(
+      hosted.record.id,
+      {
+        interactionId: request.interactionId,
+        actionDigest: request.actionDigest,
+        decision: request.decision,
+      },
+      hosted.record.runVersion,
+    );
+    const record = await this.options.hostedTaskClient.get(hosted.record.id);
+    hosted.record = record;
+    hosted.snapshot = projectHostedTask(record, undefined, hosted.snapshot);
+    return hosted.snapshot;
   }
 
   async steer(input: unknown): Promise<TaskSnapshot> {

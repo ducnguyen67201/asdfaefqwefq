@@ -8,6 +8,7 @@ const MIN_SECRET_LENGTH: usize = 32;
 pub struct Config {
     pub admin: AdminConfig,
     pub agent_runtime: AgentRuntimeConfig,
+    pub connectors: ConnectorConfig,
     pub cost_guard: CostGuardConfig,
     pub database_pool_max: u32,
     pub database_url: String,
@@ -22,6 +23,22 @@ pub struct Config {
     pub railway_git_commit_sha: String,
     pub session_duration_days: u32,
     pub session_token_hmac_key: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConnectorConfig {
+    pub callback_url: Option<String>,
+    pub canary_users: BTreeSet<String>,
+    pub current_encryption_key_version: u32,
+    pub enabled: bool,
+    pub encryption_keys: Option<String>,
+    pub gmail_client_id: Option<String>,
+    pub gmail_client_secret: Option<String>,
+    pub max_result_bytes: usize,
+    pub max_schema_bytes: usize,
+    pub mcp_timeout_ms: u64,
+    pub oauth_attempt_ttl_ms: u64,
+    pub rollout_percent: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -214,6 +231,55 @@ impl Config {
             bail!("TROCODE_BUDGET_WARNING_PERCENT must be at most 100.");
         }
 
+        let connector_enabled = boolean(environment, "TROCODE_CONNECTORS_ENABLED", false)?;
+        let connector_canary_users = comma_separated(environment, "TROCODE_CONNECTOR_CANARY_USERS");
+        let connector_rollout_percent =
+            percentage(environment, "TROCODE_CONNECTOR_ROLLOUT_PERCENT", 0)?;
+        let connector_rollout_active = connector_enabled
+            && (!connector_canary_users.is_empty() || connector_rollout_percent > 0);
+        let connector_callback_url = optional(environment, "TROCODE_CONNECTOR_CALLBACK_URL");
+        let connector_encryption_keys =
+            optional(environment, "TROCODE_CONNECTOR_TOKEN_ENCRYPTION_KEYS");
+        let gmail_connector_client_id = optional(environment, "TROCODE_GMAIL_CONNECTOR_CLIENT_ID");
+        let gmail_connector_client_secret =
+            optional(environment, "TROCODE_GMAIL_CONNECTOR_CLIENT_SECRET");
+        if connector_rollout_active {
+            connector_encryption_keys.as_ref().context(
+                "TROCODE_CONNECTOR_TOKEN_ENCRYPTION_KEYS is required when connectors are enabled.",
+            )?;
+            gmail_connector_client_id.as_ref().context(
+                "TROCODE_GMAIL_CONNECTOR_CLIENT_ID is required when connectors are enabled.",
+            )?;
+            gmail_connector_client_secret.as_ref().context(
+                "TROCODE_GMAIL_CONNECTOR_CLIENT_SECRET is required when connectors are enabled.",
+            )?;
+            let callback = connector_callback_url.as_ref().context(
+                "TROCODE_CONNECTOR_CALLBACK_URL is required when connectors are enabled.",
+            )?;
+            let parsed = url::Url::parse(callback)
+                .context("TROCODE_CONNECTOR_CALLBACK_URL must be a valid URL.")?;
+            if parsed.scheme() != "https"
+                || parsed.host_str().is_none()
+                || parsed.path() != "/v1/connectors/oauth/callback"
+                || parsed.query().is_some()
+                || parsed.fragment().is_some()
+            {
+                bail!(
+                    "TROCODE_CONNECTOR_CALLBACK_URL must be a public HTTPS URL with the exact /v1/connectors/oauth/callback path and no query or fragment."
+                );
+            }
+        }
+        let connector_max_schema_bytes =
+            positive_usize(environment, "TROCODE_CONNECTOR_MAX_SCHEMA_BYTES", 128_000)?;
+        if connector_max_schema_bytes > 512_000 {
+            bail!("TROCODE_CONNECTOR_MAX_SCHEMA_BYTES must be at most 512000.");
+        }
+        let connector_max_result_bytes =
+            positive_usize(environment, "TROCODE_CONNECTOR_MAX_RESULT_BYTES", 512_000)?;
+        if connector_max_result_bytes > 2_000_000 {
+            bail!("TROCODE_CONNECTOR_MAX_RESULT_BYTES must be at most 2000000.");
+        }
+
         Ok(Self {
             admin: AdminConfig {
                 access_token: admin_access_token,
@@ -277,6 +343,32 @@ impl Config {
                     "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
                     0,
                 )?,
+            },
+            connectors: ConnectorConfig {
+                callback_url: connector_callback_url,
+                canary_users: connector_canary_users,
+                current_encryption_key_version: positive_u32(
+                    environment,
+                    "TROCODE_CONNECTOR_TOKEN_KEY_VERSION",
+                    1,
+                )?,
+                enabled: connector_enabled,
+                encryption_keys: connector_encryption_keys,
+                gmail_client_id: gmail_connector_client_id,
+                gmail_client_secret: gmail_connector_client_secret,
+                max_result_bytes: connector_max_result_bytes,
+                max_schema_bytes: connector_max_schema_bytes,
+                mcp_timeout_ms: positive_u64(
+                    environment,
+                    "TROCODE_CONNECTOR_MCP_TIMEOUT_MS",
+                    30_000,
+                )?,
+                oauth_attempt_ttl_ms: positive_u64(
+                    environment,
+                    "TROCODE_CONNECTOR_OAUTH_ATTEMPT_TTL_MS",
+                    10 * 60 * 1_000,
+                )?,
+                rollout_percent: connector_rollout_percent,
             },
             cost_guard: CostGuardConfig {
                 daily_micro_usd: positive_i64(
@@ -515,5 +607,46 @@ mod tests {
                 .to_string()
                 .contains("TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID")
         );
+    }
+
+    #[test]
+    fn connector_defaults_are_disabled() {
+        let config = Config::from_source(&environment()).expect("valid config");
+        assert!(!config.connectors.enabled);
+        assert!(config.connectors.callback_url.is_none());
+    }
+
+    #[test]
+    fn connector_rollout_requires_separate_secrets_and_exact_callback() {
+        let mut values = environment();
+        values.extend([
+            ("TROCODE_CONNECTORS_ENABLED".to_owned(), "true".to_owned()),
+            (
+                "TROCODE_CONNECTOR_ROLLOUT_PERCENT".to_owned(),
+                "100".to_owned(),
+            ),
+            (
+                "TROCODE_CONNECTOR_TOKEN_ENCRYPTION_KEYS".to_owned(),
+                "1:eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=".to_owned(),
+            ),
+            (
+                "TROCODE_GMAIL_CONNECTOR_CLIENT_ID".to_owned(),
+                "gmail-client".to_owned(),
+            ),
+            (
+                "TROCODE_GMAIL_CONNECTOR_CLIENT_SECRET".to_owned(),
+                "gmail-secret".to_owned(),
+            ),
+            (
+                "TROCODE_CONNECTOR_CALLBACK_URL".to_owned(),
+                "https://api.example.com/wrong".to_owned(),
+            ),
+        ]);
+        assert!(Config::from_source(&values).is_err());
+        values.insert(
+            "TROCODE_CONNECTOR_CALLBACK_URL".to_owned(),
+            "https://api.example.com/v1/connectors/oauth/callback".to_owned(),
+        );
+        assert!(Config::from_source(&values).is_ok());
     }
 }

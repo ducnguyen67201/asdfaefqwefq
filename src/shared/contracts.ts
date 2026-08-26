@@ -1660,6 +1660,45 @@ export const HostedTaskStateSchema = z.enum([
   'expired',
 ]);
 
+export const ConnectorCatalogItemSchema = z.object({
+  catalogKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/u),
+  displayName: z.string().min(1).max(100),
+  description: z.string().min(1).max(1_000),
+  maturity: z.enum(['developer_preview', 'beta', 'stable']),
+}).strict();
+
+export const ConnectorConnectionSummarySchema = z.object({
+  id: z.string().uuid(),
+  catalogKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/u),
+  status: z.enum(['connecting', 'connected', 'reauthorize', 'contract_changed', 'error', 'disconnected']),
+  connectedAt: z.string().datetime({ offset: true }).nullable(),
+}).strict();
+
+export const ConnectorListSchema = z.object({
+  enabled: z.boolean(),
+  catalog: z.array(ConnectorCatalogItemSchema).max(100),
+  connections: z.array(ConnectorConnectionSummarySchema).max(100),
+}).strict();
+
+export const ConnectorAttemptStatusSchema = z.object({
+  attemptId: z.string().uuid(),
+  catalogKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/u),
+  status: z.enum(['pending', 'processing', 'connected', 'denied', 'failed', 'expired']),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export const ConnectConnectorRequestSchema = z.object({
+  catalogKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/u),
+}).strict();
+
+export const ConnectorAttemptRequestSchema = z.object({
+  attemptId: z.string().uuid(),
+}).strict();
+
+export const DisconnectConnectorRequestSchema = z.object({
+  connectionId: z.string().uuid(),
+}).strict();
+
 export const HostedTaskAuthorityContractSchema = z
   .object({
     schemaVersion: z.literal(8),
@@ -2865,6 +2904,13 @@ export type TaskBehavior = z.infer<typeof TaskBehaviorSchema>;
 export type TaskHistory = z.infer<typeof TaskHistorySchema>;
 export type HostedTaskEvent = z.infer<typeof HostedTaskEventSchema>;
 export type HostedTaskRecord = z.infer<typeof HostedTaskRecordSchema>;
+export type ConnectorCatalogItem = z.infer<typeof ConnectorCatalogItemSchema>;
+export type ConnectorConnectionSummary = z.infer<typeof ConnectorConnectionSummarySchema>;
+export type ConnectorList = z.infer<typeof ConnectorListSchema>;
+export type ConnectorAttemptStatus = z.infer<typeof ConnectorAttemptStatusSchema>;
+export type ConnectConnectorRequest = z.infer<typeof ConnectConnectorRequestSchema>;
+export type ConnectorAttemptRequest = z.infer<typeof ConnectorAttemptRequestSchema>;
+export type DisconnectConnectorRequest = z.infer<typeof DisconnectConnectorRequestSchema>;
 export type HostedTaskAuthorityContract = z.infer<
   typeof HostedTaskAuthorityContractSchema
 >;

@@ -626,6 +626,45 @@
       ],
       "type": "object"
     },
+    "ApprovalDecisionRequestV3": {
+      "additionalProperties": false,
+      "properties": {
+        "actionDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "clientCommandId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "deny"
+          ],
+          "type": "string"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "interactionId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interactionId",
+        "actionDigest",
+        "expectedRunVersion",
+        "clientCommandId",
+        "decision"
+      ],
+      "type": "object"
+    },
     "CancelAgentTaskRequestV3": {
       "additionalProperties": false,
       "properties": {
@@ -1192,6 +1231,92 @@
       ],
       "type": "object"
     },
+    "ProposedActionV3": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "login",
+            "send",
+            "submit",
+            "upload",
+            "download",
+            "delete",
+            "purchase",
+            "install",
+            "run_command",
+            "write_file",
+            "system_permission",
+            "answer",
+            "guide",
+            "observe_screen",
+            "open_application",
+            "open_url",
+            "click_element",
+            "type_text",
+            "press_key",
+            "scroll",
+            "drag",
+            "read_file",
+            "record_activity_signal"
+          ],
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/$defs/ActionEffectV3"
+        },
+        "operation": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maxLength": 100000,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 8000,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              }
+            ]
+          },
+          "propertyNames": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "target": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "toolId": {
+          "maxLength": 100,
+          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "description",
+        "parameters"
+      ],
+      "type": "object"
+    },
     "ResourceKindV3": {
       "enum": [
         "calendar_event",
@@ -1410,6 +1535,9 @@
         {
           "additionalProperties": false,
           "properties": {
+            "action": {
+              "$ref": "#/$defs/ProposedActionV3"
+            },
             "actionDigest": {
               "pattern": "^[a-f0-9]{64}$",
               "type": "string"
@@ -1443,6 +1571,7 @@
             "kind",
             "interactionId",
             "actionDigest",
+            "action",
             "consequence",
             "expiresAt",
             "since"
@@ -1456,6 +1585,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "approvalDecisionRequest": {
+      "$ref": "#/$defs/ApprovalDecisionRequestV3"
+    },
     "cancelRequest": {
       "$ref": "#/$defs/CancelAgentTaskRequestV3"
     },
@@ -1513,6 +1645,7 @@
     "desktopResult",
     "permissionWaitRequest",
     "permissionDecisionRequest",
+    "approvalDecisionRequest",
     "error"
   ],
   "title": "Tro canonical agent runtime protocol v3",
