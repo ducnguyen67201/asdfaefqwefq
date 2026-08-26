@@ -36,6 +36,7 @@
     {"method":"DELETE","path":"/v1/admin/access-codes/{codeId}","family":"admin"},
     {"method":"PATCH","path":"/v1/admin/users/{userId}/access","family":"admin"},
     {"method":"PATCH","path":"/v1/admin/users/{userId}/classroom-role","family":"admin"},
+    {"method":"PATCH","path":"/v1/admin/users/{userId}/knowledge-spaces","family":"admin"},
     {"method":"POST","path":"/v1/admin/users/{userId}/access-code","family":"admin"},
     {"method":"GET","path":"/v1/capabilities","family":"knowledge"},
     {"method":"GET","path":"/v1/spaces","family":"knowledge"},

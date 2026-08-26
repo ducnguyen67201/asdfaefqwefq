@@ -12,6 +12,7 @@ const validResponse = {
       createdAt: '2026-08-26T00:00:00Z',
       email: 'teacher@example.com',
       id: 'teacher-id',
+      knowledgeSpacesEnabled: true,
       lastSeenAt: null,
       name: 'Teacher',
       plan: 'pro',
@@ -25,6 +26,20 @@ const validResponse = {
 describe('admin API contracts', () => {
   it('accepts a valid users response', () => {
     expect(usersResponseSchema.parse(validResponse)).toEqual(validResponse);
+  });
+
+  it('rejects a non-boolean Knowledge Spaces capability', () => {
+    expect(() =>
+      usersResponseSchema.parse({
+        ...validResponse,
+        items: [
+          {
+            ...validResponse.items[0],
+            knowledgeSpacesEnabled: 'enabled',
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it('rejects an unsupported classroom role at the HTTP boundary', () => {

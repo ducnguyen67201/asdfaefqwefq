@@ -45,6 +45,7 @@ export function UsersPage({
   onSessionExpired,
 }: UsersPageProps) {
   const [busyUserId, setBusyUserId] = useState('');
+  const [knowledgeBusyUserId, setKnowledgeBusyUserId] = useState('');
   const [classroomRole, setClassroomRole] = useState('');
   const [grantUser, setGrantUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,6 +183,37 @@ export function UsersPage({
     }
   }
 
+  async function changeKnowledgeSpacesAccess(user: AdminUser) {
+    const enabled = !user.knowledgeSpacesEnabled;
+    setKnowledgeBusyUserId(user.id);
+    try {
+      await adminApi.setKnowledgeSpacesEnabled(user.id, enabled);
+      setResponse((current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((item) =>
+                item.id === user.id
+                  ? { ...item, knowledgeSpacesEnabled: enabled }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      notify(
+        `Class workspaces are now ${enabled ? 'enabled' : 'disabled'} for ${user.email}.`,
+      );
+    } catch (caught) {
+      if (isUnauthorized(caught)) {
+        onSessionExpired();
+        return;
+      }
+      notify(errorMessage(caught));
+    } finally {
+      setKnowledgeBusyUserId('');
+    }
+  }
+
   const users = response?.items ?? [];
   const total = response?.page.total ?? 0;
   const summary = response?.summary;
@@ -306,6 +338,7 @@ export function UsersPage({
                   <th scope="col">User</th>
                   <th scope="col">Plan</th>
                   <th scope="col">Classroom role</th>
+                  <th scope="col">Class workspaces</th>
                   <th scope="col">Access code</th>
                   <th scope="col">Last seen</th>
                   <th scope="col">Status</th>
@@ -364,6 +397,21 @@ export function UsersPage({
                         >
                           {roleState.message}
                         </span>
+                      </td>
+                      <td data-label="Class workspaces">
+                        <button
+                          aria-pressed={user.knowledgeSpacesEnabled}
+                          className={`row-action${user.knowledgeSpacesEnabled ? '' : ' row-action--block'}`}
+                          disabled={knowledgeBusyUserId === user.id}
+                          onClick={() => void changeKnowledgeSpacesAccess(user)}
+                          type="button"
+                        >
+                          {knowledgeBusyUserId === user.id
+                            ? 'Saving…'
+                            : user.knowledgeSpacesEnabled
+                              ? 'Enabled'
+                              : 'Disabled'}
+                        </button>
                       </td>
                       <td>
                         {user.codeLabel ||
