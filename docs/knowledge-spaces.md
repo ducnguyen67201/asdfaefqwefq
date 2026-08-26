@@ -10,11 +10,12 @@ roles from `/source/admin`:
 
 - **Teacher** — may create Class workspaces. A class owner can add registered
   Teachers and Students; a non-owner Teacher can add registered Students.
-- **Student** — may join only as a participant and use assigned class resources,
-  Activities, Attempts, help, and submissions. Student views do not expose the
-  roster, groups, upload controls, authoring, Runs, or facilitator insights.
-- **Unassigned** — may not create or join a class until an administrator assigns
-  Teacher or Student.
+- **Student** — may access a class only after a Teacher adds the registered
+  account as a participant, then use assigned class resources, Activities,
+  Attempts, help, and submissions. Student views do not expose the roster,
+  groups, upload controls, authoring, Runs, or facilitator insights.
+- **Unassigned** — may not create or access a class until an administrator
+  assigns Teacher or Student.
 
 The administrator-assigned role is an eligibility boundary. The existing
 `owner | facilitator | participant` membership remains the authority inside one
@@ -26,8 +27,9 @@ backfilled to Teacher and participant-only accounts to Student by migration 018.
 Teachers add already registered accounts by email from the People tab. Requests
 are deduplicated, limited to 500 emails per idempotent batch, and may be repeated
 as often as needed. Missing, blocked, ambiguous, or incorrectly assigned accounts
-are not added and are reported separately. Join codes remain supported, but
-redemption must match the administrator-assigned account role.
+are not added and are reported separately. Student codes never create Space
+membership: an active Teacher-managed participant membership must already
+exist. Facilitator invites remain role-checked for adding Teachers.
 
 Organization access and class enrollment are separate steps. An organization
 organizer first reserves a seat using the student's exact Google email from
@@ -64,9 +66,10 @@ Space
 A live classroom is a `live` or `hybrid` Run with a `room` target; it is not a
 second session model. A draft Run is the lobby, an open Run is the live class,
 and a closed Run removes the student's sticky Activity authority. The teacher
-creates a short-lived room code. The API stores only its HMAC digest and an
-authenticated join creates or reuses exactly one Space membership, assignment,
-Attempt, and participation for that Run.
+creates a short-lived room code. The API stores only its HMAC digest. An
+authenticated join requires an active participant membership that a Teacher
+already created, then creates or reuses exactly one assignment, Attempt, and
+participation for that Run.
 
 Teachers can broadcast only typed exercise or public-HTTPS link directives.
 Automatic link opening requires both an origin published in the immutable

@@ -76,6 +76,29 @@ pub const fn can_add_member(actor: SpaceRole, requested: SpaceRole) -> bool {
 }
 
 #[must_use]
+pub const fn can_redeem_space_invite(
+    invite_role: SpaceRole,
+    existing_role: Option<SpaceRole>,
+) -> bool {
+    match invite_role {
+        SpaceRole::Participant => matches!(existing_role, Some(SpaceRole::Participant)),
+        SpaceRole::Facilitator => true,
+        SpaceRole::Owner => false,
+    }
+}
+
+#[must_use]
+pub const fn can_join_live_room(
+    classroom_role: ClassroomRole,
+    existing_role: Option<SpaceRole>,
+) -> bool {
+    matches!(
+        (classroom_role, existing_role),
+        (ClassroomRole::Student, Some(SpaceRole::Participant))
+    )
+}
+
+#[must_use]
 pub fn classroom_role_conflicts_with_memberships<'a>(
     classroom_role: ClassroomRole,
     membership_roles: impl IntoIterator<Item = &'a str>,
@@ -130,6 +153,30 @@ mod tests {
             SpaceRole::Participant,
             SpaceRole::Participant
         ));
+    }
+
+    #[test]
+    fn students_must_be_rostered_before_using_class_codes() {
+        assert!(!can_redeem_space_invite(SpaceRole::Participant, None));
+        assert!(can_redeem_space_invite(
+            SpaceRole::Participant,
+            Some(SpaceRole::Participant)
+        ));
+        assert!(!can_join_live_room(ClassroomRole::Student, None));
+        assert!(can_join_live_room(
+            ClassroomRole::Student,
+            Some(SpaceRole::Participant)
+        ));
+        assert!(!can_join_live_room(
+            ClassroomRole::Teacher,
+            Some(SpaceRole::Participant)
+        ));
+    }
+
+    #[test]
+    fn teacher_invites_can_still_add_facilitators() {
+        assert!(can_redeem_space_invite(SpaceRole::Facilitator, None));
+        assert!(!can_redeem_space_invite(SpaceRole::Owner, None));
     }
 
     #[test]

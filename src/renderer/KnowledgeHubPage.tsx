@@ -9,7 +9,10 @@ import type {
 
 import { AssignedActivitiesPage } from './AssignedActivitiesPage';
 import { AttemptLaunchPage } from './AttemptLaunchPage';
-import { SpaceDetailPage } from './SpaceDetailPage';
+import {
+  SpaceDetailPage,
+  type SpaceDetailTab,
+} from './SpaceDetailPage';
 import { SpacesPage } from './SpacesPage';
 
 export function KnowledgeHubPage({
@@ -25,6 +28,7 @@ export function KnowledgeHubPage({
   onRefreshClassSpaces,
   onSelectSpace,
   space,
+  spaceInitialTab = 'library',
 }: {
   appLanguage: AppLanguage;
   classroomError: string | null;
@@ -38,6 +42,7 @@ export function KnowledgeHubPage({
   onRefreshClassSpaces: () => Promise<void>;
   onSelectSpace: (space: KnowledgeSpaceSummary | null) => void;
   space: KnowledgeSpaceSummary | null;
+  spaceInitialTab?: SpaceDetailTab;
 }) {
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
     null,
@@ -69,7 +74,8 @@ export function KnowledgeHubPage({
     return (
       <SpaceDetailPage
         appLanguage={appLanguage}
-        key={space.id}
+        initialTab={spaceInitialTab}
+        key={`${space.id}:${spaceInitialTab}`}
         onBack={() => onSelectSpace(null)}
         space={space}
       />

@@ -99,6 +99,32 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     assert_eq!(role_rejected.status, StatusCode::FORBIDDEN);
     assert_eq!(role_rejected.body["code"], "classroom_role_mismatch");
 
+    let unrostered = call(
+        &router,
+        Method::POST,
+        "/v1/live-rooms/join",
+        Some(&fixture.student_token),
+        Some(json!({"clientId":Uuid::new_v4(),"code":room_code})),
+    )
+    .await;
+    assert_eq!(unrostered.status, StatusCode::FORBIDDEN);
+    assert_eq!(unrostered.body["code"], "classroom_membership_required");
+
+    let rostered = call(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{}/members/bulk", fixture.space_id),
+        Some(&fixture.teacher_token),
+        Some(json!({
+            "clientId":Uuid::new_v4(),
+            "emails":[format!("{}@example.test", fixture.student_id)],
+            "role":"participant"
+        })),
+    )
+    .await;
+    assert_eq!(rostered.status, StatusCode::OK);
+    assert_eq!(rostered.body["addedEmails"].as_array().unwrap().len(), 1);
+
     let joined = call(
         &router,
         Method::POST,
@@ -401,7 +427,7 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     let final_dashboard = dashboard(&router, &fixture).await;
     assert_eq!(final_dashboard["participants"][0]["status"], "completed");
 
-    let load_users = create_load_users(&pool, 200).await;
+    let load_users = create_load_users(&pool, fixture.space_id, 200).await;
     let mut joins = tokio::task::JoinSet::new();
     for (_, token) in &load_users {
         let router = router.clone();
@@ -770,7 +796,7 @@ fn session_digest(token: &str) -> [u8; 32] {
     mac.finalize().into_bytes().into()
 }
 
-async fn create_load_users(pool: &PgPool, count: usize) -> Vec<(String, String)> {
+async fn create_load_users(pool: &PgPool, space_id: Uuid, count: usize) -> Vec<(String, String)> {
     let prefix = Uuid::new_v4();
     let users: Vec<_> = (0..count)
         .map(|index| {
@@ -787,6 +813,15 @@ async fn create_load_users(pool: &PgPool, count: usize) -> Vec<(String, String)>
            SELECT id,id||'@example.test','Rust load student','basic',NOW(),'student'
            FROM UNNEST($1::text[]) AS ids(id)"#,
     )
+    .bind(&ids)
+    .execute(pool)
+    .await
+    .unwrap();
+    query(
+        r#"INSERT INTO knowledge_space_members (space_id,user_id,role)
+           SELECT $1,id,'participant' FROM UNNEST($2::text[]) AS ids(id)"#,
+    )
+    .bind(space_id)
     .bind(&ids)
     .execute(pool)
     .await

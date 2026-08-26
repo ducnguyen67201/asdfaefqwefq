@@ -43,11 +43,9 @@ export function SpacesPage({
   spaces: KnowledgeSpaceSummary[];
 }) {
   const [name, setName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [autoOpenConsent, setAutoOpenConsent] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const t = (message: string) => translate(appLanguage, message);
@@ -123,7 +121,7 @@ export function SpacesPage({
           <h2>{t('Join your class room')}</h2>
           <p>
             {t(
-              'Enter the room code from your teacher. Tro will wait with you until class starts.',
+              'After your Teacher adds you to the class, enter the room code. Tro will wait with you until class starts.',
             )}
           </p>
           <label htmlFor="classroom-room-code">{t('Room code')}</label>
@@ -175,10 +173,22 @@ export function SpacesPage({
         </form>
       )}
 
-      <div
-        className={`class-entry-grid${canCreate ? '' : ' class-entry-grid--single'}`}
-      >
-        {canCreate && (
+      {classroomRole === 'student' && (
+        <div className="class-roster-access-note">
+          <span aria-hidden="true">✓</span>
+          <div>
+            <strong>{t('Teacher-managed workspace access')}</strong>
+            <p>
+              {t(
+                'Your class workspaces appear here only after a Teacher adds your registered account.',
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {canCreate && (
+        <div className="class-entry-grid class-entry-grid--single">
           <form
             className="knowledge-create class-entry-card class-entry-card--create"
             onSubmit={(event) => {
@@ -231,51 +241,8 @@ export function SpacesPage({
               {t(creating ? 'Creating…' : 'Create class')}
             </button>
           </form>
-        )}
-        <form
-          className="knowledge-create class-entry-card class-entry-card--join"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!inviteCode.trim()) return;
-            setJoining(true);
-            setActionError(null);
-            void window.tro
-              .redeemKnowledgeInvite({ code: inviteCode.trim() })
-              .then(() => {
-                setInviteCode('');
-                return onRefresh();
-              })
-              .catch((cause: unknown) =>
-                setActionError(
-                  cause instanceof Error
-                    ? cause.message
-                    : t('Could not join that class.'),
-                ),
-              )
-              .finally(() => setJoining(false));
-          }}
-        >
-          <div className="class-entry-card__heading">
-            <span aria-hidden="true">↳</span>
-            <div>
-              <strong>{t('Join a class')}</strong>
-              <p>{t('Use a code shared for your assigned role.')}</p>
-            </div>
-          </div>
-          <label htmlFor="space-invite-code">{t('Join code')}</label>
-          <input
-            id="space-invite-code"
-            onChange={(event) => setInviteCode(event.target.value)}
-            placeholder={t(
-              'Paste a join code that matches your assigned role',
-            )}
-            value={inviteCode}
-          />
-          <button disabled={joining || !inviteCode.trim()} type="submit">
-            {t(joining ? 'Joining…' : 'Join class')}
-          </button>
-        </form>
-      </div>
+        </div>
+      )}
 
       {(actionError ?? error) && (
         <div className="error-banner" role="alert">
