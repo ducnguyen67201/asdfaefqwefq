@@ -6,6 +6,8 @@
   "main": ".webpack/main",
   "private": true,
   "scripts": {
+    "admin:build": "vite build --config apps/admin/vite.config.ts",
+    "admin:dev": "vite --config apps/admin/vite.config.ts",
     "start": "npm run db:up && doppler run --project tro-app --config dev -- npm exec -- electron-forge start",
     "db:down": "doppler run --project tro-app --config dev -- docker compose down",
     "db:logs": "doppler run --project tro-app --config dev -- docker compose logs --tail=100 postgres",
@@ -20,11 +22,11 @@
     "bazel:test": "bazel test //services/api/...",
     "bazel:check": "bazel test --config=ci //:buildifier_test //services/api/... && bazel build --config=ci //services/api:clippy",
     "cua:report": "npm run engine -- cua-report",
-    "package": "doppler run --project tro-app --config prd -- npm exec -- electron-forge package",
-    "package:dev": "doppler run --project tro-app --config dev -- npm exec -- electron-forge package",
-    "make": "doppler run --project tro-app --config prd -- npm exec -- electron-forge make",
-    "make:dev": "doppler run --project tro-app --config dev -- npm exec -- electron-forge make",
-    "publish": "doppler run --project tro-app --config prd -- npm exec -- electron-forge publish",
+    "package": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge package",
+    "package:dev": "npm run admin:build && doppler run --project tro-app --config dev -- npm exec -- electron-forge package",
+    "make": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge make",
+    "make:dev": "npm run admin:build && doppler run --project tro-app --config dev -- npm exec -- electron-forge make",
+    "publish": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "access-code:create": "npm run engine -- access-code create",
     "membership:keygen": "npm run engine -- membership keygen",
@@ -35,12 +37,12 @@
     "api:lint": "cargo clippy --manifest-path services/api/Cargo.toml --all-targets --all-features -- -D warnings",
     "api:test": "cargo test --manifest-path services/api/Cargo.toml --all-features --locked",
     "api:audit": "cargo audit --file Cargo.lock",
-    "api:build": "cargo build --manifest-path services/api/Cargo.toml --release --locked",
+    "api:build": "npm run admin:build && cargo build --manifest-path services/api/Cargo.toml --release --locked",
     "test": "vitest run && npm run api:test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:rust-engine": "npm run engine -- rust-only-check",
-    "check": "npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
+    "check": "npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
   },
   "keywords": [
     "ai-agent",
@@ -83,6 +85,7 @@
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
+    "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "^4.1.10",
     "css-loader": "^6.11.0",
     "dotenv": "^17.4.2",
@@ -97,6 +100,7 @@
     "style-loader": "^3.3.4",
     "ts-loader": "^9.6.2",
     "typescript": "~6.0.0",
+    "vite": "^8.2.2",
     "vitest": "^4.1.10"
   },
   "dependencies": {

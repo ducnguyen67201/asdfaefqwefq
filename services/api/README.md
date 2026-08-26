@@ -4,6 +4,12 @@ This directory is Tro's Rust hosted backend. One locked `trocode-api` binary
 owns the HTTP API, ingestion worker, migrations, and operator commands. The
 Electron application remains a separate TypeScript desktop frontend.
 
+The browser admin dashboard is authored as React and TypeScript in
+`apps/admin`. `npm run admin:build` emits immutable browser assets to
+`services/api/admin-dist`, which this Rust crate embeds into the same binary and
+serves at `/source/admin`. Do not edit `admin-dist` by hand. This keeps Railway
+on one API service; the admin UI does not require a Node or Next.js server.
+
 Both Railway services must use `/` as their Root Directory so Railpack can read
 the shared root `Cargo.toml` and `Cargo.lock`. Because Railway config paths are
 repository-relative, set the API service's config path to
@@ -31,6 +37,7 @@ npm run api:fmt
 npm run api:lint
 npm run api:test
 npm run api:audit
+npm run admin:build
 npm run api:build
 ```
 
