@@ -391,6 +391,24 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let asset = send(&router, Method::GET, "/source/admin", None, None).await;
     assert_status(&asset, StatusCode::OK);
     assert!(asset.headers.contains_key("content-security-policy"));
+    let admin_html = String::from_utf8_lossy(&asset.body);
+    assert!(admin_html.contains("<div id=\"root\"></div>"));
+    assert!(admin_html.contains("/source/admin/assets/admin.js"));
+    assert!(admin_html.contains("/source/admin/assets/admin.css"));
+    let admin_script = send(
+        &router,
+        Method::GET,
+        "/source/admin/assets/admin.js",
+        None,
+        None,
+    )
+    .await;
+    assert_status(&admin_script, StatusCode::OK);
+    assert_eq!(
+        admin_script.headers.get("content-type").unwrap(),
+        "text/javascript; charset=utf-8"
+    );
+    assert!(admin_script.body.len() > 100_000);
     assert_status(
         &send_with_headers(
             &router,

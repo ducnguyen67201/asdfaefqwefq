@@ -19,6 +19,9 @@ Electron and React are client/device layers:
   protocol.
 - The hosted Rust API owns canonical tasks and sends signed, expiring tool
   invocations to a reconnectable Electron worker.
+- The web admin is a separate static React client embedded in the hosted Rust
+  binary. It calls only authenticated `/v1/admin/*` HTTP contracts and does not
+  introduce another backend runtime.
 
 ```mermaid
 flowchart LR
@@ -33,6 +36,7 @@ flowchart LR
     MAIN --> CUA["CUA / browser / OS adapters"]
     MAIN --> WORKSPACE["root-confined file + shell adapters"]
     MAIN -->|"bounded result + evidence"| API
+    ADMIN["Static React admin"] -->|"authenticated HTTPS"| API
 ```
 
 ## Task authority

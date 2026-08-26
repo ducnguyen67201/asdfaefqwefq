@@ -229,6 +229,11 @@ same artifact with the `ingestion-worker` command. Deployment and rollback gates
 are documented in the
 [same-service runbook](docs/operations/rust-backend-cutover.md).
 
+The protected web admin at `/source/admin` is a static React and TypeScript
+client built from [`apps/admin`](apps/admin). Its generated assets are embedded
+in `trocode-api`, so Railway does not need a separate frontend or Next.js
+service. Run `npm run admin:build` after changing the admin source.
+
 Run the backend locally with:
 
 ```bash

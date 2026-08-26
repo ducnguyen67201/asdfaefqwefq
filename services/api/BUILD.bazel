@@ -24,8 +24,8 @@ rust_library(
     ),
     aliases = aliases(),
     compile_data = glob([
+        "admin-dist/**/*",
         "migrations/*.sql",
-        "public/*",
     ]),
     crate_name = "trocode_api",
     edition = crate_edition(),
