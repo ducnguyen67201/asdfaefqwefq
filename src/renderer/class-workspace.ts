@@ -3,6 +3,12 @@ import type {
   KnowledgeSpaceSummary,
 } from '../shared/contracts';
 
+export function hasAssignedClassroomRole(
+  role: ClassroomAccountRole,
+): role is Exclude<ClassroomAccountRole, 'unassigned'> {
+  return role !== 'unassigned';
+}
+
 export function canCreateClassWorkspace(role: ClassroomAccountRole): boolean {
   return role === 'teacher';
 }

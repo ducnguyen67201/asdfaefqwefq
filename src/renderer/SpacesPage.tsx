@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type {
   AppLanguage,
@@ -11,6 +11,7 @@ import { translate } from './app-language';
 import {
   canCreateClassWorkspace,
   groupClassWorkspaces,
+  hasAssignedClassroomRole,
 } from './class-workspace';
 
 function classInitials(name: string) {
@@ -24,16 +25,23 @@ function classInitials(name: string) {
 
 export function SpacesPage({
   appLanguage,
+  classroomRole,
+  error,
+  loading,
   onJoined,
   onOpen,
+  onRefresh,
+  spaces,
 }: {
   appLanguage: AppLanguage;
+  classroomRole: ClassroomAccountRole;
+  error: string | null;
+  loading: boolean;
   onJoined: (attemptId: string) => void;
   onOpen: (space: KnowledgeSpaceSummary) => void;
+  onRefresh: () => Promise<void>;
+  spaces: KnowledgeSpaceSummary[];
 }) {
-  const [classroomRole, setClassroomRole] =
-    useState<ClassroomAccountRole>('unassigned');
-  const [spaces, setSpaces] = useState<KnowledgeSpaceSummary[]>([]);
   const [name, setName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -41,53 +49,10 @@ export function SpacesPage({
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
   const t = (message: string) => translate(appLanguage, message);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await window.tro.listKnowledgeSpaces();
-      setClassroomRole(result.classroomRole);
-      setSpaces(result.items);
-      setError(null);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : translate(appLanguage, 'Class workspaces are unavailable.'),
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [appLanguage]);
-
-  useEffect(() => {
-    let active = true;
-    void window.tro
-      .listKnowledgeSpaces()
-      .then((result) => {
-        if (!active) return;
-        setClassroomRole(result.classroomRole);
-        setSpaces(result.items);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : translate(appLanguage, 'Class workspaces are unavailable.'),
-        );
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [appLanguage]);
+  if (!hasAssignedClassroomRole(classroomRole)) return null;
 
   const canCreate = canCreateClassWorkspace(classroomRole);
   const groupedSpaces = groupClassWorkspaces(spaces);
@@ -100,7 +65,7 @@ export function SpacesPage({
     const code = roomCode.trim().toUpperCase();
     if (!code) return;
     setJoiningRoom(true);
-    setError(null);
+    setActionError(null);
     try {
       const session = await window.tro.joinKnowledgeRoom({
         autoOpenConsent,
@@ -110,7 +75,7 @@ export function SpacesPage({
       setRoomCode('');
       onJoined(session.attemptId);
     } catch (cause) {
-      setError(
+      setActionError(
         cause instanceof Error
           ? cause.message
           : t('Could not join this class room.'),
@@ -136,50 +101,12 @@ export function SpacesPage({
           </p>
         </div>
         <div className="class-landing-hero__identity">
-          <span className="classroom-role-badge">
-            <i aria-hidden="true" />
-            {t(
-              classroomRole === 'teacher'
-                ? 'Teacher'
-                : classroomRole === 'student'
-                  ? 'Student'
-                  : 'Role pending',
-            )}
+          <span className="class-count">
+            <strong>{spaces.length}</strong>
+            {t(spaces.length === 1 ? 'class' : 'classes')}
           </span>
-          {classroomRole !== 'unassigned' && (
-            <span className="class-count">
-              <strong>{spaces.length}</strong>
-              {t(spaces.length === 1 ? 'class' : 'classes')}
-            </span>
-          )}
         </div>
       </header>
-
-      {classroomRole === 'unassigned' && (
-        <div className="role-pending-card" role="status">
-          <span className="role-pending-card__mark" aria-hidden="true">
-            01
-          </span>
-          <div>
-            <p className="eyebrow">{t('Account ready')}</p>
-            <strong>
-              {t('Your classroom role has not been assigned yet.')}
-            </strong>
-            <p>
-              {t(
-                'An administrator assigns Teacher or Student after your account is created.',
-              )}
-            </p>
-          </div>
-          <div className="role-pending-card__path" aria-hidden="true">
-            <span>{t('Account')}</span>
-            <i />
-            <span>{t('Role')}</span>
-            <i />
-            <span>{t('Class')}</span>
-          </div>
-        </div>
-      )}
 
       {classroomRole === 'student' && (
         <form
@@ -248,111 +175,111 @@ export function SpacesPage({
         </form>
       )}
 
-      {classroomRole !== 'unassigned' && (
-        <div
-          className={`class-entry-grid${canCreate ? '' : ' class-entry-grid--single'}`}
-        >
-          {canCreate && (
-            <form
-              className="knowledge-create class-entry-card class-entry-card--create"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!name.trim()) return;
-                setCreating(true);
-                void window.tro
-                  .createKnowledgeSpace({
-                    clientId: randomUUID(),
-                    name: name.trim(),
-                    description: '',
-                    purposeLabel: 'Class',
-                  })
-                  .then((result) => {
-                    setName('');
-                    onOpen(result.space);
-                    return load();
-                  })
-                  .catch((cause: unknown) =>
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : t('Could not create the class workspace.'),
-                    ),
-                  )
-                  .finally(() => setCreating(false));
-              }}
-            >
-              <div className="class-entry-card__heading">
-                <span aria-hidden="true">＋</span>
-                <div>
-                  <strong>{t('Create a class')}</strong>
-                  <p>{t('Start a dedicated home for a new group.')}</p>
-                </div>
-              </div>
-              <label htmlFor="space-name">{t('New class workspace')}</label>
-              <input
-                id="space-name"
-                maxLength={240}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t('Python Foundations, Class 8A, Design Lab…')}
-                value={name}
-              />
-              <button
-                className="primary-button"
-                disabled={creating || !name.trim()}
-                type="submit"
-              >
-                {t(creating ? 'Creating…' : 'Create class')}
-              </button>
-            </form>
-          )}
+      <div
+        className={`class-entry-grid${canCreate ? '' : ' class-entry-grid--single'}`}
+      >
+        {canCreate && (
           <form
-            className="knowledge-create class-entry-card class-entry-card--join"
+            className="knowledge-create class-entry-card class-entry-card--create"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!inviteCode.trim()) return;
-              setJoining(true);
+              if (!name.trim()) return;
+              setCreating(true);
+              setActionError(null);
               void window.tro
-                .redeemKnowledgeInvite({ code: inviteCode.trim() })
-                .then(() => {
-                  setInviteCode('');
-                  return load();
+                .createKnowledgeSpace({
+                  clientId: randomUUID(),
+                  name: name.trim(),
+                  description: '',
+                  purposeLabel: 'Class',
+                })
+                .then((result) => {
+                  setName('');
+                  onOpen(result.space);
+                  return onRefresh();
                 })
                 .catch((cause: unknown) =>
-                  setError(
+                  setActionError(
                     cause instanceof Error
                       ? cause.message
-                      : t('Could not join that class.'),
+                      : t('Could not create the class workspace.'),
                   ),
                 )
-                .finally(() => setJoining(false));
+                .finally(() => setCreating(false));
             }}
           >
             <div className="class-entry-card__heading">
-              <span aria-hidden="true">↳</span>
+              <span aria-hidden="true">＋</span>
               <div>
-                <strong>{t('Join a class')}</strong>
-                <p>{t('Use a code shared for your assigned role.')}</p>
+                <strong>{t('Create a class')}</strong>
+                <p>{t('Start a dedicated home for a new group.')}</p>
               </div>
             </div>
-            <label htmlFor="space-invite-code">{t('Join code')}</label>
+            <label htmlFor="space-name">{t('New class workspace')}</label>
             <input
-              id="space-invite-code"
-              onChange={(event) => setInviteCode(event.target.value)}
-              placeholder={t(
-                'Paste a join code that matches your assigned role',
-              )}
-              value={inviteCode}
+              id="space-name"
+              maxLength={240}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t('Python Foundations, Class 8A, Design Lab…')}
+              value={name}
             />
-            <button disabled={joining || !inviteCode.trim()} type="submit">
-              {t(joining ? 'Joining…' : 'Join class')}
+            <button
+              className="primary-button"
+              disabled={creating || !name.trim()}
+              type="submit"
+            >
+              {t(creating ? 'Creating…' : 'Create class')}
             </button>
           </form>
-        </div>
-      )}
+        )}
+        <form
+          className="knowledge-create class-entry-card class-entry-card--join"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!inviteCode.trim()) return;
+            setJoining(true);
+            setActionError(null);
+            void window.tro
+              .redeemKnowledgeInvite({ code: inviteCode.trim() })
+              .then(() => {
+                setInviteCode('');
+                return onRefresh();
+              })
+              .catch((cause: unknown) =>
+                setActionError(
+                  cause instanceof Error
+                    ? cause.message
+                    : t('Could not join that class.'),
+                ),
+              )
+              .finally(() => setJoining(false));
+          }}
+        >
+          <div className="class-entry-card__heading">
+            <span aria-hidden="true">↳</span>
+            <div>
+              <strong>{t('Join a class')}</strong>
+              <p>{t('Use a code shared for your assigned role.')}</p>
+            </div>
+          </div>
+          <label htmlFor="space-invite-code">{t('Join code')}</label>
+          <input
+            id="space-invite-code"
+            onChange={(event) => setInviteCode(event.target.value)}
+            placeholder={t(
+              'Paste a join code that matches your assigned role',
+            )}
+            value={inviteCode}
+          />
+          <button disabled={joining || !inviteCode.trim()} type="submit">
+            {t(joining ? 'Joining…' : 'Join class')}
+          </button>
+        </form>
+      </div>
 
-      {error && (
+      {(actionError ?? error) && (
         <div className="error-banner" role="alert">
-          {error}
+          {actionError ?? error}
         </div>
       )}
       {loading ? (
