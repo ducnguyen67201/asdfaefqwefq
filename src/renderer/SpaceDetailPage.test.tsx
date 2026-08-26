@@ -20,7 +20,6 @@ function render(role: KnowledgeSpaceSummary['role']): string {
     <SpaceDetailPage
       appLanguage="en"
       onBack={vi.fn()}
-      onOpen={vi.fn()}
       space={{ ...space, role }}
     />,
   );
@@ -30,7 +29,6 @@ describe('SpaceDetailPage role presentation', () => {
   it('keeps teacher material and room controls out of the student surface', () => {
     const markup = render('participant');
 
-    expect(markup).toContain('Learning');
     expect(markup).toContain(
       'Your Teacher has not shared class resources yet.',
     );
@@ -43,7 +41,6 @@ describe('SpaceDetailPage role presentation', () => {
     (role) => {
       const markup = render(role);
 
-      expect(markup).toContain('Teaching');
       expect(markup).toContain('Upload files');
       expect(markup).toContain('Activities');
       expect(markup).toContain('People');

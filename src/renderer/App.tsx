@@ -14,11 +14,13 @@ import type {
   AppPreferences,
   AppUpdateStatus,
   AuthUser,
+  ClassroomAccountRole,
   CompanionCustomizationStatus,
   CuaStatus,
   ExecutionProfile,
   GoalSpec,
   GenerateCompanionImageRequest,
+  KnowledgeSpaceSummary,
   MembershipStatus,
   OrganizationSummary,
   PendingInteraction,
@@ -44,6 +46,7 @@ import {
 import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
+import { hasAssignedClassroomRole } from './class-workspace';
 import { ClassroomSessionBar } from './ClassroomSessionBar';
 import type { CompanionCustomizationBusy } from './CompanionCustomizationCard';
 import { HistoryPage } from './HistoryPage';
@@ -70,6 +73,7 @@ import {
   type PushToTalkPlatform,
 } from './push-to-talk';
 import { SettingsPage } from './SettingsPage';
+import { SidebarClassWorkspaceSwitcher } from './SidebarClassWorkspaceSwitcher';
 import {
   isTaskCancellable,
   isTaskSteerable,
@@ -855,6 +859,13 @@ export function App({
 }) {
   const [activeView, setActiveView] = useState<ActiveView>('agent');
   const [knowledgeSpacesEnabled, setKnowledgeSpacesEnabled] = useState(false);
+  const [classroomRole, setClassroomRole] =
+    useState<ClassroomAccountRole>('unassigned');
+  const [classSpaces, setClassSpaces] = useState<KnowledgeSpaceSummary[]>([]);
+  const [classSpacesLoading, setClassSpacesLoading] = useState(false);
+  const [classSpacesError, setClassSpacesError] = useState<string | null>(null);
+  const [selectedClassSpace, setSelectedClassSpace] =
+    useState<KnowledgeSpaceSummary | null>(null);
   const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
@@ -961,6 +972,7 @@ export function App({
   const companionRefreshIdRef = useRef(0);
   const companionActionInFlightRef = useRef(false);
   const organizationRefreshIdRef = useRef(0);
+  const classSpacesRefreshIdRef = useRef(0);
   const openOrganizationAfterActivationRef = useRef(false);
   const t = useCallback(
     (
@@ -981,23 +993,80 @@ export function App({
     membershipStatus,
   });
   const membershipAccessAllowed = entryGate !== 'membership';
+  const classroomAccessAvailable =
+    knowledgeSpacesEnabled && hasAssignedClassroomRole(classroomRole);
 
   const clearError = useCallback(() => {
     dispatchTransientCursorError({ type: 'cleared' });
   }, []);
 
-  const refreshKnowledgeCapabilities = useCallback(async () => {
-    try {
-      const capabilities = await window.tro.getKnowledgeCapabilities();
-      setKnowledgeSpacesEnabled(capabilities.knowledgeSpaces.enabled);
-    } catch {
-      setKnowledgeSpacesEnabled(false);
-    }
-  }, []);
-
   const reportError = useCallback((message: string) => {
     dispatchTransientCursorError({ type: 'reported', message });
   }, []);
+
+  const refreshClassSpaces = useCallback(async (): Promise<void> => {
+    const refreshId = classSpacesRefreshIdRef.current + 1;
+    classSpacesRefreshIdRef.current = refreshId;
+    setClassSpacesLoading(true);
+    try {
+      const result = await window.tro.listKnowledgeSpaces();
+      if (classSpacesRefreshIdRef.current !== refreshId) return;
+      setClassroomRole(result.classroomRole);
+      setClassSpaces(result.items);
+      if (!hasAssignedClassroomRole(result.classroomRole)) {
+        setActiveView((currentView) =>
+          currentView === 'spaces' || currentView === 'assigned'
+            ? 'agent'
+            : currentView,
+        );
+      }
+      setSelectedClassSpace((currentSpace) =>
+        hasAssignedClassroomRole(result.classroomRole) && currentSpace
+          ? result.items.find((space) => space.id === currentSpace.id) ?? null
+          : null,
+      );
+      setClassSpacesError(null);
+    } catch (cause) {
+      if (classSpacesRefreshIdRef.current !== refreshId) return;
+      setClassSpacesError(
+        cause instanceof Error
+          ? cause.message
+          : 'Class workspaces are unavailable.',
+      );
+    } finally {
+      if (classSpacesRefreshIdRef.current === refreshId) {
+        setClassSpacesLoading(false);
+      }
+    }
+  }, []);
+
+  const refreshKnowledgeCapabilities = useCallback(async (): Promise<void> => {
+    const clearClassroomAccess = (): void => {
+      classSpacesRefreshIdRef.current += 1;
+      setClassroomRole('unassigned');
+      setClassSpaces([]);
+      setSelectedClassSpace(null);
+      setActiveView((currentView) =>
+        currentView === 'spaces' || currentView === 'assigned'
+          ? 'agent'
+          : currentView,
+      );
+    };
+
+    try {
+      const capabilities = await window.tro.getKnowledgeCapabilities();
+      const enabled = capabilities.knowledgeSpaces.enabled;
+      setKnowledgeSpacesEnabled(enabled);
+      if (enabled) {
+        await refreshClassSpaces();
+      } else {
+        clearClassroomAccess();
+      }
+    } catch {
+      setKnowledgeSpacesEnabled(false);
+      clearClassroomAccess();
+    }
+  }, [refreshClassSpaces]);
 
   const recordSnapshot = useCallback((nextSnapshot: TaskSnapshot | null) => {
     latestSnapshotRef.current = nextSnapshot;
@@ -1219,24 +1288,19 @@ export function App({
     const refreshOnFocus = (): void => {
       void refreshKnowledgeCapabilities();
     };
-    window.addEventListener('focus', refreshOnFocus);
-    return () => window.removeEventListener('focus', refreshOnFocus);
-  }, [refreshKnowledgeCapabilities]);
+    const refreshOnVisibility = (): void => {
+      if (document.visibilityState === 'visible') {
+        void refreshKnowledgeCapabilities();
+      }
+    };
 
-  useEffect(() => {
-    if (
-      !knowledgeSpacesEnabled &&
-      (activeView === 'spaces' || activeView === 'assigned')
-    ) {
-      let cancelled = false;
-      queueMicrotask(() => {
-        if (!cancelled) setActiveView('agent');
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-  }, [activeView, knowledgeSpacesEnabled]);
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisibility);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisibility);
+    };
+  }, [refreshKnowledgeCapabilities]);
 
   useEffect(() => {
     document.documentElement.lang = appLanguageDraft;
@@ -2255,6 +2319,17 @@ export function App({
           </div>
         </div>
 
+        <SidebarClassWorkspaceSwitcher
+          appLanguage={appLanguageDraft}
+          classroomRole={classroomRole}
+          currentSpace={selectedClassSpace}
+          onOpen={(space) => {
+            setSelectedClassSpace(space);
+            setActiveView('spaces');
+          }}
+          spaces={classSpaces}
+        />
+
         <button
           aria-label={t('New task')}
           className="new-task-button"
@@ -2285,7 +2360,7 @@ export function App({
             <NavigationIcon name="agent" />
             <span className="sidebar-item-label">{t('Agent')}</span>
           </button>
-          {knowledgeSpacesEnabled && (
+          {classroomAccessAvailable && (
             <>
               <button
                 aria-label={t('Class workspaces')}
@@ -2293,7 +2368,10 @@ export function App({
                 className={`nav-item ${
                   activeView === 'spaces' ? 'nav-item--active' : ''
                 }`}
-                onClick={() => setActiveView('spaces')}
+                onClick={() => {
+                  setSelectedClassSpace(null);
+                  setActiveView('spaces');
+                }}
                 title={
                   isSidebarCollapsed ? t('Class workspaces') : undefined
                 }
@@ -2484,7 +2562,7 @@ export function App({
           </div>
         </header>
 
-        {knowledgeSpacesEnabled && (
+        {classroomAccessAvailable && (
           <ClassroomSessionBar
             appLanguage={appLanguageDraft}
             onLaunch={launchKnowledgeActivity}
@@ -2495,13 +2573,21 @@ export function App({
           />
         )}
 
-        {activeView === 'spaces' || activeView === 'assigned' ? (
+        {classroomAccessAvailable &&
+        (activeView === 'spaces' || activeView === 'assigned') ? (
           <KnowledgeHubPage
             appLanguage={appLanguageDraft}
+            classroomError={classSpacesError}
+            classroomLoading={classSpacesLoading}
+            classroomRole={classroomRole}
+            classSpaces={classSpaces}
             focusAttemptId={activeView === 'assigned' ? classroomAttemptFocus : null}
             mode={activeView}
             onAttemptFocusCleared={() => setClassroomAttemptFocus(null)}
             onLaunch={launchKnowledgeActivity}
+            onRefreshClassSpaces={refreshClassSpaces}
+            onSelectSpace={setSelectedClassSpace}
+            space={selectedClassSpace}
           />
         ) : activeView === 'history' ? (
           <HistoryPage
@@ -2528,7 +2614,12 @@ export function App({
             error={organizationError}
             isLoading={isLoadingOrganization}
             onOpenClasses={
-              knowledgeSpacesEnabled ? () => setActiveView('spaces') : undefined
+              classroomAccessAvailable
+                ? () => {
+                    setSelectedClassSpace(null);
+                    setActiveView('spaces');
+                  }
+                : undefined
             }
             onOrganizationChange={setOrganization}
             onRefresh={refreshOrganization}

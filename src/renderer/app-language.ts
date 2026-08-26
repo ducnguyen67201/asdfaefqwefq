@@ -485,6 +485,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'All class workspaces': 'Tất cả không gian lớp học',
   'Switch class': 'Chuyển lớp',
   'Switch class workspace': 'Chuyển không gian lớp học',
+  'Choose a class': 'Chọn một lớp học',
   'Current class': 'Lớp hiện tại',
   'Your classroom role': 'Vai trò lớp học của bạn',
   'Class overview': 'Tổng quan lớp học',

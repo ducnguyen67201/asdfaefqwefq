@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type {
   AppLanguage,
+  ClassroomAccountRole,
   KnowledgeSpaceSummary,
   SubmitTaskRequest,
 } from '../shared/contracts';
@@ -13,18 +14,31 @@ import { SpacesPage } from './SpacesPage';
 
 export function KnowledgeHubPage({
   appLanguage,
+  classroomError,
+  classroomLoading,
+  classroomRole,
+  classSpaces,
   focusAttemptId = null,
   mode,
   onAttemptFocusCleared,
   onLaunch,
+  onRefreshClassSpaces,
+  onSelectSpace,
+  space,
 }: {
   appLanguage: AppLanguage;
+  classroomError: string | null;
+  classroomLoading: boolean;
+  classroomRole: ClassroomAccountRole;
+  classSpaces: KnowledgeSpaceSummary[];
   focusAttemptId?: string | null;
   mode: 'spaces' | 'assigned';
   onAttemptFocusCleared?: () => void;
   onLaunch: (request: SubmitTaskRequest) => Promise<void>;
+  onRefreshClassSpaces: () => Promise<void>;
+  onSelectSpace: (space: KnowledgeSpaceSummary | null) => void;
+  space: KnowledgeSpaceSummary | null;
 }) {
-  const [space, setSpace] = useState<KnowledgeSpaceSummary | null>(null);
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
     null,
   );
@@ -56,8 +70,7 @@ export function KnowledgeHubPage({
       <SpaceDetailPage
         appLanguage={appLanguage}
         key={space.id}
-        onBack={() => setSpace(null)}
-        onOpen={setSpace}
+        onBack={() => onSelectSpace(null)}
         space={space}
       />
     );
@@ -65,8 +78,13 @@ export function KnowledgeHubPage({
   return (
     <SpacesPage
       appLanguage={appLanguage}
+      classroomRole={classroomRole}
+      error={classroomError}
+      loading={classroomLoading}
       onJoined={setSelectedAttemptId}
-      onOpen={setSpace}
+      onOpen={onSelectSpace}
+      onRefresh={onRefreshClassSpaces}
+      spaces={classSpaces}
     />
   );
 }

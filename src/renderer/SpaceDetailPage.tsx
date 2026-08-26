@@ -18,7 +18,6 @@ import {
   parseClassMemberEmails,
   rolesAvailableToMemberManager,
 } from './class-workspace';
-import { ClassWorkspaceSwitcher } from './ClassWorkspaceSwitcher';
 import { FacilitatorRunPage } from './FacilitatorRunPage';
 import { SpaceLibrary } from './SpaceLibrary';
 
@@ -27,12 +26,10 @@ type Tab = 'library' | 'activities' | 'people';
 export function SpaceDetailPage({
   appLanguage,
   onBack,
-  onOpen,
   space,
 }: {
   appLanguage: AppLanguage;
   onBack: () => void;
-  onOpen: (space: KnowledgeSpaceSummary) => void;
   space: KnowledgeSpaceSummary;
 }) {
   const [tab, setTab] = useState<Tab>('library');
@@ -229,21 +226,6 @@ export function SpaceDetailPage({
       <button className="back-link" onClick={onBack} type="button">
         ← {t('All class workspaces')}
       </button>
-      <ClassWorkspaceSwitcher
-        appLanguage={appLanguage}
-        currentSpace={space}
-        onOpen={(nextSpace) => {
-          setSources([]);
-          setGroups([]);
-          setMembers([]);
-          setRosterQuery('');
-          setRosterRole('all');
-          setError(null);
-          setMemberResult(null);
-          setTab('library');
-          onOpen(nextSpace);
-        }}
-      />
       <div className="space-tabs" role="tablist">
         {tabs.map((value, index) => (
           <button

@@ -944,43 +944,6 @@ html.voice-island-mode #root {
   margin-bottom: 28px;
 }
 
-.classroom-role-badge {
-  width: fit-content;
-  padding: 8px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.class-workspace-switcher {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(190px, 280px);
-  align-items: end;
-  gap: 14px;
-  margin-bottom: 22px;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface-soft);
-}
-
-.class-workspace-switcher > div {
-  display: grid;
-  gap: 3px;
-}
-
-.class-workspace-switcher > div > span,
-.class-workspace-switcher label > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .knowledge-heading h1 {
   margin: 4px 0 8px;
   font-size: clamp(30px, 4vw, 48px);
@@ -1344,7 +1307,6 @@ html.voice-island-mode #root {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .class-workspace-switcher,
   .class-member-add {
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
@@ -2647,6 +2609,68 @@ textarea:focus-visible {
   letter-spacing: 0;
 }
 
+.sidebar-class-workspace {
+  display: grid;
+  gap: 7px;
+  margin: -13px 9px -4px;
+  padding: 10px 11px;
+  border: 1px solid rgba(39, 39, 34, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 254, 250, 0.6);
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-class-workspace__role {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sidebar-class-workspace__role i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 3px rgba(214, 170, 33, 0.14);
+}
+
+.sidebar-class-workspace__role--student i {
+  background: #55747a;
+  box-shadow: 0 0 0 3px rgba(85, 116, 122, 0.14);
+}
+
+.sidebar-class-workspace label {
+  display: grid;
+  gap: 4px;
+}
+
+.sidebar-class-workspace label > span {
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.sidebar-class-workspace select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 4px 25px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .new-task-button,
 .primary-button,
 .secondary-button,
@@ -2811,6 +2835,7 @@ textarea:focus-visible {
 }
 
 .app-shell--sidebar-collapsed .brand > .brand-copy,
+.app-shell--sidebar-collapsed .sidebar-class-workspace,
 .app-shell--sidebar-collapsed .sidebar-item-label,
 .app-shell--sidebar-collapsed .nav-label,
 .app-shell--sidebar-collapsed .nav-count,
@@ -6775,19 +6800,6 @@ h1 {
   gap: 10px;
 }
 
-.classroom-role-badge {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 13px;
-  border-color: rgba(39, 40, 33, 0.2);
-  background: rgba(255, 254, 250, 0.84);
-  box-shadow: 0 8px 25px rgba(58, 49, 20, 0.08);
-  backdrop-filter: blur(8px);
-}
-
-.classroom-role-badge i,
 .space-role i,
 .roster-role i,
 .assignment-state i,
@@ -6804,10 +6816,12 @@ h1 {
 .class-count {
   display: inline-flex;
   min-height: 36px;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
   padding: 7px 13px;
-  border-left: 1px solid rgba(39, 40, 33, 0.2);
+  border: 1px solid rgba(39, 40, 33, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 254, 250, 0.72);
   color: var(--muted);
   font-size: 11px;
   font-weight: 750;
@@ -6816,63 +6830,6 @@ h1 {
 .class-count strong {
   color: var(--text);
   font-size: 16px;
-}
-
-.role-pending-card {
-  display: grid;
-  min-height: 150px;
-  align-items: center;
-  gap: 22px;
-  margin-bottom: 22px;
-  padding: 24px 28px;
-  overflow: hidden;
-  border: 1px solid var(--class-line);
-  border-radius: 20px;
-  background: var(--class-paper);
-  box-shadow: var(--shadow-soft);
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.role-pending-card__mark {
-  display: grid;
-  width: 64px;
-  height: 64px;
-  place-items: center;
-  border: 1px solid rgba(214, 170, 33, 0.42);
-  border-radius: 50%;
-  background: rgba(242, 201, 76, 0.18);
-  color: var(--accent-text);
-  font-family: Georgia, serif;
-  font-size: 20px;
-}
-
-.role-pending-card strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 19px;
-}
-
-.role-pending-card p:last-child {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.role-pending-card__path {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.role-pending-card__path i {
-  width: 28px;
-  height: 1px;
-  background: var(--border-strong);
 }
 
 .class-entry-grid {
@@ -7157,116 +7114,6 @@ h1 {
 .space-role--student i {
   background: var(--class-blue);
   box-shadow: 0 0 0 3px rgba(85, 116, 122, 0.15);
-}
-
-.class-workspace-switcher {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) auto minmax(210px, 285px);
-  min-height: 86px;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 14px 16px;
-  overflow: hidden;
-  border: 1px solid #1c1d19;
-  border-radius: 18px;
-  background:
-    radial-gradient(
-      circle at 78% -40%,
-      rgba(242, 201, 76, 0.2),
-      transparent 38%
-    ),
-    #282923;
-  color: #fffdf4;
-  box-shadow: 0 16px 40px rgba(31, 31, 27, 0.15);
-}
-
-.class-workspace-switcher::after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 70%;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.06);
-  content: '';
-  transform: rotate(22deg);
-}
-
-.class-workspace-switcher__identity {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center;
-  gap: 12px !important;
-}
-
-.class-workspace-switcher__mark {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid rgba(242, 201, 76, 0.48);
-  border-radius: 14px;
-  background: rgba(242, 201, 76, 0.13);
-  color: #f6d669;
-  font-family: Georgia, serif;
-  font-size: 14px;
-}
-
-.class-workspace-switcher__identity > div {
-  display: grid;
-  gap: 3px;
-}
-
-.class-workspace-switcher__copy {
-  min-width: 0;
-}
-
-.class-workspace-switcher__identity > div > span,
-.class-workspace-switcher label > span {
-  color: rgba(255, 253, 244, 0.55);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.class-workspace-switcher__identity strong {
-  overflow: hidden;
-  font-family: 'Iowan Old Style', Georgia, serif;
-  font-size: 19px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.class-workspace-switcher__copy p {
-  max-width: 660px;
-  margin: 2px 0 0;
-  overflow: hidden;
-  color: rgba(255, 253, 244, 0.58);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.class-workspace-switcher > .space-role {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f4f0df;
-}
-
-.class-workspace-switcher label {
-  position: relative;
-  z-index: 1;
-}
-
-.class-workspace-switcher select {
-  min-height: 40px;
-  border-color: rgba(255, 255, 255, 0.15);
-  background: #f6f2e5;
-  color: var(--text);
 }
 
 .knowledge-page--class-detail .back-link {
@@ -8556,14 +8403,6 @@ h1 {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .class-workspace-switcher {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .class-workspace-switcher label {
-    grid-column: 1 / -1;
-  }
-
   .people-console {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -8629,14 +8468,6 @@ h1 {
 
   .class-detail-hero__meta {
     grid-column: 1;
-  }
-
-  .role-pending-card {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .role-pending-card__path {
-    grid-column: 1 / -1;
   }
 
   .people-panel__heading,

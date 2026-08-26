@@ -4,11 +4,18 @@ import {
   canCreateClassWorkspace,
   canManageClassPeople,
   groupClassWorkspaces,
+  hasAssignedClassroomRole,
   parseClassMemberEmails,
   rolesAvailableToMemberManager,
 } from './class-workspace';
 
 describe('class workspace access', () => {
+  it('only exposes classroom navigation after a role is assigned', () => {
+    expect(hasAssignedClassroomRole('teacher')).toBe(true);
+    expect(hasAssignedClassroomRole('student')).toBe(true);
+    expect(hasAssignedClassroomRole('unassigned')).toBe(false);
+  });
+
   it('only lets Admin-assigned Teachers create classes', () => {
     expect(canCreateClassWorkspace('teacher')).toBe(true);
     expect(canCreateClassWorkspace('student')).toBe(false);
