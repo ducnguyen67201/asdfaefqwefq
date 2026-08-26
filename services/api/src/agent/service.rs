@@ -695,7 +695,7 @@ impl AgentService {
                 "Approve or deny the pending connected-app action before steering this task.",
             ));
         }
-        if kind == "approval" {
+        if kind == "approval" && row.get::<i32, _>("protocol_version") == 3 {
             let incoming_command = input
                 .get("clientCommandId")
                 .and_then(Value::as_str)

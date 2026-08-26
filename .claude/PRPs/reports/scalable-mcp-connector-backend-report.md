@@ -99,6 +99,7 @@ execution authority or a second agent loop.
 | Cargo audit | Pass with the repository's two allowed warnings: `ttf-parser` and `lru` |
 | Vitest | Pass — 117 files, 734 tests after rebasing onto current `main` |
 | Rust tests | Pass — 79 library tests plus contract/compatibility/property suites |
+| PostgreSQL integration | Pass — migration idempotency/adoption, durable agent, provider budget, and HTTP compatibility under Bazel with PostgreSQL 17 |
 | Electron Forge package | Pass — macOS arm64 package produced through the production Doppler environment |
 | Bazel | Pass — 15/15 test targets and `//services/api:clippy` |
 | Diff whitespace check | Pass |
@@ -109,11 +110,12 @@ and two regressions. The fixes ensure script-wrapped injection is inspected
 before sanitization and distinguish “draft an email” from the noun in “delete
 the draft.”
 
-Database/S3 suites that require disposable external services remained ignored
-under direct Cargo execution, as declared by the repository tests. Bazel's
-hermetic target matrix passed. No live Gmail authorization or message access was
-performed because test OAuth credentials and a dedicated Gmail account were not
-available in this implementation environment.
+Database/S3 suites remain ignored under direct Cargo execution, as declared by
+the repository tests. The exact PostgreSQL-backed Bazel CI commands pass against
+a disposable PostgreSQL 17 instance; an S3-compatible integration service was
+not configured. No live Gmail authorization or message access was performed
+because test OAuth credentials and a dedicated Gmail account were unavailable
+in this implementation environment.
 
 ## Deviations from Plan
 
