@@ -7,6 +7,7 @@ import {
   AppUpdateStatusSchema,
   AuthStatusSchema,
   ActivateCompanionCandidateRequestSchema,
+  ActivateSavedCompanionRequestSchema,
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
   CompanionPositionSchema,
@@ -121,6 +122,15 @@ const desktopApi: DesktopApi = {
     const request = ActivateCompanionCandidateRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(
       IPC_CHANNELS.companionActivateCandidate,
+      request,
+    );
+    return CompanionCustomizationStatusSchema.parse(response);
+  },
+
+  async activateSavedCompanion(input) {
+    const request = ActivateSavedCompanionRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.companionActivateSaved,
       request,
     );
     return CompanionCustomizationStatusSchema.parse(response);

@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import {
   ActivateCompanionCandidateRequestSchema,
+  ActivateSavedCompanionRequestSchema,
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
   CompanionGenerationQuotaSchema,
@@ -17,14 +18,18 @@ import {
   type CompanionCustomizationStatus,
   type CompanionGenerationQuota,
   type GenerateCompanionImageRequest,
+  type SavedCompanion,
 } from '../../shared/contracts';
 
 const CANDIDATE_TTL_MS = 10 * 60 * 1_000;
 const MAX_HOSTED_RESPONSE_BYTES = 12 * 1_024 * 1_024;
 const MAX_GENERATED_IMAGE_BYTES = 8 * 1_024 * 1_024;
 const MAX_ACTIVE_IMAGE_BYTES = 1 * 1_024 * 1_024;
+const MAX_SAVED_COMPANIONS = 50;
+const MAX_ISO_TIMESTAMP_MS = 253_402_300_799_999;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ACTIVE_FILE_PATTERN = /^active-(\d+)-([0-9a-f]{64})\.enc$/u;
+const SELECTION_FILE_NAME = 'selection.enc';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -78,6 +83,7 @@ interface CandidateRecord {
 
 interface ActiveRecord {
   bytes: Buffer;
+  createdAt: number;
   hash: string;
 }
 
@@ -85,6 +91,13 @@ const ActiveEnvelopeSchema = z
   .object({
     pngBase64: z.string().min(4).max(Math.ceil(MAX_ACTIVE_IMAGE_BYTES / 3) * 4),
     sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+    version: z.literal(1),
+  })
+  .strict();
+
+const SelectionEnvelopeSchema = z
+  .object({
+    activeHash: z.string().regex(/^[0-9a-f]{64}$/u).nullable(),
     version: z.literal(1),
   })
   .strict();
@@ -111,6 +124,22 @@ const HostedGenerationResponseSchema = z
 
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function activeFileParts(
+  name: string,
+): { hash: string; timestamp: number } | null {
+  const match = ACTIVE_FILE_PATTERN.exec(name);
+  const timestamp = Number(match?.[1]);
+  if (
+    !match?.[2] ||
+    !Number.isSafeInteger(timestamp) ||
+    timestamp < 0 ||
+    timestamp > MAX_ISO_TIMESTAMP_MS
+  ) {
+    return null;
+  }
+  return { hash: match[2], timestamp };
 }
 
 function ownerKey(userId: string): string {
@@ -235,6 +264,8 @@ export class CompanionCustomizationService {
 
   private readonly now: () => number;
 
+  private saved: ActiveRecord[] = [];
+
   private readonly uuid: () => string;
 
   constructor(private readonly options: CompanionCustomizationServiceOptions) {
@@ -248,13 +279,18 @@ export class CompanionCustomizationService {
     this.candidate = null;
     this.lastQuota = null;
     this.active = null;
+    this.saved = [];
     this.currentOwnerKey = userId ? ownerKey(userId) : null;
     if (!this.currentOwnerKey) {
       this.options.publish({ kind: 'default' });
       return;
     }
     if (await this.options.safeStorage.isAsyncEncryptionAvailable()) {
-      this.active = await this.readNewestActive();
+      this.saved = await this.readSaved();
+      const selection = await this.readSelection();
+      this.active = selection.exists
+        ? (this.saved.find((record) => record.hash === selection.activeHash) ?? null)
+        : (this.saved[0] ?? null);
     }
     this.options.publish(this.appearance());
   }
@@ -420,22 +456,46 @@ export class CompanionCustomizationService {
       throw new Error('Secure local storage is unavailable on this device.');
     }
     const hash = sha256(candidate.bytes);
-    await this.writeActive(candidate.bytes, hash);
-    this.active = { bytes: Buffer.from(candidate.bytes), hash };
+    await this.writeSaved(candidate.bytes, hash);
+    this.saved = await this.readSaved();
+    const saved = this.saved.find((record) => record.hash === hash) ?? null;
+    if (!saved) {
+      throw new Error('Tro could not save this companion securely.');
+    }
+    await this.writeSelection(hash);
+    this.active = saved;
     this.candidate = null;
     const appearance = this.appearance();
     this.options.publish(appearance);
     return this.status('available', 'Your custom companion is active.');
   }
 
+  async activateSaved(
+    rawRequest: { companionId: string },
+  ): Promise<CompanionCustomizationStatus> {
+    const request = ActivateSavedCompanionRequestSchema.parse(rawRequest);
+    this.requireOwnerKey();
+    if (!(await this.options.safeStorage.isAsyncEncryptionAvailable())) {
+      throw new Error('Secure local storage is unavailable on this device.');
+    }
+    const saved = this.saved.find((record) => record.hash === request.companionId);
+    if (!saved) throw new Error('This saved companion is no longer available.');
+    await this.writeSelection(saved.hash);
+    this.active = saved;
+    this.candidate = null;
+    const appearance = this.appearance();
+    this.options.publish(appearance);
+    return this.status('available', 'Your saved companion is active.');
+  }
+
   async useDefault(): Promise<CompanionCustomizationStatus> {
-    const key = this.requireOwnerKey();
+    this.requireOwnerKey();
+    if (!(await this.options.safeStorage.isAsyncEncryptionAvailable())) {
+      throw new Error('Secure local storage is unavailable on this device.');
+    }
+    await this.writeSelection(null);
     this.candidate = null;
     this.active = null;
-    const directory = this.ownerDirectory(key);
-    for (const name of await this.activeFileNames(directory)) {
-      await rm(path.join(directory, name), { force: true });
-    }
     this.options.publish({ kind: 'default' });
     return this.status('available', 'The default companion is active.');
   }
@@ -465,8 +525,9 @@ export class CompanionCustomizationService {
     let bytes: Buffer | null = null;
     const activeMatch = /^\/active\/([0-9a-f]{64})$/u.exec(url.pathname);
     const candidateMatch = /^\/candidate\/([^/]+)$/u.exec(url.pathname);
-    if (activeMatch?.[1] && this.active?.hash === activeMatch[1]) {
-      bytes = this.active.bytes;
+    if (activeMatch?.[1]) {
+      bytes =
+        this.saved.find((record) => record.hash === activeMatch[1])?.bytes ?? null;
     } else if (candidateMatch?.[1] && UUID_PATTERN.test(candidateMatch[1])) {
       const candidate = this.currentCandidate();
       if (candidate?.id === candidateMatch[1]) bytes = candidate.bytes;
@@ -545,6 +606,14 @@ export class CompanionCustomizationService {
     return this.candidate;
   }
 
+  private savedDescriptors(): SavedCompanion[] {
+    return this.saved.map((record) => ({
+      assetUrl: `${TROCODE_COMPANION_SCHEME}://asset/active/${record.hash}`,
+      createdAt: new Date(record.createdAt).toISOString(),
+      id: record.hash,
+    }));
+  }
+
   private status(
     state: 'available' | 'unavailable' | 'error',
     summary: string,
@@ -553,6 +622,7 @@ export class CompanionCustomizationService {
       appearance: this.appearance(),
       candidate: this.candidateDescriptor(),
       quota: state === 'available' ? this.lastQuota : null,
+      savedCompanions: this.savedDescriptors(),
       state: state === 'available' && !this.lastQuota ? 'unavailable' : state,
       summary,
     });
@@ -571,10 +641,10 @@ export class CompanionCustomizationService {
     try {
       const names = await readdir(directory);
       return names
-        .filter((name) => ACTIVE_FILE_PATTERN.test(name))
+        .filter((name) => activeFileParts(name) !== null)
         .sort((left, right) => {
-          const leftTimestamp = Number(ACTIVE_FILE_PATTERN.exec(left)?.[1] ?? 0);
-          const rightTimestamp = Number(ACTIVE_FILE_PATTERN.exec(right)?.[1] ?? 0);
+          const leftTimestamp = activeFileParts(left)?.timestamp ?? 0;
+          const rightTimestamp = activeFileParts(right)?.timestamp ?? 0;
           return rightTimestamp - leftTimestamp;
         });
     } catch (error) {
@@ -585,7 +655,8 @@ export class CompanionCustomizationService {
     }
   }
 
-  private async writeActive(bytes: Buffer, hash: string): Promise<void> {
+  private async writeSaved(bytes: Buffer, hash: string): Promise<void> {
+    if (this.saved.some((record) => record.hash === hash)) return;
     const key = this.requireOwnerKey();
     const directory = this.ownerDirectory(key);
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -598,9 +669,7 @@ export class CompanionCustomizationService {
     const encrypted = await this.options.safeStorage.encryptStringAsync(
       JSON.stringify(envelope),
     );
-    const newestTimestamp = Number(
-      ACTIVE_FILE_PATTERN.exec(existing[0] ?? '')?.[1] ?? 0,
-    );
+    const newestTimestamp = activeFileParts(existing[0] ?? '')?.timestamp ?? 0;
     const timestamp = Math.max(this.now(), newestTimestamp + 1);
     const name = `active-${timestamp}-${hash}.enc`;
     await writeFile(path.join(directory, name), encrypted.toString('base64'), {
@@ -608,18 +677,24 @@ export class CompanionCustomizationService {
       flag: 'wx',
       mode: 0o600,
     });
-    for (const previous of await this.activeFileNames(directory)) {
-      if (previous !== name) {
-        await rm(path.join(directory, previous), { force: true });
-      }
+    const savedNames = await this.activeFileNames(directory);
+    for (const overflow of savedNames.slice(MAX_SAVED_COMPANIONS)) {
+      await rm(path.join(directory, overflow), { force: true });
     }
   }
 
-  private async readNewestActive(): Promise<ActiveRecord | null> {
+  private async readSaved(): Promise<ActiveRecord[]> {
     const key = this.requireOwnerKey();
     const directory = this.ownerDirectory(key);
-    for (const name of await this.activeFileNames(directory)) {
+    const records: ActiveRecord[] = [];
+    const seen = new Set<string>();
+    for (const name of (await this.activeFileNames(directory)).slice(
+      0,
+      MAX_SAVED_COMPANIONS,
+    )) {
       try {
+        const fileParts = activeFileParts(name);
+        if (!fileParts) throw new Error('Invalid filename.');
         const encoded = await readFile(path.join(directory, name), 'utf8');
         const decrypted = await this.options.safeStorage.decryptStringAsync(
           Buffer.from(encoded, 'base64'),
@@ -629,18 +704,84 @@ export class CompanionCustomizationService {
           envelope.pngBase64,
           MAX_ACTIVE_IMAGE_BYTES,
         );
-        if (!isPng(bytes) || sha256(bytes) !== envelope.sha256) continue;
+        if (
+          !isPng(bytes) ||
+          sha256(bytes) !== envelope.sha256 ||
+          fileParts.hash !== envelope.sha256 ||
+          seen.has(envelope.sha256)
+        ) {
+          throw new Error('Invalid saved companion.');
+        }
         const decoded = this.options.nativeImage.createFromBuffer(bytes);
         const size = imageSize(decoded);
-        if (size.width !== 128 || size.height !== 128) continue;
-        if (decrypted.shouldReEncrypt) {
-          await this.writeActive(bytes, envelope.sha256);
+        if (size.width !== 128 || size.height !== 128) {
+          throw new Error('Invalid saved companion dimensions.');
         }
-        return { bytes, hash: envelope.sha256 };
+        if (decrypted.shouldReEncrypt) {
+          const encrypted = await this.options.safeStorage.encryptStringAsync(
+            JSON.stringify(envelope),
+          );
+          await writeFile(
+            path.join(directory, name),
+            encrypted.toString('base64'),
+            { encoding: 'utf8', mode: 0o600 },
+          );
+        }
+        seen.add(envelope.sha256);
+        records.push({
+          bytes,
+          createdAt: fileParts.timestamp,
+          hash: envelope.sha256,
+        });
       } catch {
-        // Corrupt entries are ignored so an older complete asset can recover.
+        await rm(path.join(directory, name), { force: true });
       }
     }
-    return null;
+    return records;
+  }
+
+  private async readSelection(): Promise<{
+    activeHash: string | null;
+    exists: boolean;
+  }> {
+    const key = this.requireOwnerKey();
+    const selectionPath = path.join(
+      this.ownerDirectory(key),
+      SELECTION_FILE_NAME,
+    );
+    try {
+      const encoded = await readFile(selectionPath, 'utf8');
+      const decrypted = await this.options.safeStorage.decryptStringAsync(
+        Buffer.from(encoded, 'base64'),
+      );
+      const envelope = SelectionEnvelopeSchema.parse(
+        JSON.parse(decrypted.result),
+      );
+      if (decrypted.shouldReEncrypt) {
+        await this.writeSelection(envelope.activeHash);
+      }
+      return { activeHash: envelope.activeHash, exists: true };
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        return { activeHash: null, exists: false };
+      }
+      await rm(selectionPath, { force: true });
+      return { activeHash: null, exists: true };
+    }
+  }
+
+  private async writeSelection(activeHash: string | null): Promise<void> {
+    const key = this.requireOwnerKey();
+    const directory = this.ownerDirectory(key);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const envelope = SelectionEnvelopeSchema.parse({ activeHash, version: 1 });
+    const encrypted = await this.options.safeStorage.encryptStringAsync(
+      JSON.stringify(envelope),
+    );
+    await writeFile(
+      path.join(directory, SELECTION_FILE_NAME),
+      encrypted.toString('base64'),
+      { encoding: 'utf8', mode: 0o600 },
+    );
   }
 }

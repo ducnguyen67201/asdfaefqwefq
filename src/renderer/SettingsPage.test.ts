@@ -20,6 +20,7 @@ const COMPANION_STATUS: CompanionCustomizationStatus = {
     remaining: 5,
     used: 0,
   },
+  savedCompanions: [],
   state: 'available',
   summary: 'Companion generation is available.',
 };
@@ -76,6 +77,7 @@ function renderSettings(
       muteSystemAudioWhileSpeaking: false,
       onActivateMembership: vi.fn(),
       onActivateCompanion: vi.fn(),
+      onActivateSavedCompanion: vi.fn(),
       onAppLanguageChange: vi.fn(),
       onAutonomyModeChange: vi.fn(),
       onCheckForUpdates: vi.fn(),
@@ -183,6 +185,7 @@ describe('SettingsPage app language', () => {
         muteSystemAudioWhileSpeaking: true,
         onActivateMembership: vi.fn(),
         onActivateCompanion: vi.fn(),
+        onActivateSavedCompanion: vi.fn(),
         onAppLanguageChange: vi.fn(),
         onAutonomyModeChange: vi.fn(),
         onCheckForUpdates: vi.fn(),

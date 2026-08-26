@@ -54,6 +54,9 @@ describe('app language', () => {
       'Add an image to continue',
       'Private by design',
       'Meet your new companion',
+      'Your companions',
+      'Choose any companion you created before. Switching does not use a preview.',
+      'Saved companions stay encrypted on this device.',
       'Your source image and prompt are sent to OpenAI only for this generation; Tro does not save them. A companion you activate stays encrypted on this device. OpenAI may retain images flagged for child-safety review. An uncertain provider outcome may use one monthly slot, and Tro will not retry it automatically.',
     ];
 

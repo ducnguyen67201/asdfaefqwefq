@@ -46,6 +46,7 @@ interface SettingsPageProps {
   onAutonomyModeChange(mode: AutonomyMode): void;
   onAppLanguageChange(language: AppLanguage): void;
   onActivateCompanion(candidateId: string): Promise<void>;
+  onActivateSavedCompanion(companionId: string): Promise<void>;
   onCheckForUpdates(): void;
   onGenerateCompanion(
     request: GenerateCompanionImageRequest,
@@ -114,6 +115,7 @@ export function SettingsPage({
   muteSystemAudioWhileSpeaking,
   onAutonomyModeChange,
   onActivateCompanion,
+  onActivateSavedCompanion,
   onAppLanguageChange,
   onCheckForUpdates,
   onGenerateCompanion,
@@ -238,6 +240,7 @@ export function SettingsPage({
         busy={companionBusy}
         error={companionError}
         onActivate={onActivateCompanion}
+        onActivateSaved={onActivateSavedCompanion}
         onGenerate={onGenerateCompanion}
         onUseDefault={onUseDefaultCompanion}
         status={companionStatus}

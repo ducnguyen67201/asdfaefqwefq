@@ -5,6 +5,7 @@ import type {
   AppUpdateStatus,
   AuthStatus,
   ActivateCompanionCandidateRequest,
+  ActivateSavedCompanionRequest,
   CancelAgentTaskRequestV3,
   CompanionAppearance,
   CompanionCustomizationStatus,
@@ -113,6 +114,7 @@ export const IPC_CHANNELS = {
   companionPositionChanged: 'companion:position-changed',
   companionAppearanceChanged: 'companion:appearance-changed',
   companionActivateCandidate: 'companion-customization:activate-candidate',
+  companionActivateSaved: 'companion-customization:activate-saved',
   companionCustomizationStatus: 'companion-customization:status',
   companionGenerateImage: 'companion-customization:generate',
   companionUseDefault: 'companion-customization:use-default',
@@ -222,6 +224,9 @@ export interface DesktopApi {
   decideApproval(request: DecideApprovalRequest): Promise<TaskSnapshot>;
   activateCompanionCandidate(
     request: ActivateCompanionCandidateRequest,
+  ): Promise<CompanionCustomizationStatus>;
+  activateSavedCompanion(
+    request: ActivateSavedCompanionRequest,
   ): Promise<CompanionCustomizationStatus>;
   generateCompanionImage(
     request: GenerateCompanionImageRequest,
