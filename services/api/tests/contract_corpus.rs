@@ -135,7 +135,7 @@ fn schema_inventory_matches_embedded_migrations() {
     let value = fixture("schema");
     let tables = value["tables"].as_array().expect("tables");
     assert_eq!(tables.len(), 48);
-    assert_eq!(value["migrationCount"], 24);
+    assert_eq!(value["migrationCount"], 25);
     let migration_sources = [
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),

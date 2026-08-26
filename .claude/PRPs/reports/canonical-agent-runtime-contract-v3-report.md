@@ -40,7 +40,7 @@ Generated contract identity:
 | Level | Status | Notes |
 |---|---|---|
 | Static Analysis | [done] Pass | Protocol freshness, ESLint, TypeScript, rustfmt, Clippy, Cargo audit, Bazel module stability, and diff checks pass. Cargo audit reports only the repository's two allowlisted warnings (`ttf-parser`, `lru`). |
-| Unit Tests | [done] Pass | `npm run check`: 100 Vitest files / 588 tests and 57 Rust unit tests pass on the final `main` checkout. Focused v3 suite passed 50/50 before the concurrent branch switch; 14 targeted contract/lifecycle/permission/navigation cases were added or updated. |
+| Unit Tests | [done] Pass | `npm run check`: 104 Vitest files / 618 tests and 63 Rust unit tests pass after merging current `origin/main`. Focused v3 contract, lifecycle, permission, and navigation coverage also passes. |
 | Build | [done] Pass | `npm run bazel:check` passes 14 targets and Clippy; `npm run package` produces the arm64 macOS Electron package through the production Doppler environment. |
 | Integration | [done] Pass | Disposable PostgreSQL 17: durable agent compatibility, Rust HTTP compatibility, empty migration idempotency, and legacy migration adoption all pass. Test container removed afterward. |
 | Edge Cases | [done] Automated | Exact direct navigation/no permission, unknown consequential effects, blocked terminality, duplicate permission resolution, stale/terminal cancellation, strict nested schemas, unknown fields, v2 digest stability. Packaged manual macOS/Windows permission and cross-app Escape checks remain release-runbook steps. |
@@ -69,7 +69,7 @@ Generated contract identity:
 
 1. Zod's `reused: ref` output produced duplicate anonymous definitions in Typify 0.7.0. The generator uses named metadata plus `reused: inline`, preserving one canonical Zod source while generating valid, deterministic Rust DTOs. `chrono` and `regress` are direct Rust dependencies because generated DTOs enforce timestamp and pattern constraints.
 2. The registry now rejects any optional runtime tool not present in the canonical catalog. Adding a provider therefore requires a contract change and regeneration first, matching the user's requirement that every backend change has a contract all consumers follow.
-3. At 13:55 local time, an external workspace operation switched the checkout from `codex/organization-settings-and-student-onboarding` to `main` and reapplied changes, producing four migration-inventory conflicts. Both sides were preserved and only the exact overlaps were resolved. Final validation ran on `main`; no commit or push was performed.
+3. At 13:55 local time, an external workspace operation switched the checkout from `codex/organization-settings-and-student-onboarding` to an outdated local `main` and reapplied changes. The work was recovered onto `codex/canonical-agent-runtime-contract-v3`, current `origin/main` was merged, and the four exact overlaps were resolved while preserving both sides. The integration exposed a migration-number collision, so the v3 migration moved from 024 to 025 after `main`'s companion migration 024.
 
 ## Issues Encountered
 
