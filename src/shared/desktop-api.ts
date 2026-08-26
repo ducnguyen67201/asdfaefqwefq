@@ -23,6 +23,15 @@ import type {
   CuaStatus,
   DecideApprovalRequest,
   MembershipStatus,
+  AddOrganizationMemberRequest,
+  AddOrganizationMemberResponse,
+  CancelOrganizationMemberRequest,
+  CancelOrganizationMemberResponse,
+  ListOrganizationMembersRequest,
+  OrganizationCurrentResponse,
+  OrganizationMemberList,
+  UpdateOrganizationRequest,
+  UpdateOrganizationResponse,
   RecordVoiceTranscriptRequest,
   RespondToInteractionRequest,
   SetVoiceAudioDuckingRequest,
@@ -67,11 +76,29 @@ import type {
   KnowledgeGroup,
   KnowledgeGroupList,
   CreateKnowledgeGroupRequest,
+  AddKnowledgeSpaceMembersRequest,
+  AddKnowledgeSpaceMembersResult,
+  KnowledgeSpaceMemberList,
   CreateKnowledgeInviteRequest,
   KnowledgeInvite,
   RedeemKnowledgeInviteRequest,
   RedeemKnowledgeInviteResponse,
   RequestKnowledgeAttemptHelp,
+  ClassroomDirective,
+  ClassroomDirectiveNotice,
+  ClassroomSessionProjection,
+  CreateClassroomDirectiveRequest,
+  CreateKnowledgeRoomCodeRequest,
+  JoinClassroomSessionRequest,
+  KnowledgeAttemptMutationRequest,
+  KnowledgeAttemptTransition,
+  KnowledgeRoomCode,
+  KnowledgeRoomRevocation,
+  OpenClassroomDirectiveRequest,
+  ResolveKnowledgeAttemptHelpRequest,
+  ReviewKnowledgeAttemptRequest,
+  RevokeKnowledgeRoomCodeRequest,
+  SetClassroomLinkConsentRequest,
 } from './contracts';
 
 export const IPC_CHANNELS = {
@@ -106,6 +133,11 @@ export const IPC_CHANNELS = {
   getComputerStatus: 'cua:status',
   getAuthStatus: 'auth:status',
   getMembershipStatus: 'membership:status',
+  getOrganization: 'organization:get',
+  updateOrganization: 'organization:update',
+  listOrganizationMembers: 'organization:members:list',
+  addOrganizationMember: 'organization:members:add',
+  cancelOrganizationMember: 'organization:members:cancel',
   getUsageBudget: 'usage:budget',
   getTaskHistory: 'task:history',
   getVoiceStatus: 'voice:status',
@@ -147,9 +179,26 @@ export const IPC_CHANNELS = {
   submitKnowledgeSelection: 'knowledge:submission:upload',
   listKnowledgeGroups: 'knowledge:groups:list',
   createKnowledgeGroup: 'knowledge:groups:create',
+  listKnowledgeMembers: 'knowledge:members:list',
+  addKnowledgeSpaceMembers: 'knowledge:members:add',
   createKnowledgeInvite: 'knowledge:invites:create',
   redeemKnowledgeInvite: 'knowledge:invites:redeem',
   requestKnowledgeAttemptHelp: 'knowledge:attempt:help',
+  createKnowledgeRoomCode: 'classroom:room-code:create',
+  revokeKnowledgeRoomCode: 'classroom:room-code:revoke',
+  joinKnowledgeRoom: 'classroom:join',
+  restoreClassroomSession: 'classroom:restore',
+  getClassroomSession: 'classroom:session:get',
+  classroomSessionChanged: 'classroom:session:changed',
+  leaveClassroomSession: 'classroom:leave',
+  setClassroomLinkConsent: 'classroom:link-consent:set',
+  createClassroomDirective: 'classroom:directive:create',
+  classroomDirectiveChanged: 'classroom:directive:changed',
+  openClassroomDirective: 'classroom:directive:open',
+  dismissClassroomDirective: 'classroom:directive:dismiss',
+  readyKnowledgeAttempt: 'classroom:attempt:ready',
+  reviewKnowledgeAttempt: 'classroom:attempt:review',
+  resolveKnowledgeAttemptHelp: 'classroom:attempt:help-resolve',
 } as const;
 
 export interface DesktopApi {
@@ -176,6 +225,19 @@ export interface DesktopApi {
   getComputerStatus(): Promise<CuaStatus>;
   getCompanionCustomizationStatus(): Promise<CompanionCustomizationStatus>;
   getMembershipStatus(): Promise<MembershipStatus>;
+  getOrganization(): Promise<OrganizationCurrentResponse>;
+  updateOrganization(
+    request: UpdateOrganizationRequest,
+  ): Promise<UpdateOrganizationResponse>;
+  listOrganizationMembers(
+    request: ListOrganizationMembersRequest,
+  ): Promise<OrganizationMemberList>;
+  addOrganizationMember(
+    request: AddOrganizationMemberRequest,
+  ): Promise<AddOrganizationMemberResponse>;
+  cancelOrganizationMember(
+    request: CancelOrganizationMemberRequest,
+  ): Promise<CancelOrganizationMemberResponse>;
   getUsageBudget(taskId?: string): Promise<UsageBudgetSnapshot>;
   getTaskHistory(): Promise<TaskHistory>;
   getAuthStatus(): Promise<AuthStatus>;
@@ -200,9 +262,26 @@ export interface DesktopApi {
   submitKnowledgeSelection(request: SubmitKnowledgeSelectionRequest): Promise<KnowledgeUploadResult>;
   listKnowledgeGroups(spaceId: string): Promise<KnowledgeGroupList>;
   createKnowledgeGroup(request: CreateKnowledgeGroupRequest): Promise<KnowledgeGroup>;
+  listKnowledgeMembers(spaceId: string): Promise<KnowledgeSpaceMemberList>;
+  addKnowledgeSpaceMembers(request: AddKnowledgeSpaceMembersRequest): Promise<AddKnowledgeSpaceMembersResult>;
   createKnowledgeInvite(request: CreateKnowledgeInviteRequest): Promise<KnowledgeInvite>;
   redeemKnowledgeInvite(request: RedeemKnowledgeInviteRequest): Promise<RedeemKnowledgeInviteResponse>;
   requestKnowledgeAttemptHelp(request: RequestKnowledgeAttemptHelp): Promise<void>;
+  createKnowledgeRoomCode(request: CreateKnowledgeRoomCodeRequest): Promise<KnowledgeRoomCode>;
+  revokeKnowledgeRoomCode(request: RevokeKnowledgeRoomCodeRequest): Promise<KnowledgeRoomRevocation>;
+  joinKnowledgeRoom(request: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection>;
+  restoreClassroomSession(): Promise<ClassroomSessionProjection | null>;
+  getClassroomSession(): Promise<ClassroomSessionProjection | null>;
+  leaveClassroomSession(request: KnowledgeAttemptMutationRequest): Promise<void>;
+  setClassroomLinkConsent(request: SetClassroomLinkConsentRequest): Promise<ClassroomSessionProjection | null>;
+  createClassroomDirective(request: CreateClassroomDirectiveRequest): Promise<ClassroomDirective>;
+  openClassroomDirective(request: OpenClassroomDirectiveRequest): Promise<void>;
+  dismissClassroomDirective(directiveId: string): Promise<void>;
+  readyKnowledgeAttempt(request: KnowledgeAttemptMutationRequest): Promise<KnowledgeAttemptTransition>;
+  reviewKnowledgeAttempt(request: ReviewKnowledgeAttemptRequest): Promise<KnowledgeAttemptTransition>;
+  resolveKnowledgeAttemptHelp(request: ResolveKnowledgeAttemptHelpRequest): Promise<KnowledgeAttemptTransition>;
+  onClassroomSessionChanged(listener: (session: ClassroomSessionProjection | null) => void): () => void;
+  onClassroomDirectiveChanged(listener: (notice: ClassroomDirectiveNotice | null) => void): () => void;
   onTaskUpdate(listener: (update: TaskUpdate) => void): () => void;
   onTaskComposerFocusRequested(
     listener: (taskId: string) => void,

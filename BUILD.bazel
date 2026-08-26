@@ -1,6 +1,39 @@
+load("@buildifier_prebuilt//:rules.bzl", "buildifier", "buildifier_test")
+
 package(default_visibility = ["//visibility:private"])
 
 exports_files([
     "Cargo.lock",
     "Cargo.toml",
+    "test/fixtures/intent-authorization-cases.json",
 ])
+
+buildifier(
+    name = "buildifier",
+    exclude_patterns = [
+        "./.git/*",
+        "./.webpack/*",
+        "./node_modules/*",
+        "./out/*",
+        "./target/*",
+    ],
+    lint_mode = "fix",
+    mode = "fix",
+    tags = ["manual"],
+)
+
+buildifier_test(
+    name = "buildifier_test",
+    size = "small",
+    exclude_patterns = [
+        "./.git/*",
+        "./.webpack/*",
+        "./node_modules/*",
+        "./out/*",
+        "./target/*",
+    ],
+    lint_mode = "warn",
+    mode = "diff",
+    no_sandbox = True,
+    workspace = "//:MODULE.bazel",
+)

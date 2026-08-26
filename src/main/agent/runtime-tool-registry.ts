@@ -1057,7 +1057,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       id: 'task.guidance',
       modelName: 'show_guidance',
       description:
-        'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the user to use playback controls before continuing.',
+        'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the bounded narration result before continuing.',
       operations: ['show'],
       parameters: objectSchema(
         {

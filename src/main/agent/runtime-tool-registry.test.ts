@@ -10,7 +10,7 @@ function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_cand
     schemaVersion: 6 as const,
     id: randomUUID(),
     originalRequest: 'Help with the Activity',
-    runtimeKind: 'openai_agents' as const,
+    runtimeKind: 'rust_hosted' as const,
     executionProfile: 'everyday' as const,
     autonomyMode: 'balanced' as const,
     workspace: null,
@@ -22,7 +22,10 @@ function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_cand
         guidancePolicy: { answerReveal: 'allowed' as const, hintMode: 'direct' as const, maxHintLevel: 3 },
         criteria: [{ id: 'triage', title: 'Triage', description: '', tags: ['logs'] }],
         completionPolicy: { requiresSubmission: false, requiresFacilitatorConfirmation: false },
+        sessionPolicy: { allowedOrigins: [], allowRoomJoin: true },
       },
+      purpose: 'help' as const,
+      currentDirective: null,
       insightPolicy,
       insightPolicyVersion: '1', policyAcknowledged: insightPolicy === 'evidence_candidates',
       sourceCatalog: [{ title: 'Runbook', role: 'reference' as const }],
@@ -71,7 +74,7 @@ describe('RuntimeToolRegistry', () => {
 
     expect(properties?.description?.maxLength).toBe(240);
     expect(guidance?.description).toContain('exactly one visible target');
-    expect(guidance?.description).toContain('playback controls');
+    expect(guidance?.description).toContain('bounded narration result');
     expect(guidance?.description).toContain('highlight');
   });
 

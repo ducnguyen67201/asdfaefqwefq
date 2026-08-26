@@ -1,8 +1,21 @@
-import type { AppLanguage } from '../shared/contracts';
+import type { AppLanguage, OrganizationSummary } from '../shared/contracts';
 
 import { translate } from './app-language';
 
-export type ActiveView = 'agent' | 'spaces' | 'assigned' | 'history' | 'insights' | 'settings';
+export type ActiveView =
+  | 'agent'
+  | 'spaces'
+  | 'assigned'
+  | 'history'
+  | 'insights'
+  | 'organization'
+  | 'settings';
+
+export function organizationSettingsAvailable(
+  organization: OrganizationSummary | null,
+): boolean {
+  return organization !== null;
+}
 
 export function navigationTitle(view: ActiveView, language: AppLanguage): { kicker: string; title: string } {
   switch (view) {
@@ -10,6 +23,7 @@ export function navigationTitle(view: ActiveView, language: AppLanguage): { kick
     case 'assigned': return { kicker: translate(language, 'Your work'), title: translate(language, 'Assigned Activities') };
     case 'history': return { kicker: translate(language, 'Session task record'), title: translate(language, 'History') };
     case 'insights': return { kicker: translate(language, 'Private on-device summary'), title: translate(language, 'Insights overview') };
+    case 'organization': return { kicker: translate(language, 'Account settings'), title: translate(language, 'Organization') };
     case 'settings': return { kicker: translate(language, 'Personal preferences'), title: translate(language, 'Language & settings') };
     case 'agent': return { kicker: translate(language, 'General-purpose agent'), title: translate(language, 'Current task') };
   }

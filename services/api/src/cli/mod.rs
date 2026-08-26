@@ -1,27 +1,40 @@
-use std::time::Instant;
+use std::{env, time::Duration, time::Instant};
 
 use rand::RngCore;
 use serde_json::json;
 
+mod checks;
+mod membership;
+mod reports;
+mod windows_release;
+
+pub use checks::{check_agent_runtime_versions, check_rust_only_script_layout};
+pub use membership::{membership_issue, membership_keygen};
+pub use reports::{agent_reliability_report, cua_fast_path_report, inference_cost_report};
+pub use windows_release::{WindowsArtifactKind, stamp_windows_executable};
+
 use crate::{
-    auth::{digest_access_code, seal_access_code},
-    config::Config,
+    auth::{digest_access_code, normalize_access_code, seal_access_code},
     db,
     knowledge::{chunk_pages, extract_text},
+    postgres::PgPoolOptions,
     usage::plan_for,
 };
 
 pub async fn create_access_code(
-    config: &Config,
     code: Option<String>,
     label: Option<String>,
     max_users: i32,
     plan: &str,
+    distribution_mode: &str,
 ) -> anyhow::Result<()> {
     if max_users < 1 {
         anyhow::bail!("--max-users must be a positive integer.")
     }
     plan_for(plan).map_err(|_| anyhow::anyhow!("--plan must be one of: free, basic, pro, max."))?;
+    if !matches!(distribution_mode, "organization" | "shared") {
+        anyhow::bail!("--distribution-mode must be organization or shared.")
+    }
     let code = code
         .map(|value| value.trim().to_uppercase())
         .unwrap_or_else(|| {
@@ -35,15 +48,36 @@ pub async fn create_access_code(
                     .collect::<String>()
             )
         });
-    let digest = digest_access_code(&code, &config.session_token_hmac_key)?.ok_or_else(|| {
+    let code = normalize_access_code(&code).ok_or_else(|| {
         anyhow::anyhow!(
             "Access codes must contain 4 to 64 letters, numbers, hyphens, or underscores."
         )
     })?;
-    let sealed = seal_access_code(&code, &config.session_token_hmac_key, &digest)?;
-    let pool = db::connect(config).await?;
+    let label = label.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_owned())
+    });
+    if label
+        .as_ref()
+        .is_some_and(|value| value.encode_utf16().count() > 100)
+    {
+        anyhow::bail!("--label must be at most 100 characters.")
+    }
+    let database_url = required_environment("DATABASE_URL")?;
+    let session_token_hmac_key = required_environment("TROCODE_SESSION_TOKEN_HMAC_KEY")?;
+    if session_token_hmac_key.len() < 32 {
+        anyhow::bail!("TROCODE_SESSION_TOKEN_HMAC_KEY must be at least 32 characters.")
+    }
+    let digest = digest_access_code(&code, &session_token_hmac_key)?
+        .ok_or_else(|| anyhow::anyhow!("Access code normalization failed."))?;
+    let sealed = seal_access_code(&code, &session_token_hmac_key, &digest)?;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .acquire_timeout(Duration::from_secs(15))
+        .connect(&database_url)
+        .await?;
     db::migrate(&pool).await?;
-    let result=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan)VALUES($1,$2,$3,$4,$5)RETURNING id").bind(digest.to_vec()).bind(sealed).bind(label.as_deref()).bind(max_users).bind(plan).fetch_one(&pool).await;
+    let result=sqlx::query("INSERT INTO access_codes(code_digest,code_ciphertext,label,max_users,plan,distribution_mode)VALUES($1,$2,$3,$4,$5,$6)RETURNING id").bind(digest.to_vec()).bind(sealed).bind(label.as_deref()).bind(max_users).bind(plan).bind(distribution_mode).fetch_one(&pool).await;
     match result {
         Ok(row) => {
             use sqlx::Row;
@@ -51,6 +85,7 @@ pub async fn create_access_code(
             println!("Code: {code}");
             println!("User limit: {max_users}");
             println!("Plan: {plan}");
+            println!("Distribution mode: {distribution_mode}");
             if let Some(label) = label {
                 println!("Label: {label}");
             }
@@ -66,6 +101,15 @@ pub async fn create_access_code(
     pool.close().await;
     Ok(())
 }
+
+fn required_environment(name: &str) -> anyhow::Result<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{name} is required."))
+}
+
 pub fn knowledge_load_report() {
     for participants in [200, 500] {
         let mut durations = Vec::new();
@@ -106,69 +150,34 @@ mod tests {
 
     #[tokio::test]
     async fn access_code_command_rejects_invalid_arguments_before_database_access() {
-        let config = Config {
-            admin: crate::config::AdminConfig { access_token: None },
-            agent_runtime: crate::config::AgentRuntimeConfig {
-                canary_users: std::collections::BTreeSet::new(),
-                compaction_item_threshold: 80,
-                current_encryption_key_version: 1,
-                enabled: false,
-                encryption_keys: None,
-                heartbeat_ttl_ms: 35_000,
-                intent_authorization: crate::config::RolloutConfig {
-                    canary_users: std::collections::BTreeSet::new(),
-                    enabled: false,
-                    rollout_percent: 0,
-                },
-                lease_ms: 30_000,
-                max_active_runs_per_user: 2,
-                max_queue_depth: 1_000,
-                payload_ttl_ms: 604_800_000,
-                playwright_cdp_enabled: false,
-                protocol_version: 2,
-                rollout_percent: 0,
-            },
-            cost_guard: crate::config::CostGuardConfig {
-                daily_micro_usd: 8_000_000,
-                enabled: true,
-                mode: crate::config::CostGuardMode::Enforce,
-                monthly_micro_usd: 45_000_000,
-                realtime_call_micro_usd: 5_000,
-                reservation_ttl_ms: 120_000,
-                speech_micro_usd_per_thousand_characters: 60_000,
-                task_micro_usd: 5_000_000,
-                transcription_micro_usd_per_minute: 6_000,
-                warning_percent: 80,
-            },
-            database_pool_max: 1,
-            database_url: "postgresql://unused.invalid/unused".to_owned(),
-            eleven_labs_api_key: None,
-            eleven_labs_model_id: "eleven_multilingual_v2".to_owned(),
-            eleven_labs_voice_id: None,
-            google_client_id: "unused".to_owned(),
-            knowledge_spaces: crate::config::KnowledgeConfig {
-                enabled: false,
-                object_store: None,
-            },
-            openai_api_key: "unused".to_owned(),
-            openai_models: std::collections::BTreeSet::new(),
-            port: 0,
-            railway_git_commit_sha: "test".to_owned(),
-            session_duration_days: 30,
-            session_token_hmac_key: "cli_test_hmac_key_0123456789abcdef".to_owned(),
-        };
         assert!(
-            create_access_code(&config, None, None, 0, "basic")
+            create_access_code(None, None, 0, "basic", "organization")
                 .await
                 .is_err()
         );
         assert!(
-            create_access_code(&config, None, None, 1, "enterprise")
+            create_access_code(None, None, 1, "enterprise", "organization")
                 .await
                 .is_err()
         );
         assert!(
-            create_access_code(&config, Some("bad code!".to_owned()), None, 1, "basic")
+            create_access_code(
+                Some("bad code!".to_owned()),
+                None,
+                1,
+                "basic",
+                "organization",
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            create_access_code(None, Some("x".repeat(101)), 1, "basic", "organization")
+                .await
+                .is_err()
+        );
+        assert!(
+            create_access_code(None, None, 1, "basic", "invalid")
                 .await
                 .is_err()
         );

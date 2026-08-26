@@ -3,9 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { createCuaSemanticToolDefinitions } from './cua-semantic-agent-tools';
-import { evaluateAction } from './policy';
 import { RuntimeToolRegistry } from './runtime-tool-registry';
-import { createTaskContract } from './task-contract';
 
 const effectFree = {
   kind: 'none' as const,
@@ -151,7 +149,7 @@ describe('CUA semantic agent tools', () => {
     });
   });
 
-  it('auto-authorizes one private calendar save and requires approval once attendees exist', () => {
+  it('preserves exact calendar and invitation effects for Rust policy evaluation', () => {
     const tools = registry();
     const base = {
       observationId: observation.observationId,
@@ -178,17 +176,11 @@ describe('CUA semantic agent tools', () => {
       },
       { taskId: observation.taskId, latestObservation: observation },
     );
-    expect(
-      evaluateAction(
-        createTaskContract('Create a calendar event.'),
-        createInvocation.action!,
-        tools,
-      ),
-    ).toMatchObject({
-      status: 'allowed',
-      authorizationSource: 'user_instruction',
-      approvalRequired: false,
-      consequential: true,
+    expect(createInvocation.action).toMatchObject({
+      effect: {
+        kind: 'create_resource',
+        resourceKind: 'calendar_event',
+      },
     });
 
     const inviteInvocation = tools.resolve(
@@ -208,12 +200,14 @@ describe('CUA semantic agent tools', () => {
       },
       { taskId: observation.taskId, latestObservation: observation },
     );
-    expect(
-      evaluateAction(
-        createTaskContract('Create a calendar event with an attendee.'),
-        inviteInvocation.action!,
-        tools,
-      ).status,
-    ).toBe('needs_approval');
+    expect(inviteInvocation.action).toMatchObject({
+      effect: {
+        kind: 'send_communication',
+        communication: 'invite',
+      },
+      parameters: {
+        attendees: ['teammate@example.test'],
+      },
+    });
   });
 });

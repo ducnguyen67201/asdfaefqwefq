@@ -39,14 +39,17 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   };
   event: unknown;
   interactionEvent: unknown;
+  cancelActiveTasks: ReturnType<typeof vi.fn>;
   executionCoordinator: {
-    cancelActiveTasks: ReturnType<typeof vi.fn>;
     resume: ReturnType<typeof vi.fn>;
     start: ReturnType<typeof vi.fn>;
   };
   cuaConnect: ReturnType<typeof vi.fn>;
   cuaGetStatus: ReturnType<typeof vi.fn>;
   callOrder: string[];
+  classroomJoin: ReturnType<typeof vi.fn>;
+  classroomOpenDirective: ReturnType<typeof vi.fn>;
+  createClassroomDirective: ReturnType<typeof vi.fn>;
   checkForUpdates: ReturnType<typeof vi.fn>;
   companionCustomizationService: {
     activateCandidate: ReturnType<typeof vi.fn>;
@@ -62,6 +65,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     assertActive: ReturnType<typeof vi.fn>;
     continueWithFree: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
+  };
+  organizationClient: {
+    addMember: ReturnType<typeof vi.fn>;
+    cancelMember: ReturnType<typeof vi.fn>;
+    getCurrent: ReturnType<typeof vi.fn>;
+    listMembers: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   onAuthSignedIn: ReturnType<typeof vi.fn>;
   restartAndInstallUpdate: ReturnType<typeof vi.fn>;
@@ -172,13 +182,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     on: vi.fn(),
   };
   const executionCoordinator = {
-    cancelActiveTasks: vi.fn(() => []),
     resume: vi.fn(),
     start: vi.fn((input: unknown) => {
       void input;
       return { taskId: 'task-id', phase: 'planning' };
     }),
   };
+  const cancelActiveTasks = vi.fn(async () => undefined);
   const taskApplicationService = {
     cancel: vi.fn((input: unknown) => input),
     decideApproval: vi.fn((input: { taskId: string }) => {
@@ -288,6 +298,90 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     getStatus: vi.fn(async () => companionStatus),
     useDefault: vi.fn(async () => companionStatus),
   };
+  const classroomSession = {
+    attemptId: '11111111-1111-4111-8111-111111111111',
+    attemptState: 'assigned' as const,
+    run: {
+      id: '22222222-2222-4222-8222-222222222222',
+      state: 'draft' as const,
+      mode: 'live' as const,
+      status: 'lobby' as const,
+    },
+    space: {
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Python 101',
+    },
+    activityVersionId: '44444444-4444-4444-8444-444444444444',
+    activity: { title: 'Loops', objective: 'Practice loops.', requiresSubmission: false },
+    currentDirective: null,
+    joinedAt: '2026-08-25T00:00:00.000Z',
+    leftAt: null,
+    role: 'student' as const,
+    autoOpenConsent: false,
+  };
+  const classroomJoin = vi.fn(async () => classroomSession);
+  const classroomOpenDirective = vi.fn(async () => undefined);
+  const createClassroomDirective = vi.fn(async (request: unknown) => request);
+  const classroomSessionService = {
+    clear: vi.fn(),
+    get: vi.fn(() => classroomSession),
+    join: classroomJoin,
+    leave: vi.fn(async () => undefined),
+    onChange: vi.fn(() => vi.fn()),
+    restore: vi.fn(async () => classroomSession),
+    setAutoOpenConsent: vi.fn((consent: boolean) => ({
+      ...classroomSession,
+      autoOpenConsent: consent,
+    })),
+  };
+  const classroomDirectiveService = {
+    dismiss: vi.fn(),
+    getNotice: vi.fn(() => null),
+    onNotice: vi.fn(() => vi.fn()),
+    open: classroomOpenDirective,
+  };
+  const organization = {
+    capacity: {
+      assignedSeats: 1,
+      maxSeats: 10,
+      remainingSeats: 9,
+      state: 'available' as const,
+    },
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Math Teachers',
+    plan: 'pro' as const,
+    role: 'organizer' as const,
+  };
+  const pendingMember = {
+    createdAt: '2026-08-25T08:00:00.000Z',
+    email: 'student@example.com',
+    id: '22222222-2222-4222-8222-222222222222',
+    joinedAt: null,
+    name: null,
+    role: 'member' as const,
+    state: 'pending' as const,
+  };
+  const organizationClient = {
+    addMember: vi.fn(async () => ({
+      member: pendingMember,
+      newlyCreated: true,
+      organization,
+    })),
+    cancelMember: vi.fn(async (memberId: string) => ({
+      kind: 'cancelled' as const,
+      memberId,
+      organization,
+    })),
+    getCurrent: vi.fn(async () => ({ organization })),
+    listMembers: vi.fn(async (input: { limit: number; offset: number }) => ({
+      items: [pendingMember],
+      organization,
+      page: { ...input, total: 1 },
+    })),
+    update: vi.fn(async (input: { name: string }) => ({
+      organization: { ...organization, name: input.name },
+    })),
+  };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
     appUpdateService: {
@@ -302,11 +396,17 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     },
     authService,
     companionCustomizationService,
+    classroomDirectiveService,
+    classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
-    executionCoordinator,
+    cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
     handleCompanionResponseAction,
     membershipService,
+    knowledgeSpaceClient: {
+      createDirective: createClassroomDirective,
+    },
+    organizationClient,
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,
@@ -351,12 +451,16 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
 
   return {
     authService,
+    cancelActiveTasks,
     callOrder,
+    classroomJoin,
+    classroomOpenDirective,
     checkForUpdates,
     companionCustomizationService,
     transcribeVoiceSegment,
     cuaConnect,
     cuaGetStatus,
+    createClassroomDirective,
     event,
     interactionEvent,
     executionCoordinator,
@@ -364,6 +468,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     getTaskHistory,
     handleCompanionResponseAction,
     membershipService,
+    organizationClient,
     onAuthSignedIn,
     openSystemPermissionSettings,
     recordVoiceTranscript,
@@ -556,6 +661,66 @@ describe('registerIpcHandlers auth boundary', () => {
     expect(executionCoordinator.start).toHaveBeenCalledWith({
       taskId: 'task-id',
     });
+    unregister();
+  });
+
+  it('routes parsed classroom join and directive actions through trusted main services', async () => {
+    const {
+      classroomJoin,
+      classroomOpenDirective,
+      createClassroomDirective,
+      event,
+      unregister,
+    } = setup(true);
+    const joinRequest = {
+      autoOpenConsent: true,
+      clientId: '55555555-5555-4555-8555-555555555555',
+      code: 'TRO-ABCD-12',
+    };
+    const directive = {
+      id: '66666666-6666-4666-8666-666666666666',
+      sequence: 1,
+      kind: 'exercise' as const,
+      delivery: 'manual_only' as const,
+      instruction: 'Complete exercise A.',
+      criterionIds: ['exercise-a'],
+      createdAt: '2026-08-25T00:00:00.000Z',
+    };
+    const createRequest = {
+      spaceId: '33333333-3333-4333-8333-333333333333',
+      runId: '22222222-2222-4222-8222-222222222222',
+      clientId: '77777777-7777-4777-8777-777777777777',
+      directive: {
+        kind: 'exercise' as const,
+        instruction: 'Complete exercise A.',
+        criterionIds: ['exercise-a'],
+      },
+    };
+
+    await electronMock.handlers.get(IPC_CHANNELS.joinKnowledgeRoom)?.(
+      event,
+      joinRequest,
+    );
+    await electronMock.handlers.get(IPC_CHANNELS.createClassroomDirective)?.(
+      event,
+      createRequest,
+    );
+    await electronMock.handlers.get(IPC_CHANNELS.openClassroomDirective)?.(
+      event,
+      { directive },
+    );
+
+    expect(classroomJoin).toHaveBeenCalledWith(joinRequest);
+    expect(createClassroomDirective).toHaveBeenCalledWith(createRequest);
+    expect(classroomOpenDirective).toHaveBeenCalledWith(directive);
+
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.joinKnowledgeRoom)?.(
+        event,
+        { ...joinRequest, code: 'short' },
+      ),
+    ).rejects.toThrow();
+    expect(classroomJoin).toHaveBeenCalledOnce();
     unregister();
   });
 
@@ -848,6 +1013,106 @@ describe('registerIpcHandlers auth boundary', () => {
     unregister();
   });
 
+  it('authorizes and validates exact organization operations at the IPC boundary', async () => {
+    const { event, organizationClient, unregister } = setup(true);
+    const memberId = '22222222-2222-4222-8222-222222222222';
+
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(event),
+    ).resolves.toMatchObject({
+      organization: { role: 'organizer' },
+    });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(event, { name: '  Greenfield School  ' }),
+    ).resolves.toMatchObject({
+      organization: { name: 'Greenfield School' },
+    });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.listOrganizationMembers)
+        ?.(event, { limit: 25, offset: 0 }),
+    ).resolves.toMatchObject({ page: { limit: 25, offset: 0 } });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.addOrganizationMember)
+        ?.(event, { email: ' Student@Example.com ' }),
+    ).resolves.toMatchObject({ newlyCreated: true });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.cancelOrganizationMember)
+        ?.(event, { memberId }),
+    ).resolves.toMatchObject({ kind: 'cancelled', memberId });
+
+    expect(organizationClient.getCurrent).toHaveBeenCalledOnce();
+    expect(organizationClient.update).toHaveBeenCalledWith({
+      name: 'Greenfield School',
+    });
+    expect(organizationClient.listMembers).toHaveBeenCalledWith({
+      limit: 25,
+      offset: 0,
+    });
+    expect(organizationClient.addMember).toHaveBeenCalledWith({
+      email: 'Student@Example.com',
+    });
+    expect(organizationClient.cancelMember).toHaveBeenCalledWith(memberId);
+    unregister();
+  });
+
+  it('rejects malformed or unauthorized organization calls before the client', async () => {
+    const active = setup(true);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.addOrganizationMember)
+        ?.(active.event, { email: 'not-an-email' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.cancelOrganizationMember)
+        ?.(active.event, { memberId: 'not-a-uuid' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, { name: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, {
+          name: 'Greenfield School',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+        }),
+    ).rejects.toThrow();
+    expect(active.organizationClient.addMember).not.toHaveBeenCalled();
+    expect(active.organizationClient.cancelMember).not.toHaveBeenCalled();
+    expect(active.organizationClient.update).not.toHaveBeenCalled();
+    active.unregister();
+
+    const inactive = setup(true, false);
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(inactive.event),
+    ).rejects.toThrow('active membership');
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(inactive.event, { name: 'Greenfield School' }),
+    ).rejects.toThrow('active membership');
+    expect(inactive.organizationClient.getCurrent).not.toHaveBeenCalled();
+    expect(inactive.organizationClient.update).not.toHaveBeenCalled();
+    inactive.unregister();
+
+    const untrusted = setup(true);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.getOrganization)
+        ?.({ sender: { id: 999 }, senderFrame: {} }),
+    ).rejects.toThrow();
+    expect(untrusted.organizationClient.getCurrent).not.toHaveBeenCalled();
+    untrusted.unregister();
+  });
+
   it('rejects unsupported primary languages at the IPC boundary', async () => {
     const { event, unregister, updateAppPreferences } = setup(true);
 
@@ -988,14 +1253,14 @@ describe('registerIpcHandlers auth boundary', () => {
   });
 
   it('cancels active execution before signing out', async () => {
-    const { event, executionCoordinator, unregister } = setup(true);
+    const { cancelActiveTasks, event, unregister } = setup(true);
     const handler = electronMock.handlers.get(IPC_CHANNELS.signOutGoogle);
 
     await expect(handler?.(event)).resolves.toMatchObject({
       state: 'signed_out',
       user: null,
     });
-    expect(executionCoordinator.cancelActiveTasks).toHaveBeenCalledOnce();
+    expect(cancelActiveTasks).toHaveBeenCalledOnce();
     unregister();
   });
 

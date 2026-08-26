@@ -25,8 +25,8 @@ usage, and the old rate.
 
 - `npm exec -- vitest run src/main/voice/voice-service.test.ts src/shared/contracts.test.ts`
   failed 4 tests and passed 17.
-- `node --test services/api/test/openai-transcription-service.test.mjs services/api/test/config.test.mjs`
-  failed 4 tests and passed 7.
+- Superseded Rust API compatibility tests failed the same provider/config
+  assertions before the Rust migration was completed.
 
 The rollout compatibility checkpoint is commit `9bd26ba` (`test: cover
 transcription rollout compatibility`). Its focused run failed three assertions:

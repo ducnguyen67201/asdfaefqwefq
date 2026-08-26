@@ -20,6 +20,7 @@ import type {
   GoalSpec,
   GenerateCompanionImageRequest,
   MembershipStatus,
+  OrganizationSummary,
   PendingInteraction,
   PrimaryLanguage,
   TaskEvent,
@@ -35,10 +36,15 @@ import { VOICE_TRANSCRIPTION_MODEL } from '../shared/contracts';
 
 import { acceptAgentActivity } from './agent-activity-projection';
 import { appLanguageLabel, translate } from './app-language';
-import { navigationTitle, type ActiveView } from './app-navigation';
+import {
+  navigationTitle,
+  organizationSettingsAvailable,
+  type ActiveView,
+} from './app-navigation';
 import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
+import { ClassroomSessionBar } from './ClassroomSessionBar';
 import type { CompanionCustomizationBusy } from './CompanionCustomizationCard';
 import { HistoryPage } from './HistoryPage';
 import { InsightsPage } from './InsightsPage';
@@ -47,8 +53,9 @@ import {
   isPrimaryLanguageSetupComplete,
   primaryLanguageLabel,
 } from './language-options';
-import { appEntryGate } from './membership';
+import { appEntryGate, membershipAllowsAccess } from './membership';
 import { MembershipGate } from './MembershipGate';
+import { OrganizationPage } from './OrganizationPage';
 import {
   createPermissionChecklist,
   inspectMicrophonePermission,
@@ -160,7 +167,15 @@ function mergeTaskEvents(
 function NavigationIcon({
   name,
 }: {
-  name: 'activity' | 'agent' | 'assigned' | 'history' | 'insights' | 'settings' | 'spaces';
+  name:
+    | 'activity'
+    | 'agent'
+    | 'assigned'
+    | 'history'
+    | 'insights'
+    | 'organization'
+    | 'settings'
+    | 'spaces';
 }) {
   if (name === 'agent') {
     return (
@@ -195,6 +210,16 @@ function NavigationIcon({
 
   if (name === 'assigned') {
     return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h12v18H6z" /><path d="m9 12 2 2 4-5M9 7h6" /></svg>;
+  }
+
+  if (name === 'organization') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 19v-2.2A3.8 3.8 0 0 1 7.3 13h3.4a3.8 3.8 0 0 1 3.8 3.8V19" />
+        <path d="M16 10.5a2.5 2.5 0 1 0 0-5M16.5 13.5a3.5 3.5 0 0 1 4 3.5v2" />
+      </svg>
+    );
   }
 
   if (name === 'settings') {
@@ -838,6 +863,7 @@ export function App({
 }) {
   const [activeView, setActiveView] = useState<ActiveView>('agent');
   const [knowledgeSpacesEnabled, setKnowledgeSpacesEnabled] = useState(false);
+  const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -915,6 +941,12 @@ export function App({
   const [companionError, setCompanionError] = useState<string | null>(null);
   const [companionBusy, setCompanionBusy] =
     useState<CompanionCustomizationBusy>(null);
+  const [organization, setOrganization] =
+    useState<OrganizationSummary | null>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(
+    null,
+  );
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(false);
   const [isCheckingMembership, setIsCheckingMembership] = useState(true);
   const [isActivatingMembership, setIsActivatingMembership] = useState(false);
   const [isContinuingFree, setIsContinuingFree] = useState(false);
@@ -936,6 +968,8 @@ export function App({
   const membershipRefreshIdRef = useRef(0);
   const companionRefreshIdRef = useRef(0);
   const companionActionInFlightRef = useRef(false);
+  const organizationRefreshIdRef = useRef(0);
+  const openOrganizationAfterActivationRef = useRef(false);
   const t = useCallback(
     (
       message: string,
@@ -1338,6 +1372,38 @@ export function App({
     }
   }, []);
 
+  const refreshOrganization =
+    useCallback(async (): Promise<OrganizationSummary | null> => {
+      const refreshId = organizationRefreshIdRef.current + 1;
+      organizationRefreshIdRef.current = refreshId;
+      setIsLoadingOrganization(true);
+      setOrganizationError(null);
+      try {
+        const response = await window.tro.getOrganization();
+        if (organizationRefreshIdRef.current !== refreshId) return null;
+        setOrganization(response.organization);
+        if (openOrganizationAfterActivationRef.current) {
+          openOrganizationAfterActivationRef.current = false;
+          if (organizationSettingsAvailable(response.organization)) {
+            setActiveView('organization');
+          }
+        }
+        return response.organization;
+      } catch (organizationStatusError) {
+        if (organizationRefreshIdRef.current !== refreshId) return null;
+        setOrganizationError(
+          organizationStatusError instanceof Error
+            ? organizationStatusError.message
+            : 'Tro could not load this organization.',
+        );
+        openOrganizationAfterActivationRef.current = false;
+        return null;
+      } finally {
+        if (organizationRefreshIdRef.current === refreshId) {
+          setIsLoadingOrganization(false);
+        }
+      }
+    }, []);
   useEffect(() => {
     const handleWindowFocus = (): void => {
       void refreshMembership();
@@ -1349,6 +1415,46 @@ export function App({
       window.removeEventListener('focus', handleWindowFocus);
     };
   }, [refreshMembership]);
+
+  useEffect(() => {
+    if (!membershipAllowsAccess(membershipStatus)) {
+      organizationRefreshIdRef.current += 1;
+      openOrganizationAfterActivationRef.current = false;
+      queueMicrotask(() => {
+        setOrganization(null);
+        setOrganizationError(null);
+        setIsLoadingOrganization(false);
+      });
+      return;
+    }
+
+    const handleWindowFocus = (): void => {
+      void refreshOrganization();
+    };
+    queueMicrotask(() => void refreshOrganization());
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      organizationRefreshIdRef.current += 1;
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [currentUser.id, membershipStatus, refreshOrganization]);
+
+  useEffect(() => {
+    if (activeView !== 'organization' || !membershipAllowsAccess(membershipStatus)) {
+      return;
+    }
+    queueMicrotask(() => void refreshOrganization());
+  }, [activeView, membershipStatus, refreshOrganization]);
+
+  useEffect(() => {
+    if (
+      activeView === 'organization' &&
+      !isLoadingOrganization &&
+      !organizationSettingsAvailable(organization)
+    ) {
+      queueMicrotask(() => setActiveView('agent'));
+    }
+  }, [activeView, isLoadingOrganization, organization]);
 
   useEffect(() => {
     if (membershipStatus?.state !== 'active' || !membershipStatus.expiresAt) {
@@ -1386,6 +1492,8 @@ export function App({
       try {
         setMembershipStatus(await window.tro.activateMembership({ code }));
         void refreshCompanionCustomization();
+        openOrganizationAfterActivationRef.current = true;
+        await refreshOrganization();
       } catch (activationError) {
         setMembershipError(
           activationError instanceof Error
@@ -1396,7 +1504,7 @@ export function App({
         setIsActivatingMembership(false);
       }
     },
-    [refreshCompanionCustomization],
+    [refreshCompanionCustomization, refreshOrganization],
   );
 
   const continueWithFree = useCallback(async () => {
@@ -1645,6 +1753,7 @@ export function App({
           recordSnapshot(null);
           nextSnapshot = await window.tro.submitTask({
             activityAttemptId: null,
+            activityIntent: 'work',
             executionProfile,
             text: normalizedRequest,
             workspaceSelectionId:
@@ -2140,37 +2249,37 @@ export function App({
           {knowledgeSpacesEnabled && (
             <>
               <button
-                aria-label={t('Knowledge Spaces')}
+                aria-label={t('Class workspaces')}
                 aria-current={activeView === 'spaces' ? 'page' : undefined}
                 className={`nav-item ${
                   activeView === 'spaces' ? 'nav-item--active' : ''
                 }`}
                 onClick={() => setActiveView('spaces')}
                 title={
-                  isSidebarCollapsed ? t('Knowledge Spaces') : undefined
+                  isSidebarCollapsed ? t('Class workspaces') : undefined
                 }
                 type="button"
               >
                 <NavigationIcon name="spaces" />
                 <span className="sidebar-item-label">
-                  {t('Knowledge Spaces')}
+                  {t('Class workspaces')}
                 </span>
               </button>
               <button
-                aria-label={t('Assigned Activities')}
+                aria-label={t('Classwork')}
                 aria-current={activeView === 'assigned' ? 'page' : undefined}
                 className={`nav-item ${
                   activeView === 'assigned' ? 'nav-item--active' : ''
                 }`}
                 onClick={() => setActiveView('assigned')}
                 title={
-                  isSidebarCollapsed ? t('Assigned Activities') : undefined
+                  isSidebarCollapsed ? t('Classwork') : undefined
                 }
                 type="button"
               >
                 <NavigationIcon name="assigned" />
                 <span className="sidebar-item-label">
-                  {t('Assigned Activities')}
+                  {t('Classwork')}
                 </span>
               </button>
             </>
@@ -2232,6 +2341,27 @@ export function App({
 
         <div className="sidebar-bottom">
           <nav aria-label={t('Settings')}>
+            {organizationSettingsAvailable(organization) && (
+              <button
+                aria-label={t('Organization settings')}
+                aria-current={
+                  activeView === 'organization' ? 'page' : undefined
+                }
+                className={`nav-item ${
+                  activeView === 'organization' ? 'nav-item--active' : ''
+                }`}
+                onClick={() => setActiveView('organization')}
+                title={
+                  isSidebarCollapsed ? t('Organization settings') : undefined
+                }
+                type="button"
+              >
+                <NavigationIcon name="organization" />
+                <span className="sidebar-item-label">
+                  {t('Organization settings')}
+                </span>
+              </button>
+            )}
             <button
               aria-label={t('Settings')}
               aria-current={activeView === 'settings' ? 'page' : undefined}
@@ -2315,10 +2445,23 @@ export function App({
           </div>
         </header>
 
+        {knowledgeSpacesEnabled && (
+          <ClassroomSessionBar
+            appLanguage={appLanguageDraft}
+            onLaunch={launchKnowledgeActivity}
+            onOpenClasswork={(attemptId) => {
+              setClassroomAttemptFocus(attemptId);
+              setActiveView('assigned');
+            }}
+          />
+        )}
+
         {activeView === 'spaces' || activeView === 'assigned' ? (
           <KnowledgeHubPage
             appLanguage={appLanguageDraft}
+            focusAttemptId={activeView === 'assigned' ? classroomAttemptFocus : null}
             mode={activeView}
+            onAttemptFocusCleared={() => setClassroomAttemptFocus(null)}
             onLaunch={launchKnowledgeActivity}
           />
         ) : activeView === 'history' ? (
@@ -2339,6 +2482,18 @@ export function App({
             events={sessionEvents}
             persistence={taskPersistence}
             tasks={sessionTaskSnapshots}
+          />
+        ) : activeView === 'organization' ? (
+          <OrganizationPage
+            appLanguage={appLanguageDraft}
+            error={organizationError}
+            isLoading={isLoadingOrganization}
+            onOpenClasses={
+              knowledgeSpacesEnabled ? () => setActiveView('spaces') : undefined
+            }
+            onOrganizationChange={setOrganization}
+            onRefresh={refreshOrganization}
+            organization={organization}
           />
         ) : activeView === 'settings' ? (
           <SettingsPage
@@ -2363,6 +2518,9 @@ export function App({
             membershipError={membershipError}
             membershipStatus={membershipStatus}
             onActivateCompanion={activateCompanion}
+            organization={organization}
+            organizationError={organizationError}
+            isLoadingOrganization={isLoadingOrganization}
             onAppLanguageChange={(language) => {
               setAppLanguageDraft(language);
               setSettingsError(null);
@@ -2386,6 +2544,8 @@ export function App({
               setSettingsError(null);
               setSettingsSaveMessage(null);
             }}
+            onOpenOrganization={() => setActiveView('organization')}
+            onRefreshOrganization={() => void refreshOrganization()}
             onRestartAndInstall={() => void restartAndInstallAppUpdate()}
             onSave={() => void saveSettings()}
             onUseDefaultCompanion={useDefaultCompanion}

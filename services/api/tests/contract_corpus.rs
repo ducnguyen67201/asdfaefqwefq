@@ -52,7 +52,7 @@ fn hex(value: &[u8]) -> String {
 }
 
 #[test]
-fn opens_javascript_crypto_fixtures() {
+fn opens_stable_crypto_fixtures() {
     let value = fixture("crypto");
     let access = &value["accessCode"];
     let key = access["hmacKey"].as_str().expect("key");
@@ -110,7 +110,9 @@ fn route_inventory_is_unique_and_covers_every_family() {
         );
         families.insert(route["family"].as_str().expect("family"));
     }
-    assert!(routes.len() >= 70);
+    assert!(routes.len() >= 72);
+    assert!(keys.contains("GET /v1/companion-images/quota"));
+    assert!(keys.contains("POST /v1/openai/images/companion-edits"));
     assert_eq!(
         families,
         HashSet::from([
@@ -120,21 +122,20 @@ fn route_inventory_is_unique_and_covers_every_family() {
             "auth",
             "core",
             "knowledge",
+            "organization",
             "provider",
             "usage"
         ])
     );
     assert_eq!(value["sse"].as_array().expect("sse").len(), 3);
-    assert!(keys.contains("GET /v1/companion-images/quota"));
-    assert!(keys.contains("POST /v1/openai/images/companion-edits"));
 }
 
 #[test]
 fn schema_inventory_matches_embedded_migrations() {
     let value = fixture("schema");
-    assert_eq!(value["migrationCount"], 18);
     let tables = value["tables"].as_array().expect("tables");
-    assert_eq!(tables.len(), 39);
+    assert_eq!(tables.len(), 48);
+    assert_eq!(value["migrationCount"], 24);
     let migration_sources = [
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),
@@ -153,7 +154,13 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/015_intent_authorization.sql"),
         include_str!("../migrations/016_admin_code_grants.sql"),
         include_str!("../migrations/017_free_plan_onboarding.sql"),
-        include_str!("../migrations/018_companion_image_generation.sql"),
+        include_str!("../migrations/018_classroom_roles.sql"),
+        include_str!("../migrations/019_invite_idempotency.sql"),
+        include_str!("../migrations/020_live_classroom_room_flow.sql"),
+        include_str!("../migrations/021_organization_managed_access.sql"),
+        include_str!("../migrations/022_organization_profile_settings.sql"),
+        include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
+        include_str!("../migrations/024_companion_image_generation.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {
@@ -163,4 +170,11 @@ fn schema_inventory_matches_embedded_migrations() {
             "missing {table}"
         );
     }
+}
+
+#[test]
+fn knowledge_spaces_access_defaults_on_per_user() {
+    let migration = include_str!("../migrations/023_user_knowledge_spaces_access.sql");
+    assert!(migration.contains("knowledge_spaces_enabled BOOLEAN NOT NULL DEFAULT TRUE"));
+    assert!(migration.contains("user.knowledge_spaces_access_updated"));
 }

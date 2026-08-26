@@ -12,8 +12,8 @@ import {
 describe('app language', () => {
   it('only exposes interface languages supported by the shared contract', () => {
     expect(
-      APP_LANGUAGE_OPTIONS.every((option) =>
-        AppLanguageSchema.safeParse(option.code).success,
+      APP_LANGUAGE_OPTIONS.every(
+        (option) => AppLanguageSchema.safeParse(option.code).success,
       ),
     ).toBe(true);
   });
@@ -66,5 +66,38 @@ describe('app language', () => {
         remaining: 3,
       }),
     ).toBe('Còn 3 trên 5 trong tháng này');
+  });
+
+  it('translates the role-aware live classroom flow', () => {
+    expect(translate('vi', 'Join your class')).toBe('Tham gia lớp học');
+    expect(translate('vi', 'Broadcast to class')).toBe('Gửi cho cả lớp');
+    expect(translate('vi', 'Ready for review')).toBe('Sẵn sàng để xem xét');
+    expect(translate('vi', 'Confirm Complete')).toBe('Xác nhận hoàn tất');
+    expect(
+      translate('vi', '{count} students in the lobby', { count: 24 }),
+    ).toBe('24 học sinh trong phòng chờ');
+    expect(
+      translate(
+        'vi',
+        ' Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.',
+      ),
+    ).not.toContain('continuous cursor');
+  });
+
+  it('translates organization settings and seat onboarding copy', () => {
+    expect(translate('vi', 'Organization settings')).toBe('Cài đặt tổ chức');
+    expect(translate('vi', 'Member')).toBe('Thành viên');
+    expect(translate('vi', 'Invite a student or staff member')).toBe(
+      'Mời học sinh hoặc nhân viên',
+    );
+    expect(
+      translate('vi', '{assigned} of {maximum}', {
+        assigned: 4,
+        maximum: 25,
+      }),
+    ).toBe('4 trên 25');
+    expect(translate('vi', 'Open Class workspaces')).toBe(
+      'Mở Không gian lớp học',
+    );
   });
 });

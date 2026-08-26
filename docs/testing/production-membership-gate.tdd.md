@@ -26,8 +26,7 @@ plan file was used.
   register membership handlers.
 - GREEN: task and voice effects now pass through main-process membership
   authorization while permission-onboarding calls remain available after login.
-- RED: the administrator CLI compatibility test failed because
-  `scripts/membership-codes.mjs` did not exist.
+- RED: the administrator membership-code command did not exist.
 - GREEN: codes issued by the CLI activate through the same verifier used by the
   packaged application.
 - RED: hosted sessions entered the workspace without any database-backed code,
@@ -55,12 +54,12 @@ plan file was used.
 | 6 | Membership inspect/activate IPC validates and routes signed-in users | `register-ipc.test.ts` | Integration | PASS |
 | 7 | CLI-issued codes are compatible with the application verifier | `membership-service.test.ts` | Integration | PASS |
 | 8 | Only active or development-bypassed statuses admit the renderer workspace | `membership.test.ts` | Unit | PASS |
-| 9 | Hosted codes are case-normalized and stored only as keyed HMAC digests | `access-code-repository.test.mjs` | Unit/security | PASS |
-| 10 | User and code rows are locked before quota checks and full codes do not insert | `access-code-repository.test.mjs` | Unit/concurrency | PASS |
-| 11 | One account cannot switch to a second code | `server.test.mjs`, `access-code-repository.test.mjs` | Integration/security | PASS |
-| 12 | A code at its user limit rejects new accounts while existing accounts remain active | `server.test.mjs` | Integration | PASS |
-| 13 | Hosted model, realtime, and speech proxies deny authenticated users without a redemption | `server.test.mjs` | Integration/security | PASS |
-| 14 | All checked-in SQL migrations run in order | `migrate.test.mjs` | Unit | PASS |
+| 9 | Hosted codes are case-normalized and stored only as keyed HMAC digests | `contract_corpus.rs`, `http_compat.rs` | Unit/security | PASS |
+| 10 | User and code rows are locked before quota checks and full codes do not insert | `http_compat.rs` | Integration/concurrency | PASS |
+| 11 | One account cannot switch to a second code | `http_compat.rs` | Integration/security | PASS |
+| 12 | A code at its user limit rejects new accounts while existing accounts remain active | `http_compat.rs` | Integration | PASS |
+| 13 | Hosted model, transcription, and speech proxies deny authenticated users without a redemption | `http_compat.rs`, `provider_budget_compat.rs` | Integration/security | PASS |
+| 14 | All checked-in SQL migrations run in order | `postgres_compat.rs`, `contract_corpus.rs` | Integration | PASS |
 | 15 | A signed-in user sees membership before first-run language and permission onboarding | `membership.test.ts` | Unit/regression | PASS |
 
 ## Coverage and known gaps

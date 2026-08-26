@@ -5,7 +5,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::AgentService,
-    auth::{AccessCodeRepository, AgentStateCrypto, GoogleVerifier, SessionRepository},
+    auth::{
+        AccessCodeRepository, AgentStateCrypto, GoogleVerifier, OrganizationRepository,
+        SessionRepository,
+    },
+    classroom::ClassroomService,
     config::Config,
     db,
     error::ApiError,
@@ -21,6 +25,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub sessions: SessionRepository,
     pub access_codes: AccessCodeRepository,
+    pub organizations: OrganizationRepository,
     pub rate_limiter: RateLimiter,
     pub budget: BudgetService,
     pub companion_images: CompanionImageService,
@@ -28,6 +33,7 @@ pub struct AppState {
     pub transcription: TranscriptionService,
     pub google: GoogleVerifier,
     pub knowledge: KnowledgeService,
+    pub classroom: ClassroomService,
     pub agent: Option<AgentService>,
     pub shutdown: CancellationToken,
 }
@@ -50,6 +56,7 @@ impl AppState {
             None => None,
         };
         let knowledge = KnowledgeService::new(pool.clone(), store, &config.session_token_hmac_key);
+        let classroom = ClassroomService::new(pool.clone(), &config.session_token_hmac_key);
         let agent = match &config.agent_runtime.encryption_keys {
             Some(keys) => Some(AgentService::new(
                 pool.clone(),
@@ -69,6 +76,7 @@ impl AppState {
                 config.session_duration_days,
             ),
             access_codes: AccessCodeRepository::new(pool.clone(), &config.session_token_hmac_key),
+            organizations: OrganizationRepository::new(pool.clone()),
             rate_limiter: RateLimiter::new(pool.clone(), &config.session_token_hmac_key),
             transcription: TranscriptionService::new(
                 budget.clone(),
@@ -82,6 +90,7 @@ impl AppState {
             companion_images,
             responses,
             knowledge,
+            classroom,
             agent,
             shutdown: CancellationToken::new(),
         })

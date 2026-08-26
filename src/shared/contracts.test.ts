@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
-  ActivateMembershipRequestSchema,
   ActivateCompanionCandidateRequestSchema,
+  ActivateMembershipRequestSchema,
   ActionEffectSchema,
   AgentActivityUpdateSchema,
   AgentTaskContractV3Schema,
@@ -16,7 +16,6 @@ import {
   CompanionCustomizationStatusSchema,
   CompanionGenerationQuotaSchema,
   GenerateCompanionImageRequestSchema,
-  MAX_COMPANION_IMAGE_BYTES,
   HostedDesktopInvocationSchema,
   IntentAuthorizationContractSchema,
   CompanionResponseActionRequestSchema,
@@ -24,9 +23,19 @@ import {
   SubmitTaskRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionSpeechSchema,
+  ClassroomDirectiveSchema,
+  CreateKnowledgeRunRequestSchema,
   MembershipStatusSchema,
+  AddOrganizationMemberRequestSchema,
+  CancelOrganizationMemberRequestSchema,
+  OrganizationCurrentResponseSchema,
+  OrganizationMemberListSchema,
+  UpdateOrganizationRequestSchema,
+  UpdateOrganizationResponseSchema,
   PlanIdSchema,
+  SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
+  MAX_COMPANION_IMAGE_BYTES,
   TaskComposerFocusRequestSchema,
   TaskHistorySchema,
   TaskProgressSchema,
@@ -134,6 +143,90 @@ describe('companion customization contracts', () => {
         quota: null,
         state: 'available',
         summary: 'Ready.',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('organization management contracts', () => {
+  const organization = {
+    capacity: {
+      assignedSeats: 10,
+      maxSeats: 10,
+      remainingSeats: 0,
+      state: 'full',
+    },
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Math Teachers',
+    plan: 'pro',
+    role: 'organizer',
+  };
+
+  it('accepts strict organization summaries and bounded member pages', () => {
+    expect(
+      OrganizationCurrentResponseSchema.parse({ organization }),
+    ).toEqual({ organization });
+    expect(
+      OrganizationMemberListSchema.parse({
+        items: [{
+          createdAt: '2026-08-25T08:00:00.000Z',
+          email: 'student@example.com',
+          id: '22222222-2222-4222-8222-222222222222',
+          joinedAt: null,
+          name: null,
+          role: 'member',
+          state: 'pending',
+        }],
+        organization,
+        page: { limit: 50, offset: 0, total: 1 },
+      }),
+    ).toMatchObject({ page: { total: 1 } });
+  });
+
+  it('normalizes email and rejects extra fields or malformed member IDs', () => {
+    expect(
+      AddOrganizationMemberRequestSchema.parse({
+        email: ' Student@Example.com ',
+      }),
+    ).toEqual({ email: 'Student@Example.com' });
+    expect(
+      AddOrganizationMemberRequestSchema.safeParse({
+        email: 'student@example.com',
+        organizationId: organization.id,
+      }).success,
+    ).toBe(false);
+    expect(
+      CancelOrganizationMemberRequestSchema.safeParse({ memberId: 'member-1' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('normalizes bounded organization names and rejects delegated authority', () => {
+    expect(
+      UpdateOrganizationRequestSchema.parse({
+        name: '  Greenfield School  ',
+      }),
+    ).toEqual({ name: 'Greenfield School' });
+    expect(
+      UpdateOrganizationResponseSchema.parse({
+        organization: { ...organization, name: 'Greenfield School' },
+      }),
+    ).toMatchObject({ organization: { name: 'Greenfield School' } });
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: '   ' }).success,
+    ).toBe(false);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: 'a'.repeat(100) })
+        .success,
+    ).toBe(true);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: 'a'.repeat(101) })
+        .success,
+    ).toBe(false);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({
+        name: 'Greenfield School',
+        organizationId: organization.id,
       }).success,
     ).toBe(false);
   });
@@ -260,7 +353,7 @@ describe('shared task contracts', () => {
       schemaVersion: 6,
       id: randomUUID(),
       originalRequest: 'Help me debug this Activity',
-      runtimeKind: 'openai_agents',
+      runtimeKind: 'rust_hosted',
       executionProfile: 'everyday',
       autonomyMode: 'balanced',
       workspace: null,
@@ -269,6 +362,104 @@ describe('shared task contracts', () => {
       limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
     });
     expect(contract.activity).toBeNull();
+  });
+
+  it('defaults legacy Activity drafts safely and accepts explicit room Runs', () => {
+    const definition = {
+      title: 'Python loops',
+      objective: 'Practice bounded loops.',
+      instructions: 'Complete the exercise and ask for Help if needed.',
+      launchTarget: 'current_surface',
+      guidancePolicy: {
+        answerReveal: 'after_attempt',
+        hintMode: 'guided',
+        maxHintLevel: 2,
+      },
+      criteria: [],
+      completionPolicy: {
+        requiresSubmission: true,
+        requiresFacilitatorConfirmation: true,
+      },
+    } as const;
+    const saved = SaveKnowledgeActivityRequestSchema.parse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition,
+      sourceVersionIds: [],
+    });
+    expect(saved.definition.sessionPolicy).toEqual({
+      allowedOrigins: [],
+      allowRoomJoin: false,
+    });
+    expect(SaveKnowledgeActivityRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition: {
+        ...definition,
+        sessionPolicy: {
+          allowedOrigins: ['https://class.example/exercise'],
+          allowRoomJoin: true,
+        },
+      },
+      sourceVersionIds: [],
+    }).success).toBe(false);
+    expect(SaveKnowledgeActivityRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      definition: {
+        ...definition,
+        sessionPolicy: {
+          allowedOrigins: ['https://127.0.0.1'],
+          allowRoomJoin: true,
+        },
+      },
+      sourceVersionIds: [],
+    }).success).toBe(false);
+    expect(ClassroomDirectiveSchema.safeParse({
+      id: randomUUID(),
+      sequence: 1,
+      kind: 'open_url',
+      delivery: 'manual_only',
+      instruction: 'Open this link.',
+      criterionIds: [],
+      url: 'https://[ff02::1]/exercise',
+      origin: 'https://[ff02::1]',
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }).success).toBe(false);
+
+    expect(CreateKnowledgeRunRequestSchema.parse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      activityVersionId: randomUUID(),
+      mode: 'live',
+      opensAt: null,
+      closesAt: null,
+      target: { kind: 'room' },
+      insightPolicy: 'explicit_and_operational',
+    }).target).toEqual({ kind: 'room' });
+    expect(CreateKnowledgeRunRequestSchema.safeParse({
+      spaceId: randomUUID(),
+      clientId: randomUUID(),
+      activityVersionId: randomUUID(),
+      mode: 'async',
+      opensAt: null,
+      closesAt: null,
+      target: { kind: 'room' },
+      insightPolicy: 'explicit_and_operational',
+    }).success).toBe(false);
+  });
+
+  it('accepts explicit Check intent and leaves trusted Attempt inheritance to main', () => {
+    const attemptId = randomUUID();
+    expect(SubmitTaskRequestSchema.parse({
+      text: 'Is this solution correct?',
+      activityAttemptId: attemptId,
+      activityIntent: 'check',
+    })).toMatchObject({ activityAttemptId: attemptId, activityIntent: 'check' });
+    expect(SubmitTaskRequestSchema.parse({
+      text: 'Check this unrelated task.',
+      activityIntent: 'check',
+    })).toMatchObject({ activityAttemptId: null, activityIntent: 'check' });
   });
   it('validates bounded companion response cards across streaming and completion', () => {
     const cardId = randomUUID();
@@ -540,11 +731,11 @@ describe('shared task contracts', () => {
           maxToolCalls: 30,
         },
         originalRequest: 'Fix the tests.',
-        runtimeKind: 'openai_agents',
+        runtimeKind: 'rust_hosted',
         schemaVersion: 5,
         workspace,
       }),
-    ).toMatchObject({ runtimeKind: 'openai_agents', workspace });
+    ).toMatchObject({ runtimeKind: 'rust_hosted', workspace });
     expect(
       SubmitTaskRequestSchema.parse({
         executionProfile: 'workspace',

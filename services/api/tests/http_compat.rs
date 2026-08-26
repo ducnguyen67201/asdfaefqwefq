@@ -22,7 +22,7 @@ use trocode_api::{
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
-    providers::{CompanionImageService, ResponsesService, TranscriptionService},
+    providers::{ResponsesService, TranscriptionService},
     query, query_scalar,
 };
 use url::Url;
@@ -72,7 +72,7 @@ async fn reset_database(database_url: &str) {
         .connect(database_url)
         .await
         .expect("connect to disposable PostgreSQL");
-    query("DROP SCHEMA public CASCADE")
+    query("DROP SCHEMA IF EXISTS public CASCADE")
         .execute(&pool)
         .await
         .expect("drop disposable schema");
@@ -130,10 +130,7 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
         eleven_labs_model_id: "eleven_multilingual_v2".to_owned(),
         eleven_labs_voice_id: None,
         google_client_id: "http-test.apps.googleusercontent.com".to_owned(),
-        knowledge_spaces: KnowledgeConfig {
-            enabled: true,
-            object_store,
-        },
+        knowledge_spaces: KnowledgeConfig { object_store },
         openai_api_key: "test-openai-key".to_owned(),
         openai_models: BTreeSet::from([
             "gpt-5.6-luna".to_owned(),
@@ -360,23 +357,6 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         )
         .mount(&provider)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/images/edits"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "application/json")
-                .set_body_json(json!({
-                    "data": [{"b64_json": STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0])}],
-                    "usage": {
-                        "input_tokens": 2,
-                        "input_tokens_details": {"image_tokens": 1, "text_tokens": 1},
-                        "output_tokens": 200
-                    }
-                })),
-        )
-        .expect(1)
-        .mount(&provider)
-        .await;
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
@@ -392,13 +372,6 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         "test-key",
         &format!("{}/v1/audio/transcriptions", provider.uri()),
     );
-    state.companion_images = CompanionImageService::new_with_endpoint(
-        state.budget.clone(),
-        reqwest::Client::new(),
-        "test-key",
-        50_000,
-        &format!("{}/v1/images/edits", provider.uri()),
-    );
     let router = trocode_api::http::router(state.clone());
 
     let health = send(&router, Method::GET, "/healthz", None, None).await;
@@ -409,11 +382,29 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         StatusCode::OK,
     );
     let capabilities = send(&router, Method::GET, "/v1/capabilities", None, None).await;
-    assert_status(&capabilities, StatusCode::OK);
-    assert_eq!(capabilities.json()["knowledgeSpaces"]["enabled"], true);
+    assert_status(&capabilities, StatusCode::UNAUTHORIZED);
+    assert_eq!(capabilities.json()["code"], "authentication_required");
     let asset = send(&router, Method::GET, "/source/admin", None, None).await;
     assert_status(&asset, StatusCode::OK);
     assert!(asset.headers.contains_key("content-security-policy"));
+    let admin_html = String::from_utf8_lossy(&asset.body);
+    assert!(admin_html.contains("<div id=\"root\"></div>"));
+    assert!(admin_html.contains("/source/admin/assets/admin.js"));
+    assert!(admin_html.contains("/source/admin/assets/admin.css"));
+    let admin_script = send(
+        &router,
+        Method::GET,
+        "/source/admin/assets/admin.js",
+        None,
+        None,
+    )
+    .await;
+    assert_status(&admin_script, StatusCode::OK);
+    assert_eq!(
+        admin_script.headers.get("content-type").unwrap(),
+        "text/javascript; charset=utf-8"
+    );
+    assert!(admin_script.body.len() > 100_000);
     assert_status(
         &send_with_headers(
             &router,
@@ -433,6 +424,18 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
 
     let owner_token = issue_user(&state, "http-owner").await;
     let participant_token = issue_user(&state, "http-participant").await;
+    let facilitator_token = issue_user(&state, "http-facilitator").await;
+    let capabilities = send(
+        &router,
+        Method::GET,
+        "/v1/capabilities",
+        Some(&owner_token),
+        None,
+    )
+    .await;
+    assert_status(&capabilities, StatusCode::OK);
+    assert_eq!(capabilities.json()["knowledgeSpaces"]["enabled"], true);
+    assert_eq!(capabilities.json()["knowledgeSpaces"]["contractVersion"], 2);
     assert_status(
         &send(
             &router,
@@ -467,6 +470,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_eq!(pending.json()["state"], "inactive");
     activate_basic(&router, &state, "http-owner", &owner_token).await;
     activate_basic(&router, &state, "http-participant", &participant_token).await;
+    activate_basic(&router, &state, "http-facilitator", &facilitator_token).await;
 
     assert_status(
         &send(
@@ -489,17 +493,82 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&admin_session, StatusCode::NO_CONTENT);
     assert!(admin_session.headers.contains_key("set-cookie"));
-    assert_status(
-        &send(
+    for (user, role) in [
+        ("http-owner", "teacher"),
+        ("http-participant", "student"),
+        ("http-facilitator", "teacher"),
+    ] {
+        let assigned = send(
             &router,
-            Method::GET,
-            "/v1/admin/users?status=active&limit=10",
+            Method::PATCH,
+            &format!("/v1/admin/users/{user}/classroom-role"),
             Some(ADMIN_TOKEN),
-            None,
+            Some(&json!({"role":role})),
         )
-        .await,
-        StatusCode::OK,
+        .await;
+        assert_status(&assigned, StatusCode::OK);
+        assert_eq!(assigned.json()["classroomRole"], role);
+    }
+    let admin_users = send(
+        &router,
+        Method::GET,
+        "/v1/admin/users?status=active&classroomRole=teacher&limit=10",
+        Some(ADMIN_TOKEN),
+        None,
+    )
+    .await;
+    assert_status(&admin_users, StatusCode::OK);
+    assert!(
+        admin_users.json()["items"]
+            .as_array()
+            .expect("admin users")
+            .iter()
+            .all(|user| user["knowledgeSpacesEnabled"] == true)
     );
+
+    let disabled_knowledge = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-participant/knowledge-spaces",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"enabled":false})),
+    )
+    .await;
+    assert_status(&disabled_knowledge, StatusCode::OK);
+    assert_eq!(disabled_knowledge.json()["knowledgeSpacesEnabled"], false);
+    let disabled_capabilities = send(
+        &router,
+        Method::GET,
+        "/v1/capabilities",
+        Some(&participant_token),
+        None,
+    )
+    .await;
+    assert_status(&disabled_capabilities, StatusCode::OK);
+    assert_eq!(
+        disabled_capabilities.json()["knowledgeSpaces"]["enabled"],
+        false
+    );
+    let disabled_spaces = send(
+        &router,
+        Method::GET,
+        "/v1/spaces",
+        Some(&participant_token),
+        None,
+    )
+    .await;
+    assert_status(&disabled_spaces, StatusCode::FORBIDDEN);
+    assert_eq!(disabled_spaces.json()["code"], "knowledge_spaces_disabled");
+    let enabled_knowledge = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-participant/knowledge-spaces",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"enabled":true})),
+    )
+    .await;
+    assert_status(&enabled_knowledge, StatusCode::OK);
+    assert_eq!(enabled_knowledge.json()["knowledgeSpacesEnabled"], true);
     let companion_quota = send(
         &router,
         Method::GET,
@@ -554,7 +623,13 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         Method::POST,
         "/v1/admin/access-codes/bulk",
         Some(ADMIN_TOKEN),
-        Some(&json!({"count":2,"label":"HTTP parity","maxUsers":2,"plan":"basic"})),
+        Some(&json!({
+            "count":2,
+            "distributionMode":"shared",
+            "label":"HTTP parity",
+            "maxUsers":2,
+            "plan":"basic"
+        })),
     )
     .await;
     assert_status(&created_codes, StatusCode::CREATED);
@@ -657,17 +732,206 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         StatusCode::OK,
     );
 
+    let organization_codes = send(
+        &router,
+        Method::POST,
+        "/v1/admin/access-codes/bulk",
+        Some(ADMIN_TOKEN),
+        Some(&json!({
+            "count":1,
+            "distributionMode":"organization",
+            "label":"HTTP organization",
+            "maxUsers":2,
+            "plan":"pro"
+        })),
+    )
+    .await;
+    assert_status(&organization_codes, StatusCode::CREATED);
+    let organization_code = organization_codes.json();
+    let organization_code_id = organization_code["items"][0]["id"]
+        .as_str()
+        .expect("organization access-code id")
+        .to_owned();
+    let organization_plaintext = organization_code["items"][0]["code"]
+        .as_str()
+        .expect("organization access-code plaintext")
+        .to_owned();
+    let organizer_token = issue_user(&state, "http-organizer").await;
+    let organizer_claim = send(
+        &router,
+        Method::POST,
+        "/v1/access-code-redemptions",
+        Some(&organizer_token),
+        Some(&json!({"code":organization_plaintext})),
+    )
+    .await;
+    assert_status(&organizer_claim, StatusCode::CREATED);
+    assert_eq!(organizer_claim.json()["usedUsers"], 1);
+
+    let renamed_organization = send(
+        &router,
+        Method::PATCH,
+        "/v1/organizations/me",
+        Some(&organizer_token),
+        Some(&json!({"name":"  Greenfield School  "})),
+    )
+    .await;
+    assert_status(&renamed_organization, StatusCode::OK);
+    assert_eq!(
+        renamed_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    let current_organization = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me",
+        Some(&organizer_token),
+        None,
+    )
+    .await;
+    assert_status(&current_organization, StatusCode::OK);
+    assert_eq!(
+        current_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    for invalid_profile in [
+        json!({"name":"   "}),
+        json!({"name":"School","id":"forbidden"}),
+    ] {
+        let invalid_update = send(
+            &router,
+            Method::PATCH,
+            "/v1/organizations/me",
+            Some(&organizer_token),
+            Some(&invalid_profile),
+        )
+        .await;
+        assert_status(&invalid_update, StatusCode::BAD_REQUEST);
+        assert_eq!(invalid_update.json()["code"], "invalid_request");
+    }
+
+    let outsider_token = issue_user(&state, "http-outsider").await;
+    let forwarded_claim = send(
+        &router,
+        Method::POST,
+        "/v1/access-code-redemptions",
+        Some(&outsider_token),
+        Some(&json!({"code":organization_plaintext})),
+    )
+    .await;
+    assert_status(&forwarded_claim, StatusCode::CONFLICT);
+    assert_eq!(forwarded_claim.json()["code"], "organization_managed_code");
+
+    let reserved = send(
+        &router,
+        Method::POST,
+        "/v1/organizations/me/members",
+        Some(&organizer_token),
+        Some(&json!({"email":"HTTP-INVITED@example.test"})),
+    )
+    .await;
+    assert_status(&reserved, StatusCode::CREATED);
+    let reserved_id = reserved.json()["member"]["id"]
+        .as_str()
+        .expect("reserved membership id")
+        .to_owned();
+    assert_eq!(reserved.json()["organization"]["capacity"]["state"], "full");
+    let full = send(
+        &router,
+        Method::POST,
+        "/v1/organizations/me/members",
+        Some(&organizer_token),
+        Some(&json!({"email":"another@example.test"})),
+    )
+    .await;
+    assert_status(&full, StatusCode::CONFLICT);
+    assert_eq!(full.json()["code"], "organization_capacity_reached");
+    assert_status(
+        &send(
+            &router,
+            Method::PATCH,
+            &format!("/v1/admin/access-codes/{organization_code_id}"),
+            Some(ADMIN_TOKEN),
+            Some(&json!({"paused":true})),
+        )
+        .await,
+        StatusCode::OK,
+    );
+    let invited_token = issue_user(&state, "http-invited").await;
+    let invited_access = send(
+        &router,
+        Method::GET,
+        "/v1/access-code-redemptions/me",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&invited_access, StatusCode::OK);
+    assert_eq!(invited_access.json()["state"], "active");
+    assert_eq!(invited_access.json()["plan"], "pro");
+    let invited_organization = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&invited_organization, StatusCode::OK);
+    assert_eq!(
+        invited_organization.json()["organization"]["role"],
+        "member"
+    );
+    assert_eq!(
+        invited_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    let member_update = send(
+        &router,
+        Method::PATCH,
+        "/v1/organizations/me",
+        Some(&invited_token),
+        Some(&json!({"name":"Member rename"})),
+    )
+    .await;
+    assert_status(&member_update, StatusCode::FORBIDDEN);
+    assert_eq!(
+        member_update.json()["code"],
+        "organization_organizer_required"
+    );
+    let member_roster = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me/members",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&member_roster, StatusCode::FORBIDDEN);
+    let active_removal = send(
+        &router,
+        Method::DELETE,
+        &format!("/v1/organizations/me/members/{reserved_id}"),
+        Some(&organizer_token),
+        None,
+    )
+    .await;
+    assert_status(&active_removal, StatusCode::CONFLICT);
+    assert_eq!(active_removal.json()["code"], "organization_member_active");
+
+    let space_client_id = Uuid::new_v4();
+    let space_body = json!({
+        "clientId":space_client_id,
+        "description":"Disposable integration space",
+        "name":"HTTP compatibility",
+        "purposeLabel":"migration"
+    });
     let space = send(
         &router,
         Method::POST,
         "/v1/spaces",
         Some(&owner_token),
-        Some(&json!({
-            "clientId":Uuid::new_v4(),
-            "description":"Disposable integration space",
-            "name":"HTTP compatibility",
-            "purposeLabel":"migration"
-        })),
+        Some(&space_body),
     )
     .await;
     assert_status(&space, StatusCode::CREATED);
@@ -675,6 +939,30 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("space id")
         .to_owned();
+    for index in 0..2 {
+        let extra_space = send(
+            &router,
+            Method::POST,
+            "/v1/spaces",
+            Some(&owner_token),
+            Some(&json!({
+                "clientId":Uuid::new_v4(),
+                "name":format!("Quota filler {index}")
+            })),
+        )
+        .await;
+        assert_status(&extra_space, StatusCode::CREATED);
+    }
+    let replayed_space = send(
+        &router,
+        Method::POST,
+        "/v1/spaces",
+        Some(&owner_token),
+        Some(&space_body),
+    )
+    .await;
+    assert_status(&replayed_space, StatusCode::OK);
+    assert_eq!(replayed_space.json()["space"]["id"], space_id);
     for path in [
         "/v1/spaces".to_owned(),
         format!("/v1/spaces/{space_id}"),
@@ -688,7 +976,107 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         );
     }
     let spaces = send(&router, Method::GET, "/v1/spaces", Some(&owner_token), None).await;
+    assert_eq!(spaces.json()["classroomRole"], "teacher");
     assert_eq!(spaces.json()["nextCursor"], Value::Null);
+    let participant_batch_id = Uuid::new_v4();
+    let added_participant = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":participant_batch_id,
+            "emails":[
+                "HTTP-PARTICIPANT@example.test",
+                "http-owner@example.test",
+                "missing@example.test"
+            ],
+            "role":"participant"
+        })),
+    )
+    .await;
+    assert_status(&added_participant, StatusCode::OK);
+    let added_participant_body = added_participant.json();
+    assert_eq!(
+        added_participant_body["addedEmails"],
+        json!(["http-participant@example.test"]),
+        "unexpected roster result: {added_participant_body}"
+    );
+    assert_eq!(
+        added_participant_body["alreadyMemberEmails"],
+        json!(["http-owner@example.test"]),
+        "unexpected roster result: {added_participant_body}"
+    );
+    assert_eq!(
+        added_participant_body["roleMismatchEmails"],
+        json!([]),
+        "unexpected roster result: {added_participant_body}"
+    );
+    assert_eq!(
+        added_participant_body["unavailableEmails"],
+        json!(["missing@example.test"]),
+        "unexpected roster result: {added_participant_body}"
+    );
+    let replayed_batch = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":participant_batch_id,
+            "emails":["different@example.test"],
+            "role":"participant"
+        })),
+    )
+    .await;
+    assert_status(&replayed_batch, StatusCode::OK);
+    assert_eq!(replayed_batch.json(), added_participant_body);
+    let added_facilitator = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&owner_token),
+        Some(&json!({
+            "clientId":Uuid::new_v4(),
+            "emails":[
+                "http-facilitator@example.test",
+                "http-participant@example.test"
+            ],
+            "role":"facilitator"
+        })),
+    )
+    .await;
+    assert_status(&added_facilitator, StatusCode::OK);
+    assert_eq!(
+        added_facilitator.json()["addedEmails"],
+        json!(["http-facilitator@example.test"])
+    );
+    assert_eq!(
+        added_facilitator.json()["roleMismatchEmails"],
+        json!(["http-participant@example.test"])
+    );
+    let facilitator_cannot_add_teacher = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/members/bulk"),
+        Some(&facilitator_token),
+        Some(&json!({
+            "clientId":Uuid::new_v4(),
+            "emails":["http-owner@example.test"],
+            "role":"facilitator"
+        })),
+    )
+    .await;
+    assert_status(&facilitator_cannot_add_teacher, StatusCode::FORBIDDEN);
+    let owner_role_in_use = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-owner/classroom-role",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"role":"student"})),
+    )
+    .await;
+    assert_status(&owner_role_in_use, StatusCode::CONFLICT);
     let group = send(
         &router,
         Method::POST,
@@ -715,21 +1103,34 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .await,
         StatusCode::NOT_FOUND,
     );
+    let invite_client_id = Uuid::new_v4();
+    let invite_body = json!({
+        "clientId":invite_client_id,
+        "groupId":group_id,
+        "maxUses":2,
+        "role":"participant"
+    });
     let invite = send(
         &router,
         Method::POST,
         &format!("/v1/spaces/{space_id}/invites"),
         Some(&owner_token),
-        Some(&json!({
-            "clientId":Uuid::new_v4(),
-            "groupId":group_id,
-            "maxUses":2,
-            "role":"participant"
-        })),
+        Some(&invite_body),
     )
     .await;
     assert_status(&invite, StatusCode::CREATED);
-    let invite_code = invite.json()["code"]
+    let replayed_invite = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/invites"),
+        Some(&owner_token),
+        Some(&invite_body),
+    )
+    .await;
+    assert_status(&replayed_invite, StatusCode::CREATED);
+    assert_eq!(replayed_invite.json()["id"], invite.json()["id"]);
+    assert_eq!(replayed_invite.json()["code"], invite.json()["code"]);
+    let invite_code = replayed_invite.json()["code"]
         .as_str()
         .expect("invite code")
         .to_owned();
@@ -766,6 +1167,10 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
                 "instructions":"Exercise the Rust backend contract.",
                 "launchTarget":"none",
                 "objective":"Prove the hosted backend contract remains compatible.",
+                "sessionPolicy":{
+                    "allowRoomJoin":true,
+                    "allowedOrigins":["https://class.example"]
+                },
                 "title":"Migration parity",
                 "criteria":[{
                     "id":"rust-router",
@@ -795,6 +1200,36 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("activity version id")
         .to_owned();
+    let room_run = send(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{space_id}/runs"),
+        Some(&owner_token),
+        Some(&json!({
+            "activityVersionId":version_id,
+            "clientId":Uuid::new_v4(),
+            "insightPolicy":"explicit_and_operational",
+            "mode":"live",
+            "target":{"kind":"room"}
+        })),
+    )
+    .await;
+    assert_status(&room_run, StatusCode::CREATED);
+    let room_run_id = room_run.json()["id"]
+        .as_str()
+        .expect("room run id")
+        .to_owned();
+    assert_status(
+        &send(
+            &router,
+            Method::POST,
+            &format!("/v1/spaces/{space_id}/runs/{room_run_id}/room-code"),
+            Some(&owner_token),
+            Some(&json!({"clientId":Uuid::new_v4(),"expiresAt":null,"maxUses":200})),
+        )
+        .await,
+        StatusCode::CREATED,
+    );
     let run_client_id = Uuid::new_v4();
     let run_body = json!({
         "activityVersionId":version_id,
@@ -813,6 +1248,15 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&run, StatusCode::CREATED);
     let run_id = run.json()["id"].as_str().expect("run id").to_owned();
+    for _ in 0..4 {
+        query("INSERT INTO knowledge_activity_runs(client_id,space_id,activity_version_id,mode,target_kind,insight_policy,created_by)VALUES($1,$2,$3,'live','participants','explicit_and_operational','http-owner')")
+            .bind(Uuid::new_v4())
+            .bind(Uuid::parse_str(&space_id).expect("space UUID"))
+            .bind(Uuid::parse_str(&version_id).expect("version UUID"))
+            .execute(&state.pool)
+            .await
+            .expect("fill active run quota");
+    }
     let repeated_run = send(
         &router,
         Method::POST,
@@ -1035,6 +1479,17 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
             .filter(|kind| **kind == "work_session_created")
             .count(),
         1
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/spaces/{space_id}/runs/{run_id}/dashboard?sinceSequence=0.0"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::OK,
     );
     assert_status(
         &send(

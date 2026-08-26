@@ -1,8 +1,10 @@
 mod admin;
 mod agent_runtime;
+mod classroom;
 mod core;
 mod knowledge;
 mod middleware;
+mod organization;
 
 use axum::{
     Router,
@@ -41,6 +43,9 @@ async fn dispatch(
             http::StatusCode::FORBIDDEN,
             "Browser-origin requests are not allowed.",
         ));
+    }
+    if let Some(response) = organization::handle(&state, &method, &uri, &headers, &body).await? {
+        return Ok(response);
     }
     if let Some(response) = knowledge::handle(&state, &method, &uri, &headers, &body).await? {
         return Ok(response);

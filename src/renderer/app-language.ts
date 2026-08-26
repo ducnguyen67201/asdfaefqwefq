@@ -165,7 +165,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Lifecycle events per day for the last six weeks':
     'Sự kiện vòng đời mỗi ngày trong sáu tuần qua',
   'Learning focus': 'Trọng tâm học tập',
-  'Loading application update status…': 'Đang tải trạng thái cập nhật ứng dụng…',
+  'Loading application update status…':
+    'Đang tải trạng thái cập nhật ứng dụng…',
   'Loading saved task history…': 'Đang tải lịch sử tác vụ đã lưu…',
   'Loading version…': 'Đang tải phiên bản…',
   'Loading…': 'Đang tải…',
@@ -219,8 +220,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'GPT Transcribe voice input is ready. The microphone stays off until you hold the shortcut.':
     'Nhập liệu giọng nói GPT Transcribe đã sẵn sàng. Micrô sẽ tắt cho đến khi bạn giữ phím tắt.',
   'Restart to update': 'Khởi động lại để cập nhật',
-  'Restart to install Tro {version}':
-    'Khởi động lại để cài đặt Tro {version}',
+  'Restart to install Tro {version}': 'Khởi động lại để cài đặt Tro {version}',
   'Restarting…': 'Đang khởi động lại…',
   Saved: 'Đã lưu',
   'Saved task history': 'Lịch sử tác vụ đã lưu',
@@ -339,16 +339,17 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Your active task has not settled yet.': 'Tác vụ đang chạy chưa kết thúc.',
   'Your move': 'Đến lượt bạn',
   'Your reference code': 'Mã tham chiếu của bạn',
-  'Fix the failing tests in my project': 'Sửa các bài kiểm thử đang lỗi trong dự án của tôi',
+  'Fix the failing tests in my project':
+    'Sửa các bài kiểm thử đang lỗi trong dự án của tôi',
   'Follow the live signal, steer the next safe step, or stop the task at any time.':
     'Theo dõi tín hiệu trực tiếp, điều hướng bước an toàn tiếp theo hoặc dừng tác vụ bất cứ lúc nào.',
-  'Less': 'Ít hơn',
-  'More': 'Nhiều hơn',
+  Less: 'Ít hơn',
+  More: 'Nhiều hơn',
   'Last six weeks': 'Sáu tuần qua',
   'Membership access': 'Quyền thành viên',
   'Membership needs attention': 'Tư cách thành viên cần được chú ý',
   Microphone: 'Micrô',
-  'Mode': 'Chế độ',
+  Mode: 'Chế độ',
   'No execution steps': 'Không có bước thực thi',
   'Nothing executes until scope and approvals are checked.':
     'Không có gì được thực thi cho đến khi phạm vi và phê duyệt được kiểm tra.',
@@ -407,9 +408,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Create Space': 'Tạo không gian',
   'Join a Space': 'Tham gia không gian',
   'Join Space': 'Tham gia',
-  'Library': 'Thư viện',
-  'Activities': 'Hoạt động',
-  'People': 'Mọi người',
+  Library: 'Thư viện',
+  Activities: 'Hoạt động',
+  People: 'Mọi người',
   'Upload files': 'Tải tệp lên',
   'Snapshot folder': 'Chụp nhanh thư mục',
   'Review upload': 'Xem lại nội dung tải lên',
@@ -446,6 +447,125 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Evidence patterns': 'Mẫu bằng chứng',
   'Suggested support': 'Hỗ trợ đề xuất',
   participants: 'người tham gia',
+  Classes: 'Lớp học',
+  class: 'lớp',
+  classes: 'lớp',
+  'Class workspaces': 'Không gian lớp học',
+  'Class workspace': 'Không gian lớp học',
+  'Keep each class easy to find, switch between, and manage from one place.':
+    'Dễ dàng tìm, chuyển đổi và quản lý từng lớp học tại một nơi.',
+  Teacher: 'Giáo viên',
+  Student: 'Học sinh',
+  'Role pending': 'Đang chờ phân vai',
+  'Account ready': 'Tài khoản đã sẵn sàng',
+  Account: 'Tài khoản',
+  Class: 'Lớp học',
+  'Your classroom role has not been assigned yet.':
+    'Vai trò lớp học của bạn chưa được chỉ định.',
+  'An administrator assigns Teacher or Student after your account is created.':
+    'Quản trị viên sẽ chỉ định Giáo viên hoặc Học sinh sau khi tài khoản được tạo.',
+  'New class workspace': 'Không gian lớp học mới',
+  'Create a class': 'Tạo lớp học',
+  'Start a dedicated home for a new group.':
+    'Tạo một không gian riêng cho nhóm mới.',
+  'Create class': 'Tạo lớp học',
+  'Creating…': 'Đang tạo…',
+  'Join a class': 'Tham gia lớp học',
+  'Use a code shared for your assigned role.':
+    'Dùng mã được chia sẻ cho vai trò của bạn.',
+  'Join class': 'Vào lớp học',
+  'Joining…': 'Đang tham gia…',
+  'No class workspaces yet': 'Chưa có không gian lớp học',
+  'Create a class, then add registered Teachers and Students.':
+    'Tạo lớp học rồi thêm Giáo viên và Học sinh đã đăng ký.',
+  'A Teacher can add your registered account to a class.':
+    'Giáo viên có thể thêm tài khoản đã đăng ký của bạn vào lớp.',
+  'Class owner': 'Chủ lớp học',
+  'Open class': 'Mở lớp học',
+  'All class workspaces': 'Tất cả không gian lớp học',
+  'Switch class': 'Chuyển lớp',
+  'Switch class workspace': 'Chuyển không gian lớp học',
+  'Current class': 'Lớp hiện tại',
+  'Your classroom role': 'Vai trò lớp học của bạn',
+  'Class overview': 'Tổng quan lớp học',
+  resources: 'tài nguyên',
+  resource: 'tài nguyên',
+  people: 'người',
+  Teaching: 'Đang giảng dạy',
+  Learning: 'Đang học',
+  'Class community': 'Cộng đồng lớp học',
+  'on the roster': 'trong danh sách lớp',
+  'Roster composition': 'Thành phần lớp học',
+  'At a glance': 'Tổng quan nhanh',
+  Teachers: 'Giáo viên',
+  Students: 'Học sinh',
+  'Roles are verified before anyone is added.':
+    'Vai trò được xác minh trước khi thêm bất kỳ ai.',
+  'Add registered accounts': 'Thêm tài khoản đã đăng ký',
+  'Build the roster': 'Xây dựng danh sách lớp',
+  'Add people after their account exists and an administrator assigns their Teacher or Student role.':
+    'Thêm mọi người sau khi tài khoản đã tồn tại và quản trị viên đã chỉ định vai trò Giáo viên hoặc Học sinh.',
+  'Registered account emails': 'Email tài khoản đã đăng ký',
+  'One email per line, comma, or space':
+    'Mỗi email một dòng, hoặc phân cách bằng dấu phẩy hay khoảng trắng',
+  'Add up to 500 people per batch. You can repeat as needed.':
+    'Thêm tối đa 500 người mỗi lượt và lặp lại khi cần.',
+  'Add as': 'Thêm với vai trò',
+  'Add to class': 'Thêm vào lớp',
+  'Adding…': 'Đang thêm…',
+  'Check these email entries': 'Kiểm tra các email này',
+  'Use 500 or fewer emails in each batch.':
+    'Dùng tối đa 500 email trong mỗi lượt.',
+  '{count} people added': 'Đã thêm {count} người',
+  '{count} already in this class': '{count} người đã có trong lớp',
+  'Roster update complete': 'Đã cập nhật danh sách lớp',
+  'Every account was checked against its classroom role.':
+    'Mỗi tài khoản đã được kiểm tra theo vai trò lớp học.',
+  Added: 'Đã thêm',
+  'Already here': 'Đã có trong lớp',
+  'Role mismatch': 'Sai vai trò',
+  'Review accounts that need attention': 'Xem các tài khoản cần xử lý',
+  'Wrong Admin-assigned role':
+    'Vai trò do quản trị viên chỉ định không phù hợp',
+  'Account not found or unavailable':
+    'Không tìm thấy tài khoản hoặc tài khoản không khả dụng',
+  'Class roster': 'Danh sách lớp',
+  'Everyone in this class': 'Mọi người trong lớp',
+  'Find a person': 'Tìm một người',
+  'Search name, email, or account ID': 'Tìm tên, email hoặc ID tài khoản',
+  'Show role': 'Hiển thị vai trò',
+  Everyone: 'Tất cả mọi người',
+  shown: 'đang hiển thị',
+  'No people match this view': 'Không có người phù hợp với chế độ xem này',
+  'Try another name or role.': 'Thử tên hoặc vai trò khác.',
+  Person: 'Người dùng',
+  Role: 'Vai trò',
+  'Account ID': 'ID tài khoản',
+  'Student join code': 'Mã tham gia cho Học sinh',
+  'Create 7-day Student join code': 'Tạo mã tham gia 7 ngày cho Học sinh',
+  'Only an account assigned as Student can use this code.':
+    'Chỉ tài khoản được chỉ định là Học sinh mới dùng được mã này.',
+  'Smaller circles': 'Các nhóm nhỏ',
+  'Organize students for focused activities and shared join codes.':
+    'Sắp xếp học sinh cho hoạt động tập trung và mã tham gia chung.',
+  'e.g. Studio A': 'ví dụ: Nhóm A',
+  'Resource count': 'Số tài nguyên',
+  'Ready to add': 'Sẵn sàng để thêm',
+  'All classes': 'Tất cả lớp học',
+  'Showing work from': 'Hiển thị bài từ',
+  'All clear': 'Đã hoàn tất',
+  'Class folio': 'Hồ sơ lớp học',
+  '{count} activity': '{count} hoạt động',
+  '{count} activities': '{count} hoạt động',
+  'Open activity': 'Mở hoạt động',
+  'When a Teacher opens a Run for you, it will appear here.':
+    'Khi Giáo viên mở một đợt thực hiện cho bạn, nội dung sẽ xuất hiện tại đây.',
+  'Your Teacher-published work appears in the Assigned view.':
+    'Bài tập do Giáo viên xuất bản sẽ xuất hiện trong mục Được giao.',
+  'Resources, activities, and people for this class.':
+    'Tài nguyên, hoạt động và mọi người trong lớp học này.',
+  'Your Teacher has not shared class resources yet.':
+    'Giáo viên chưa chia sẻ tài nguyên lớp học.',
   'Previous work': 'Công việc trước đó',
   'Spoken or typed “yes” cannot approve this action. Use the button below.':
     'Nói hoặc nhập “có” không thể phê duyệt hành động này. Hãy dùng nút bên dưới.',
@@ -548,6 +668,422 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tính năng tạo bạn đồng hành không khả dụng cho tài khoản này.',
   'Companion image generation is disabled.':
     'Tính năng tạo ảnh bạn đồng hành đang tắt.',
+  Organization: 'Tổ chức',
+  'Organization settings': 'Cài đặt tổ chức',
+  'Organization access': 'Quyền truy cập tổ chức',
+  'Organization profile': 'Hồ sơ tổ chức',
+  'Organization name': 'Tên tổ chức',
+  'Organization name was not saved': 'Chưa lưu được tên tổ chức',
+  'Organization name must be between 1 and 100 characters.':
+    'Tên tổ chức phải có từ 1 đến 100 ký tự.',
+  'Organization name is already up to date.':
+    'Tên tổ chức đã được cập nhật.',
+  'Organization name saved.': 'Đã lưu tên tổ chức.',
+  'Tro could not save the organization name.':
+    'Tro không thể lưu tên tổ chức.',
+  'Save name': 'Lưu tên',
+  'Saving name…': 'Đang lưu tên…',
+  '{count} of 100 characters': '{count} trên 100 ký tự',
+  Member: 'Thành viên',
+  'Manage your organization profile and access seats.':
+    'Quản lý hồ sơ tổ chức và các chỗ truy cập.',
+  'View the organization that manages your Tro access.':
+    'Xem tổ chức đang quản lý quyền truy cập Tro của bạn.',
+  'Managed access': 'Quyền truy cập được quản lý',
+  'Your access is managed by this organization':
+    'Quyền truy cập của bạn do tổ chức này quản lý',
+  'You joined automatically with your verified Google email. You do not need to enter the organization code.':
+    'Bạn đã tự động tham gia bằng email Google đã xác minh. Bạn không cần nhập mã của tổ chức.',
+  'Manage organization': 'Quản lý tổ chức',
+  'Loading organization…': 'Đang tải tổ chức…',
+  'No organization to manage': 'Không có tổ chức để quản lý',
+  'This account does not manage an organization access code.':
+    'Tài khoản này không quản lý mã truy cập của tổ chức.',
+  Refresh: 'Làm mới',
+  Organizer: 'Người tổ chức',
+  'Reserve seats by email. Members join automatically when they sign in with that address.':
+    'Giữ chỗ bằng email. Thành viên sẽ tự động tham gia khi đăng nhập bằng địa chỉ đó.',
+  'Organization refresh failed': 'Không thể làm mới tổ chức',
+  'All seats are assigned': 'Tất cả chỗ đã được phân bổ',
+  'Cancel a pending reservation before adding another person.':
+    'Hủy một chỗ đang chờ trước khi thêm người khác.',
+  'Access capacity': 'Sức chứa truy cập',
+  'Access seats': 'Chỗ truy cập',
+  '{assigned} of {maximum} seats assigned':
+    'Đã phân bổ {assigned} trên {maximum} chỗ',
+  '{remaining} remaining': 'Còn {remaining} chỗ',
+  '{percent}% of seats assigned': 'Đã phân bổ {percent}% số chỗ',
+  'Invite a student or staff member': 'Mời học sinh hoặc nhân viên',
+  'Google account email': 'Email tài khoản Google',
+  'student@example.com': 'hocsinh@example.com',
+  'Reserve the exact Google account email. Tro does not send an invitation email, and the person does not need your organization code. They join automatically when they sign in.':
+    'Giữ chỗ bằng đúng email tài khoản Google. Tro không gửi email mời và người đó không cần mã tổ chức của bạn. Họ sẽ tự động tham gia khi đăng nhập.',
+  'Reserving…': 'Đang giữ chỗ…',
+  'Reserve seat': 'Giữ chỗ',
+  '{count} assigned seats': '{count} chỗ đã phân bổ',
+  'Refreshing…': 'Đang làm mới…',
+  'Loading members…': 'Đang tải thành viên…',
+  'No seats have been assigned yet.': 'Chưa có chỗ nào được phân bổ.',
+  'Joined {date}': 'Đã tham gia {date}',
+  'Reserved {date}': 'Đã giữ chỗ {date}',
+  Pending: 'Đang chờ',
+  'Cancelling…': 'Đang hủy…',
+  'Cancel reservation': 'Hủy chỗ',
+  'Load more': 'Tải thêm',
+  'Seat reserved for {email}.': 'Đã giữ chỗ cho {email}.',
+  '{email} already has a reserved seat.': '{email} đã có chỗ được giữ.',
+  'The reserved seat for {email} was cancelled.':
+    'Đã hủy chỗ được giữ cho {email}.',
+  'Tro could not load organization members.':
+    'Tro không thể tải thành viên tổ chức.',
+  'Tro could not reserve this seat.': 'Tro không thể giữ chỗ này.',
+  'Tro could not cancel this reserved seat.':
+    'Tro không thể hủy chỗ được giữ này.',
+  Plan: 'Gói',
+  'Assigned seats': 'Chỗ đã phân bổ',
+  '{assigned} of {maximum}': '{assigned} trên {maximum}',
+  'Open organization settings': 'Mở cài đặt tổ chức',
+  'Manage your organization name and reserve seats by email. Students sign in with that address and do not need your code.':
+    'Quản lý tên tổ chức và giữ chỗ bằng email. Học sinh đăng nhập bằng địa chỉ đó và không cần mã của bạn.',
+  'Your Tro access is managed by this organization. You do not need to enter its access code.':
+    'Quyền truy cập Tro của bạn do tổ chức này quản lý. Bạn không cần nhập mã truy cập của tổ chức.',
+  'Next step: class enrollment': 'Bước tiếp theo: ghi danh vào lớp',
+  'Add active students to a class separately':
+    'Thêm riêng học sinh đang hoạt động vào lớp',
+  'An organization seat provides Tro access, but it does not enroll someone in a class.':
+    'Chỗ trong tổ chức cấp quyền truy cập Tro nhưng không ghi danh người đó vào lớp.',
+  'After the account exists and has the Student role, open Class workspaces, choose the class, then use People to add them.':
+    'Sau khi tài khoản tồn tại và có vai trò Học sinh, hãy mở Không gian lớp học, chọn lớp rồi dùng mục Mọi người để thêm họ.',
+  'Open Class workspaces': 'Mở Không gian lớp học',
+};
+
+const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
+  'Activity blueprint': 'Bản thiết kế hoạt động',
+  'Activity controls': 'Điều khiển hoạt động',
+  'Attempt withdrawn': 'Lượt làm bài đã được rút lại',
+  'Activity preparation steps': 'Các bước chuẩn bị hoạt động',
+  'Activity published. Ready to open a room.':
+    'Đã xuất bản hoạt động. Sẵn sàng mở phòng.',
+  'Add a note for Tro': 'Thêm ghi chú cho Tro',
+  'Add class material': 'Thêm tài liệu lớp học',
+  'Add material, publish an Activity, then open a live room your students can join.':
+    'Thêm tài liệu, xuất bản Hoạt động, rồi mở phòng trực tiếp để học sinh tham gia.',
+  'Advisory feedback, never an automatic grade':
+    'Phản hồi tham khảo, không bao giờ tự động chấm điểm',
+  'Allow students to join a live room':
+    'Cho phép học sinh tham gia phòng trực tiếp',
+  'Approved site · eligible for student opt-in auto-open':
+    'Trang đã duyệt · có thể tự mở khi học sinh đồng ý',
+  'Approved sites for automatic opening': 'Các trang được phép tự động mở',
+  'Asked at {time}': 'Đã hỏi lúc {time}',
+  'Asking…': 'Đang yêu cầu…',
+  'Attach check criteria': 'Đính kèm tiêu chí kiểm tra',
+  'Available when class starts': 'Có sau khi bắt đầu lớp',
+  'Begin or continue the exercise': 'Bắt đầu hoặc tiếp tục bài tập',
+  'Bound Tro’s guidance': 'Giới hạn hướng dẫn của Tro',
+  'Broadcast #{sequence} sent': 'Đã gửi thông báo #{sequence}',
+  'Broadcast is class-wide': 'Thông báo sẽ gửi cho cả lớp',
+  'Broadcast to class': 'Gửi cho cả lớp',
+  'Broadcasting…': 'Đang gửi…',
+  'Build the bounded source set Tro can use for this class.':
+    'Xây dựng bộ nguồn giới hạn mà Tro được dùng cho lớp này.',
+  'Check criteria': 'Tiêu chí kiểm tra',
+  'Check my work': 'Kiểm tra bài của tôi',
+  'Checking…': 'Đang kiểm tra…',
+  'Choose files': 'Chọn tệp',
+  'Choose folder': 'Chọn thư mục',
+  'Choose the intent. Tro uses this Activity’s instructions, criteria, and published sources.':
+    'Chọn mục đích. Tro sẽ dùng hướng dẫn, tiêu chí và nguồn đã xuất bản của Hoạt động này.',
+  'Class ended': 'Lớp đã kết thúc',
+  'Class live': 'Lớp đang diễn ra',
+  'Class pulse': 'Nhịp lớp học',
+  Classwork: 'Bài trên lớp',
+  'Class sourcebook': 'Bộ nguồn lớp học',
+  'Class context is active. Tro knows the published exercise when you ask for help.':
+    'Ngữ cảnh lớp đang hoạt động. Tro biết bài tập đã xuất bản khi bạn yêu cầu trợ giúp.',
+  Complete: 'Hoàn tất',
+  'Continue where you left off': 'Tiếp tục từ chỗ bạn dừng lại',
+  'Could not broadcast this direction.': 'Không thể gửi chỉ dẫn này.',
+  'Could not close room admission.': 'Không thể đóng quyền tham gia phòng.',
+  'Could not create a room code.': 'Không thể tạo mã phòng.',
+  'Could not create this Run.': 'Không thể tạo lượt học này.',
+  'Could not join this class room.': 'Không thể tham gia phòng học này.',
+  'Could not leave this class.': 'Không thể rời lớp học này.',
+  'Could not mark this work ready.': 'Không thể đánh dấu bài đã sẵn sàng.',
+  'Could not open this link.': 'Không thể mở liên kết này.',
+  'Could not resolve this help request.':
+    'Không thể đánh dấu yêu cầu trợ giúp đã xử lý.',
+  'Could not start classroom support.': 'Không thể bắt đầu hỗ trợ trong lớp.',
+  'Could not update link permission.': 'Không thể cập nhật quyền mở liên kết.',
+  'Could not update the class state.': 'Không thể cập nhật trạng thái lớp.',
+  'Could not update this review.': 'Không thể cập nhật kết quả xem xét.',
+  'Create 7-day invite': 'Tạo lời mời 7 ngày',
+  'Create a code, then display or read it to your students.':
+    'Tạo mã rồi hiển thị hoặc đọc mã cho học sinh.',
+  'Create a teaching Space': 'Tạo Không gian giảng dạy',
+  'Create a teaching Space or join a class room above.':
+    'Tạo Không gian giảng dạy hoặc tham gia phòng học ở trên.',
+  'Create room code': 'Tạo mã phòng',
+  'Create room lobby': 'Tạo phòng chờ',
+  'Create teaching Space': 'Tạo Không gian giảng dạy',
+  'Creating…': 'Đang tạo…',
+  'Current class direction': 'Chỉ dẫn hiện tại của lớp',
+  'Current class session': 'Phiên học hiện tại',
+  'Current direction': 'Chỉ dẫn hiện tại',
+  'Current teacher direction': 'Chỉ dẫn hiện tại từ giáo viên',
+  'Delivery method': 'Cách giao bài',
+  'Direct assignment': 'Giao bài trực tiếp',
+  'Direction type': 'Loại chỉ dẫn',
+  Dismiss: 'Bỏ qua',
+  'End class safely': 'Kết thúc lớp an toàn',
+  'Ending…': 'Đang kết thúc…',
+  'Enter a valid public HTTPS link': 'Nhập liên kết HTTPS công khai hợp lệ',
+  'Enter the room code from your teacher. Tro will wait with you until class starts.':
+    'Nhập mã phòng từ giáo viên. Tro sẽ chờ cùng bạn cho đến khi lớp bắt đầu.',
+  'Every Attempt, in one calm place.':
+    'Mọi lượt làm bài, trong một nơi gọn gàng.',
+  'Every automatic action stays explicit and revocable':
+    'Mọi hành động tự động đều rõ ràng và có thể thu hồi',
+  'Exact student preview': 'Bản xem trước chính xác cho học sinh',
+  Exercise: 'Bài tập',
+  'Expires at {time}': 'Hết hạn lúc {time}',
+  'Explicit class signals': 'Tín hiệu rõ ràng từ lớp học',
+  'Explicit hand-in': 'Nộp bài chủ động',
+  'Explicit lifecycle events only': 'Chỉ các sự kiện vòng đời rõ ràng',
+  'Explicit status': 'Trạng thái rõ ràng',
+  'Files leaving this device': 'Các tệp sẽ rời thiết bị này',
+  'Filter classwork': 'Lọc bài trên lớp',
+  'For students': 'Dành cho học sinh',
+  'For teachers': 'Dành cho giáo viên',
+  'Frame the exercise': 'Định hình bài tập',
+  'Groups are for recurring assignments. Live rooms can admit students without a prebuilt list.':
+    'Nhóm dùng cho bài tập lặp lại. Phòng trực tiếp cho phép học sinh tham gia mà không cần danh sách có sẵn.',
+  'Have a longer Space invite code?': 'Bạn có mã mời Không gian dài hơn?',
+  'Help requested': 'Đã yêu cầu trợ giúp',
+  'Help stays inside the published material and policy':
+    'Trợ giúp luôn nằm trong tài liệu và chính sách đã xuất bản',
+  'How will students begin?': 'Học sinh sẽ bắt đầu như thế nào?',
+  'I’m ready for review': 'Tôi đã sẵn sàng để giáo viên xem',
+  'Immutable version': 'Phiên bản bất biến',
+  'Invite the room': 'Mời cả lớp vào phòng',
+  'Invite the room, set the current direction, and review explicit student signals in one place.':
+    'Mời cả lớp, đặt chỉ dẫn hiện tại và xem các tín hiệu rõ ràng của học sinh tại một nơi.',
+  'Join · Work · Help · Check · Submit':
+    'Tham gia · Làm bài · Trợ giúp · Kiểm tra · Nộp bài',
+  'Join a room from Knowledge Spaces or wait for your teacher to assign an Activity.':
+    'Tham gia phòng từ Không gian kiến thức hoặc chờ giáo viên giao Hoạt động.',
+  'Join room': 'Tham gia phòng',
+  'Join your class': 'Tham gia lớp học',
+  'Joining creates each student’s private Attempt.':
+    'Khi tham gia, mỗi học sinh có một lượt làm bài riêng tư.',
+  'Joining…': 'Đang tham gia…',
+  Leave: 'Rời lớp',
+  'Leaving…': 'Đang rời lớp…',
+  'Links never broadcast or open until you confirm the preview.':
+    'Liên kết không được gửi hoặc mở cho đến khi bạn xác nhận bản xem trước.',
+  'Live class': 'Lớp trực tiếp',
+  'Live classroom control': 'Điều khiển lớp học trực tiếp',
+  'Live room': 'Phòng trực tiếp',
+  'Loading Activity…': 'Đang tải Hoạt động…',
+  'Manual delivery': 'Mở thủ công',
+  'Mark resolved': 'Đánh dấu đã xử lý',
+  'Marking ready…': 'Đang đánh dấu sẵn sàng…',
+  'Material type': 'Loại tài liệu',
+  Materials: 'Tài liệu',
+  'Move forward without losing context': 'Tiếp tục mà không mất ngữ cảnh',
+  'Needs help now': 'Cần trợ giúp ngay',
+  'New exercise from your teacher': 'Bài tập mới từ giáo viên',
+  'New link from your teacher': 'Liên kết mới từ giáo viên',
+  'No shared material': 'Chưa có tài liệu được chia sẻ',
+  'Nothing active right now': 'Hiện không có bài nào đang làm',
+  'No classwork here yet': 'Chưa có bài trên lớp',
+  'One HTTPS origin per line. Other safe links remain manual and always show an Open button.':
+    'Mỗi dòng một nguồn HTTPS. Các liên kết an toàn khác vẫn mở thủ công và luôn hiện nút Mở.',
+  'One criterion per line. Check uses these; it never assigns a numeric grade.':
+    'Mỗi dòng một tiêu chí. Kiểm tra dùng các tiêu chí này và không bao giờ tự cho điểm số.',
+  'One room. Everyone in context.': 'Một phòng. Mọi người cùng ngữ cảnh.',
+  'Only joined, Help, Check, readiness, submission, and review events—never inferred attention or understanding.':
+    'Chỉ ghi nhận tham gia, Trợ giúp, Kiểm tra, sẵn sàng, nộp bài và xem xét—không suy đoán sự chú ý hay mức độ hiểu.',
+  'Only material published with your Activities is shared with you.':
+    'Chỉ tài liệu được xuất bản cùng Hoạt động mới được chia sẻ với bạn.',
+  'Only published HTTPS sites allowed by this Activity. You can turn this off anytime.':
+    'Chỉ các trang HTTPS đã xuất bản và được Hoạt động cho phép. Bạn có thể tắt bất cứ lúc nào.',
+  'Open a link': 'Mở liên kết',
+  'Open a live room for class, or assign this version for independent work.':
+    'Mở phòng trực tiếp cho lớp hoặc giao phiên bản này để học sinh tự làm.',
+  'Open approved class links automatically':
+    'Tự động mở liên kết lớp học đã duyệt',
+  'Open assignment': 'Mở bài được giao',
+  'Open classwork': 'Mở bài trên lớp',
+  'Open link': 'Mở liên kết',
+  'Open the published brief, continue your work, ask for Help, Check against criteria, or submit when you decide.':
+    'Mở đề bài đã xuất bản, tiếp tục làm, yêu cầu Trợ giúp, Kiểm tra theo tiêu chí hoặc nộp khi bạn quyết định.',
+  'Optional. Only published HTTPS sites for this Activity; change it anytime.':
+    'Không bắt buộc. Chỉ các trang HTTPS đã xuất bản cho Hoạt động này; có thể thay đổi bất cứ lúc nào.',
+  'People & groups': 'Người học và nhóm',
+  'Pinned source versions': 'Các phiên bản nguồn đã ghim',
+  'Prepare before class': 'Chuẩn bị trước giờ học',
+  'Prepare material, publish a learning path, then invite the room.':
+    'Chuẩn bị tài liệu, xuất bản lộ trình học, rồi mời cả lớp vào phòng.',
+  'Prepare the learning path': 'Chuẩn bị lộ trình học',
+  'Prepare · Broadcast · Review': 'Chuẩn bị · Gửi chỉ dẫn · Xem xét',
+  'Preview exact broadcast': 'Xem trước thông báo chính xác',
+  'Public HTTPS link': 'Liên kết HTTPS công khai',
+  'Publish Activity': 'Xuất bản Hoạt động',
+  'Publish one immutable version before you open a live room.':
+    'Xuất bản một phiên bản bất biến trước khi mở phòng trực tiếp.',
+  'Published and ready': 'Đã xuất bản và sẵn sàng',
+  'Published brief': 'Đề bài đã xuất bản',
+  'Published source set': 'Bộ nguồn đã xuất bản',
+  'Raised explicitly by the student': 'Do học sinh chủ động yêu cầu',
+  'Ready for review': 'Sẵn sàng để xem xét',
+  Recommended: 'Được đề xuất',
+  'Require an explicit file submission': 'Yêu cầu chủ động nộp tệp',
+  'Resolving…': 'Đang xử lý…',
+  Return: 'Trả lại',
+  'Reusable cohorts': 'Nhóm học có thể tái sử dụng',
+  'Review actions': 'Thao tác xem xét',
+  'Review before upload': 'Xem lại trước khi tải lên',
+  'Complete this exact Attempt?': 'Hoàn tất đúng lượt làm bài này?',
+  'Return this exact Attempt for revision?':
+    'Trả lại đúng lượt làm bài này để chỉnh sửa?',
+  'Confirm Complete': 'Xác nhận hoàn tất',
+  'Confirm Return': 'Xác nhận trả lại',
+  'Updating…': 'Đang cập nhật…',
+  Cancel: 'Hủy',
+  Revise: 'Chỉnh sửa',
+  Revoke: 'Thu hồi',
+  'Role-aware by design': 'Thiết kế theo đúng vai trò',
+  'Room code': 'Mã phòng',
+  'Room lobby': 'Phòng chờ',
+  'Rotate code': 'Đổi mã',
+  'Safe link · students will choose Open':
+    'Liên kết an toàn · học sinh sẽ chọn Mở',
+  'Session visibility': 'Thông tin phiên được chia sẻ',
+  'Set live-class permissions': 'Đặt quyền cho lớp trực tiếp',
+  'Share the room code above. Joined students appear here without refreshing.':
+    'Chia sẻ mã phòng ở trên. Học sinh đã tham gia sẽ xuất hiện tại đây mà không cần tải lại.',
+  'Share this longer-lived code only with intended participants.':
+    'Chỉ chia sẻ mã có thời hạn dài hơn này với người học phù hợp.',
+  'Short-lived · up to 500 joins': 'Thời hạn ngắn · tối đa 500 lượt tham gia',
+  'Space invite': 'Lời mời Không gian',
+  'Space invite code': 'Mã mời Không gian',
+  'Space name': 'Tên Không gian',
+  'Space sections': 'Các mục trong Không gian',
+  'Start class': 'Bắt đầu lớp',
+  'Start together': 'Cùng bắt đầu',
+  'Start working': 'Bắt đầu làm bài',
+  'Student access': 'Quyền học sinh',
+  'Student instructions': 'Hướng dẫn cho học sinh',
+  'Student Space': 'Không gian học sinh',
+  'Students join a lobby with one short code. You decide when class starts.':
+    'Học sinh vào phòng chờ bằng một mã ngắn. Bạn quyết định khi nào lớp bắt đầu.',
+  'Submission received. Your teacher can now review it.':
+    'Đã nhận bài nộp. Giáo viên có thể xem ngay bây giờ.',
+  'Submit files': 'Nộp tệp',
+  'Submit files above': 'Nộp tệp ở phía trên',
+  'Submit the required files above when your work is ready.':
+    'Hãy nộp các tệp bắt buộc ở phía trên khi bài của bạn đã sẵn sàng.',
+  'Submitted for review': 'Đã nộp để giáo viên xem xét',
+  'Submitting…': 'Đang nộp…',
+  'Takes less than a minute': 'Chưa đến một phút',
+  'Teacher · Facilitator': 'Giáo viên · Người hướng dẫn',
+  'Teacher · Owner': 'Giáo viên · Chủ sở hữu',
+  'Teacher flow: Materials, Activity, Live room':
+    'Quy trình giáo viên: Tài liệu, Hoạt động, Phòng trực tiếp',
+  'Teachers can': 'Giáo viên có thể',
+  'Teachers prepare the path. Students ask for help only when they need it. Tro keeps the published exercise in view.':
+    'Giáo viên chuẩn bị lộ trình. Học sinh chỉ yêu cầu trợ giúp khi cần. Tro luôn giữ bài tập đã xuất bản trong ngữ cảnh.',
+  'Tell the teacher and get one next step':
+    'Báo cho giáo viên và nhận một bước tiếp theo',
+  'Tell your teacher you are ready': 'Báo cho giáo viên rằng bạn đã sẵn sàng',
+  'The room is closed. Student work remains saved.':
+    'Phòng đã đóng. Bài của học sinh vẫn được lưu.',
+  'This is explicit. Tro will not mark your work ready on its own.':
+    'Đây là thao tác chủ động. Tro sẽ không tự đánh dấu bài đã sẵn sàng.',
+  'Tro Classroom': 'Lớp học Tro',
+  'Tro never uploads local work automatically.':
+    'Tro không bao giờ tự động tải bài trên máy lên.',
+  'Tro never uploads your local work automatically. You review the exact files before anything leaves your device.':
+    'Tro không bao giờ tự động tải bài trên máy lên. Bạn xem đúng các tệp trước khi chúng rời thiết bị.',
+  'Updated {date}': 'Cập nhật {date}',
+  'Upload ready material in the Materials tab first.':
+    'Hãy tải tài liệu sẵn sàng trong thẻ Tài liệu trước.',
+  'Use starter': 'Dùng bộ khởi đầu',
+  'Waiting for students': 'Đang chờ học sinh',
+  'Waiting for teacher': 'Đang chờ giáo viên',
+  'Waiting for teacher review': 'Đang chờ giáo viên xem xét',
+  'What should every student do next?': 'Mọi học sinh nên làm gì tiếp theo?',
+  'What students see and what success means':
+    'Nội dung học sinh nhìn thấy và tiêu chí thành công',
+  'What this session shares': 'Phiên này chia sẻ gì',
+  'When you are satisfied': 'Khi bạn đã hài lòng',
+  'Work with Tro': 'Làm bài cùng Tro',
+  'Workspace required': 'Cần thư mục làm việc',
+  'You are in. Tro will receive the exercise when your teacher starts class.':
+    'Bạn đã vào phòng. Tro sẽ nhận bài tập khi giáo viên bắt đầu lớp.',
+  'You can continue working if your teacher returns this Attempt.':
+    'Bạn có thể tiếp tục nếu giáo viên trả lại lượt làm bài này.',
+  'You can': 'Bạn có thể',
+  'You receive only the Activity material assigned to you. Teacher uploads, publishing, room controls, and class-wide reporting are not available in the student view.':
+    'Bạn chỉ nhận tài liệu Hoạt động được giao. Tải lên, xuất bản, điều khiển phòng và báo cáo toàn lớp không xuất hiện trong giao diện học sinh.',
+  'Your classwork stays private': 'Bài trên lớp của bạn luôn riêng tư',
+  'Your classwork': 'Bài trên lớp của bạn',
+  'Your current and previous Attempts appear in Classwork in the sidebar.':
+    'Các lượt làm bài hiện tại và trước đây nằm trong Bài trên lớp ở thanh bên.',
+  'Your published class context and private Attempts live here.':
+    'Ngữ cảnh lớp đã xuất bản và các lượt làm bài riêng tư của bạn nằm ở đây.',
+  'Your sourcebook is empty': 'Bộ nguồn của bạn đang trống',
+  'Your teacher can now review this Attempt.':
+    'Giáo viên có thể xem lượt làm bài này ngay bây giờ.',
+  'Your teacher can review the submitted snapshot.':
+    'Giáo viên có thể xem bản chụp bài đã nộp.',
+  'Your submitted snapshot is waiting for teacher review.':
+    'Bản chụp bài đã nộp đang chờ giáo viên xem xét.',
+  'Submission unavailable': 'Không thể nộp bài',
+  'This Attempt is no longer active.': 'Lượt làm bài này không còn hoạt động.',
+  'This Attempt is no longer active. Your prior work remains saved.':
+    'Lượt làm bài này không còn hoạt động. Bài trước đó của bạn vẫn được lưu.',
+  'Your work is private to you and your teachers.':
+    'Bài của bạn chỉ hiển thị với bạn và giáo viên.',
+  'Your work is still saved. This class session is no longer active.':
+    'Bài của bạn vẫn được lưu. Phiên học này không còn hoạt động.',
+  '{count} active Activities': '{count} Hoạt động đang thực hiện',
+  '{count} check criteria attached': 'Đã đính kèm {count} tiêu chí kiểm tra',
+  '{count} sources': '{count} nguồn',
+  '{count} students in the lobby': '{count} học sinh trong phòng chờ',
+  in_lobby: 'trong phòng chờ',
+  launch_failed: 'khởi chạy thất bại',
+  lobby: 'phòng chờ',
+  working: 'đang làm bài',
+  needs_help: 'cần trợ giúp',
+  not_joined: 'chưa tham gia',
+  ready: 'sẵn sàng',
+  ready_for_review: 'sẵn sàng để xem xét',
+  submitted: 'đã nộp',
+  left: 'đã rời lớp',
+  withdrawn: 'đã rút lại',
+  'Auto-open eligible': 'Có thể tự động mở',
+  'Could not start this Activity.': 'Không thể bắt đầu Hoạt động này.',
+  'Opened in your browser': 'Đã mở trong trình duyệt',
+  'Could not open this link': 'Không thể mở liên kết này',
+  Dismissed: 'Đã bỏ qua',
+  'Your teacher can see that you asked for help. Tro can guide your next step now.':
+    'Giáo viên thấy rằng bạn đã yêu cầu trợ giúp. Tro có thể hướng dẫn bước tiếp theo ngay bây giờ.',
+  'Your teacher can review this Attempt. You can still ask Tro to check another detail.':
+    'Giáo viên có thể xem lượt làm bài này. Bạn vẫn có thể nhờ Tro kiểm tra thêm chi tiết.',
+  'Your reviewed files were submitted and are waiting for teacher review.':
+    'Các tệp bạn đã xem lại được nộp và đang chờ giáo viên xem.',
+  'Your teacher completed this Attempt.':
+    'Giáo viên đã hoàn tất lượt làm bài này.',
+  'Only published HTTPS sites for this Activity; change it anytime.':
+    'Chỉ các trang HTTPS đã xuất bản cho Hoạt động này; có thể thay đổi bất cứ lúc nào.',
+  ' Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.':
+    ' Chỉ các sự kiện tham gia, Trợ giúp, Kiểm tra, nộp bài và xem xét. Không theo dõi liên tục con trỏ, thao tác gõ hay màn hình.',
+  ' Students receive exactly this content. A model cannot press Broadcast for you.':
+    ' Học sinh nhận đúng nội dung này. Mô hình không thể bấm Gửi thay bạn.',
+  ' Tro may record bounded, provenance-labeled evidence candidates for teacher review. These cannot grade you or change completion state.':
+    ' Tro có thể ghi lại các bằng chứng giới hạn, có nhãn nguồn để giáo viên xem. Chúng không thể chấm điểm hay thay đổi trạng thái hoàn thành.',
 };
 
 export function appLanguageLabel(language: AppLanguage): string {
@@ -568,7 +1104,9 @@ export function translate(
 ): string {
   let translated =
     language === 'vi'
-      ? (VIETNAMESE_TRANSLATIONS[message] ?? message)
+      ? (VIETNAMESE_TRANSLATIONS[message] ??
+        CLASSROOM_VIETNAMESE_TRANSLATIONS[message] ??
+        message)
       : message;
 
   for (const [key, value] of Object.entries(replacements)) {

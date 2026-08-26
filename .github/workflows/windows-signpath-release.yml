@@ -107,7 +107,7 @@ jobs:
             Write-Error "Packaged application not found: $application"
             exit 1
           }
-          node scripts/windows-release-metadata.mjs `
+          npm run windows:release-metadata -- `
             --file $application `
             --kind app `
             --version $env:TROCODE_RELEASE_VERSION
@@ -176,7 +176,7 @@ jobs:
             Write-Error "Squirrel installer not found in $artifactDirectory"
             exit 1
           }
-          node scripts/windows-release-metadata.mjs `
+          npm run windows:release-metadata -- `
             --file $installer.FullName `
             --kind installer `
             --version $env:TROCODE_RELEASE_VERSION

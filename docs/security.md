@@ -8,16 +8,26 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
 - The preload exposes a fixed, typed API rather than raw Electron IPC.
 - The main process validates the sending renderer and parses all payloads.
 - Only trusted main-process code creates and destroys the CUA runtime.
+- The bundled Rust desktop engine independently normalizes effects and returns
+  the policy decision before a hosted native action can request its one-time
+  executing transition. Its private stdio protocol is not exposed to preload.
 - A model cannot register a tool, approve an action, alter host limits, or make
   a private/local browser target admissible.
 - A model cannot select a runtime, choose or expand a workspace, change the
   trusted root, grant itself an approval, or operate TroCode approval controls.
+- A renderer or model cannot grant a classroom role, broadcast a directive, or
+  invent Activity context. Room codes are HMAC-digested at the API; public HTTPS
+  teacher links are origin-checked server-side and revalidated in Electron main.
+  Automatic opening is off by default and claimed once only after student
+  consent. Classroom dashboards receive explicit lifecycle/evidence facts, not
+  cursor, typing, continuous screen, attention, or inferred-stuck telemetry.
 
 ## Default behavior
 
 - Google sign-in opens in the system browser and uses a random loopback port,
-  state, nonce, and PKCE. The main process verifies the ID token signature,
-  issuer, audience, timestamps, nonce, and verified-email claim.
+  state, nonce, and PKCE. The bundled Rust engine exchanges the code and checks
+  the nonce; the hosted Rust API verifies the ID token signature, issuer,
+  audience, timestamps, nonce, and verified-email claim.
 - The renderer receives only an allowlisted user ID, email, display name, and
   sign-in status. OAuth codes and tokens never cross the preload boundary. For
   hosted builds, the Railway API independently verifies the Google ID token and
@@ -28,20 +38,36 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   prompting. Text work does not require microphone or CUA permissions.
   Push-to-talk requests microphone access when used; desktop work pauses until
   the user clicks Connect computer. Model output cannot open System Settings.
-- Packaged builds without a hosted API require an active membership after language setup.
-  The renderer can inspect and submit membership codes only through narrow,
-  schema-validated IPC. The main process verifies an Ed25519 signature, binds
-  the signed payload to a reference derived from the verified Google user ID,
-  checks its expiry, and rechecks membership before task and voice operations.
-  Local development bypasses this gate; legacy packaged builds fail closed if
-  the public verification key is absent. Hosted builds authorize access through
-  the revocable Google-backed device session instead of an offline activation.
+- Packaged builds require the hosted Rust API. Membership and plan checks use
+  the revocable Google-backed device session and fail closed when the service
+  is unavailable; Electron has no offline membership verifier.
+- Organization-managed access is authorized entirely by the hosted service.
+  Every member sees only the current organization's bounded summary (identity,
+  plan, role, and seat capacity) and receives organizer controls only when the
+  server returns `role: organizer`; every rename, list, add, and cancel request
+  repeats session, active-access, role, code-state, and capacity checks. The
+  preload exposes five fixed schema-parsed methods,
+  never a generic REST or IPC bridge, plaintext access code, platform admin
+  token, or arbitrary organization-ID authority.
+- An organizer reserves a seat by normalized email without looking up or
+  revealing whether an account already exists. Only the verified email from a
+  server-validated Google identity may claim that pending seat. Membership,
+  redemption, plan upgrade, audit event, and new device session commit in one
+  PostgreSQL transaction; an expected existing-entitlement conflict leaves the
+  reservation untouched while sign-in still succeeds. Access-code row locks
+  serialize capacity changes, and pending seats count toward the limit.
+- Organization audit details contain IDs and seat counts only. The
+  `organization.profile_updated` event records `{}` and never stores the old or
+  new organization name. Request logs do not contain email addresses, names,
+  request bodies, bearer tokens, or plaintext access codes. Active members
+  cannot be removed through the organizer API; only pending reservations can
+  be cancelled.
 - Assistant text and tool calls share one model session. A model tool call is a
   proposal, not permission or proof that an effect occurred.
 - Approval requirement and consequence are separate. In Balanced mode,
   authenticated user text compiles to closed grants for requested reversible
   private create/update/rename/move/comment and safe Workspace effects. The pure
-  host classifier still resolves the exact effect and can raise risk from
+  Rust host classifier still resolves the exact effect and can raise risk from
   normalized payload facts, opaque/stale state, or visible cues. Send/invite,
   delete/archive, unexpected overwrite, publish/deploy/merge, money/trade,
   credentials, permissions, installs, sensitive transfer, and unknown effects
@@ -62,18 +88,14 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   operation, and resource digest. Semantic approval revalidation can only
   rebind a uniquely matching target on the unchanged surface.
 
-Workspace mode uses the authenticated TroCode backend; it never asks the user
-for a Codex login, ChatGPT subscription, or OpenAI API key. The trusted
-main-process picker canonicalizes one directory and returns only an opaque
-selection ID to the renderer. SDK patch operations resolve paths against that
-canonical root, reject lexical and symlink escapes, bound file and patch sizes,
-and pass host policy at the SDK interruption. Requested create/update/move
-patches may resume without user UI; delete and unexpected overwrite remain
-exact. SDK shell operations start in the root, receive only an allowlisted OS
-environment, and bypass user UI only for the closed read/validation/requested-
-local command policy. TroCode, provider, database, analytics, and release
-secrets are not inherited. When approval is required, the card displays the full
-command or patch and remains single-use. The shell is not an OS
+Workspace mode uses the authenticated Rust backend. The trusted main-process
+picker canonicalizes one directory and returns only an opaque selection ID to
+the renderer. Native patch operations resolve paths against that canonical
+root, reject lexical and symlink escapes, and bound file and patch sizes. Native
+shell operations start in the root and receive only an allowlisted OS
+environment. Rust owns effect and approval policy; Electron revalidates root
+binding and consumes exact approvals. TroCode, provider, database, analytics,
+and release secrets are not inherited. The shell is not an OS
 sandbox: it starts in the selected directory, but an approved command can use
 absolute paths or the network. Patch operations, unlike shell commands, are
 structurally confined to the selected root.
@@ -82,10 +104,11 @@ structurally confined to the selected root.
 
 Screenshots, URLs, document text, file paths, typed input, voice transcripts,
 model reasoning, and raw tool arguments may contain private data. Do not write
-them to analytics logs. Task-history persistence is enabled only when the operator configures
-`DATABASE_URL`. It stores task requests, conversations, goal scope, and
-lifecycle outcomes under the verified Google user ID, but not raw screenshots,
-OAuth tokens, or model-provider credentials. Hosted connections must use TLS,
+them to analytics logs. Task-history persistence is owned by the Rust API when
+its `DATABASE_URL` is configured. Electron never receives that credential. The
+API stores task requests, conversations, goal scope, and lifecycle outcomes
+under the verified Google user ID, but not raw screenshots, OAuth tokens, or
+model-provider credentials. Hosted connections must use TLS,
 a least-privilege database role, access controls, and an explicit retention
 policy. Rich screenshot or document trajectory storage remains out of scope and
 should be opt-in and encrypted.
@@ -100,6 +123,17 @@ participant's local Workspace, screen, unsaved editor state, and ordinary task
 conversation are never uploaded. Submission always requires a separate exact
 file preview and user action. Agent evidence is policy-acknowledged, allowlisted,
 bounded, provenance-labeled, and cannot grade or change state.
+
+Classroom authorization has two server-owned layers. An administrator assigns
+the account-level Teacher or Student eligibility; the Space membership still
+authorizes operations in one exact class. Students can only hold participant
+memberships and never receive roster, group, upload, authoring, Run-management,
+insight, or help-resolution operations. Teachers receive those operations only
+where they are an owner or facilitator. A Teacher role never grants computer
+control, student-screen access, task conversations, or local files. Teacher-only
+rosters expose the registered account identity needed for class management
+(name, email, user ID, role, and join time) but do not join progress, evidence,
+sessions, conversations, screens, or files.
 
 Backend-agent canary runs are a separate, explicit privacy path: task text and
 bounded tool results are processed by Railway and short-lived operational state
@@ -159,46 +193,23 @@ contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
 
-Custom companion generation is a narrow media exception available to every
-authenticated account with an active membership. It has no per-feature switch
-or account allowlist; the global paid-call switch remains the shared provider
-shutdown. ZDR on the exact OpenAI project/key is a deployment requirement, not
-an application environment assertion. The desktop never receives the OpenAI
-key. The hosted request fixes the image model, one output, square low-quality
-PNG, transparent background, and automatic moderation; callers cannot override
-those provider controls. Logs and usage rows contain request IDs, status,
-model/catalog versions, token modality counts, cost, and duration only—not
-source bytes, prompts, or generated PNG bytes.
+Custom companion generation is available to every authenticated account with
+an active membership. It has no per-feature switch or account allowlist; the
+global paid-call switch remains the shared provider shutdown. ZDR on the exact
+OpenAI project/key is a deployment requirement. The desktop never receives the
+OpenAI key, and callers cannot override the fixed image model, one-output,
+square low-quality PNG, transparent-background, or automatic-moderation
+controls. Logs and usage rows never contain source bytes, prompts, or generated
+PNG bytes.
 
-At the renderer, main, and API boundaries, source images are limited to one PNG
-or JPEG of at most 5 MiB and a 1–400 character prompt. Electron main verifies
-the actual image signature and dimensions (16–8192 pixels per side), decodes it,
-and normalizes it to an aspect-preserving PNG no larger than 1024 pixels before
-upload. Returned images are signature-checked and decoded before a 128-pixel
-active asset can be written.
-
-Generated candidates live only in main-process memory for ten minutes. An
-activated PNG is encrypted with Electron `safeStorage` and stored beneath a
-SHA-256 hash of the verified owner ID; the user ID and plaintext PNG are not in
-the filename. Reads honor `shouldReEncrypt` so operating-system key rotation
-rewrites a valid asset under the current protection. Owner changes clear the
-candidate and appearance state, so one account cannot resolve another's asset.
-
-The private protocol accepts only exact `GET` or `HEAD` requests matching
-`trocode-companion://asset/candidate/<uuid>` or
-`trocode-companion://asset/active/<64-lowercase-hex-sha256>`, with no
-credentials, port, query, fragment, traversal, or alternate host. The active
-hash must match the current account's decrypted and validated asset, and a
-candidate must be current, unexpired, and owned by that account. Decrypted
-responses are `image/png` with `Cache-Control: no-store`. The scheme is secure
-and fetch-capable but does not bypass CSP; no filesystem path or generic fetch
-capability crosses preload.
-
-The membership signing private key is an administrative secret and must never
-be added to the repository, Doppler application runtime, analytics, or a
-release bundle. Only the Ed25519 public key is compiled into packaged builds.
-Offline activation codes support account binding and expiry but not immediate
-revocation or authoritative time; those require an authenticated backend.
+Source images are limited to one PNG or JPEG of at most 5 MiB and a 1–400
+character prompt. Electron main verifies the image signature and dimensions,
+normalizes it before upload, keeps generated candidates in memory for ten
+minutes, and encrypts only an explicitly activated 128-pixel PNG with
+`safeStorage`. Account changes clear candidate and appearance state. The private
+`trocode-companion` protocol serves only exact candidate or active asset URLs
+with `Cache-Control: no-store`; it exposes no filesystem path or generic fetch
+capability.
 
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling
@@ -207,10 +218,12 @@ does not widen authority or bypass exact-action approvals.
 Backend ownership does not move local authority to Railway. A protocol-v2
 durable tool call carries a typed effect proposal, intent revision, approval
 requirement, authorization source, and independent consequence bit. Only the
-exact signed-in desktop worker may transition it to executing, after repeating
-schema validation, workspace binding, effect normalization, policy, and any
-one-use approval. A stale worker result is rejected. Loss after executing is
-recorded as unknown and blocks completion rather than replaying the effect.
+exact signed-in desktop worker may transition it to executing, after Electron
+repeats schema/workspace binding and the bundled Rust engine performs effect
+normalization, policy, and intent matching. Electron presents and consumes any
+one-use approval before dispatch. A stale worker result is rejected. Loss after
+executing is recorded as unknown and blocks completion rather than replaying
+the effect.
 
 ## Release requirements
 

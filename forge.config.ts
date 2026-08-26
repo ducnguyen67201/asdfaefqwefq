@@ -61,6 +61,31 @@ const MACOS_VOICE_SHORTCUT_BINARY = path.resolve(
   '.generated-native',
   MACOS_VOICE_SHORTCUT_HELPER_NAME,
 );
+const RUST_DESKTOP_ENGINE_BINARY = path.resolve(
+  __dirname,
+  'target/release',
+  process.platform === 'win32' ? 'trocode-api.exe' : 'trocode-api',
+);
+
+async function compileRustDesktopEngine(
+  platform: ForgePlatform,
+  arch: ForgeArch,
+): Promise<void> {
+  if (platform !== process.platform || arch !== process.arch) {
+    throw new Error(
+      `Rust desktop engine packaging requires a native ${platform}/${arch} build host.`,
+    );
+  }
+  await executeFile(process.env.CARGO?.trim() || 'cargo', [
+    'build',
+    '--manifest-path',
+    path.resolve(__dirname, 'services/api/Cargo.toml'),
+    '--release',
+    '--locked',
+    '--bin',
+    'trocode-api',
+  ], { cwd: __dirname });
+}
 
 async function compileMacOSNativeHelpers(
   platform: ForgePlatform,
@@ -128,6 +153,7 @@ const config: ForgeConfig = {
     executableName: TROCODE_EXECUTABLE_NAME,
     extraResource: [
       APP_ICON_PNG,
+      RUST_DESKTOP_ENGINE_BINARY,
       ...(process.platform === 'darwin'
         ? [MACOS_VOICE_SHORTCUT_BINARY]
         : []),
@@ -178,7 +204,10 @@ const config: ForgeConfig = {
   },
   hooks: {
     generateAssets: async (_forgeConfig, platform, arch) => {
-      await compileMacOSNativeHelpers(platform, arch);
+      await Promise.all([
+        compileMacOSNativeHelpers(platform, arch),
+        compileRustDesktopEngine(platform, arch),
+      ]);
     },
     packageAfterCopy: async (_forgeConfig, buildPath, _version, platform, arch) => {
       await stageCuaRuntime(buildPath, platform, arch);

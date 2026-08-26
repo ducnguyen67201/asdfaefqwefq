@@ -41,13 +41,29 @@ import {
   PrepareActivityStarterRequestSchema,
   SubmitKnowledgeSelectionRequestSchema,
   CreateKnowledgeGroupRequestSchema,
+  AddKnowledgeSpaceMembersRequestSchema,
   CreateKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteRequestSchema,
   RequestKnowledgeAttemptHelpSchema,
+  AddOrganizationMemberRequestSchema,
+  CancelOrganizationMemberRequestSchema,
+  ClassroomDirectiveNoticeSchema,
+  ClassroomSessionProjectionSchema,
+  CreateClassroomDirectiveRequestSchema,
+  CreateKnowledgeRoomCodeRequestSchema,
+  DismissClassroomDirectiveRequestSchema,
+  JoinClassroomSessionRequestSchema,
+  KnowledgeAttemptMutationRequestSchema,
+  OpenClassroomDirectiveRequestSchema,
+  ResolveKnowledgeAttemptHelpRequestSchema,
+  ReviewKnowledgeAttemptRequestSchema,
+  RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomLinkConsentRequestSchema,
+  ListOrganizationMembersRequestSchema,
+  UpdateOrganizationRequestSchema,
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
-import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { TaskApplicationService } from '../application/task-application-service';
 import type { GoogleAuthService } from '../auth/google-auth-service';
@@ -57,10 +73,13 @@ import type { CuaService } from '../cua/cua-service';
 import type { TaskHistoryService } from '../history/task-history-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
 import type { ActivityWorkspacePreparationService } from '../knowledge/activity-workspace-preparation-service';
+import type { ClassroomDirectiveService } from '../knowledge/classroom-directive-service';
+import type { ClassroomSessionService } from '../knowledge/classroom-session-service';
 import type { FileSelectionService } from '../knowledge/file-selection-service';
 import type { KnowledgeSpaceClient } from '../knowledge/knowledge-space-client';
 import type { KnowledgeUploadOrchestrator } from '../knowledge/knowledge-upload-service';
 import type { MembershipService } from '../membership/membership-service';
+import type { OrganizationClient } from '../organization/organization-client';
 import type { AppPreferencesService } from '../preferences/app-preferences-service';
 import type { AppUpdateService } from '../update/app-update-service';
 import type { SystemAudioDuckingService } from '../voice/system-audio-ducking-service';
@@ -82,13 +101,14 @@ interface IpcServices {
     CompanionCustomizationService,
     'activateCandidate' | 'generate' | 'getStatus' | 'useDefault'
   >;
+  cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
-  executionCoordinator: TaskExecutionCoordinator;
   getCompanionInteractionWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
   ): Promise<void> | void;
   membershipService: MembershipService;
+  organizationClient: OrganizationClient;
   onAuthSignedIn?(user: AuthUser): Promise<void> | void;
   onAuthSignedOut?(): Promise<void> | void;
   onUsageBudgetSnapshot?(snapshot: UsageBudgetSnapshot): void;
@@ -119,6 +139,8 @@ interface IpcServices {
   knowledgeUploadOrchestrator: KnowledgeUploadOrchestrator;
   activityProgressReporter: Pick<ActivityProgressReporter, 'clear'>;
   activityWorkspacePreparationService: Pick<ActivityWorkspacePreparationService, 'prepare'>;
+  classroomDirectiveService: Pick<ClassroomDirectiveService, 'dismiss' | 'onNotice' | 'open'>;
+  classroomSessionService: Pick<ClassroomSessionService, 'clear' | 'get' | 'join' | 'leave' | 'onChange' | 'restore' | 'setAutoOpenConsent'>;
 }
 
 async function assertAuthorizedSender(
@@ -226,6 +248,11 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getComputerStatus,
     IPC_CHANNELS.getAuthStatus,
     IPC_CHANNELS.getMembershipStatus,
+    IPC_CHANNELS.getOrganization,
+    IPC_CHANNELS.updateOrganization,
+    IPC_CHANNELS.listOrganizationMembers,
+    IPC_CHANNELS.addOrganizationMember,
+    IPC_CHANNELS.cancelOrganizationMember,
     IPC_CHANNELS.getUsageBudget,
     IPC_CHANNELS.getTaskHistory,
     IPC_CHANNELS.getVoiceStatus,
@@ -264,9 +291,24 @@ export function registerIpcHandlers(
     IPC_CHANNELS.submitKnowledgeSelection,
     IPC_CHANNELS.listKnowledgeGroups,
     IPC_CHANNELS.createKnowledgeGroup,
+    IPC_CHANNELS.listKnowledgeMembers,
+    IPC_CHANNELS.addKnowledgeSpaceMembers,
     IPC_CHANNELS.createKnowledgeInvite,
     IPC_CHANNELS.redeemKnowledgeInvite,
     IPC_CHANNELS.requestKnowledgeAttemptHelp,
+    IPC_CHANNELS.createKnowledgeRoomCode,
+    IPC_CHANNELS.revokeKnowledgeRoomCode,
+    IPC_CHANNELS.joinKnowledgeRoom,
+    IPC_CHANNELS.restoreClassroomSession,
+    IPC_CHANNELS.getClassroomSession,
+    IPC_CHANNELS.leaveClassroomSession,
+    IPC_CHANNELS.setClassroomLinkConsent,
+    IPC_CHANNELS.createClassroomDirective,
+    IPC_CHANNELS.openClassroomDirective,
+    IPC_CHANNELS.dismissClassroomDirective,
+    IPC_CHANNELS.readyKnowledgeAttempt,
+    IPC_CHANNELS.reviewKnowledgeAttempt,
+    IPC_CHANNELS.resolveKnowledgeAttemptHelp,
   ];
 
   for (const channel of channels) ipcMain.removeHandler(channel);
@@ -312,10 +354,11 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.signOutGoogle, async (event) => {
     assertTrustedSender(event, mainWindow);
-    services.executionCoordinator.cancelActiveTasks();
+    await services.cancelActiveTasks();
     const status = await services.authService.signOut();
     services.fileSelectionService?.clear();
     services.activityProgressReporter?.clear();
+    services.classroomSessionService.clear();
     await services.onAuthSignedOut?.();
     return status;
   });
@@ -350,6 +393,50 @@ export function registerIpcHandlers(
     );
     return services.membershipService.continueWithFree(user);
   });
+
+  ipcMain.handle(IPC_CHANNELS.getOrganization, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.organizationClient.getCurrent();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.updateOrganization,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.update(
+        UpdateOrganizationRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.listOrganizationMembers,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.listMembers(
+        ListOrganizationMembersRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.addOrganizationMember,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.addMember(
+        AddOrganizationMemberRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.cancelOrganizationMember,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = CancelOrganizationMemberRequestSchema.parse(input);
+      return services.organizationClient.cancelMember(request.memberId);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.getAppPreferences, async (event) => {
     await assertAuthorizedSender(event, mainWindow, services.authService);
@@ -496,6 +583,19 @@ export function registerIpcHandlers(
     );
   });
 
+  ipcMain.handle(IPC_CHANNELS.listKnowledgeMembers, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeSpaceIdRequestSchema.parse(input);
+    return services.knowledgeSpaceClient.listMembers(request.spaceId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.addKnowledgeSpaceMembers, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.addMembers(
+      AddKnowledgeSpaceMembersRequestSchema.parse(input),
+    );
+  });
+
   ipcMain.handle(IPC_CHANNELS.createKnowledgeInvite, async (event, input: unknown) => {
     await assertMembershipAuthorizedSender(event, mainWindow, services);
     return services.knowledgeSpaceClient.createInvite(
@@ -516,6 +616,78 @@ export function registerIpcHandlers(
       request.attemptId,
       request.clientId,
     );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createKnowledgeRoomCode, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.createRoomCode(CreateKnowledgeRoomCodeRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.revokeKnowledgeRoomCode, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.revokeRoomCode(RevokeKnowledgeRoomCodeRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.joinKnowledgeRoom, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.join(JoinClassroomSessionRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.restoreClassroomSession, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.restore();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getClassroomSession, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.classroomSessionService.get();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.leaveClassroomSession, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    const current = services.classroomSessionService.get();
+    if (!current || current.attemptId !== request.attemptId) throw new Error('The requested class session is not active.');
+    await services.classroomSessionService.leave();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.setClassroomLinkConsent, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = SetClassroomLinkConsentRequestSchema.parse(input);
+    return services.classroomSessionService.setAutoOpenConsent(request.consent);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.createDirective(CreateClassroomDirectiveRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    await services.classroomDirectiveService.open(request.directive);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.dismissClassroomDirective, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = DismissClassroomDirectiveRequestSchema.parse(input);
+    services.classroomDirectiveService.dismiss(request.directiveId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.readyKnowledgeAttempt, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    return services.knowledgeSpaceClient.readyAttempt(request.attemptId, request.clientId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.reviewKnowledgeAttempt, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.reviewAttempt(ReviewKnowledgeAttemptRequestSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.resolveKnowledgeAttemptHelp, async (event, input: unknown) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.knowledgeSpaceClient.resolveHelp(ResolveKnowledgeAttemptHelpRequestSchema.parse(input));
   });
 
   ipcMain.handle(
@@ -746,6 +918,20 @@ export function registerIpcHandlers(
     mainWindow.webContents.send(IPC_CHANNELS.agentActivity, activity);
   };
   services.agentActivityService.on('activity', forwardAgentActivity);
+  const stopForwardingClassroomSession = services.classroomSessionService.onChange((session) => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send(
+      IPC_CHANNELS.classroomSessionChanged,
+      ClassroomSessionProjectionSchema.nullable().parse(session),
+    );
+  });
+  const stopForwardingClassroomDirective = services.classroomDirectiveService.onNotice((notice) => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send(
+      IPC_CHANNELS.classroomDirectiveChanged,
+      ClassroomDirectiveNoticeSchema.nullable().parse(notice),
+    );
+  });
   const stopForwardingAppUpdateStatus = services.appUpdateService.onStatusChange(
     (status) => {
       if (mainWindow.isDestroyed()) return;
@@ -754,6 +940,8 @@ export function registerIpcHandlers(
   );
 
   return () => {
+    stopForwardingClassroomDirective();
+    stopForwardingClassroomSession();
     stopForwardingAppUpdateStatus();
     services.agentActivityService.off('activity', forwardAgentActivity);
     services.taskRuntime.off('task-update', forwardTaskUpdate);

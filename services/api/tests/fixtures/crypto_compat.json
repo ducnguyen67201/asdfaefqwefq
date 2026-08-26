@@ -35,7 +35,7 @@
     }
   },
   "digests": {
-    "toolSchema": "b522f692ea332c0d58c6d6ec83fbd1355755fc38ea2c04c6fb1b0020ebacc122",
+    "toolSchema": "2f21290b5c0fb2b5c450cec2019e9c8622a39d56de82519fa7018ae5086d335a",
     "sessionToken": "tro_live_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "sessionDigestHex": "f26a9df70c4ccf037dbb5810149228a8ca9a91d7f304b11fb2973903f037aadc",
     "rateScope": "responses.minute",

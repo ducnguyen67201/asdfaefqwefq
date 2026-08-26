@@ -26,6 +26,15 @@ import {
   CuaStatusSchema,
   DecideApprovalRequestSchema,
   MembershipStatusSchema,
+  AddOrganizationMemberRequestSchema,
+  AddOrganizationMemberResponseSchema,
+  CancelOrganizationMemberRequestSchema,
+  CancelOrganizationMemberResponseSchema,
+  ListOrganizationMembersRequestSchema,
+  OrganizationCurrentResponseSchema,
+  OrganizationMemberListSchema,
+  UpdateOrganizationRequestSchema,
+  UpdateOrganizationResponseSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
   SetVoiceAudioDuckingRequestSchema,
@@ -75,11 +84,30 @@ import {
   KnowledgeGroupListSchema,
   CreateKnowledgeGroupRequestSchema,
   KnowledgeGroupSchema,
+  KnowledgeSpaceMemberListSchema,
+  AddKnowledgeSpaceMembersRequestSchema,
+  AddKnowledgeSpaceMembersResultSchema,
   CreateKnowledgeInviteRequestSchema,
   KnowledgeInviteSchema,
   RedeemKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteResponseSchema,
   RequestKnowledgeAttemptHelpSchema,
+  ClassroomDirectiveNoticeSchema,
+  ClassroomDirectiveSchema,
+  ClassroomSessionProjectionSchema,
+  CreateClassroomDirectiveRequestSchema,
+  CreateKnowledgeRoomCodeRequestSchema,
+  DismissClassroomDirectiveRequestSchema,
+  JoinClassroomSessionRequestSchema,
+  KnowledgeAttemptMutationRequestSchema,
+  KnowledgeAttemptTransitionSchema,
+  KnowledgeRoomCodeSchema,
+  KnowledgeRoomRevocationSchema,
+  OpenClassroomDirectiveRequestSchema,
+  ResolveKnowledgeAttemptHelpRequestSchema,
+  ReviewKnowledgeAttemptRequestSchema,
+  RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomLinkConsentRequestSchema,
 } from './shared/contracts';
 import {
   IPC_CHANNELS,
@@ -235,6 +263,24 @@ const desktopApi: DesktopApi = {
     return KnowledgeGroupSchema.parse(response);
   },
 
+  async listKnowledgeMembers(spaceId) {
+    const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listKnowledgeMembers,
+      request,
+    );
+    return KnowledgeSpaceMemberListSchema.parse(response);
+  },
+
+  async addKnowledgeSpaceMembers(input) {
+    const request = AddKnowledgeSpaceMembersRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.addKnowledgeSpaceMembers,
+      request,
+    );
+    return AddKnowledgeSpaceMembersResultSchema.parse(response);
+  },
+
   async createKnowledgeInvite(input) {
     const request = CreateKnowledgeInviteRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(
@@ -256,6 +302,95 @@ const desktopApi: DesktopApi = {
   async requestKnowledgeAttemptHelp(input) {
     const request = RequestKnowledgeAttemptHelpSchema.parse(input);
     await ipcRenderer.invoke(IPC_CHANNELS.requestKnowledgeAttemptHelp, request);
+  },
+
+  async createKnowledgeRoomCode(input) {
+    const request = CreateKnowledgeRoomCodeRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createKnowledgeRoomCode, request);
+    return KnowledgeRoomCodeSchema.parse(response);
+  },
+
+  async revokeKnowledgeRoomCode(input) {
+    const request = RevokeKnowledgeRoomCodeRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.revokeKnowledgeRoomCode, request);
+    return KnowledgeRoomRevocationSchema.parse(response);
+  },
+
+  async joinKnowledgeRoom(input) {
+    const request = JoinClassroomSessionRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.joinKnowledgeRoom, request);
+    return ClassroomSessionProjectionSchema.parse(response);
+  },
+
+  async restoreClassroomSession() {
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.restoreClassroomSession);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async getClassroomSession() {
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getClassroomSession);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async leaveClassroomSession(input) {
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.leaveClassroomSession, request);
+  },
+
+  async setClassroomLinkConsent(input) {
+    const request = SetClassroomLinkConsentRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.setClassroomLinkConsent, request);
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
+  async createClassroomDirective(input) {
+    const request = CreateClassroomDirectiveRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createClassroomDirective, request);
+    return ClassroomDirectiveSchema.parse(response);
+  },
+
+  async openClassroomDirective(input) {
+    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.openClassroomDirective, request);
+  },
+
+  async dismissClassroomDirective(directiveId) {
+    const request = DismissClassroomDirectiveRequestSchema.parse({ directiveId });
+    await ipcRenderer.invoke(IPC_CHANNELS.dismissClassroomDirective, request);
+  },
+
+  async readyKnowledgeAttempt(input) {
+    const request = KnowledgeAttemptMutationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readyKnowledgeAttempt, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  async reviewKnowledgeAttempt(input) {
+    const request = ReviewKnowledgeAttemptRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.reviewKnowledgeAttempt, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  async resolveKnowledgeAttemptHelp(input) {
+    const request = ResolveKnowledgeAttemptHelpRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.resolveKnowledgeAttemptHelp, request);
+    return KnowledgeAttemptTransitionSchema.parse(response);
+  },
+
+  onClassroomSessionChanged(listener) {
+    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      listener(ClassroomSessionProjectionSchema.nullable().parse(value));
+    };
+    ipcRenderer.on(IPC_CHANNELS.classroomSessionChanged, eventHandler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomSessionChanged, eventHandler);
+  },
+
+  onClassroomDirectiveChanged(listener) {
+    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      listener(ClassroomDirectiveNoticeSchema.nullable().parse(value));
+    };
+    ipcRenderer.on(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
   },
 
   onAgentActivity(listener) {
@@ -294,6 +429,49 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.getMembershipStatus,
     );
     return MembershipStatusSchema.parse(response);
+  },
+
+  async getOrganization() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getOrganization,
+    );
+    return OrganizationCurrentResponseSchema.parse(response);
+  },
+
+  async updateOrganization(input) {
+    const request = UpdateOrganizationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.updateOrganization,
+      request,
+    );
+    return UpdateOrganizationResponseSchema.parse(response);
+  },
+
+  async listOrganizationMembers(input) {
+    const request = ListOrganizationMembersRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listOrganizationMembers,
+      request,
+    );
+    return OrganizationMemberListSchema.parse(response);
+  },
+
+  async addOrganizationMember(input) {
+    const request = AddOrganizationMemberRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.addOrganizationMember,
+      request,
+    );
+    return AddOrganizationMemberResponseSchema.parse(response);
+  },
+
+  async cancelOrganizationMember(input) {
+    const request = CancelOrganizationMemberRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.cancelOrganizationMember,
+      request,
+    );
+    return CancelOrganizationMemberResponseSchema.parse(response);
   },
 
   async activateMembership(input) {

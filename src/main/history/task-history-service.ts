@@ -10,7 +10,7 @@ const SESSION_ONLY_HISTORY: TaskHistory = TaskHistorySchema.parse({
   events: [],
   persistence: {
     mode: 'session_only',
-    summary: 'Set DATABASE_URL to save task history across app restarts.',
+    summary: 'Hosted Rust task history is unavailable for this session.',
   },
   snapshots: [],
 });
@@ -73,7 +73,7 @@ export class TaskHistoryService {
         ...SESSION_ONLY_HISTORY,
         persistence: {
           mode: 'session_only',
-          summary: 'PostgreSQL is unavailable; this session is not durable.',
+          summary: 'Hosted Rust task history is unavailable; this session is not durable.',
         },
       });
     }
@@ -92,4 +92,3 @@ export class TaskHistoryService {
     }
   }
 }
-

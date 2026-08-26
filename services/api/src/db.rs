@@ -97,8 +97,38 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
         ),
         migration(
             18,
+            "classroom roles",
+            include_str!("../migrations/018_classroom_roles.sql"),
+        ),
+        migration(
+            19,
+            "invite idempotency",
+            include_str!("../migrations/019_invite_idempotency.sql"),
+        ),
+        migration(
+            20,
+            "live classroom room flow",
+            include_str!("../migrations/020_live_classroom_room_flow.sql"),
+        ),
+        migration(
+            21,
+            "organization managed access",
+            include_str!("../migrations/021_organization_managed_access.sql"),
+        ),
+        migration(
+            22,
+            "organization profile settings",
+            include_str!("../migrations/022_organization_profile_settings.sql"),
+        ),
+        migration(
+            23,
+            "user knowledge spaces access",
+            include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
+        ),
+        migration(
+            24,
             "companion image generation",
-            include_str!("../migrations/018_companion_image_generation.sql"),
+            include_str!("../migrations/024_companion_image_generation.sql"),
         ),
     ]),
     ..Migrator::DEFAULT

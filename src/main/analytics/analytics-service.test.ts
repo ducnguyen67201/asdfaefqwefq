@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,6 +6,11 @@ import path from 'node:path';
 import type { EventMessage, IdentifyMessage } from 'posthog-node';
 import { describe, expect, it } from 'vitest';
 
+import {
+  HOST_ALWAYS_CONFIRM_EFFECTS,
+  type HostedTaskAuthorityContract,
+  type WorkspaceIdentity,
+} from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
 import {
@@ -77,6 +83,66 @@ function createService(
     now,
     platform: 'darwin',
   });
+}
+
+function authority(
+  request: string,
+  workspaceSelectionId: string | null = null,
+): HostedTaskAuthorityContract {
+  return {
+    schemaVersion: 8,
+    id: randomUUID(),
+    originalRequest: request,
+    runtimeKind: 'rust_hosted',
+    executionProfile: workspaceSelectionId ? 'workspace' : 'everyday',
+    autonomyMode: 'balanced',
+    workspaceSelectionId,
+    activity: null,
+    outcomeContract: {
+      schemaVersion: 1,
+      revision: 1,
+      completionMode: 'all_required',
+      criteria: [{
+        id: 'assistant-output',
+        description: 'Return a user-facing answer.',
+        required: true,
+        verifier: { kind: 'assistant_output', constraints: [] },
+      }],
+    },
+    intentAuthorization: {
+      schemaVersion: 1,
+      revision: 1,
+      source: 'user_instruction',
+      grants: [],
+    },
+    approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
+    limits: {
+      maxImages: 20,
+      maxMicroUsd: 5_000_000,
+      maxMinutes: 30,
+      maxModelSamples: 40,
+      maxToolCalls: 30,
+    },
+  };
+}
+
+function submitProjection(
+  runtime: TaskRuntime,
+  request: string,
+  workspace: WorkspaceIdentity | null = null,
+) {
+  return runtime.submit(
+    {
+      text: request,
+      executionProfile: workspace ? 'workspace' : 'everyday',
+      workspaceSelectionId: workspace?.selectionId ?? null,
+    },
+    {
+      authority: authority(request, workspace?.selectionId ?? null),
+      taskId: randomUUID(),
+      workspace,
+    },
+  );
 }
 
 describe('FileAnalyticsIdentityStore', () => {
@@ -184,22 +250,14 @@ describe('AnalyticsService', () => {
     const runtime = new TaskRuntime({
       now: () => new Date('2026-08-15T06:00:00.000Z'),
     });
-    const snapshot = runtime.submit(
+    const snapshot = submitProjection(
+      runtime,
+      'Research private acquisition documents in /Users/example',
       {
-        text: 'Research private acquisition documents in /Users/example',
-        executionProfile: 'workspace',
-        workspaceSelectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      },
-      {
-        autonomyMode: 'balanced',
-        executionProfile: 'workspace',
-        runtimeKind: 'openai_agents',
-        workspace: {
           canonicalPath: '/Users/example',
           displayName: 'example',
           selectedAt: '2026-08-15T05:59:00.000Z',
           selectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        },
       },
     );
 
@@ -221,7 +279,7 @@ describe('AnalyticsService', () => {
       autonomy_mode: 'balanced',
       contract_version: 8,
       execution_profile: 'workspace',
-      runtime_kind: 'openai_agents',
+      runtime_kind: 'rust_hosted',
     });
     expect(client.events.at(-1)?.properties).not.toHaveProperty('behavior');
   });
@@ -237,7 +295,7 @@ describe('AnalyticsService', () => {
     const runtime = new TaskRuntime({
       now: () => new Date('2026-08-15T06:00:00.000Z'),
     });
-    const snapshot = runtime.submit({ text: 'Private prompt' });
+    const snapshot = submitProjection(runtime, 'Private prompt');
 
     await service.trackTaskUpdate({ event: snapshot.lastEvent, snapshot });
     await service.trackAgentActivity({
@@ -277,7 +335,7 @@ describe('AnalyticsService', () => {
     const runtime = new TaskRuntime({
       now: () => new Date('2026-08-15T06:00:00.000Z'),
     });
-    const ready = runtime.submit({ text: 'Complete a bounded task.' });
+    const ready = submitProjection(runtime, 'Complete a bounded task.');
     await service.trackTaskUpdate({ event: ready.lastEvent, snapshot: ready });
     const terminal = {
       ...ready,
@@ -319,13 +377,21 @@ describe('AnalyticsService', () => {
     const runtime = new TaskRuntime({
       now: () => new Date('2026-08-15T06:00:00.000Z'),
     });
-    const ready = runtime.submit({ text: 'Private workspace instruction.' });
-    runtime.start({ taskId: ready.taskId });
-    runtime.beginObservation(ready.taskId, 'Inspecting the workspace.');
-    const verifying = runtime.recordToolResult(
-      ready.taskId,
-      'Workspace update finished.',
-      {
+    const ready = submitProjection(runtime, 'Private workspace instruction.');
+    const verifying = {
+      ...ready,
+      phase: 'verifying' as const,
+      updatedAt: '2026-08-15T06:00:01.000Z',
+      lastEvent: {
+        eventId: randomUUID(),
+        taskId: ready.taskId,
+        phase: 'verifying' as const,
+        timestamp: '2026-08-15T06:00:01.000Z',
+        status: 'success' as const,
+        summary: 'Workspace update finished.',
+        nextActions: [],
+        artifacts: [],
+        tool: {
         toolId: 'workspace.apply_patch',
         operation: 'apply_patch',
         effectKind: 'workspace_write',
@@ -334,7 +400,8 @@ describe('AnalyticsService', () => {
         approvalRequired: false,
         consequential: true,
       },
-    );
+      },
+    };
 
     await service.trackTaskUpdate({
       event: verifying.lastEvent,

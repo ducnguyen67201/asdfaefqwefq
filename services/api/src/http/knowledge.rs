@@ -15,8 +15,9 @@ use crate::{
     app::AppState,
     error::{ApiError, ApiResult},
     http::{
+        bearer, classroom,
         core::{access, session},
-        json_response, read_json,
+        json_response, read_json, request_ip,
     },
     usage::{Plan, plan_for},
     validation::{api_uuid, js_string_len, zod_uuid},
@@ -30,16 +31,42 @@ pub async fn handle(
     body: &Bytes,
 ) -> ApiResult<Option<Response>> {
     let path = uri.path();
-    if method == Method::GET && path == "/v1/capabilities" {
-        return Ok(Some(json_response(
-            StatusCode::OK,
-            json!({"knowledgeSpaces":{"enabled":state.config.knowledge_spaces.enabled,"contractVersion":1}}),
-        )?));
-    }
-    if !state.config.knowledge_spaces.enabled || !matches_knowledge(path) {
+    let reads_capabilities = method == Method::GET && path == "/v1/capabilities";
+    if !reads_capabilities && !matches_knowledge(path) {
         return Ok(None);
     }
-    let current = session(state, headers).await?;
+    let current = session(state, headers).await.map_err(|error| {
+        if error.status != StatusCode::UNAUTHORIZED {
+            return error;
+        }
+        if bearer(headers).is_none() {
+            ApiError::coded(
+                StatusCode::UNAUTHORIZED,
+                "authentication_required",
+                "Sign in to continue.",
+            )
+        } else {
+            ApiError::coded(
+                StatusCode::UNAUTHORIZED,
+                "session_expired",
+                "Your session expired. Sign in again.",
+            )
+        }
+    })?;
+    let knowledge_spaces_enabled = state.knowledge.enabled_for(&current.user.id).await?;
+    if reads_capabilities {
+        return Ok(Some(json_response(
+            StatusCode::OK,
+            json!({"knowledgeSpaces":{"enabled":knowledge_spaces_enabled,"contractVersion":2}}),
+        )?));
+    }
+    if !knowledge_spaces_enabled {
+        return Err(ApiError::coded(
+            StatusCode::FORBIDDEN,
+            "knowledge_spaces_disabled",
+            "Knowledge Spaces are disabled for this account.",
+        ));
+    }
     let membership = access(state, &current).await.map_err(|error| {
         if error.status == StatusCode::FORBIDDEN {
             ApiError::coded(
@@ -52,7 +79,10 @@ pub async fn handle(
         }
     })?;
     let plan = plan_for(membership.plan.as_deref().unwrap_or("free"))?;
-    let scope = if method == Method::POST && path.ends_with("/knowledge/search") {
+    let joins_room = method == Method::POST && path == "/v1/live-rooms/join";
+    let scope = if joins_room {
+        "classroom.join"
+    } else if method == Method::POST && path.ends_with("/knowledge/search") {
         "knowledge.search"
     } else if method == Method::POST
         && (path.ends_with("/uploads/initiate") || path.ends_with("/submissions/initiate"))
@@ -63,7 +93,9 @@ pub async fn handle(
     } else {
         "knowledge.write"
     };
-    let rate = if scope == "knowledge.search" {
+    let rate = if joins_room {
+        12
+    } else if scope == "knowledge.search" {
         plan.knowledge_queries_per_minute
     } else if scope == "knowledge.upload" {
         plan.upload_initiates_per_minute
@@ -84,11 +116,31 @@ pub async fn handle(
         )
         .retry_after(consumed.retry_after_seconds));
     }
+    if joins_room {
+        let peer = state
+            .rate_limiter
+            .consume(
+                "classroom.join.peer",
+                request_ip(headers),
+                2_400,
+                Duration::from_secs(60),
+            )
+            .await?;
+        if !peer.allowed {
+            return Err(ApiError::coded(
+                StatusCode::TOO_MANY_REQUESTS,
+                "room_join_rate_limited",
+                "Too many room join attempts from this network. Try again shortly.",
+            )
+            .retry_after(peer.retry_after_seconds));
+        }
+    }
     let response = route(state, &current.user.id, plan, method, uri, headers, body).await?;
     Ok(Some(response))
 }
 fn matches_knowledge(path: &str) -> bool {
-    path.starts_with("/v1/spaces")
+    path.starts_with("/v1/live-rooms")
+        || path.starts_with("/v1/spaces")
         || path.starts_with("/v1/activities")
         || path.starts_with("/v1/runs")
         || path.starts_with("/v1/attempts")
@@ -107,6 +159,9 @@ async fn route(
     headers: &HeaderMap,
     body: &Bytes,
 ) -> ApiResult<Response> {
+    if let Some(response) = classroom::route(state, user, plan, method, uri, headers, body).await? {
+        return Ok(response);
+    }
     let path = uri.path();
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     if method == Method::GET && path == "/v1/spaces" {
@@ -187,6 +242,16 @@ async fn route(
                 state.knowledge.list_members(user, space).await?,
             );
         }
+        if parts.len() == 5 && parts[3] == "members" && parts[4] == "bulk" && method == Method::POST
+        {
+            return json_response(
+                StatusCode::OK,
+                state
+                    .knowledge
+                    .add_members(user, space, &read_json(headers, body, 200_000)?)
+                    .await?,
+            );
+        }
         if parts.len() == 4 && parts[3] == "invites" && method == Method::POST {
             return json_response(
                 StatusCode::CREATED,
@@ -210,20 +275,6 @@ async fn route(
         if parts.len() == 4 && parts[3] == "runs" && method == Method::POST {
             return create_run(state, user, space, plan, headers, body).await;
         }
-        if parts.len() == 6
-            && parts[3] == "runs"
-            && matches!(parts[5], "open" | "close")
-            && method == Method::POST
-        {
-            return set_run(state, user, space, parse_uuid(parts[4])?, parts[5]).await;
-        }
-        if parts.len() == 6
-            && parts[3] == "runs"
-            && parts[5] == "dashboard"
-            && method == Method::GET
-        {
-            return dashboard(state, user, space, parse_uuid(parts[4])?, uri).await;
-        }
     }
     if method == Method::POST && path == "/v1/uploads/complete" {
         return complete_upload(state, user, headers, body).await;
@@ -244,7 +295,18 @@ async fn route(
             && parts[4] == "initiate"
             && method == Method::POST
         {
-            let space:Uuid=sqlx::query_scalar("SELECT runs.space_id FROM knowledge_activity_attempts attempts JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id WHERE attempts.id=$1 AND attempts.user_id=$2").bind(attempt).bind(user).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
+            let attempt_context=sqlx::query("SELECT attempts.state,runs.space_id FROM knowledge_activity_attempts attempts JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id WHERE attempts.id=$1 AND attempts.user_id=$2").bind(attempt).bind(user).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
+            if !matches!(
+                attempt_context.get::<String, _>("state").as_str(),
+                "assigned" | "in_progress" | "blocked" | "ready_for_review"
+            ) {
+                return Err(ApiError::coded(
+                    StatusCode::CONFLICT,
+                    "attempt_not_active",
+                    "This Attempt is waiting for review or no longer active.",
+                ));
+            }
+            let space: Uuid = attempt_context.get("space_id");
             return initiate_upload(state, user, space, plan, headers, body, Some(attempt)).await;
         }
         if parts.len() == 5
@@ -256,9 +318,6 @@ async fn route(
         }
         if parts.len() == 4 && parts[3] == "acknowledge" && method == Method::POST {
             return acknowledge(state, user, attempt, headers, body).await;
-        }
-        if parts.len() == 4 && parts[3] == "help" && method == Method::POST {
-            return request_help(state, user, attempt, headers, body).await;
         }
         if parts.len() == 4 && parts[3] == "work-sessions" && method == Method::POST {
             return create_work_session(state, user, attempt, headers, body).await;
@@ -303,6 +362,13 @@ fn invalid() -> ApiError {
         StatusCode::BAD_REQUEST,
         "invalid_request",
         "Request data is invalid.",
+    )
+}
+fn knowledge_storage_unavailable() -> ApiError {
+    ApiError::coded(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "knowledge_storage_unavailable",
+        "Knowledge file storage is not configured.",
     )
 }
 fn strict_object(input: &Value, allowed: &[&str]) -> ApiResult<()> {
@@ -427,6 +493,34 @@ fn normalize_activity_definition(input: &Value) -> ApiResult<Value> {
         Some(value) => value.as_bool().ok_or_else(invalid)?,
     };
 
+    let empty_session = Value::Object(serde_json::Map::new());
+    let session = input.get("sessionPolicy").unwrap_or(&empty_session);
+    if !session.is_object() {
+        return Err(invalid());
+    }
+    let allow_room_join = match session.get("allowRoomJoin") {
+        None => false,
+        Some(value) => value.as_bool().ok_or_else(invalid)?,
+    };
+    let raw_origins = match session.get("allowedOrigins") {
+        None => &[][..],
+        Some(value) => value.as_array().map(Vec::as_slice).ok_or_else(invalid)?,
+    };
+    if raw_origins.len() > 20 {
+        return Err(invalid());
+    }
+    let allowed_origins = raw_origins
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| js_string_len(value) <= 2_000)
+                .and_then(crate::classroom::validated_origin)
+                .ok_or_else(invalid)
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+
     Ok(json!({
         "title": title,
         "objective": objective,
@@ -441,6 +535,10 @@ fn normalize_activity_definition(input: &Value) -> ApiResult<Value> {
         "completionPolicy": {
             "requiresSubmission": requires_submission,
             "requiresFacilitatorConfirmation": requires_facilitator_confirmation,
+        },
+        "sessionPolicy": {
+            "allowRoomJoin": allow_room_join,
+            "allowedOrigins": allowed_origins,
         },
     }))
 }
@@ -598,7 +696,7 @@ async fn initiate_upload(
         .knowledge
         .object_store
         .as_ref()
-        .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+        .ok_or_else(knowledge_storage_unavailable)?;
     let mut tx = state.pool.begin().await?;
     let mut pending = Vec::new();
     for (client, name, path, media, size, sha, role) in parsed_files {
@@ -667,7 +765,7 @@ async fn complete_upload(
         .knowledge
         .object_store
         .as_ref()
-        .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+        .ok_or_else(knowledge_storage_unavailable)?;
     let head = store.head(row.get("object_key")).await?;
     let checksum = STANDARD.encode(decode_hex(&row.get::<String, _>("sha256"))?);
     if head.byte_size != row.get::<i64, _>("byte_size")
@@ -861,11 +959,17 @@ async fn create_run(
     let target_kind = target
         .get("kind")
         .and_then(Value::as_str)
-        .filter(|value| matches!(*value, "group" | "participants"))
+        .filter(|value| matches!(*value, "group" | "participants" | "room"))
         .ok_or_else(invalid)?;
+    if target_kind == "room" && mode == "async" {
+        return Err(invalid());
+    }
     let (group, users) = if target_kind == "group" {
         strict_object(target, &["kind", "groupId"])?;
         (Some(required_uuid(target, "groupId")?), Vec::new())
+    } else if target_kind == "room" {
+        strict_object(target, &["kind"])?;
+        (None, Vec::new())
     } else {
         strict_object(target, &["kind", "userIds"])?;
         let raw_users = target
@@ -886,32 +990,6 @@ async fn create_run(
         }
         (None, users)
     };
-    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_activity_runs WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&state.pool).await?;
-    if active >= plan.active_runs {
-        return Err(ApiError::coded(
-            StatusCode::CONFLICT,
-            "active_run_quota",
-            "This Space reached its active Run limit.",
-        ));
-    }
-    let count = if let Some(group) = group {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(members.user_id)::bigint FROM knowledge_space_groups groups LEFT JOIN knowledge_space_group_members members ON members.group_id=groups.id WHERE groups.id=$1 AND groups.space_id=$2 AND groups.archived_at IS NULL",
-        )
-        .bind(group)
-        .bind(space)
-        .fetch_one(&state.pool)
-        .await?
-    } else {
-        i64::try_from(users.len()).unwrap_or(i64::MAX)
-    };
-    if count > plan.group_participants {
-        return Err(ApiError::coded(
-            StatusCode::CONFLICT,
-            "participant_quota",
-            "This Run has too many participants for the current plan.",
-        ));
-    }
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("run:{space}:{client}"))
@@ -936,6 +1014,32 @@ async fn create_run(
             HeaderValue::from_str(&format!("/v1/runs/{id}")).map_err(ApiError::internal)?,
         );
         return Ok(response);
+    }
+    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_activity_runs WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&mut*tx).await?;
+    if active >= plan.active_runs {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "active_run_quota",
+            "This Space reached its active Run limit.",
+        ));
+    }
+    let count = if let Some(group) = group {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(members.user_id)::bigint FROM knowledge_space_groups groups LEFT JOIN knowledge_space_group_members members ON members.group_id=groups.id WHERE groups.id=$1 AND groups.space_id=$2 AND groups.archived_at IS NULL",
+        )
+        .bind(group)
+        .bind(space)
+        .fetch_one(&mut *tx)
+        .await?
+    } else {
+        i64::try_from(users.len()).unwrap_or(i64::MAX)
+    };
+    if count > plan.group_participants {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "participant_quota",
+            "This Run has too many participants for the current plan.",
+        ));
     }
     let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM knowledge_activity_versions versions JOIN knowledge_activities activities ON activities.id=versions.activity_id WHERE versions.id=$1 AND activities.space_id=$2)").bind(version).bind(space).fetch_one(&mut*tx).await?;
     if !valid {
@@ -1001,46 +1105,6 @@ async fn create_run(
     );
     Ok(response)
 }
-async fn set_run(
-    state: &AppState,
-    user: &str,
-    space: Uuid,
-    run: Uuid,
-    action: &str,
-) -> ApiResult<Response> {
-    state
-        .knowledge
-        .role(user, space, &["owner", "facilitator"])
-        .await?;
-    let next = if action == "open" { "open" } else { "closed" };
-    let current: String =
-        sqlx::query_scalar("SELECT state FROM knowledge_activity_runs WHERE id=$1 AND space_id=$2")
-            .bind(run)
-            .bind(space)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| {
-                ApiError::coded(StatusCode::NOT_FOUND, "run_not_found", "Run not found.")
-            })?;
-    if current == next {
-        return json_response(StatusCode::OK, json!({"id":run,"state":current}));
-    }
-    if !matches!(
-        (current.as_str(), next),
-        ("draft", "open") | ("open", "closed")
-    ) {
-        return Err(ApiError::coded(
-            StatusCode::CONFLICT,
-            "invalid_transition",
-            "Invalid run transition.",
-        ));
-    }
-    let row=sqlx::query("UPDATE knowledge_activity_runs SET state=$3,updated_at=NOW()WHERE id=$1 AND space_id=$2 RETURNING id,state").bind(run).bind(space).bind(next).fetch_one(&state.pool).await?;
-    json_response(
-        StatusCode::OK,
-        json!({"id":row.get::<Uuid,_>("id"),"state":row.get::<String,_>("state")}),
-    )
-}
 async fn assignments(state: &AppState, user: &str) -> ApiResult<Response> {
     let rows=sqlx::query("SELECT attempts.id attempt_id,attempts.state,attempts.updated_at,runs.id run_id,runs.mode,runs.opens_at,runs.closes_at,runs.space_id,versions.definition,spaces.name space_name FROM knowledge_activity_attempts attempts JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id JOIN knowledge_activity_versions versions ON versions.id=runs.activity_version_id JOIN knowledge_spaces spaces ON spaces.id=runs.space_id WHERE attempts.user_id=$1 AND attempts.state<>'withdrawn'ORDER BY attempts.updated_at DESC,attempts.id DESC LIMIT 100").bind(user).fetch_all(&state.pool).await?;
     json_response(
@@ -1104,7 +1168,7 @@ async fn starter_files(state: &AppState, user: &str, attempt: Uuid) -> ApiResult
             .knowledge
             .object_store
             .as_ref()
-            .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+            .ok_or_else(knowledge_storage_unavailable)?;
         files.push(json!({"byteSize":row.get::<i64,_>("byte_size"),"mediaType":row.get::<String,_>("media_type"),"relativePath":row.get::<String,_>("virtual_path"),"sha256":row.get::<String,_>("sha256"),"sourceVersionId":row.get::<Uuid,_>("version_id"),"download":store.get_ticket(row.get("object_key")).await?}));
     }
     json_response(StatusCode::OK, json!({"files":files}))
@@ -1134,7 +1198,7 @@ async fn commit_submission(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    let updated=sqlx::query("UPDATE knowledge_activity_attempts attempts SET state='submitted',submitted_at=COALESCE(submitted_at,NOW()),updated_at=NOW()WHERE attempts.id=$1 AND attempts.user_id=$2 AND attempts.state IN('assigned','in_progress','blocked')AND EXISTS(SELECT 1 FROM knowledge_submission_artifacts artifacts JOIN knowledge_source_versions versions ON versions.id=artifacts.source_version_id WHERE artifacts.attempt_id=attempts.id AND versions.state IN('processing','ready'))RETURNING id,run_id,state,submitted_at").bind(attempt).bind(user).fetch_optional(&mut*tx).await?;
+    let updated=sqlx::query("UPDATE knowledge_activity_attempts attempts SET state='submitted',submitted_at=COALESCE(submitted_at,NOW()),updated_at=NOW()WHERE attempts.id=$1 AND attempts.user_id=$2 AND attempts.state IN('assigned','in_progress','blocked','ready_for_review')AND EXISTS(SELECT 1 FROM knowledge_submission_artifacts artifacts JOIN knowledge_source_versions versions ON versions.id=artifacts.source_version_id WHERE artifacts.attempt_id=attempts.id AND versions.state IN('processing','ready'))RETURNING id,run_id,state,submitted_at").bind(attempt).bind(user).fetch_optional(&mut*tx).await?;
     let row = if let Some(row) = updated {
         sqlx::query("INSERT INTO knowledge_activity_run_events(run_id,attempt_id,event_type,payload)VALUES($1,$2,'attempt_submitted',jsonb_build_object('state','submitted'))")
             .bind(row.get::<Uuid, _>("run_id"))
@@ -1181,37 +1245,6 @@ async fn acknowledge(
     }
     json_response(StatusCode::OK, json!({"acknowledged":true}))
 }
-async fn request_help(
-    state: &AppState,
-    user: &str,
-    attempt: Uuid,
-    headers: &HeaderMap,
-    body: &Bytes,
-) -> ApiResult<Response> {
-    let input = read_json(headers, body, 16_000)?;
-    strict_object(&input, &["clientId"])?;
-    let client = required_uuid(&input, "clientId")?;
-    let mut tx = state.pool.begin().await?;
-    let row=sqlx::query("UPDATE knowledge_activity_attempts SET state=CASE WHEN state IN('assigned','in_progress')THEN'blocked'ELSE state END,updated_at=NOW()WHERE id=$1 AND user_id=$2 AND state NOT IN('completed','withdrawn')RETURNING id,run_id,state").bind(attempt).bind(user).fetch_optional(&mut*tx).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
-    let newly_requested = sqlx::query_scalar::<_, time::OffsetDateTime>("INSERT INTO knowledge_attempt_help_requests(client_id,attempt_id,requested_by)VALUES($1,$2,$3)ON CONFLICT(attempt_id,client_id)DO NOTHING RETURNING requested_at").bind(client).bind(attempt).bind(user).fetch_optional(&mut*tx).await?.is_some();
-    if newly_requested {
-        sqlx::query("UPDATE knowledge_activity_work_sessions SET help_requested_at=COALESCE(help_requested_at,NOW()),updated_at=NOW() WHERE id=(SELECT id FROM knowledge_activity_work_sessions WHERE attempt_id=$1 ORDER BY created_at DESC LIMIT 1)")
-            .bind(attempt)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("INSERT INTO knowledge_activity_run_events(run_id,attempt_id,event_type,payload)VALUES($1,$2,'help_requested',jsonb_build_object('state',$3::text))")
-            .bind(row.get::<Uuid, _>("run_id"))
-            .bind(row.get::<Uuid, _>("id"))
-            .bind(row.get::<String, _>("state"))
-            .execute(&mut *tx)
-            .await?;
-    }
-    tx.commit().await?;
-    json_response(
-        StatusCode::OK,
-        json!({"requested":true,"state":row.get::<String,_>("state")}),
-    )
-}
 async fn create_work_session(
     state: &AppState,
     user: &str,
@@ -1220,7 +1253,7 @@ async fn create_work_session(
     body: &Bytes,
 ) -> ApiResult<Response> {
     let input = read_json(headers, body, 32_000)?;
-    strict_object(&input, &["clientId", "taskId", "launchKind"])?;
+    strict_object(&input, &["clientId", "taskId", "launchKind", "purpose"])?;
     let client = required_uuid(&input, "clientId")?;
     let task = required_uuid(&input, "taskId")?;
     let launch = input
@@ -1228,7 +1261,14 @@ async fn create_work_session(
         .and_then(Value::as_str)
         .filter(|value| matches!(*value, "none" | "workspace" | "current_surface"))
         .ok_or_else(invalid)?;
-    let context=sqlx::query("SELECT runs.state run_state,runs.opens_at,runs.closes_at,versions.definition FROM knowledge_activity_attempts attempts JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id JOIN knowledge_activity_versions versions ON versions.id=runs.activity_version_id WHERE attempts.id=$1 AND attempts.user_id=$2").bind(attempt).bind(user).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
+    let purpose = match input.get("purpose") {
+        None => "work",
+        Some(value) => value
+            .as_str()
+            .filter(|value| matches!(*value, "work" | "help" | "check"))
+            .ok_or_else(invalid)?,
+    };
+    let context=sqlx::query("SELECT attempts.state,runs.state run_state,runs.opens_at,runs.closes_at,versions.definition FROM knowledge_activity_attempts attempts JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id JOIN knowledge_activity_versions versions ON versions.id=runs.activity_version_id WHERE attempts.id=$1 AND attempts.user_id=$2").bind(attempt).bind(user).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
     let now = time::OffsetDateTime::now_utc();
     let opens_at = context.get::<Option<time::OffsetDateTime>, _>("opens_at");
     let closes_at = context.get::<Option<time::OffsetDateTime>, _>("closes_at");
@@ -1240,6 +1280,16 @@ async fn create_work_session(
             StatusCode::CONFLICT,
             "run_not_open",
             "This Run is not open.",
+        ));
+    }
+    if !matches!(
+        context.get::<String, _>("state").as_str(),
+        "assigned" | "in_progress" | "blocked" | "ready_for_review"
+    ) {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "attempt_not_active",
+            "This Attempt is waiting for review or no longer active.",
         ));
     }
     if context
@@ -1254,19 +1304,23 @@ async fn create_work_session(
             "Launch selection does not match the published Activity.",
         ));
     }
+    if purpose == "help" {
+        state.classroom.request_help(user, attempt, client).await?;
+    }
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("work:{attempt}:{client}"))
         .execute(&mut *tx)
         .await?;
-    let existing=sqlx::query("SELECT sessions.id,sessions.state,sessions.task_id,sessions.launch_kind,sessions.updated_at created_at FROM knowledge_activity_work_sessions sessions JOIN knowledge_activity_attempts attempts ON attempts.id=sessions.attempt_id WHERE sessions.attempt_id=$1 AND sessions.client_id=$2 AND attempts.user_id=$3").bind(attempt).bind(client).bind(user).fetch_optional(&mut*tx).await?;
+    let existing=sqlx::query("SELECT sessions.id,sessions.state,sessions.task_id,sessions.launch_kind,sessions.purpose,sessions.updated_at created_at FROM knowledge_activity_work_sessions sessions JOIN knowledge_activity_attempts attempts ON attempts.id=sessions.attempt_id WHERE sessions.attempt_id=$1 AND sessions.client_id=$2 AND attempts.user_id=$3").bind(attempt).bind(client).bind(user).fetch_optional(&mut*tx).await?;
     let row = if let Some(row) = existing {
         row
     } else {
-        let row=sqlx::query("INSERT INTO knowledge_activity_work_sessions(client_id,attempt_id,task_id,launch_kind)SELECT $2,attempts.id,$3,$4 FROM knowledge_activity_attempts attempts WHERE attempts.id=$1 AND attempts.user_id=$5 RETURNING id,state,task_id,launch_kind,created_at").bind(attempt).bind(client).bind(task).bind(launch).bind(user).fetch_optional(&mut*tx).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
+        let row=sqlx::query("INSERT INTO knowledge_activity_work_sessions(client_id,attempt_id,task_id,launch_kind,purpose)SELECT $2,attempts.id,$3,$4,$6 FROM knowledge_activity_attempts attempts WHERE attempts.id=$1 AND attempts.user_id=$5 RETURNING id,state,task_id,launch_kind,purpose,created_at").bind(attempt).bind(client).bind(task).bind(launch).bind(user).bind(purpose).fetch_optional(&mut*tx).await?.ok_or_else(||ApiError::coded(StatusCode::NOT_FOUND,"attempt_not_found","Attempt not found."))?;
         sqlx::query("UPDATE knowledge_activity_attempts SET state=CASE WHEN state='assigned'THEN'in_progress'ELSE state END,started_at=COALESCE(started_at,NOW()),updated_at=NOW()WHERE id=$1").bind(attempt).execute(&mut*tx).await?;
-        sqlx::query("INSERT INTO knowledge_activity_run_events(run_id,attempt_id,event_type,payload)SELECT run_id,id,'work_session_created',jsonb_build_object('state','created')FROM knowledge_activity_attempts WHERE id=$1")
+        sqlx::query("INSERT INTO knowledge_activity_run_events(run_id,attempt_id,event_type,payload)SELECT run_id,id,'work_session_created',jsonb_build_object('state','created','purpose',$2::text)FROM knowledge_activity_attempts WHERE id=$1")
             .bind(attempt)
+            .bind(purpose)
             .execute(&mut *tx)
             .await?;
         row
@@ -1275,7 +1329,7 @@ async fn create_work_session(
     let id: Uuid = row.get("id");
     let mut response = json_response(
         StatusCode::CREATED,
-        json!({"id":id,"state":row.get::<String,_>("state"),"taskId":row.get::<Uuid,_>("task_id"),"launchKind":row.get::<String,_>("launch_kind"),"createdAt":format_time(row.get("created_at"))}),
+        json!({"id":id,"state":row.get::<String,_>("state"),"taskId":row.get::<Uuid,_>("task_id"),"launchKind":row.get::<String,_>("launch_kind"),"purpose":row.get::<String,_>("purpose"),"createdAt":format_time(row.get("created_at"))}),
     )?;
     response.headers_mut().insert(
         "location",
@@ -1450,140 +1504,5 @@ async fn record_evidence(
     json_response(
         StatusCode::CREATED,
         json!({"id":row.get::<Uuid,_>("id"),"criterionId":criterion,"tag":tag,"provenance":provenance,"resultCode":result,"createdAt":format_time(row.get("created_at"))}),
-    )
-}
-async fn dashboard(
-    state: &AppState,
-    user: &str,
-    space: Uuid,
-    run: Uuid,
-    uri: &Uri,
-) -> ApiResult<Response> {
-    state
-        .knowledge
-        .role(user, space, &["owner", "facilitator"])
-        .await?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM knowledge_activity_runs WHERE id=$1 AND space_id=$2)",
-    )
-    .bind(run)
-    .bind(space)
-    .fetch_one(&state.pool)
-    .await?;
-    if !exists {
-        return Err(ApiError::coded(
-            StatusCode::NOT_FOUND,
-            "run_not_found",
-            "Run not found.",
-        ));
-    }
-    let since = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
-        .find(|(key, _)| key == "sinceSequence")
-        .map(|(_, value)| {
-            let raw = value.trim();
-            let number = if raw.is_empty() {
-                0.0
-            } else {
-                raw.parse::<f64>().map_err(|_| ())?
-            };
-            if number.is_finite()
-                && number.fract() == 0.0
-                && (0.0..=9_007_199_254_740_991.0).contains(&number)
-            {
-                Ok(number as i64)
-            } else {
-                Err(())
-            }
-        })
-        .transpose()
-        .map_err(|()| {
-            ApiError::coded(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "sinceSequence is invalid.",
-            )
-        })?;
-    if let Some(since) = since {
-        let rows=sqlx::query("SELECT sequence,event_type,payload,created_at FROM knowledge_activity_run_events WHERE run_id=$1 AND sequence>$2 ORDER BY sequence LIMIT 1000").bind(run).bind(since).fetch_all(&state.pool).await?;
-        let max = rows.last().map_or(since, |row| row.get("sequence"));
-        return json_response(
-            StatusCode::OK,
-            json!({"kind":"delta","events":rows.into_iter().map(|row|json!({"sequence":row.get::<i64,_>("sequence"),"type":row.get::<String,_>("event_type"),"payload":row.get::<Value,_>("payload"),"createdAt":format_time(row.get("created_at"))})).collect::<Vec<_>>(),"maxSequence":max}),
-        );
-    }
-    let rows=sqlx::query("SELECT attempts.id,attempts.user_id,attempts.state,attempts.updated_at,COUNT(DISTINCT sessions.id)::int session_count,COUNT(DISTINCT evidence.id)::int evidence_count,GREATEST(MAX(sessions.help_requested_at),MAX(help.requested_at))help_requested_at FROM knowledge_activity_runs runs JOIN knowledge_activity_attempts attempts ON attempts.run_id=runs.id LEFT JOIN knowledge_activity_work_sessions sessions ON sessions.attempt_id=attempts.id LEFT JOIN knowledge_activity_evidence evidence ON evidence.attempt_id=attempts.id LEFT JOIN knowledge_attempt_help_requests help ON help.attempt_id=attempts.id AND help.resolved_at IS NULL WHERE runs.id=$1 AND runs.space_id=$2 GROUP BY attempts.id ORDER BY attempts.updated_at DESC LIMIT 500").bind(run).bind(space).fetch_all(&state.pool).await?;
-    let participants:Vec<_>=rows.into_iter().map(|row|json!({"id":row.get::<String,_>("user_id"),"attemptId":row.get::<Uuid,_>("id"),"state":row.get::<String,_>("state"),"updatedAt":format_time(row.get("updated_at")),"sessionCount":row.get::<i32,_>("session_count"),"evidenceCount":row.get::<i32,_>("evidence_count"),"helpRequestedAt":row.get::<Option<time::OffsetDateTime>,_>("help_requested_at").map(format_time)})).collect();
-    let evidence_rows=sqlx::query("SELECT evidence.criterion_id,COUNT(DISTINCT evidence.attempt_id)::int participant_count,COUNT(*)FILTER(WHERE evidence.provenance='agent_candidate')::int agent_candidate_count,COUNT(DISTINCT evidence.provenance)::int corroborated_count FROM knowledge_activity_evidence evidence JOIN knowledge_activity_attempts attempts ON attempts.id=evidence.attempt_id JOIN knowledge_activity_runs runs ON runs.id=attempts.run_id WHERE runs.id=$1 AND runs.space_id=$2 GROUP BY evidence.criterion_id ORDER BY participant_count DESC,evidence.criterion_id LIMIT 100").bind(run).bind(space).fetch_all(&state.pool).await?;
-    let criterion_evidence: Vec<_> = evidence_rows
-        .into_iter()
-        .map(|row| {
-            json!({
-                "agentCandidateCount":row.get::<i32,_>("agent_candidate_count"),
-                "corroboratedCount":row.get::<i32,_>("corroborated_count"),
-                "criterionId":row.get::<String,_>("criterion_id"),
-                "participantCount":row.get::<i32,_>("participant_count"),
-            })
-        })
-        .collect();
-    let max_sequence: i64=sqlx::query_scalar("SELECT COALESCE(MAX(events.sequence),0)FROM knowledge_activity_run_events events JOIN knowledge_activity_runs runs ON runs.id=events.run_id WHERE events.run_id=$1 AND runs.space_id=$2").bind(run).bind(space).fetch_one(&state.pool).await?;
-    let mut counts = serde_json::Map::new();
-    let mut help_queue: Vec<_> = Vec::new();
-    let mut suggestions = Vec::new();
-    for participant in &participants {
-        let status = participant["state"].as_str().unwrap_or_default();
-        let count = counts
-            .get(status)
-            .and_then(Value::as_u64)
-            .unwrap_or(0)
-            .saturating_add(1);
-        counts.insert(status.to_owned(), json!(count));
-        let help_requested = participant["helpRequestedAt"].is_string();
-        if help_requested {
-            help_queue.push(participant.clone());
-        }
-        let blocked_sessions = if status == "blocked" {
-            participant["sessionCount"].as_i64().unwrap_or(0)
-        } else {
-            0
-        };
-        if help_requested || blocked_sessions >= 2 {
-            suggestions.push(json!({
-                "kind":"individual_follow_up",
-                "participantId":participant["id"],
-                "reason":if help_requested {"explicit_help_request"} else {"repeated_blocked_sessions"},
-            }));
-        }
-    }
-    help_queue.sort_by(|left, right| {
-        left["helpRequestedAt"]
-            .as_str()
-            .cmp(&right["helpRequestedAt"].as_str())
-    });
-    if participants.len() >= 5 {
-        for evidence in &criterion_evidence {
-            let participant_count = evidence["participantCount"].as_i64().unwrap_or(0);
-            let corroborated_count = evidence["corroboratedCount"].as_i64().unwrap_or(0);
-            let agent_candidate_count = evidence["agentCandidateCount"].as_i64().unwrap_or(0);
-            let ratio = participant_count as f64 / participants.len() as f64;
-            if participant_count >= 5 && ratio >= 0.3 && corroborated_count >= 2 {
-                suggestions.push(json!({
-                    "kind":"group_clarification",
-                    "criterionId":evidence["criterionId"],
-                    "participantCount":participant_count,
-                    "activeParticipants":participants.len(),
-                    "confidence":if ratio >= 0.6 {"high"} else {"moderate"},
-                }));
-            } else if agent_candidate_count > 0 {
-                suggestions.push(json!({
-                    "kind":"review_evidence",
-                    "criterionId":evidence["criterionId"],
-                }));
-            }
-        }
-    }
-    let patterns = criterion_evidence.clone();
-    json_response(
-        StatusCode::OK,
-        json!({"kind":"snapshot","participants":participants,"criterionEvidence":criterion_evidence,"patterns":patterns,"suggestions":suggestions,"helpQueue":help_queue,"counts":counts,"maxSequence":max_sequence}),
     )
 }

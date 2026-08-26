@@ -1,1 +1,2 @@
 services/api/migrations/*.sql text eol=lf
+services/api/admin-dist/** linguist-generated=true -whitespace

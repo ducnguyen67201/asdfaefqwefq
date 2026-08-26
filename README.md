@@ -1,11 +1,11 @@
-
 https://github.com/user-attachments/assets/ab86a7a6-d9e1-4645-bd5e-9090b13950b9
 
 # Tro
 
-Tro is a cross-platform, general-purpose agent foundation. Everyday and
-Workspace tasks run through the OpenAI Agents SDK and Tro's authenticated
-backend. Both stay behind the same trusted host policy and activity stream.
+Tro is a cross-platform, general-purpose agent foundation. Hosted Everyday and
+Workspace tasks run through one Rust agent engine and Tro's authenticated
+backend. The Electron process is a typed UI/native-device adapter; it does not
+replace an unavailable Rust runtime with a second engine.
 
 Read the [privacy policy](PRIVACY.md), [code signing policy](CODE_SIGNING_POLICY.md),
 the [security model](docs/security.md), and the
@@ -23,25 +23,33 @@ Implemented:
   and evidence-based facilitator dashboards. PostgreSQL is authoritative; no
   manifest or Firebase is required.
 
+- Live classroom rooms built on the same Run and Attempt model: teacher-only
+  material publishing, short-lived room admission, lobby/start/end lifecycle,
+  typed exercise and safe-link broadcasts, sticky student Activity context,
+  explicit Help/Check/Ready/Submit actions, and teacher Complete/Return review.
+  This release records lifecycle facts only—no cursor, typing, or continuous
+  screen observation.
+
 - Secure Electron main/preload/renderer separation.
-- One persistent OpenAI Agents SDK loop for multilingual reasoning, writing,
-  desktop work, and installed tools, with incremental Responses SSE.
-- An explicit Workspace mode backed by a canonical user-selected root and the
-  Agents SDK's local shell and patch tools. Commands and file mutations require
+- One durable Rust model/tool loop for multilingual reasoning, writing,
+  desktop work, and installed tools, with replayable lifecycle events.
+- An explicit Workspace mode backed by a canonical user-selected root and
+  trusted local shell and patch adapters. Commands and file mutations require
   exact, one-use Tro approval; provider credentials remain backend-only.
 - A trusted model-visible tool registry with desktop observation/control,
   public HTTPS navigation, grounded guidance, and user-input adapters.
 - Typed task lifecycle with guarded transitions.
 - Task-scoped clarification replies that continue the same goal conversation.
 - Structured pending interactions and exact, single-use approval decisions.
-- Task steering queued for the next safe Agents SDK model boundary.
-- Concrete tool/operation, target, and approval policy evaluation.
-- Native Google OAuth sign-in with Authorization Code + PKCE, locally verified
-  identity claims, and an operating-system-encrypted, revocable hosted session.
+- Task steering applied by Rust at the next safe model boundary.
+- Rust-owned concrete tool/operation, target, and approval policy evaluation.
+- Native Google OAuth sign-in with Authorization Code + PKCE, Rust-side code
+  exchange, server-verified identity claims, and an operating-system-encrypted,
+  revocable hosted session.
 - Text-first workspace readiness; microphone and computer permissions are
   optional and requested only when their feature is used.
-- Hosted production access for signed-in users; offline builds retain the
-  account-bound, time-limited Ed25519 activation-code fallback.
+- Hosted production access for signed-in users, with membership and plans
+  authorized by the Rust API.
 - Lazy CUA initialization after a model desktop-observation request or an
   explicit user-clicked Connect computer action.
 - Task-scoped CUA sessions with bounded screenshots, typed clicks, text entry,
@@ -52,7 +60,7 @@ Implemented:
   integer micro-USD reservations before any paid provider dispatch.
 - One resized current screenshot per visual sample, bounded context, and a
   4,000-token output ceiling.
-- SDK-owned model → tool → result continuation with host-owned
+- Rust-owned model → tool → result continuation with host-owned
   tool/time limits, cancellation, safe steering, post-action screenshots, and
   no repeat after unknown results.
 - Direct public HTTPS navigation and exact, revalidated approval
@@ -67,11 +75,10 @@ Implemented:
 - Railway-hosted Responses, GPT Transcribe, and optional ElevenLabs
   access; provider keys are never compiled into or stored by the customer
   application.
-- A narrowly scoped custom cursor companion generator in Settings: any signed-in
-  user with an active membership can explicitly edit one PNG/JPEG through the hosted OpenAI
-  Images API, preview it in memory, and activate an account-scoped,
-  operating-system-encrypted local 128-pixel PNG. Every plan receives five
-  generations per UTC month.
+- A custom cursor companion generator in Settings: any signed-in user with an
+  active membership can edit one PNG/JPEG through the hosted OpenAI Images API,
+  preview it in memory, and activate an account-scoped, operating-system-
+  encrypted local PNG. Every plan receives five generations per UTC month.
 - PostHog product analytics for count-only app, model, and tool activity; task
   text, voice transcripts, screenshots, and tool arguments are excluded.
 - Account-scoped PostgreSQL task history that saves the latest validated task
@@ -100,8 +107,8 @@ Not implemented yet:
 - Direct Gmail/Calendar connectors and app-specific independent verifiers.
 - Persistent screenshot-rich execution trajectory storage.
 - General-purpose media/music generation providers and release-credential
-  provisioning. The custom cursor companion edit above is the only implemented
-  media-generation exception.
+  provisioning. Custom cursor companion edits are the only implemented media
+  generation path.
 
 Music and other creative work can already be performed through an installed or
 browser-based application using navigation, visible guidance, clicks, hotkeys,
@@ -183,11 +190,6 @@ to `gpt-5.6-luna` and never falls back to a second model. See the
 [inference cost lifecycle](docs/inference-cost-lifecycle.md) for the text,
 screen, reservation, settlement, and presentation flow.
 
-During a visible walkthrough, use **Command/Control + Alt + J** for Back,
-**Command/Control + Alt + K** for Pause/Resume, and **Command/Control + Alt + L**
-for Next. Tro registers each shortcut only while a guidance step is waiting
-and hides any shortcut that the operating system would not grant.
-
 Paste the value at Doppler's prompt, then enter a line containing only `.`.
 Doppler injects the public configuration while Electron Forge builds and starts
 the app. Provider keys stay only in the hosted API. A desktop OAuth client
@@ -219,13 +221,24 @@ Doppler `tro-app/prd` is their administrative source.
 The production API runs at
 `https://api-production-3022a.up.railway.app` with a separate Railway
 PostgreSQL service. `GET /healthz` checks process liveness and `GET /readyz`
-checks database readiness. Railway starts the API from
-[`services/api`](services/api) and applies its idempotent session migration
-before accepting traffic.
+checks database readiness. Railway builds from the repository root so Railpack
+can read the shared Cargo workspace, then uses
+[`services/api/railway.json`](services/api/railway.json) to start the API and
+apply its idempotent migrations before accepting traffic. The root
+[`railpack.json`](railpack.json) forces Rust provider selection even though the
+Electron frontend keeps its root `package.json`.
 
-The feature-complete Rust backend builds from the same directory and is kept
-behind the current Node deployment until the parity and rollback gates in the
-[same-service cutover runbook](docs/operations/rust-backend-cutover.md) pass.
+The hosted backend is the locked Rust `trocode-api` binary. Railway's checked-in
+service configuration starts `./bin/trocode-api serve`; the ingestion service
+uses [the worker configuration](services/api/railway.worker.json) to start the
+same artifact with the `ingestion-worker` command. Deployment and rollback gates
+are documented in the
+[same-service runbook](docs/operations/rust-backend-cutover.md).
+
+The protected web admin at `/source/admin` is a static React and TypeScript
+client built from [`apps/admin`](apps/admin). Its generated assets are embedded
+in `trocode-api`, so Railway does not need a separate frontend or Next.js
+service. Run `npm run admin:build` after changing the admin source.
 
 Run the backend locally with:
 
@@ -233,12 +246,13 @@ Run the backend locally with:
 cargo run --manifest-path services/api/Cargo.toml --locked -- serve
 ```
 
-Run its unit/contract tests with `npm run api:test`, or the complete desktop,
-Node-oracle, and Rust-candidate gate with `npm run check`.
+Run its unit/contract tests with `npm run api:test`, or the complete Electron and
+Rust-backend gate with `npm run check`.
 
-At sign-in, Electron verifies Google's JWT nonce and signature locally, then
-the API verifies it independently and exchanges it for a random opaque device
-session. Tro does not issue a JWT. Only a HMAC digest of the device token is
+At sign-in, the bundled Rust engine exchanges the PKCE code and verifies the
+nonce, then the hosted Rust API independently verifies Google's signed claims
+and exchanges them for a random opaque device session. Tro does not issue a
+JWT. Only a HMAC digest of the device token is
 stored in PostgreSQL, enabling expiration, rotation, and immediate sign-out
 revocation. The desktop stores the token with operating-system encryption.
 
@@ -261,95 +275,65 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-Native computer-use policy remains in the trusted Electron main process.
+Computer-use policy is evaluated by Rust; Electron owns schema validation,
+trusted workspace binding, approval presentation, and exactly-once native
+dispatch.
 
 #### Custom companion availability
 
 Companion image generation is available to every signed-in account with an
 active membership. It has no companion-specific feature flag or user allowlist;
 the global paid-call switch remains the emergency shutdown for every hosted
-model call. The entitlement is five successful or uncertain generations per
-account per UTC month, with a separate two-request-per-minute abuse limit and a
-fixed 50,000 micro-USD reservation per attempt. Definitive pre-inference
-rejection releases a slot; an outcome that may have reached the provider remains
-counted and is never retried automatically.
+model call. Each account receives five successful or uncertain generations per
+UTC month, with a separate two-request-per-minute abuse limit and a fixed
+50,000 micro-USD reservation per attempt. Definitive pre-inference rejection
+releases a slot; an outcome that may have reached the provider remains counted
+and is never retried automatically.
 
-Before deploying a server that supports companion generation, operators must
-complete and record all of these requirements:
-
-1. Verify the OpenAI organization and the exact Images model used in production.
-2. Obtain and enable ZDR approval on the exact OpenAI project and API key.
-3. Complete legal and privacy review for the ages and jurisdictions served.
-4. Establish any required eligibility or consent outside Tro; Tro does not
-   establish parental consent.
-5. Test moderation behavior and the operator's child-safety escalation channel.
-6. Reconcile provider modality usage and integer micro-USD settlement
-   against OpenAI billing, and verify that logs and PostgreSQL contain no image
-   or prompt bodies.
-
-For an emergency provider shutdown, set the existing global
-`TROCODE_PAID_CALLS_ENABLED=false`. Existing encrypted custom images continue
-rendering locally, but no new generation or other hosted model call is available.
-
-The in-place Rust backend implements companion quota accounting, image-token
-pricing and settlement, the provider adapter, and both HTTP routes. Validate the
-ZDR, privacy, moderation, billing-reconciliation, and no-sensitive-logging
-requirements above before deploying it. The JavaScript implementation remains
-only as a release-parity and rollback oracle until the same-service cutover is
-approved.
-
-For a user validation pass, open **Settings → Custom companion**, paste/drop or
-choose a PNG/JPEG no larger than 5 MiB, enter a 1–400 character prompt, and make
-one explicit generation. Confirm the quota changes only from the returned
-status, the candidate expires after ten minutes, **Use this companion** updates
-the live cursor overlay, restart restores the same account's encrypted choice,
-sign-out shows the default, and **Use default companion** deletes only that
-account's local asset.
+Before deploying, verify the exact OpenAI Images model and project, enable ZDR
+on that project/key, complete privacy and child-safety review, test moderation,
+and reconcile provider usage against Tro's integer micro-USD settlements.
+Existing encrypted custom images continue rendering when the global paid-call
+shutdown prevents new provider calls.
 
 ### PostgreSQL task history
 
-Local development uses PostgreSQL 17 from [`compose.yaml`](compose.yaml), bound
-only to `127.0.0.1:54320`. `TROCODE_POSTGRES_PASSWORD` and the matching
-`DATABASE_URL` live in Doppler's `tro-app/dev` config; they are injected into
-Compose and Electron only at runtime. The named `trocode_postgres_data` volume
-preserves records, while [`migrations/001_task_history.sql`](migrations/001_task_history.sql)
-initializes a new database. Tro also verifies the schema idempotently when
-it starts and keys every query by the verified Google user ID.
-
-The URL is intentionally not added to Webpack's `DefinePlugin`, so database
-credentials are not compiled into the desktop bundle or exposed through
-preload. Deployment database configuration remains separate from this local
-Compose setup.
-
-On history load, Tro validates every persisted snapshot and performs a
-forward-only read repair for transitional v5 contracts created before runtime,
-profile, autonomy, and workspace fields were introduced. Repairs default to
-the Everyday OpenAI runtime unless a complete trusted workspace identity is
-already present, then write back in bounded, owner-scoped batches guarded by
-the previous JSONB value. Valid legacy contracts remain historical and cannot
-silently gain execution authority.
-
-When `DATABASE_URL` is absent or PostgreSQL cannot initialize, the app remains
-usable and labels History as **Session only**. Task requests, conversation
-messages, goal scope, and lifecycle outcomes are stored; raw screenshots and
-OAuth/model credentials are not part of the task snapshot contract.
+PostgreSQL belongs exclusively to the Rust API. Local development may start the
+PostgreSQL 17 container from [`compose.yaml`](compose.yaml), but Electron never
+opens a database connection and never receives `DATABASE_URL`. The Rust API
+owns migrations, account scoping, encrypted task state, lifecycle events, and
+history projections. If the API or database is unavailable, new tasks fail
+closed and History reports the hosted service as unavailable; there is no
+session-only TypeScript persistence backend.
 
 ### Production access codes
 
 Access checks are bypassed by raw local development (`npm start`). In hosted
 builds, every Google account must complete the plan-choice screen after sign-in.
-The user can redeem a shared access code immediately or explicitly continue on
-the Free plan, then enter a promo code later from Settings. The Free choice is
-stored per account so it remains complete across devices. Packaged builds
-without the hosted API retain the signed activation-code fallback.
+New access codes are organization-managed by default: one person claims the
+code as organizer, then opens **Settings → Organization settings** to name the
+organization and reserve the remaining seats by exact Google email. No
+invitation email is sent. A person with a reserved seat joins the organization
+automatically on their next verified Google sign-in and never needs to enter
+the organizer's code. Users can still
+explicitly continue on the Free plan and enter a promo code later from
+Settings. The Free choice is stored per account so it remains complete across
+devices. Packaged builds require the hosted API.
+
+An organization seat grants plan access; it does not enroll the account in a
+Class workspace. After the account is registered and an administrator assigns
+the Student role, a Teacher adds it from **Class workspaces → class → People**.
 
 Hosted builds configured with `TROCODE_API_BASE_URL` store each account's plan,
-shared access codes, and code redemptions in PostgreSQL. Create access codes
-with the administrator CLI; do not insert them manually:
+access codes, organizations, reserved seats, and code redemptions in
+PostgreSQL. Organization-managed access is implemented by the Rust hosted API
+and the same locked binary owns migrations and operator commands. Create codes
+with the Rust operator CLI; do not insert them manually:
 
 ```bash
 doppler run --project tro-app --config prd -- \
-  npm run access-code:create -- \
+  cargo run --locked --manifest-path services/api/Cargo.toml -- \
+  access-code create \
   --code CODEA \
   --max-users 10 \
   --plan basic \
@@ -357,20 +341,39 @@ doppler run --project tro-app --config prd -- \
 ```
 
 Omit `--code CODEA` to generate a strong random code. The command applies
-pending API migrations, stores only a keyed HMAC digest of the code, and prints
-the code once for secure distribution. `CODEA --max-users 10` admits at most ten
-distinct Google accounts. Each account is permanently linked to its first code;
-when a code is full, existing linked accounts retain access while new accounts
-are rejected.
+pending API migrations, stores a keyed HMAC digest plus the admin-retrievable
+encrypted copy, and prints the code once for secure distribution. Give that
+code to the intended organizer. `CODEA --max-users 10` has ten total seats,
+including the organizer;
+pending email reservations and active members both consume capacity. At the
+limit, the organizer sees a persistent full-capacity warning and must cancel a
+pending reservation before adding another person. Active members cannot be
+removed or transferred by this flow.
+
+Legacy shared-code behavior remains available only when explicitly requested:
+
+```bash
+cargo run --locked --manifest-path services/api/Cargo.toml -- \
+  access-code create \
+  --max-users 10 \
+  --plan basic \
+  --distribution-mode shared \
+  --label "Legacy shared batch"
+```
+
+Migration 021 leaves every existing code in `shared` mode and does not create
+organizations for historical redemptions. Pausing an organization code blocks
+its initial claim and new reservations, but preserves existing access and lets
+an already-reserved verified email complete its automatic join.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
-| Plan | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM | Companion images/month |
-|---|---:|---:|---:|---:|---:|
-| Free | $0 | 25 | $1 | 15 | 5 |
-| Basic | $20 | 300 | $8 | 30 | 5 |
-| Pro | $50 | 750 | $20 | 45 | 5 |
-| Max | $100 | 1,875 | $45 | 60 | 5 |
+| Plan  | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM | Companion images/month |
+| ----- | ----------------: | ------------------: | ----------------------: | ------------: | ---------------------: |
+| Free  |                $0 |                  25 |                      $1 |            15 |                      5 |
+| Basic |               $20 |                 300 |                      $8 |            30 |                      5 |
+| Pro   |               $50 |                 750 |                     $20 |            45 |                      5 |
+| Max   |              $100 |               1,875 |                     $45 |            60 |                      5 |
 
 #### Admin dashboard
 
@@ -380,11 +383,14 @@ the hosted API environment to enable the separate dashboard at
 signed, `HttpOnly`, `Secure`, `SameSite=Strict` browser session that lasts for
 30 days or until the administrator selects **Lock**.
 
-The dashboard lists registered users, their current plans and access status,
-can grant an available code directly to an unlinked user, can block or unblock
-an account, and can generate 1–100 access codes in a single batch with a
-selected `free`, `basic`, `pro`, or `max` plan. Blocking an account immediately
-revokes all of its device sessions and prevents new sessions from being issued.
+The dashboard lists registered users, their current plans
+and access status, can grant an available code directly to an unlinked user,
+can block or unblock an account, and can generate 1–100 codes in a batch. On
+the Rust API those dashboard-created batches default to organization-managed;
+use the Rust CLI when an explicit shared code is required. The Rust admin API
+also exposes assigned, active, and pending seat counts and rejects grants of an
+already claimed organization code. Blocking an account immediately revokes all
+of its device sessions and prevents new sessions from being issued.
 Access-code verification uses keyed HMAC digests; new codes also keep an
 AES-256-GCM encrypted copy for authenticated admin retrieval. Legacy digest-only
 codes remain valid but cannot be displayed. An administrator can pause or
@@ -413,38 +419,6 @@ explicit `--plan free|basic|pro|max`.
 The API resolves the account plan again before proxying model, voice
 transcription, or speech requests, so bypassing the renderer does not bypass the
 quota.
-
-Packaged builds without `TROCODE_API_BASE_URL` use the offline signed-membership
-fallback and fail closed when `TROCODE_MEMBERSHIP_PUBLIC_KEY` is missing or
-invalid.
-
-Generate the signing keys once. Keep the private key outside this repository
-and never place it in Doppler or the application bundle:
-
-```bash
-npm run membership:keygen -- \
-  --private-key /secure/location/trocode-membership-private.pem \
-  --public-key /secure/location/trocode-membership-public.txt
-```
-
-The command prints `TROCODE_MEMBERSHIP_PUBLIC_KEY=...`. Put that public value in
-the environment used to package the offline build. After a user finishes
-permissions, their membership screen shows a reference such as
-`TRC-AAAA-BBBB-CCCC`. Issue an activation for the desired number of days:
-
-```bash
-npm run membership:issue -- \
-  --private-key /secure/location/trocode-membership-private.pem \
-  --reference TRC-AAAA-BBBB-CCCC \
-  --days 30
-```
-
-Send the printed activation code to that user. It is signed for only that
-Google account reference, is encrypted locally after entry, and stops granting
-task and voice access at its signed expiry. Issued offline codes cannot be
-revoked before expiry; use short durations or replace this verifier with an
-authenticated membership service when immediate revocation or authoritative
-server time is required.
 
 ### Product analytics
 
@@ -492,8 +466,8 @@ authenticated and proxied by Railway.
    computer** if CUA is not ready.
 2. Sign in to Gmail yourself. Tro will not type passwords.
 3. Enter a complete bounded request, for example: `Open Gmail, compose an
-   email from my work account to me@example.com with subject "Tro test"
-   and body "The desktop loop works", then send it after I approve.`
+email from my work account to me@example.com with subject "Tro test"
+and body "The desktop loop works", then send it after I approve.`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
@@ -511,9 +485,9 @@ npm run package
 npm run bazel:check
 ```
 
-`npm run bazel:check` builds, tests, formats, and lints the non-production Rust
-backend candidate. Run it for Rust or Bazel changes; it is intentionally not
-part of the Electron `npm run check` or release workflow.
+`npm run bazel:check` builds, tests, formats, and lints the in-place Rust backend
+candidate, including the live-classroom route family. Run it for Rust or Bazel
+changes; it is intentionally not part of the Electron release workflow.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject
@@ -610,12 +584,12 @@ React renderer
   -> typed preload API
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
-      -> TaskContract v5 / runtime factory / policy brokers
-      -> OpenAI Agents SDK through the Tro backend
-        -> trusted local Workspace shell/patch tools when explicitly selected
+      -> bundled trocode-api desktop engine (Rust policy + voice transport)
+      -> Rust durable agent runtime through the Tro backend
+        -> trusted local CUA/Workspace adapters when explicitly selected
       -> PostHog analytics service (allowlisted metadata only)
       -> local PCM/VAD voice capture
-        -> bounded GPT Transcribe segments through authenticated IPC/API
+        -> bundled Rust engine -> bounded GPT Transcribe API
       -> CUA service
         -> native CUA runtime
 ```
@@ -634,7 +608,8 @@ Read:
 ```text
 src/
 ├── main/
-│   ├── agent/       runtime boundary, SDK adapter, brokers, policy, coordinator
+│   ├── agent/       hosted-task projection and native tool adapters
+│   ├── engine/      private Rust desktop-engine process bridge
 │   ├── analytics/   privacy-safe PostHog events and durable identity
 │   ├── workspace/   canonical folder selection and opaque root binding
 │   ├── cua/         permission-aware CUA lifecycle
@@ -647,7 +622,7 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-└── api/              Rust hosted backend plus JavaScript rollback/parity oracle
+└── api/              Rust API, worker, migrations, commands, and contract tests
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```
