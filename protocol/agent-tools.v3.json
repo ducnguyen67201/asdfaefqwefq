@@ -8,13 +8,13 @@
         "kind": "none"
       },
       "modelName": "record_activity_signal",
-      "operations": [
-        "record"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "record"
       },
+      "operations": [
+        "record"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -56,13 +56,13 @@
         "kind": "none"
       },
       "modelName": "open_application",
-      "operations": [
-        "launch"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "launch"
       },
+      "operations": [
+        "launch"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -93,13 +93,13 @@
         "kind": "none"
       },
       "modelName": "open_url",
-      "operations": [
-        "open_url"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "open_url"
       },
+      "operations": [
+        "open_url"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -129,13 +129,13 @@
         "resourceKind": "application"
       },
       "modelName": "prepare_browser_access",
-      "operations": [
-        "attach_existing_profile"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "attach_existing_profile"
       },
+      "operations": [
+        "attach_existing_profile"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -164,16 +164,16 @@
         "pointer": "/effect"
       },
       "modelName": "control_surface",
+      "operationSelector": {
+        "kind": "json_pointer",
+        "pointer": "/command/kind"
+      },
       "operations": [
         "click_element",
         "type_text",
         "press_key",
         "scroll"
       ],
-      "operationSelector": {
-        "kind": "json_pointer",
-        "pointer": "/command/kind"
-      },
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -858,16 +858,16 @@
         "kind": "none"
       },
       "modelName": "observe_surface",
-      "operations": [
-        "observe",
-        "inspect_surface_region"
-      ],
       "operationSelector": {
         "kind": "json_pointer",
         "nullValue": "observe",
         "pointer": "/observationId",
         "presentValue": "inspect_surface_region"
       },
+      "operations": [
+        "observe",
+        "inspect_surface_region"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -958,6 +958,10 @@
         "pointer": "/effect"
       },
       "modelName": "control_desktop",
+      "operationSelector": {
+        "kind": "json_pointer",
+        "pointer": "/command/kind"
+      },
       "operations": [
         "click",
         "drag",
@@ -966,10 +970,6 @@
         "keypress",
         "scroll"
       ],
-      "operationSelector": {
-        "kind": "json_pointer",
-        "pointer": "/command/kind"
-      },
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1729,13 +1729,13 @@
         "kind": "none"
       },
       "modelName": "observe_desktop",
-      "operations": [
-        "observe"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "observe"
       },
+      "operations": [
+        "observe"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1763,13 +1763,13 @@
         "kind": "none"
       },
       "modelName": "search_activity_knowledge",
-      "operations": [
-        "search"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "search"
       },
+      "operations": [
+        "search"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1800,13 +1800,13 @@
         "kind": "none"
       },
       "modelName": "show_guidance",
-      "operations": [
-        "show"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "show"
       },
+      "operations": [
+        "show"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1904,13 +1904,13 @@
         "kind": "none"
       },
       "modelName": "request_user_input",
-      "operations": [
-        "request"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "request"
       },
+      "operations": [
+        "request"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1943,16 +1943,16 @@
         "kind": "workspace_filesystem"
       },
       "modelName": "workspace_filesystem",
-      "operations": [
-        "read_file",
-        "write_file"
-      ],
       "operationSelector": {
         "kind": "json_pointer",
         "nullValue": "read_file",
         "pointer": "/content",
         "presentValue": "write_file"
       },
+      "operations": [
+        "read_file",
+        "write_file"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {
@@ -1989,13 +1989,13 @@
         "kind": "workspace_terminal"
       },
       "modelName": "workspace_terminal",
-      "operations": [
-        "run_command"
-      ],
       "operationSelector": {
         "kind": "constant",
         "value": "run_command"
       },
+      "operations": [
+        "run_command"
+      ],
       "parameters": {
         "additionalProperties": false,
         "properties": {

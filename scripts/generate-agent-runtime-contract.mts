@@ -28,13 +28,19 @@ const repositoryRoot = path.resolve(
   '..',
 );
 
+function compareOrdinal(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([, child]) => child !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right, 'en'))
+      .sort(([left], [right]) => compareOrdinal(left, right))
       .map(([key, child]) => [key, canonicalize(child)]),
   );
 }
@@ -63,7 +69,7 @@ const schemaDocument = {
 delete (schemaDocument as Record<string, unknown>)['~standard'];
 
 const tools = [...HOSTED_TOOL_CONTRACTS]
-  .sort((left, right) => left.toolId.localeCompare(right.toolId, 'en'))
+  .sort((left, right) => compareOrdinal(left.toolId, right.toolId))
   .map((contract) => {
     assertStrictFunctionSchema(contract.parameters);
     return contract;
