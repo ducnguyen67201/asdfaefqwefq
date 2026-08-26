@@ -26,7 +26,7 @@ rust_library(
     compile_data = glob([
         "admin-dist/**/*",
         "migrations/*.sql",
-    ]),
+    ]) + ["//protocol:agent_runtime_v3_contract"],
     crate_name = "trocode_api",
     edition = crate_edition(),
     lint_config = ":rust_lints",
@@ -46,6 +46,16 @@ rust_binary(
         "clap",
         "tokio",
     ]),
+)
+
+trocode_rust_integration_test(
+    name = "agent_runtime_contract_test",
+    size = "small",
+    src = "tests/agent_runtime_contract.rs",
+    compile_data = [
+        "//:agent_runtime_v3_fixtures",
+        "//protocol:agent_runtime_v3_contract",
+    ],
 )
 
 trocode_rust_integration_test(
@@ -129,6 +139,7 @@ trocode_rust_integration_test(
 )
 
 RUST_TEST_TARGETS = [
+    ":agent_runtime_contract_test",
     ":agent_runtime_compat_test",
     ":api_lib_test",
     ":classroom_e2e_test",

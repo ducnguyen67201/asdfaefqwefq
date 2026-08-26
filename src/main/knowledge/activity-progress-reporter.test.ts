@@ -21,16 +21,15 @@ function update(phase: TaskUpdate['snapshot']['phase']): TaskUpdate {
 }
 
 describe('ActivityProgressReporter', () => {
-  it('maps blocked to paused rather than failed and flushes terminal completion', async () => {
+  it('maps terminal blocked to paused and stops later session updates', async () => {
     const updateWorkSession = vi.fn(async () => undefined);
-    let now = 20_000;
+    const now = 20_000;
     const reporter = new ActivityProgressReporter({ updateWorkSession }, () => now);
     reporter.bind('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000003');
     await reporter.report(update('blocked'));
     expect(updateWorkSession).toHaveBeenLastCalledWith('00000000-0000-4000-8000-000000000003', { state: 'paused' });
-    now += 1;
     await reporter.report(update('completed'));
-    expect(updateWorkSession).toHaveBeenLastCalledWith('00000000-0000-4000-8000-000000000003', { state: 'completed' });
+    expect(updateWorkSession).toHaveBeenCalledOnce();
   });
 
   it('marks a bound Work Session failed when task creation aborts', async () => {

@@ -10,57 +10,27 @@ use uuid::Uuid;
 
 use crate::{
     auth::{AgentEnvelope, AgentStateCrypto},
-    config::AgentRuntimeConfig,
-    config::CostGuardMode,
+    config::{AgentRuntimeConfig, AgentRuntimeV3Mode, CostGuardMode},
     error::{ApiError, ApiResult},
     providers::{ProviderBody, ResponsesInput, ResponsesService},
     usage::plan_for,
     validation::{js_string_len, zod_uuid},
 };
 
-use super::policy::{compile_intent_authorization, empty_intent_authorization};
+use super::{
+    lifecycle,
+    policy::{compile_intent_authorization, empty_intent_authorization},
+    protocol, tool_catalog,
+};
 
-pub(super) const TOOLS: &[(&str, &[&str])] = &[
-    ("application.launch", &["launch"]),
-    ("browser.navigate", &["open_url"]),
-    (
-        "browser.dom",
-        &[
-            "observe", "click", "fill", "press", "scroll", "read", "assert",
-        ],
-    ),
-    (
-        "computer.control",
-        &["click_element", "type_text", "press_key", "scroll"],
-    ),
-    ("computer.observe", &["observe", "inspect_surface_region"]),
-    (
-        "desktop.control",
-        &[
-            "click",
-            "type_text",
-            "keypress",
-            "scroll",
-            "drag",
-            "paste_table",
-        ],
-    ),
-    ("desktop.observe", &["observe"]),
-    ("task.interaction", &["request"]),
-    ("workspace.filesystem", &["read_file", "write_file"]),
-    ("workspace.terminal", &["run_command"]),
-    ("knowledge.search", &["search"]),
-    ("activity.signal", &["record"]),
-];
-pub static TOOL_SCHEMA_DIGEST: LazyLock<String> = LazyLock::new(tool_schema_digest);
+pub static TOOL_SCHEMA_DIGEST: LazyLock<String> =
+    LazyLock::new(|| LEGACY_V2_TOOL_SCHEMA_DIGEST.to_owned());
 pub fn tool_schema_digest() -> String {
-    let definitions:Vec<Value>=TOOLS.iter().map(|(tool,operations)|json!({"defaultEffectKind":if operations.iter().all(|value|matches!(*value,"launch"|"open_url"|"observe"|"inspect_surface_region"|"request"|"search"|"record")){"none"}else{"operation_specific"},"operations":operations,"toolId":tool})).collect();
-    format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&definitions).unwrap_or_default())
-    )
+    LEGACY_V2_TOOL_SCHEMA_DIGEST.to_owned()
 }
 const INSTRUCTIONS: &str = "You are Tro, a general-purpose agent. Treat the original request as a checklist.\nUse only the supplied tools. Tool calls are executed by a trusted desktop worker.\nFor every tool call, declare the exact typed effect. Read, observe, and navigation use effect kind none. Private reversible creation or edits use their specific create/update/workspace effect. Sending, invitations, deletion, publish, deploy, merge, money, credentials, permissions, install, sensitive transfer, and ambiguous submit must use their matching hard-confirm or unknown effect.\nThe authenticated user instruction authorizes in-scope reversible work when the desktop host matches it. Do not ask again unless a material choice is missing; the host independently enforces exact approval for hard-confirm effects.\nNever claim a side effect succeeded without a confirmed tool result or fresh evidence.\nNever retry an action whose result is unknown.\nReturn a concise user-facing final answer only after every requested outcome is satisfied.";
+const LEGACY_V2_TOOL_SCHEMA_DIGEST: &str =
+    "2f21290b5c0fb2b5c450cec2019e9c8622a39d56de82519fa7018ae5086d335a";
 
 #[derive(Clone)]
 pub struct AgentService {
@@ -103,6 +73,10 @@ impl AgentService {
             &self.config.canary_users,
             self.config.rollout_percent,
         )
+    }
+    #[must_use]
+    pub const fn v3_mode(&self) -> AgentRuntimeV3Mode {
+        self.config.v3_mode
     }
 
     fn intent_authorization_enabled_for(&self, user: &str) -> bool {
@@ -155,8 +129,38 @@ impl AgentService {
                     | "workspaceSelectionId"
                     | "activityAttemptId"
                     | "activityIntent"
+                    | "protocolVersion"
+                    | "protocolDigest"
+                    | "toolCatalogDigest"
             )
         }) {
+            return Err(invalid());
+        }
+        let protocol_version = input
+            .get("protocolVersion")
+            .and_then(Value::as_i64)
+            .unwrap_or(2);
+        if protocol_version == 2 && self.config.v3_mode == AgentRuntimeV3Mode::Enforce {
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "desktop_upgrade_required",
+                "Upgrade Tro before starting a new agent task.",
+            ));
+        }
+        if protocol_version == 3
+            && (input.get("protocolDigest").and_then(Value::as_str)
+                != Some(protocol::protocol_digest())
+                || input.get("toolCatalogDigest").and_then(Value::as_str)
+                    != Some(protocol::tool_catalog_digest()))
+        {
+            tracing::warn!(event = "agent.protocol_mismatch", protocol_version);
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "protocol_upgrade_required",
+                "Tro and the agent backend must be upgraded before starting this task.",
+            ));
+        }
+        if !matches!(protocol_version, 2 | 3) {
             return Err(invalid());
         }
         let client = parse_uuid(input, "clientTaskId")?;
@@ -283,7 +287,7 @@ impl AgentService {
             + time::Duration::milliseconds(
                 i64::try_from(self.config.payload_ttl_ms).unwrap_or(i64::MAX),
             );
-        let row=sqlx::query("INSERT INTO agent_runs(id,user_id,task_id,client_task_id,execution_profile,workspace_selection_id,agent_turn_id,state,schema_digest,protocol_version,request_ciphertext,request_iv,request_tag,request_key_version,contract_ciphertext,contract_iv,contract_tag,contract_key_version,deadline_at,payload_expires_at,public_summary)VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,2,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'Task queued for the durable agent runtime.')RETURNING *").bind(run).bind(user).bind(task).bind(client).bind(profile).bind(workspace).bind(turn).bind(&*TOOL_SCHEMA_DIGEST).bind(request_envelope.ciphertext).bind(request_envelope.iv).bind(request_envelope.tag).bind(i32::try_from(request_envelope.key_version).unwrap_or(i32::MAX)).bind(contract_envelope.ciphertext).bind(contract_envelope.iv).bind(contract_envelope.tag).bind(i32::try_from(contract_envelope.key_version).unwrap_or(i32::MAX)).bind(deadline).bind(payload).fetch_one(&mut*tx).await?;
+        let row=sqlx::query("INSERT INTO agent_runs(id,user_id,task_id,client_task_id,execution_profile,workspace_selection_id,agent_turn_id,state,schema_digest,protocol_version,protocol_digest,tool_catalog_digest,request_ciphertext,request_iv,request_tag,request_key_version,contract_ciphertext,contract_iv,contract_tag,contract_key_version,deadline_at,payload_expires_at,public_summary)VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'Task queued for the durable agent runtime.')RETURNING *").bind(run).bind(user).bind(task).bind(client).bind(profile).bind(workspace).bind(turn).bind(if protocol_version == 3 { protocol::tool_catalog_digest() } else { LEGACY_V2_TOOL_SCHEMA_DIGEST }).bind(i32::try_from(protocol_version).unwrap_or_default()).bind((protocol_version == 3).then(protocol::protocol_digest)).bind((protocol_version == 3).then(protocol::tool_catalog_digest)).bind(request_envelope.ciphertext).bind(request_envelope.iv).bind(request_envelope.tag).bind(i32::try_from(request_envelope.key_version).unwrap_or(i32::MAX)).bind(contract_envelope.ciphertext).bind(contract_envelope.iv).bind(contract_envelope.tag).bind(i32::try_from(contract_envelope.key_version).unwrap_or(i32::MAX)).bind(deadline).bind(payload).fetch_one(&mut*tx).await?;
         append_session_item(
             &mut tx,
             run,
@@ -362,9 +366,118 @@ impl AgentService {
         }
         Ok(values)
     }
+    pub fn project_v3_run(&self, run: &Value) -> ApiResult<Value> {
+        let state: protocol::AgentRunStateV3 =
+            serde_json::from_value(run.get("state").cloned().ok_or_else(invalid)?)
+                .map_err(ApiError::internal)?;
+        let lifecycle = lifecycle::project(&state);
+        let waiting_on = match run.get("state").and_then(Value::as_str) {
+            Some("awaiting_worker") => json!({
+                "kind":"worker",
+                "since":run["updatedAt"]
+            }),
+            Some("awaiting_permission") => json!({
+                "kind":"permission",
+                "interactionId":run["permissionInteractionId"],
+                "invocationId":run["permissionInvocationId"],
+                "requiredPermissions":run["permissionRequirements"],
+                "since":run["updatedAt"]
+            }),
+            _ => Value::Null,
+        };
+        let failure = run
+            .get("failureCode")
+            .and_then(Value::as_str)
+            .map_or(Value::Null, |code| {
+                json!({
+                    "stage":run["failureStage"],
+                    "code":code,
+                    "message":run["publicSummary"],
+                    "retryable":run["failureRetryable"].as_bool().unwrap_or(false)
+                })
+            });
+        let projection = json!({
+            "state":state,
+            "runVersion":run["runVersion"],
+            "phase":lifecycle.phase,
+            "terminal":lifecycle.terminal,
+            "availableActions":lifecycle.actions,
+            "waitingOn":waiting_on,
+            "failure":failure,
+            "cancellationSource":run.get("cancellationSource").cloned().unwrap_or(Value::Null)
+        });
+        let record = json!({
+            "id":run["id"],
+            "taskId":run["taskId"],
+            "clientTaskId":run["clientTaskId"],
+            "request":run["request"],
+            "executionProfile":run["executionProfile"],
+            "workspaceSelectionId":run["workspaceSelectionId"],
+            "protocolVersion":3,
+            "protocolDigest":protocol::protocol_digest(),
+            "toolCatalogDigest":protocol::tool_catalog_digest(),
+            "outcomeRevision":run["outcomeRevision"],
+            "publicSummary":run["publicSummary"],
+            "authorityContract":run["contract"],
+            "projection":projection,
+            "createdAt":run["createdAt"],
+            "updatedAt":run["updatedAt"],
+            "newlyCreated":run.get("newlyCreated").and_then(Value::as_bool).unwrap_or(false)
+        });
+        let typed: protocol::AgentTaskRecordV3 =
+            serde_json::from_value(record).map_err(ApiError::internal)?;
+        serde_json::to_value(typed).map_err(ApiError::internal)
+    }
+
+    pub async fn get_v3(&self, user: &str, run: Uuid) -> ApiResult<Option<Value>> {
+        self.get(user, run)
+            .await?
+            .map(|value| self.project_v3_run(&value))
+            .transpose()
+    }
+
+    pub async fn list_v3(&self, user: &str) -> ApiResult<Vec<Value>> {
+        self.list(user)
+            .await?
+            .iter()
+            .filter(|run| run["protocolVersion"].as_i64() == Some(3))
+            .map(|run| self.project_v3_run(run))
+            .collect()
+    }
+
+    pub async fn events_v3(&self, user: &str, run: Uuid, after: i64) -> ApiResult<Vec<Value>> {
+        let record = self.get_v3(user, run).await?.ok_or_else(|| {
+            ApiError::coded(
+                http::StatusCode::NOT_FOUND,
+                "agent_run_not_found",
+                "Agent task not found.",
+            )
+        })?;
+        self.events(user, run, after)
+            .await?
+            .into_iter()
+            .map(|event| {
+                let value = json!({
+                    "id":event["id"],
+                    "runId":event["runId"],
+                    "sequence":event["sequence"],
+                    "eventType":event["type"],
+                    "summary":event["summary"],
+                    "finalOutput":event.get("finalOutput").cloned().unwrap_or(Value::Null),
+                    "outcomeRevision":event.get("outcomeRevision").cloned().unwrap_or(Value::Null),
+                    "outcomes":event.get("outcomes").cloned().unwrap_or_else(||json!([])),
+                    "projection":record["projection"],
+                    "createdAt":event["createdAt"]
+                });
+                let typed: protocol::AgentTaskEventV3 =
+                    serde_json::from_value(value).map_err(ApiError::internal)?;
+                serde_json::to_value(typed).map_err(ApiError::internal)
+            })
+            .collect()
+    }
     pub async fn cancel(&self, user: &str, run: Uuid) -> ApiResult<Option<Value>> {
         let mut tx = self.pool.begin().await?;
-        let row=sqlx::query("UPDATE agent_runs SET state='cancelled',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Task cancelled.' WHERE id=$1 AND user_id=$2 AND state NOT IN('completed','failed','cancelled','expired')RETURNING *").bind(run).bind(user).fetch_optional(&mut*tx).await?;
+        let row=sqlx::query("UPDATE agent_runs SET state='cancelled',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Task cancelled.' WHERE id=$1 AND user_id=$2 AND state NOT IN('completed','blocked','failed','cancelled','expired')RETURNING *").bind(run).bind(user).fetch_optional(&mut*tx).await?;
         if row.is_some() {
             sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='executing'THEN'unknown'ELSE'cancelled'END,terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','executing')")
                 .bind(run)
@@ -390,6 +503,91 @@ impl AgentService {
             Ok(value)
         })
         .transpose()
+    }
+    pub async fn cancel_v3(
+        &self,
+        user: &str,
+        run: Uuid,
+        input: &Value,
+    ) -> ApiResult<Option<Value>> {
+        let expected_version = input
+            .get("expectedRunVersion")
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+            .ok_or_else(invalid)?;
+        let source = input
+            .get("source")
+            .and_then(Value::as_str)
+            .filter(|value| {
+                matches!(
+                    *value,
+                    "stop_button" | "focused_escape" | "replacement" | "sign_out" | "shutdown"
+                )
+            })
+            .ok_or_else(invalid)?;
+        let command_id = parse_uuid(input, "clientCommandId")?;
+        let mut tx = self.pool.begin().await?;
+        let current = sqlx::query(
+            "SELECT state,run_version FROM agent_runs WHERE id=$1 AND user_id=$2 FOR UPDATE",
+        )
+        .bind(run)
+        .bind(user)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(current) = current else {
+            tx.rollback().await?;
+            return Ok(None);
+        };
+        let stored_version = i64::from(current.get::<i32, _>("run_version"));
+        if stored_version != expected_version {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "stale_run_version",
+                "The agent task changed before cancellation. Refresh and try again.",
+            ));
+        }
+        if matches!(
+            current.get::<String, _>("state").as_str(),
+            "completed" | "blocked" | "failed" | "cancelled" | "expired"
+        ) {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "run_not_cancellable",
+                "This agent task can no longer be cancelled.",
+            ));
+        }
+        let consequential_execution: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM agent_tool_invocations WHERE run_id=$1 AND state='executing' AND consequential=TRUE)",
+        )
+        .bind(run)
+        .fetch_one(&mut *tx)
+        .await?;
+        let (state, summary, event) = if consequential_execution {
+            (
+                "blocked",
+                "A consequential desktop action has an unknown outcome and will not be retried.",
+                "run.blocked",
+            )
+        } else {
+            ("cancelled", "Task cancelled.", "run.cancelled")
+        };
+        sqlx::query("UPDATE agent_runs SET state=$3,run_version=run_version+1,cancellation_source=$4,last_client_command_id=$5,failure_stage=CASE WHEN $6 THEN'tool_execution'ELSE NULL END,failure_code=CASE WHEN $6 THEN'effect_outcome_unknown'ELSE NULL END,failure_retryable=CASE WHEN $6 THEN FALSE ELSE NULL END,permission_interaction_id=NULL,permission_invocation_id=NULL,permission_requirements=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary=$7 WHERE id=$1 AND user_id=$2 AND run_version=$8").bind(run).bind(user).bind(state).bind(source).bind(command_id).bind(consequential_execution).bind(summary).bind(i32::try_from(expected_version).unwrap_or_default()).execute(&mut*tx).await?;
+        if consequential_execution {
+            sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='executing'THEN'unknown'ELSE'cancelled'END,terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','awaiting_permission','executing')")
+                .bind(run)
+                .execute(&mut *tx)
+                .await?;
+        } else {
+            sqlx::query("UPDATE agent_tool_invocations SET state='cancelled',terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','awaiting_permission','executing')")
+                .bind(run)
+                .execute(&mut *tx)
+                .await?;
+        }
+        append_event(&mut tx, run, event, summary, None).await?;
+        tx.commit().await?;
+        self.get_v3(user, run).await
     }
     pub async fn control(
         &self,
@@ -519,10 +717,29 @@ impl AgentService {
         capabilities: &Value,
     ) -> ApiResult<Value> {
         let capabilities = validate_capabilities(capabilities)?;
-        if capabilities["schemaDigest"].as_str() != Some(TOOL_SCHEMA_DIGEST.as_str()) {
+        let version = capabilities["protocolVersion"].as_i64().unwrap_or_default();
+        if version == 2 && self.config.v3_mode == AgentRuntimeV3Mode::Enforce {
             return Err(ApiError::coded(
                 http::StatusCode::CONFLICT,
-                "worker_upgrade_required",
+                "desktop_upgrade_required",
+                "Desktop worker must upgrade before accepting tasks.",
+            ));
+        }
+        let compatible = if version == 3 {
+            capabilities["protocolDigest"].as_str() == Some(protocol::protocol_digest())
+                && capabilities["toolCatalogDigest"].as_str()
+                    == Some(protocol::tool_catalog_digest())
+        } else {
+            capabilities["schemaDigest"].as_str() == Some(LEGACY_V2_TOOL_SCHEMA_DIGEST)
+        };
+        if !compatible {
+            tracing::warn!(
+                event = "agent.protocol_mismatch",
+                protocol_version = version
+            );
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "tool_catalog_upgrade_required",
                 "Desktop worker must upgrade before accepting tasks.",
             ));
         }
@@ -531,11 +748,18 @@ impl AgentService {
             + time::Duration::milliseconds(
                 i64::try_from(self.config.heartbeat_ttl_ms).unwrap_or(i64::MAX),
             );
-        let row=sqlx::query("INSERT INTO agent_worker_sessions(id,user_id,device_session_id,protocol_version,schema_digest,capabilities,expires_at)VALUES($1,$2,$3,2,$4,$5,$6)RETURNING connected_at,expires_at").bind(id).bind(user).bind(device).bind(&*TOOL_SCHEMA_DIGEST).bind(&capabilities).bind(expires).fetch_one(&self.pool).await?;
+        let schema_digest = if version == 3 {
+            protocol::tool_catalog_digest()
+        } else {
+            LEGACY_V2_TOOL_SCHEMA_DIGEST
+        };
+        let row=sqlx::query("INSERT INTO agent_worker_sessions(id,user_id,device_session_id,protocol_version,schema_digest,protocol_digest,tool_catalog_digest,capabilities,expires_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)RETURNING connected_at,expires_at").bind(id).bind(user).bind(device).bind(i32::try_from(version).unwrap_or_default()).bind(schema_digest).bind((version == 3).then(protocol::protocol_digest)).bind((version == 3).then(protocol::tool_catalog_digest)).bind(&capabilities).bind(expires).fetch_one(&self.pool).await?;
         sqlx::query("UPDATE agent_runs SET state='recovering',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Desktop worker reconnected; resuming task.'WHERE user_id=$1 AND state='awaiting_worker'AND deadline_at>NOW()").bind(user).execute(&self.pool).await?;
-        Ok(
-            json!({"id":id,"connectedAt":iso(row.get("connected_at")),"expiresAt":iso(row.get("expires_at"))}),
-        )
+        Ok(if version == 3 {
+            json!({"id":id,"protocolVersion":3,"protocolDigest":protocol::protocol_digest(),"toolCatalogDigest":protocol::tool_catalog_digest(),"connectedAt":iso(row.get("connected_at")),"expiresAt":iso(row.get("expires_at"))})
+        } else {
+            json!({"id":id,"connectedAt":iso(row.get("connected_at")),"expiresAt":iso(row.get("expires_at"))})
+        })
     }
     async fn require_worker(&self, user: &str, worker: Uuid) -> ApiResult<Value> {
         sqlx::query_scalar("SELECT to_jsonb(workers) FROM agent_worker_sessions workers WHERE id=$1 AND user_id=$2 AND disconnected_at IS NULL AND expires_at>NOW()").bind(worker).bind(user).fetch_optional(&self.pool).await?.ok_or_else(||ApiError::coded(http::StatusCode::CONFLICT,"stale_worker_session","Desktop worker session is stale or disconnected."))
@@ -550,7 +774,7 @@ impl AgentService {
     }
     pub async fn pending(&self, user: &str, worker: Uuid) -> ApiResult<Vec<Value>> {
         let session = self.require_worker(user, worker).await?;
-        let rows=sqlx::query("SELECT invocations.* FROM agent_tool_invocations invocations JOIN agent_runs runs ON runs.id=invocations.run_id WHERE runs.user_id=$1 AND invocations.state IN('requested','delivered')AND invocations.expires_at>NOW()AND(invocations.state='requested'OR invocations.worker_session_id=$2 OR NOT EXISTS(SELECT 1 FROM agent_worker_sessions previous WHERE previous.id=invocations.worker_session_id AND previous.disconnected_at IS NULL AND previous.expires_at>NOW()))ORDER BY invocations.requested_at LIMIT 100").bind(user).bind(worker).fetch_all(&self.pool).await?;
+        let rows=sqlx::query("SELECT invocations.*,runs.run_version FROM agent_tool_invocations invocations JOIN agent_runs runs ON runs.id=invocations.run_id WHERE runs.user_id=$1 AND invocations.state IN('requested','delivered','awaiting_permission')AND invocations.expires_at>NOW()AND(invocations.state='requested'OR invocations.worker_session_id=$2 OR NOT EXISTS(SELECT 1 FROM agent_worker_sessions previous WHERE previous.id=invocations.worker_session_id AND previous.disconnected_at IS NULL AND previous.expires_at>NOW()))ORDER BY invocations.requested_at LIMIT 100").bind(user).bind(worker).fetch_all(&self.pool).await?;
         let mut values = Vec::new();
         for row in rows {
             let id: Uuid = row.get("id");
@@ -558,7 +782,7 @@ impl AgentService {
             let envelope = row_envelope(&row, "request")?
                 .ok_or_else(|| ApiError::internal(anyhow::anyhow!("missing invocation payload")))?;
             let input=self.crypto.decrypt_json(&envelope,&json!({"invocationId":id,"kind":"agent_tool_request","runId":run,"schemaVersion":1}))?;
-            let delivered=sqlx::query("UPDATE agent_tool_invocations SET state='delivered',worker_session_id=$2,delivered_at=COALESCE(delivered_at,NOW())WHERE id=$1 AND state IN('requested','delivered')AND expires_at>NOW()AND(worker_session_id IS NULL OR worker_session_id=$2 OR NOT EXISTS(SELECT 1 FROM agent_worker_sessions previous WHERE previous.id=agent_tool_invocations.worker_session_id AND previous.disconnected_at IS NULL AND previous.expires_at>NOW()))RETURNING id").bind(id).bind(worker).fetch_optional(&self.pool).await?;
+            let delivered=sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='awaiting_permission'THEN state ELSE'delivered'END,worker_session_id=$2,delivered_at=COALESCE(delivered_at,NOW())WHERE id=$1 AND state IN('requested','delivered','awaiting_permission')AND expires_at>NOW()AND(worker_session_id IS NULL OR worker_session_id=$2 OR NOT EXISTS(SELECT 1 FROM agent_worker_sessions previous WHERE previous.id=agent_tool_invocations.worker_session_id AND previous.disconnected_at IS NULL AND previous.expires_at>NOW()))RETURNING id").bind(id).bind(worker).fetch_optional(&self.pool).await?;
             if delivered.is_none() {
                 continue;
             }
@@ -587,10 +811,209 @@ impl AgentService {
             let (effect_id, _, _) = effect_criterion(&tool_id, &operation)?;
             let obligations=sqlx::query("SELECT criteria.criterion_id,criteria.verifier_kind FROM agent_outcome_criteria criteria JOIN agent_runs runs ON runs.id=criteria.run_id WHERE criteria.run_id=$1 AND criteria.revision=runs.outcome_revision AND(criteria.criterion_id=$2 OR(criteria.verifier_kind=ANY($3::text[])AND(criteria.verifier_kind<>'filesystem_effect'OR criteria.criterion_id=ANY($4::text[]))))ORDER BY(criteria.criterion_id=$2)DESC,criteria.criterion_id LIMIT 4").bind(run).bind(effect_id).bind(&verifier_kinds).bind(&filesystem_ids).fetch_all(&self.pool).await?;
             let obligations = obligations.into_iter().map(|criterion| json!({"criterionId":criterion.get::<String,_>("criterion_id"),"verifierKind":criterion.get::<String,_>("verifier_kind")})).collect::<Vec<_>>();
-            values.push(json!({"protocolVersion":2,"schemaDigest":session["schema_digest"],"invocationId":id,"runId":run,"callId":row.get::<String,_>("call_id"),"toolId":tool_id,"operation":operation,"effect":input["effect"],"intentRevision":row.get::<i32,_>("intent_revision"),"approvalRequired":row.get::<bool,_>("approval_required"),"authorizationSource":row.get::<String,_>("authorization_source"),"consequential":row.get::<bool,_>("consequential"),"input":input["input"],"obligations":obligations,"expiresAt":iso(row.get("expires_at"))}));
+            let protocol_version = session["protocol_version"].as_i64().unwrap_or(2);
+            values.push(if protocol_version == 3 {
+                json!({"protocolVersion":3,"protocolDigest":session["protocol_digest"],"toolCatalogDigest":session["tool_catalog_digest"],"invocationId":id,"runId":run,"runVersion":row.get::<i32,_>("run_version"),"callId":row.get::<String,_>("call_id"),"toolId":tool_id,"operation":operation,"effect":input["effect"],"intentRevision":row.get::<i32,_>("intent_revision"),"approvalRequired":row.get::<bool,_>("approval_required"),"authorizationSource":row.get::<String,_>("authorization_source"),"consequential":row.get::<bool,_>("consequential"),"permissionInteractionId":row.get::<Option<Uuid>,_>("permission_interaction_id"),"permissionRequirements":row.get::<Option<Value>,_>("permission_requirements").unwrap_or_else(||json!([])),"input":input["input"],"obligations":obligations,"expiresAt":iso(row.get("expires_at"))})
+            } else {
+                json!({"protocolVersion":2,"schemaDigest":session["schema_digest"],"invocationId":id,"runId":run,"callId":row.get::<String,_>("call_id"),"toolId":tool_id,"operation":operation,"effect":input["effect"],"intentRevision":row.get::<i32,_>("intent_revision"),"approvalRequired":row.get::<bool,_>("approval_required"),"authorizationSource":row.get::<String,_>("authorization_source"),"consequential":row.get::<bool,_>("consequential"),"input":input["input"],"obligations":obligations,"expiresAt":iso(row.get("expires_at"))})
+            });
         }
         Ok(values)
     }
+    pub async fn wait_for_permission(
+        &self,
+        user: &str,
+        worker: Uuid,
+        input: &Value,
+    ) -> ApiResult<Value> {
+        self.require_worker(user, worker).await?;
+        let invocation_id = parse_uuid(input, "invocationId")?;
+        let interaction_id = parse_uuid(input, "interactionId")?;
+        let expected_version = input
+            .get("expectedRunVersion")
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+            .ok_or_else(invalid)?;
+        let requirements = input
+            .get("requiredPermissions")
+            .and_then(Value::as_array)
+            .filter(|items| (1..=2).contains(&items.len()))
+            .ok_or_else(invalid)?;
+        let requirements = requirements
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| matches!(*value, "accessibility" | "screen_recording"))
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(invalid)
+            })
+            .collect::<ApiResult<Vec<_>>>()?;
+        let mut tx = self.pool.begin().await?;
+        let row=sqlx::query("SELECT invocations.state,invocations.tool_id,invocations.permission_interaction_id,runs.id AS run_id,runs.run_version FROM agent_tool_invocations invocations JOIN agent_runs runs ON runs.id=invocations.run_id WHERE invocations.id=$1 AND invocations.worker_session_id=$2 AND runs.user_id=$3 FOR UPDATE OF invocations,runs").bind(invocation_id).bind(worker).bind(user).fetch_optional(&mut*tx).await?;
+        let Some(row) = row else {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "permission_interaction_stale",
+                "This computer-permission request is stale.",
+            ));
+        };
+        if row.get::<String, _>("state") == "awaiting_permission"
+            && row.get::<Option<Uuid>, _>("permission_interaction_id") == Some(interaction_id)
+        {
+            tx.commit().await?;
+            return Ok(
+                json!({"kind":"waiting","interactionId":interaction_id,"runVersion":row.get::<i32,_>("run_version")}),
+            );
+        }
+        if i64::from(row.get::<i32, _>("run_version")) != expected_version
+            || !matches!(
+                row.get::<String, _>("state").as_str(),
+                "requested" | "delivered"
+            )
+        {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "stale_run_version",
+                "The agent task changed before the permission wait was recorded.",
+            ));
+        }
+        let tool = tool_catalog::by_id(&row.get::<String, _>("tool_id")).ok_or_else(invalid)?;
+        if tool.prerequisites != requirements {
+            tx.rollback().await?;
+            return Err(invalid());
+        }
+        let run_id = row.get::<Uuid, _>("run_id");
+        let requirement_value = json!(requirements);
+        sqlx::query("UPDATE agent_tool_invocations SET state='awaiting_permission',permission_interaction_id=$2,permission_requirements=$3 WHERE id=$1 AND state IN('requested','delivered')")
+            .bind(invocation_id)
+            .bind(interaction_id)
+            .bind(&requirement_value)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE agent_runs SET state='awaiting_permission',run_version=run_version+1,permission_interaction_id=$2,permission_invocation_id=$3,permission_requirements=$4,lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Computer permission is required before this action can run.'WHERE id=$1 AND run_version=$5")
+            .bind(run_id)
+            .bind(interaction_id)
+            .bind(invocation_id)
+            .bind(&requirement_value)
+            .bind(i32::try_from(expected_version).unwrap_or_default())
+            .execute(&mut *tx)
+            .await?;
+        append_event(
+            &mut tx,
+            run_id,
+            "run.awaiting_permission",
+            "Computer permission is required before this action can run.",
+            None,
+        )
+        .await?;
+        tx.commit().await?;
+        tracing::info!(
+            event = "agent.permission_wait_started",
+            %run_id,
+            %invocation_id,
+            %interaction_id
+        );
+        Ok(json!({"kind":"waiting","interactionId":interaction_id,"runVersion":expected_version+1}))
+    }
+
+    pub async fn decide_permission(
+        &self,
+        user: &str,
+        worker: Uuid,
+        input: &Value,
+    ) -> ApiResult<Value> {
+        self.require_worker(user, worker).await?;
+        let invocation_id = parse_uuid(input, "invocationId")?;
+        let interaction_id = parse_uuid(input, "interactionId")?;
+        let expected_version = input
+            .get("expectedRunVersion")
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+            .ok_or_else(invalid)?;
+        let decision = input
+            .get("decision")
+            .and_then(Value::as_str)
+            .filter(|value| matches!(*value, "granted" | "continue_without_computer"))
+            .ok_or_else(invalid)?;
+        let mut tx = self.pool.begin().await?;
+        let row=sqlx::query("SELECT invocations.run_id,invocations.call_id,invocations.permission_interaction_id,runs.run_version FROM agent_tool_invocations invocations JOIN agent_runs runs ON runs.id=invocations.run_id WHERE invocations.id=$1 AND invocations.worker_session_id=$2 AND invocations.state='awaiting_permission'AND runs.user_id=$3 AND runs.state='awaiting_permission'FOR UPDATE OF invocations,runs").bind(invocation_id).bind(worker).bind(user).fetch_optional(&mut*tx).await?;
+        let Some(row) = row else {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "permission_interaction_stale",
+                "This computer-permission request is stale.",
+            ));
+        };
+        if row.get::<Option<Uuid>, _>("permission_interaction_id") != Some(interaction_id)
+            || i64::from(row.get::<i32, _>("run_version")) != expected_version
+        {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::CONFLICT,
+                "stale_run_version",
+                "The agent task changed before the permission decision.",
+            ));
+        }
+        let run_id = row.get::<Uuid, _>("run_id");
+        let response = if decision == "granted" {
+            sqlx::query("UPDATE agent_tool_invocations SET state='delivered',permission_interaction_id=NULL,permission_requirements=NULL WHERE id=$1 AND state='awaiting_permission'")
+                .bind(invocation_id)
+                .execute(&mut *tx)
+                .await?;
+            json!({"kind":"ready","invocationId":invocation_id,"runVersion":expected_version+1})
+        } else {
+            let durable = json!({"invocationId":invocation_id,"status":"not_executed","summary":"Computer use was skipped at the user's request.","data":null,"evidence":[]});
+            let envelope = self.crypto.encrypt_json(
+                &durable,
+                &json!({"invocationId":invocation_id,"kind":"agent_tool_result","runId":run_id,"schemaVersion":1}),
+            )?;
+            sqlx::query("UPDATE agent_tool_invocations SET state='not_executed',permission_interaction_id=NULL,permission_requirements=NULL,result_ciphertext=$2,result_iv=$3,result_tag=$4,result_key_version=$5,public_summary='Computer use was skipped at the user''s request.',terminal_at=NOW()WHERE id=$1 AND state='awaiting_permission'")
+                .bind(invocation_id)
+                .bind(envelope.ciphertext)
+                .bind(envelope.iv)
+                .bind(envelope.tag)
+                .bind(i32::try_from(envelope.key_version).unwrap_or(i32::MAX))
+                .execute(&mut *tx)
+                .await?;
+            append_session_item(&mut tx,run_id,&self.crypto,&json!({"type":"function_call_output","call_id":row.get::<String,_>("call_id"),"output":serde_json::to_string(&durable).unwrap_or_default()})).await?;
+            json!({"kind":"committed","invocationId":invocation_id,"runVersion":expected_version+1})
+        };
+        sqlx::query("UPDATE agent_runs SET state='recovering',run_version=run_version+1,permission_interaction_id=NULL,permission_invocation_id=NULL,permission_requirements=NULL,updated_at=NOW(),public_summary=$2 WHERE id=$1 AND run_version=$3")
+            .bind(run_id)
+            .bind(if decision == "granted" { "Computer permission is ready; resuming the same action." } else { "Continuing without computer use." })
+            .bind(i32::try_from(expected_version).unwrap_or_default())
+            .execute(&mut *tx)
+            .await?;
+        append_event(
+            &mut tx,
+            run_id,
+            if decision == "granted" {
+                "run.permission_ready"
+            } else {
+                "run.permission_skipped"
+            },
+            if decision == "granted" {
+                "Computer permission is ready; resuming the same action."
+            } else {
+                "Continuing without computer use."
+            },
+            None,
+        )
+        .await?;
+        tx.commit().await?;
+        tracing::info!(
+            event = "agent.permission_wait_resolved",
+            %run_id,
+            %invocation_id,
+            decision
+        );
+        Ok(response)
+    }
+
     pub async fn grant_execution(
         &self,
         user: &str,
@@ -656,6 +1079,10 @@ impl AgentService {
             sqlx::query("UPDATE agent_outcome_criteria criteria SET required=TRUE,updated_at=NOW()FROM agent_runs runs WHERE runs.id=$1 AND criteria.run_id=runs.id AND criteria.revision=runs.outcome_revision AND criteria.criterion_id=$2")
                 .bind(row.get::<Uuid, _>("run_id"))
                 .bind(criterion_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("UPDATE agent_runs SET state='executing_tool',run_version=run_version+1,updated_at=NOW(),public_summary='Desktop action is executing.'WHERE id=$1 AND state IN('awaiting_worker','recovering','planning')")
+                .bind(row.get::<Uuid, _>("run_id"))
                 .execute(&self.pool)
                 .await?;
         }
@@ -974,11 +1401,29 @@ impl AgentService {
                 event = "agent.worker.failed",
                 code = error.code.unwrap_or("agent_worker_error")
             );
-            self.transition(
+            let ambiguous = matches!(
+                error.code,
+                Some("ambiguous_dispatch" | "ambiguous_response")
+            );
+            self.transition_failure(
                 run.get("id"),
-                "blocked",
-                "run.blocked",
-                "The durable agent run stopped at a safe recovery boundary.",
+                if ambiguous { "blocked" } else { "failed" },
+                if ambiguous {
+                    "provider_dispatch"
+                } else {
+                    "runtime"
+                },
+                if ambiguous {
+                    "provider_outcome_unknown"
+                } else {
+                    "internal_runtime_error"
+                },
+                false,
+                if ambiguous {
+                    "The model-provider outcome is unknown. Tro did not retry it."
+                } else {
+                    "The agent runtime failed before it could finish this task."
+                },
             )
             .await?;
         }
@@ -1302,6 +1747,42 @@ impl AgentService {
             .await;
         renewal.cancel();
         let response = response_result?;
+        if !response.status.is_success() {
+            let status = response.status.as_u16();
+            let (state, stage, code, retryable, summary) = match status {
+                400 | 401 | 403 | 404 | 422 => (
+                    "failed",
+                    "provider_request",
+                    "provider_request_rejected",
+                    false,
+                    "The model provider rejected the request before inference.",
+                ),
+                429 => (
+                    "failed",
+                    "provider_request",
+                    "provider_unavailable",
+                    true,
+                    "The model provider is temporarily unavailable.",
+                ),
+                _ => (
+                    "blocked",
+                    "provider_dispatch",
+                    "provider_outcome_unknown",
+                    false,
+                    "The model-provider outcome is unknown. Tro did not retry it.",
+                ),
+            };
+            tracing::warn!(
+                event = "agent.provider_response_rejected",
+                %id,
+                %request_id,
+                provider_status = status,
+                failure_code = code
+            );
+            self.transition_failure(id, state, stage, code, retryable, summary)
+                .await?;
+            return Ok(());
+        }
         let ProviderBody::Buffered(bytes) = response.body else {
             return Err(ApiError::internal(anyhow::anyhow!(
                 "agent responses must be buffered"
@@ -1404,23 +1885,18 @@ impl AgentService {
             .get("name")
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
-        let tool_id = name.replace("__", ".").replace('_', "-");
+        let tool = tool_catalog::by_model_name(name).ok_or_else(invalid)?;
+        let tool_id = tool.tool_id.clone();
         let arguments: Value = serde_json::from_str(
             call.get("arguments")
                 .and_then(Value::as_str)
                 .unwrap_or("{}"),
         )
         .map_err(|_| invalid())?;
-        let operation = arguments
-            .get("operation")
-            .and_then(Value::as_str)
-            .filter(|op| {
-                TOOLS
-                    .iter()
-                    .any(|(tool, ops)| *tool == tool_id && ops.contains(op))
-            })
-            .ok_or_else(invalid)?;
-        let effect = arguments.get("effect").cloned().ok_or_else(invalid)?;
+        tool_catalog::validate_model_arguments(&tool.parameters, &arguments)
+            .map_err(|_| invalid())?;
+        let operation = tool_catalog::resolve_operation(tool, &arguments).map_err(|_| invalid())?;
+        let effect = tool_catalog::resolve_effect(tool, &arguments).map_err(|_| invalid())?;
         validate_effect(&effect)?;
         let effect_kind = effect
             .get("kind")
@@ -1428,7 +1904,7 @@ impl AgentService {
             .unwrap_or("unknown");
         let consequential = effect_kind != "none";
         let invocation = Uuid::new_v4();
-        let request = json!({"callId":call_id,"toolId":tool_id,"operation":operation,"effect":effect,"intentRevision":1,"approvalRequired":consequential,"authorizationSource":if consequential{"none"}else{"routine"},"consequential":consequential,"input":arguments.get("input").cloned().unwrap_or_else(||json!({}))});
+        let request = json!({"callId":call_id,"toolId":tool_id,"operation":operation,"effect":effect,"intentRevision":1,"approvalRequired":consequential,"authorizationSource":if consequential{"none"}else{"routine"},"consequential":consequential,"input":arguments});
         let request_envelope=self.crypto.encrypt_json(&request,&json!({"invocationId":invocation,"kind":"agent_tool_request","runId":id,"schemaVersion":1}))?;
         let mut continuation = items.to_vec();
         continuation.push(call.clone());
@@ -1438,7 +1914,7 @@ impl AgentService {
         let expires = OffsetDateTime::now_utc() + time::Duration::minutes(5);
         let mut tx = self.pool.begin().await?;
         lock_lease(&mut tx, id, &self.worker_id, run_version).await?;
-        let (criterion_id, verifier, verifier_digest) = effect_criterion(&tool_id, operation)?;
+        let (criterion_id, verifier, verifier_digest) = effect_criterion(&tool_id, &operation)?;
         let description = self.crypto.encrypt_json(
             &json!({"description":format!("The desktop completed {tool_id}.{operation} with a trusted result."),"verifier":verifier}),
             &json!({"criterionId":&criterion_id,"kind":"agent_outcome_criterion","runId":id,"schemaVersion":1}),
@@ -1455,7 +1931,7 @@ impl AgentService {
             .await?;
         sqlx::query("INSERT INTO agent_run_checkpoints(run_id,run_version,model_step_id,graph_digest,state_ciphertext,state_iv,state_tag,state_key_version)VALUES($1,$2,$3,$4,$5,$6,$7,$8)ON CONFLICT(run_id,run_version)DO UPDATE SET state_ciphertext=EXCLUDED.state_ciphertext,state_iv=EXCLUDED.state_iv,state_tag=EXCLUDED.state_tag,state_key_version=EXCLUDED.state_key_version").bind(id).bind(run_version).bind(model_step).bind(&*TOOL_SCHEMA_DIGEST).bind(state.ciphertext).bind(state.iv).bind(state.tag).bind(i32::try_from(state.key_version).unwrap_or(i32::MAX)).execute(&mut*tx).await?;
         append_session_item(&mut tx, id, &self.crypto, call).await?;
-        sqlx::query("INSERT INTO agent_tool_invocations(id,run_id,call_id,tool_id,operation,state,consequential,idempotency_key,request_ciphertext,request_iv,request_tag,request_key_version,public_summary,expires_at,effect_kind,resource_kind,authorization_source,intent_revision,approval_required)VALUES($1,$2,$3,$4,$5,'requested',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17)ON CONFLICT(run_id,call_id)DO NOTHING").bind(invocation).bind(id).bind(call_id).bind(&tool_id).bind(operation).bind(consequential).bind(format!("{run_version}:{call_id}")).bind(request_envelope.ciphertext).bind(request_envelope.iv).bind(request_envelope.tag).bind(i32::try_from(request_envelope.key_version).unwrap_or(i32::MAX)).bind(format!("{tool_id}.{operation} requested.")).bind(expires).bind(effect_kind).bind(effect.get("resourceKind").and_then(Value::as_str)).bind(if consequential{"none"}else{"routine"}).bind(consequential).execute(&mut*tx).await?;
+        sqlx::query("INSERT INTO agent_tool_invocations(id,run_id,call_id,tool_id,operation,state,consequential,idempotency_key,request_ciphertext,request_iv,request_tag,request_key_version,public_summary,expires_at,effect_kind,resource_kind,authorization_source,intent_revision,approval_required)VALUES($1,$2,$3,$4,$5,'requested',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17)ON CONFLICT(run_id,call_id)DO NOTHING").bind(invocation).bind(id).bind(call_id).bind(&tool_id).bind(&operation).bind(consequential).bind(format!("{run_version}:{call_id}")).bind(request_envelope.ciphertext).bind(request_envelope.iv).bind(request_envelope.tag).bind(i32::try_from(request_envelope.key_version).unwrap_or(i32::MAX)).bind(format!("{tool_id}.{operation} requested.")).bind(expires).bind(effect_kind).bind(effect.get("resourceKind").and_then(Value::as_str)).bind(if consequential{"none"}else{"routine"}).bind(consequential).execute(&mut*tx).await?;
         sqlx::query("UPDATE agent_runs SET state='awaiting_worker',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Waiting for the desktop worker.'WHERE id=$1").bind(id).execute(&mut*tx).await?;
         append_event(
             &mut tx,
@@ -1479,6 +1955,34 @@ impl AgentService {
         let changed=sqlx::query("UPDATE agent_runs SET state=$2,lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary=$3 WHERE id=$1 AND state NOT IN('completed','blocked','failed','cancelled','expired')").bind(run).bind(state).bind(summary).execute(&mut*tx).await?.rows_affected();
         if changed == 1 {
             append_event(&mut tx, run, event, summary, None).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+    async fn transition_failure(
+        &self,
+        run: Uuid,
+        state: &str,
+        stage: &str,
+        code: &str,
+        retryable: bool,
+        summary: &str,
+    ) -> ApiResult<()> {
+        let mut tx = self.pool.begin().await?;
+        let changed=sqlx::query("UPDATE agent_runs SET state=$2,failure_stage=$3,failure_code=$4,failure_retryable=$5,lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary=$6 WHERE id=$1 AND state NOT IN('completed','blocked','failed','cancelled','expired')").bind(run).bind(state).bind(stage).bind(code).bind(retryable).bind(summary).execute(&mut*tx).await?.rows_affected();
+        if changed == 1 {
+            append_event(
+                &mut tx,
+                run,
+                if state == "blocked" {
+                    "run.blocked"
+                } else {
+                    "run.failed"
+                },
+                summary,
+                None,
+            )
+            .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -1563,7 +2067,7 @@ impl AgentService {
     }
     fn public_run(&self, row: &sqlx::postgres::PgRow) -> ApiResult<Value> {
         Ok(
-            json!({"id":row.get::<Uuid,_>("id"),"userId":row.get::<String,_>("user_id"),"taskId":row.get::<Uuid,_>("task_id"),"clientTaskId":row.get::<Uuid,_>("client_task_id"),"executionProfile":row.get::<String,_>("execution_profile"),"workspaceSelectionId":row.get::<Option<Uuid>,_>("workspace_selection_id"),"state":row.get::<String,_>("state"),"schemaDigest":row.get::<String,_>("schema_digest"),"protocolVersion":row.get::<i32,_>("protocol_version"),"runVersion":row.get::<i32,_>("run_version"),"outcomeRevision":row.get::<i32,_>("outcome_revision"),"nextSequence":row.get::<i64,_>("next_sequence"),"leaseOwner":row.get::<Option<String>,_>("lease_owner"),"leaseExpiresAt":row.get::<Option<OffsetDateTime>,_>("lease_expires_at").map(iso),"deadlineAt":iso(row.get("deadline_at")),"payloadExpiresAt":iso(row.get("payload_expires_at")),"publicSummary":row.get::<String,_>("public_summary"),"createdAt":iso(row.get("created_at")),"updatedAt":iso(row.get("updated_at"))}),
+            json!({"id":row.get::<Uuid,_>("id"),"userId":row.get::<String,_>("user_id"),"taskId":row.get::<Uuid,_>("task_id"),"clientTaskId":row.get::<Uuid,_>("client_task_id"),"executionProfile":row.get::<String,_>("execution_profile"),"workspaceSelectionId":row.get::<Option<Uuid>,_>("workspace_selection_id"),"state":row.get::<String,_>("state"),"schemaDigest":row.get::<String,_>("schema_digest"),"protocolVersion":row.get::<i32,_>("protocol_version"),"protocolDigest":row.get::<Option<String>,_>("protocol_digest"),"toolCatalogDigest":row.get::<Option<String>,_>("tool_catalog_digest"),"runVersion":row.get::<i32,_>("run_version"),"outcomeRevision":row.get::<i32,_>("outcome_revision"),"nextSequence":row.get::<i64,_>("next_sequence"),"leaseOwner":row.get::<Option<String>,_>("lease_owner"),"leaseExpiresAt":row.get::<Option<OffsetDateTime>,_>("lease_expires_at").map(iso),"deadlineAt":iso(row.get("deadline_at")),"payloadExpiresAt":iso(row.get("payload_expires_at")),"failureStage":row.get::<Option<String>,_>("failure_stage"),"failureCode":row.get::<Option<String>,_>("failure_code"),"failureRetryable":row.get::<Option<bool>,_>("failure_retryable"),"cancellationSource":row.get::<Option<String>,_>("cancellation_source"),"permissionInteractionId":row.get::<Option<Uuid>,_>("permission_interaction_id"),"permissionInvocationId":row.get::<Option<Uuid>,_>("permission_invocation_id"),"permissionRequirements":row.get::<Option<Value>,_>("permission_requirements"),"publicSummary":row.get::<String,_>("public_summary"),"createdAt":iso(row.get("created_at")),"updatedAt":iso(row.get("updated_at"))}),
         )
     }
 }
@@ -1658,26 +2162,49 @@ fn effect_criterion(tool_id: &str, operation: &str) -> ApiResult<(String, Value,
 }
 fn validate_capabilities(capabilities: &Value) -> ApiResult<Value> {
     let object = capabilities.as_object().ok_or_else(invalid)?;
-    if object.len() != 3
-        || object
-            .keys()
-            .any(|key| !matches!(key.as_str(), "protocolVersion" | "schemaDigest" | "tools"))
-    {
-        return Err(invalid());
-    }
-    if capabilities.get("protocolVersion").and_then(Value::as_i64) != Some(2) {
-        return Err(invalid());
-    }
-    let digest = capabilities
-        .get("schemaDigest")
-        .and_then(Value::as_str)
-        .filter(|value| {
-            value.len() == 64
-                && value
-                    .bytes()
-                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        })
+    let version = capabilities
+        .get("protocolVersion")
+        .and_then(Value::as_i64)
+        .filter(|value| matches!(*value, 2 | 3))
         .ok_or_else(invalid)?;
+    let valid_keys = if version == 3 {
+        object.len() == 4
+            && object.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "protocolVersion" | "protocolDigest" | "toolCatalogDigest" | "tools"
+                )
+            })
+    } else {
+        object.len() == 3
+            && object
+                .keys()
+                .all(|key| matches!(key.as_str(), "protocolVersion" | "schemaDigest" | "tools"))
+    };
+    if !valid_keys {
+        return Err(invalid());
+    }
+    let parse_digest = |key: &str| {
+        capabilities
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| {
+                value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+            .ok_or_else(invalid)
+    };
+    let schema_digest = (version == 2)
+        .then(|| parse_digest("schemaDigest"))
+        .transpose()?;
+    let protocol_digest = (version == 3)
+        .then(|| parse_digest("protocolDigest"))
+        .transpose()?;
+    let tool_catalog_digest = (version == 3)
+        .then(|| parse_digest("toolCatalogDigest"))
+        .transpose()?;
     let tools = capabilities
         .get("tools")
         .and_then(Value::as_array)
@@ -1730,7 +2257,11 @@ fn validate_capabilities(capabilities: &Value) -> ApiResult<Value> {
             .collect::<ApiResult<Vec<_>>>()?;
         normalized_tools.push(json!({"toolId":tool_id,"operations":operations}));
     }
-    Ok(json!({"protocolVersion":2,"schemaDigest":digest,"tools":normalized_tools}))
+    Ok(if version == 3 {
+        json!({"protocolVersion":3,"protocolDigest":protocol_digest,"toolCatalogDigest":tool_catalog_digest,"tools":normalized_tools})
+    } else {
+        json!({"protocolVersion":2,"schemaDigest":schema_digest,"tools":normalized_tools})
+    })
 }
 async fn lock_lease(
     tx: &mut Transaction<'_, Postgres>,
@@ -2092,8 +2623,22 @@ fn validate_effect(effect: &Value) -> ApiResult<()> {
     Ok(())
 }
 fn model_tools(capabilities: &Value, has_activity: bool) -> ApiResult<Vec<Value>> {
-    if capabilities.get("schemaDigest").and_then(Value::as_str) != Some(TOOL_SCHEMA_DIGEST.as_str())
-    {
+    let version = capabilities
+        .get("protocolVersion")
+        .and_then(Value::as_i64)
+        .unwrap_or(2);
+    let digest_matches = if version == 3 {
+        capabilities.get("protocolDigest").and_then(Value::as_str)
+            == Some(protocol::protocol_digest())
+            && capabilities
+                .get("toolCatalogDigest")
+                .and_then(Value::as_str)
+                == Some(protocol::tool_catalog_digest())
+    } else {
+        capabilities.get("schemaDigest").and_then(Value::as_str)
+            == Some(LEGACY_V2_TOOL_SCHEMA_DIGEST)
+    };
+    if !digest_matches {
         return Err(ApiError::coded(
             http::StatusCode::CONFLICT,
             "worker_upgrade_required",
@@ -2117,22 +2662,42 @@ fn model_tools(capabilities: &Value, has_activity: bool) -> ApiResult<Vec<Value>
             ))
         })
         .collect();
-    Ok(TOOLS.iter().filter_map(|(tool,operations)|{
-        if !has_activity && matches!(*tool, "knowledge.search" | "activity.signal") {
-            return None;
-        }
-        let allowed=advertised.iter().find(|(id,_)|id==tool)?.1.clone();let operations:Vec<_>=operations.iter().filter(|op|allowed.contains(**op)).copied().collect();if operations.is_empty(){return None}let name=tool.replace('.',"__").replace('-', "_");Some(json!({"type":"function","name":name,"description":format!("Request {tool} using one allowlisted operation."),"strict":true,"parameters":{"type":"object","additionalProperties":false,"required":["operation","effect","input"],"properties":{"operation":{"type":"string","enum":operations},"effect":{"type":"object","additionalProperties":false,"required":["kind","resourceKind","reversibility","externality","communication","overwrite","sensitiveDataTransfer"],"properties":{"kind":{"type":"string"},"resourceKind":{"type":["string","null"]},"reversibility":{"type":"string"},"externality":{"type":"string"},"communication":{"type":"string"},"overwrite":{"type":"string"},"sensitiveDataTransfer":{"type":["boolean","string"]}}},"input":{"type":"object","additionalProperties":true}}}}))}).collect())
+    Ok(tool_catalog::all()
+        .filter_map(|tool| {
+            if !has_activity
+                && matches!(
+                    tool.tool_id.as_str(),
+                    "knowledge.search" | "activity.signal"
+                )
+            {
+                return None;
+            }
+            let allowed = &advertised.iter().find(|(id, _)| id == &tool.tool_id)?.1;
+            if !tool
+                .operations
+                .iter()
+                .all(|operation| allowed.contains(operation))
+            {
+                return None;
+            }
+            Some(json!({
+                "type":"function",
+                "name":tool.model_name,
+                "description":tool.description,
+                "strict":true,
+                "parameters":tool.parameters
+            }))
+        })
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn tool_digest_matches_desktop_catalog() {
-        assert_eq!(
-            TOOL_SCHEMA_DIGEST.as_str(),
-            "2f21290b5c0fb2b5c450cec2019e9c8622a39d56de82519fa7018ae5086d335a"
-        );
+    fn protocol_v3_has_a_separate_tool_catalog_digest() {
+        assert_ne!(TOOL_SCHEMA_DIGEST.as_str(), protocol::tool_catalog_digest());
+        assert_eq!(protocol::tool_catalog_digest().len(), 64);
     }
     #[test]
     fn effect_free_requires_null_resource() {
@@ -2141,6 +2706,7 @@ mod tests {
     #[test]
     fn classroom_tools_require_activity_context() {
         let capabilities = json!({
+            "protocolVersion":2,
             "schemaDigest":TOOL_SCHEMA_DIGEST.as_str(),
             "tools":[
                 {"toolId":"knowledge.search","operations":["search"]},
@@ -2150,8 +2716,9 @@ mod tests {
         assert!(model_tools(&capabilities, false).unwrap().is_empty());
         let tools = model_tools(&capabilities, true).unwrap();
         assert_eq!(tools.len(), 2);
-        assert_eq!(tools[0]["name"], "knowledge__search");
-        assert_eq!(tools[1]["name"], "activity__signal");
+        assert_eq!(tools[0]["name"], "record_activity_signal");
+        assert_eq!(tools[1]["name"], "search_activity_knowledge");
+        assert_eq!(tools[0]["parameters"]["additionalProperties"], false);
     }
     #[test]
     fn classroom_instructions_include_published_guidance_and_criteria() {

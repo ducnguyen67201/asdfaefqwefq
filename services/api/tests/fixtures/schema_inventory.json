@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 24,
+  "migrationCount": 25,
   "tables": [
     "users",
     "device_sessions",
@@ -55,8 +55,11 @@
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],
     "agentRun": [
       "queued",
+      "compiling_outcomes",
       "planning",
       "awaiting_worker",
+      "awaiting_permission",
+      "awaiting_input",
       "awaiting_approval",
       "executing_tool",
       "recovering",
@@ -70,6 +73,7 @@
     "toolInvocation": [
       "requested",
       "delivered",
+      "awaiting_permission",
       "executing",
       "confirmed",
       "failed",

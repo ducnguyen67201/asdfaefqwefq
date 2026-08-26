@@ -1,22 +1,16 @@
 import type {
   TaskBehavior,
   TaskEvent,
-  TaskPhase,
   TaskSnapshot,
 } from '../shared/contracts';
-
-const TERMINAL_PHASES = new Set<TaskPhase>([
-  'completed',
-  'failed',
-  'cancelled',
-]);
+import { isLegacyTaskPhaseTerminal } from '../shared/legacy-agent-runtime-v2';
 
 export interface HistoryEntry {
   behavior: TaskBehavior | null;
   events: TaskEvent[];
   finalResponse: string | null;
   objective: string;
-  phase: 'completed' | 'failed' | 'cancelled';
+  phase: 'completed' | 'blocked' | 'failed' | 'cancelled';
   progress: TaskSnapshot['progress'];
   snapshot: TaskSnapshot;
   toolsUsed: string[];
@@ -40,12 +34,9 @@ export function createHistoryEntries(
   }
 
   return [...snapshotsByTaskId.values()]
-    .filter(
-      (
-        snapshot,
-      ): snapshot is TaskSnapshot & {
-        phase: HistoryEntry['phase'];
-      } => TERMINAL_PHASES.has(snapshot.phase),
+    .filter((snapshot) =>
+      snapshot.lifecycle?.terminal ??
+      isLegacyTaskPhaseTerminal(snapshot.phase),
     )
     .map((snapshot) => {
       const taskEvents = [
@@ -68,7 +59,7 @@ export function createHistoryEntries(
           snapshot.goal?.schemaVersion === 2
             ? snapshot.goal.objective
             : snapshot.request,
-        phase: snapshot.phase,
+        phase: snapshot.phase as HistoryEntry['phase'],
         progress: snapshot.progress,
         snapshot,
         toolsUsed: [

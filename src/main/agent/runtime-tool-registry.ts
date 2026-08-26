@@ -3,6 +3,13 @@ import path from 'node:path';
 import { z } from 'zod';
 
 import {
+  assertStrictFunctionSchema,
+  hostedToolContractById,
+  modelToolSpecFor,
+  objectSchema,
+  type StrictJsonObjectSchema,
+} from '../../shared/agent-tool-contracts';
+import {
   ActionEffectKindSchema,
   ActionEffectSchema,
   ProposedActionSchema,
@@ -20,7 +27,6 @@ import {
   type AgentToolCall,
   type ModelToolSpec,
   type ResolvedToolInvocation,
-  type StrictJsonObjectSchema,
 } from './agent-contracts';
 import {
   DesktopCommandSchema,
@@ -492,28 +498,6 @@ function commandParameters(
   }
 }
 
-const functionSpec = (
-  name: string,
-  description: string,
-  parameters: StrictJsonObjectSchema,
-): ModelToolSpec => ({
-  type: 'function',
-  name,
-  description,
-  strict: true,
-  parameters,
-});
-
-const objectSchema = (
-  properties: Record<string, Record<string, unknown>>,
-  required: string[],
-): StrictJsonObjectSchema => ({
-  type: 'object',
-  additionalProperties: false,
-  properties,
-  required,
-});
-
 const controlRequiredProperties = [
   'observationId',
   'description',
@@ -760,62 +744,20 @@ function controlParametersSchema(): StrictJsonObjectSchema {
   );
 }
 
-function assertStrictFunctionSchema(
-  schema: unknown,
-  path = 'parameters',
-): void {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
-    throw new Error('Model tool schema at ' + path + ' must be an object.');
-  }
-  const node = schema as Record<string, unknown>;
-  if ('const' in node && typeof node.type !== 'string') {
-    throw new Error(
-      'Model tool schema at ' + path + ' uses const without an explicit type.',
-    );
-  }
-  if (node.type === 'object') {
-    if (node.additionalProperties !== false) {
-      throw new Error(
-        'Strict model tool object at ' +
-          path +
-          ' must set additionalProperties to false.',
-      );
-    }
-    if (!node.properties || typeof node.properties !== 'object') {
-      throw new Error(
-        'Strict model tool object at ' + path + ' must define properties.',
-      );
-    }
-    const properties = node.properties as Record<string, unknown>;
-    const required = Array.isArray(node.required) ? node.required : [];
-    for (const [name, propertySchema] of Object.entries(properties)) {
-      if (!required.includes(name)) {
-        throw new Error(
-          'Strict model tool property ' + path + '.' + name + ' is not required.',
-        );
-      }
-      assertStrictFunctionSchema(propertySchema, path + '.properties.' + name);
-    }
-  }
-  for (const keyword of ['anyOf', 'oneOf', 'allOf'] as const) {
-    const alternatives = node[keyword];
-    if (!Array.isArray(alternatives)) continue;
-    alternatives.forEach((alternative, index) =>
-      assertStrictFunctionSchema(
-        alternative,
-        path + '.' + keyword + '[' + index + ']',
-      ),
-    );
-  }
-  if (node.items !== undefined) {
-    assertStrictFunctionSchema(node.items, path + '.items');
-  }
-}
-
 function defineTool<T>(
   definition: RuntimeToolDefinition<T>,
 ): RuntimeToolDefinition {
-  return definition as RuntimeToolDefinition;
+  const contract = hostedToolContractById(definition.id);
+  if (!contract) {
+    throw new Error(`Runtime tool ${definition.id} is missing from the hosted catalog.`);
+  }
+  return {
+    ...definition,
+    description: contract.description,
+    modelName: contract.modelName,
+    operations: contract.operations,
+    parameters: contract.parameters,
+  } as RuntimeToolDefinition;
 }
 
 export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
@@ -1458,6 +1400,15 @@ export class RuntimeToolRegistry {
   ) {
     for (const definition of definitions) {
       const id = RuntimeToolIdSchema.parse(definition.id);
+      const contract = hostedToolContractById(id);
+      if (!contract) {
+        throw new Error(`Runtime tool ${id} is missing from the hosted catalog.`);
+      }
+      if (definition.modelName !== contract.modelName) {
+        throw new Error(
+          `Runtime tool ${id} must use canonical model name ${contract.modelName}.`,
+        );
+      }
       if (this.toolsById.has(id)) {
         throw new Error('Runtime tool ' + id + ' is already registered.');
       }
@@ -1480,11 +1431,9 @@ export class RuntimeToolRegistry {
   modelVisibleSpecs(context?: ToolResolutionContext): ModelToolSpec[] {
     return this.list(context).map((definition) => {
       assertStrictFunctionSchema(definition.parameters);
-      return functionSpec(
-        definition.modelName,
-        definition.description,
-        definition.parameters,
-      );
+      const contract = hostedToolContractById(definition.id);
+      if (!contract) throw new Error('Hosted tool catalog invariant failed.');
+      return modelToolSpecFor(contract);
     });
   }
 

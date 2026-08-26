@@ -1,8 +1,7 @@
 import type { TaskUpdate } from '../../shared/contracts';
+import { isLegacyTaskPhaseTerminal } from '../../shared/legacy-agent-runtime-v2';
 
 import type { KnowledgeSpaceClient } from './knowledge-space-client';
-
-const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 
 export class ActivityProgressReporter {
   private readonly sessions = new Map<string, { workSessionId: string; lastSentAt: number }>();
@@ -29,7 +28,9 @@ export class ActivityProgressReporter {
   async report(update: TaskUpdate): Promise<void> {
     const session = this.sessions.get(update.snapshot.taskId);
     if (!session) return;
-    const terminal = TERMINAL.has(update.snapshot.phase);
+    const terminal =
+      update.snapshot.lifecycle?.terminal ??
+      isLegacyTaskPhaseTerminal(update.snapshot.phase);
     const now = this.now();
     if (!terminal && now - session.lastSentAt < 10_000) return;
     session.lastSentAt = now;

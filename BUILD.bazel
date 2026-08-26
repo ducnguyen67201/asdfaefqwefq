@@ -8,6 +8,12 @@ exports_files([
     "test/fixtures/intent-authorization-cases.json",
 ])
 
+filegroup(
+    name = "agent_runtime_v3_fixtures",
+    srcs = glob(["test/fixtures/agent-runtime-v3/*.json"]),
+    visibility = ["//visibility:public"],
+)
+
 buildifier(
     name = "buildifier",
     exclude_patterns = [

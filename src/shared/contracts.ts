@@ -1,9 +1,15 @@
 import { z } from 'zod';
 
 import {
+  AgentRunProjectionV3Schema,
+  CancellationSourceV3Schema,
+} from './agent-runtime-protocol';
+import {
   isPublicClassroomHostname,
   validateClassroomUrl,
 } from './classroom-url-policy';
+
+export * from './agent-runtime-protocol';
 
 export const DomainSchema = z.enum([
   'education',
@@ -842,6 +848,7 @@ export const TaskPhaseSchema = z.enum([
   'acting',
   'verifying',
   'paused',
+  'awaiting_permission',
   'blocked',
   'completed',
   'failed',
@@ -1097,6 +1104,7 @@ export const TaskSnapshotSchema = z
     taskId: z.string().uuid(),
     request: z.string().min(2).max(8_000),
     phase: TaskPhaseSchema,
+    lifecycle: AgentRunProjectionV3Schema.nullable().optional(),
     goal: GoalSpecSchema.nullable(),
     messages: z.array(TaskMessageSchema).max(200),
     pendingInteraction: PendingInteractionSchema.nullable(),
@@ -1545,7 +1553,19 @@ export const GetUsageBudgetRequestSchema = z.object({
 
 export const CancelTaskRequestSchema = z.object({
   taskId: z.string().uuid(),
+  source: CancellationSourceV3Schema.default('stop_button'),
 });
+
+export const ResolveComputerPermissionRequestSchema = z
+  .object({
+    taskId: z.string().uuid(),
+    action: z.enum([
+      'open_system_settings',
+      'continue_without_computer',
+      'refresh',
+    ]),
+  })
+  .strict();
 
 export const StartTaskRequestSchema = z.object({
   taskId: z.string().uuid(),
@@ -1626,6 +1646,7 @@ export const HostedTaskStateSchema = z.enum([
   'compiling_outcomes',
   'planning',
   'awaiting_worker',
+  'awaiting_permission',
   'executing_tool',
   'awaiting_input',
   'awaiting_approval',
@@ -1668,6 +1689,8 @@ export const HostedTaskRecordSchema = z.object({
   workspaceSelectionId: z.string().uuid().nullable(),
   state: HostedTaskStateSchema,
   protocolVersion: z.number().int().positive(),
+  protocolDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  toolCatalogDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   runVersion: z.number().int().positive(),
   outcomeRevision: z.number().int().positive(),
   contractSchemaVersion: z.union([z.literal(7), z.literal(8)]).optional(),
@@ -1677,6 +1700,7 @@ export const HostedTaskRecordSchema = z.object({
   contract: HostedTaskAuthorityContractSchema.optional(),
   activity: ActivityContextSchema.nullable().optional(),
   publicSummary: z.string().max(1_000),
+  lifecycle: AgentRunProjectionV3Schema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   newlyCreated: z.boolean().optional(),
@@ -1686,6 +1710,7 @@ export const HostedTaskEventSchema = z.object({
   id: z.string().uuid(),
   runId: z.string().uuid(),
   sequence: z.number().int().positive(),
+  runVersion: z.number().int().positive().optional(),
   type: z.string().trim().min(1).max(80),
   summary: z.string().trim().min(1).max(1_000),
   finalOutput: z.string().trim().min(1).max(8_000).optional(),
@@ -1700,6 +1725,7 @@ export const HostedTaskEventSchema = z.object({
     ]),
   }).strict()).max(20).optional(),
   createdAt: z.string().datetime(),
+  lifecycle: AgentRunProjectionV3Schema.optional(),
 }).strict();
 
 export const HostedTaskListSchema = z.object({
@@ -2613,6 +2639,9 @@ export type TaskMessage = z.infer<typeof TaskMessageSchema>;
 export type TaskPhase = z.infer<typeof TaskPhaseSchema>;
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;
 export type TaskSnapshot = z.infer<typeof TaskSnapshotSchema>;
+export type ResolveComputerPermissionRequest = z.infer<
+  typeof ResolveComputerPermissionRequestSchema
+>;
 export type TaskUpdate = z.infer<typeof TaskUpdateSchema>;
 export type CompletionDecision = z.infer<typeof CompletionDecisionSchema>;
 export type CriterionResult = z.infer<typeof CriterionResultSchema>;

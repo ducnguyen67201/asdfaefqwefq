@@ -25,6 +25,7 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["default-htt
 axum = { version = "0.8.6", features = ["http1", "json", "macros", "multipart", "tokio"] }
 base64 = "0.22.1"
 bytes = "1.10.1"
+chrono = { version = "0.4.44", features = ["serde"] }
 clap = { version = "4.5.48", features = ["derive", "env"] }
 editpe = { version = "0.2.4", default-features = false, features = ["std"] }
 ed25519-dalek = { version = "3.0.0", features = ["alloc", "pkcs8"] }
@@ -36,6 +37,7 @@ jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 pdf-extract = "0.12.0"
 rand = "0.9.2"
 regex = "1.11.2"
+regress = "0.11.1"
 reqwest = { version = "0.12.23", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
@@ -52,6 +54,7 @@ tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.6", features = ["catch-panic", "limit", "request-id", "timeout", "trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
+typify = "0.7.0"
 unicode-normalization = "0.1.24"
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["serde", "v4"] }

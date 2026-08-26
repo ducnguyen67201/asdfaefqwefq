@@ -6,6 +6,9 @@ use std::{
 
 use anyhow::Context;
 use serde::Deserialize;
+use sqlx_core::row::Row;
+
+use crate::{agent::protocol, postgres::PgPoolOptions};
 
 const EXPECTED_AGENT_RUNTIME_VERSIONS: [(&str, &str); 3] = [
     ("@trycua/cua-driver", "0.19.3"),
@@ -65,6 +68,55 @@ pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()
         );
     }
     println!("Agent runtime versions match the supported compatibility baseline.");
+    Ok(())
+}
+
+pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
+    check_agent_runtime_versions(repository_root)?;
+    let mode = std::env::var("AGENT_RUNTIME_V3_MODE")
+        .unwrap_or_else(|_| "observe".to_owned())
+        .to_lowercase();
+    anyhow::ensure!(
+        matches!(mode.as_str(), "observe" | "dual" | "enforce"),
+        "AGENT_RUNTIME_V3_MODE must be one of: observe, dual, enforce."
+    );
+
+    println!("Canonical agent protocol: v{}", protocol::PROTOCOL_VERSION);
+    println!("Protocol digest: {}", protocol::protocol_digest());
+    println!("Tool catalog digest: {}", protocol::tool_catalog_digest());
+    println!("Rollout mode: {mode}");
+
+    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+        println!("Active v2/v3 runs: unavailable (DATABASE_URL is not configured)");
+        println!("Enforcement readiness: unknown until the active-run drain query is available");
+        return Ok(());
+    };
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .context("failed to inspect active agent runtime versions")?;
+    let counts = sqlx::query(
+        "SELECT \
+           COUNT(*) FILTER (WHERE protocol_version = 2) AS active_v2, \
+           COUNT(*) FILTER (WHERE protocol_version = 3) AS active_v3 \
+         FROM agent_runs \
+         WHERE state NOT IN ('completed','blocked','failed','cancelled','expired')",
+    )
+    .fetch_one(&pool)
+    .await
+    .context("failed to count active agent runtime rows")?;
+    let active_v2 = counts.get::<i64, _>("active_v2");
+    let active_v3 = counts.get::<i64, _>("active_v3");
+    println!("Active runs: v2={active_v2}, v3={active_v3}");
+    println!(
+        "Enforcement readiness: {}",
+        if active_v2 == 0 {
+            "ready (no active v2 runs)"
+        } else {
+            "not ready (drain active v2 runs before enforce)"
+        }
+    );
     Ok(())
 }
 

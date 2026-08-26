@@ -17,8 +17,8 @@ use trocode_api::{
     app::AppState,
     auth::User,
     config::{
-        AdminConfig, AgentRuntimeConfig, Config, CostGuardConfig, CostGuardMode, KnowledgeConfig,
-        ObjectStoreConfig, RolloutConfig,
+        AdminConfig, AgentRuntimeConfig, AgentRuntimeV3Mode, Config, CostGuardConfig,
+        CostGuardMode, KnowledgeConfig, ObjectStoreConfig, RolloutConfig,
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
@@ -111,6 +111,7 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
             playwright_cdp_enabled: false,
             protocol_version: 2,
             rollout_percent: 0,
+            v3_mode: AgentRuntimeV3Mode::Observe,
         },
         cost_guard: CostGuardConfig {
             daily_micro_usd: 8_000_000,

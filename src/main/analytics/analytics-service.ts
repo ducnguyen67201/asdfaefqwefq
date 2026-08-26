@@ -9,6 +9,7 @@ import {
   TaskUpdateSchema,
   type TaskSnapshot,
 } from '../../shared/contracts';
+import { isLegacyTaskPhaseTerminal } from '../../shared/legacy-agent-runtime-v2';
 import { resolveActionEffect } from '../agent/action-effect';
 import { toolIdentityForAction } from '../agent/runtime-tool-registry';
 
@@ -50,17 +51,13 @@ const TRACKED_PHASES: ReadonlySet<TaskSnapshot['phase']> = new Set([
   'ready',
   'awaiting_approval',
   'awaiting_input',
+  'awaiting_permission',
   'planning',
   'verifying',
   'completed',
   'failed',
   'cancelled',
-]);
-
-const TERMINAL_PHASES: ReadonlySet<TaskSnapshot['phase']> = new Set([
-  'completed',
-  'failed',
-  'cancelled',
+  'blocked',
 ]);
 
 type AnalyticsProperties = Record<
@@ -266,7 +263,10 @@ export class AnalyticsService {
       });
       return;
     }
-    if (TERMINAL_PHASES.has(snapshot.phase)) {
+    if (
+      snapshot.lifecycle?.terminal ??
+      isLegacyTaskPhaseTerminal(snapshot.phase)
+    ) {
       const approvalCount = this.taskApprovalCounts.get(snapshot.taskId) ?? 0;
       const toolCount = snapshot.progress
         ? 'kind' in snapshot.progress
@@ -279,6 +279,9 @@ export class AnalyticsService {
         approvals_per_verified_success:
           snapshot.phase === 'completed' ? approvalCount : 0,
         outcome: snapshot.phase,
+        cancellation_source:
+          snapshot.lifecycle?.cancellationSource ?? 'none',
+        failure_code: snapshot.lifecycle?.failure?.code ?? 'none',
         tool_count: toolCount,
         unnecessary_approval_count: 0,
         unnecessary_approval_rate: 0,

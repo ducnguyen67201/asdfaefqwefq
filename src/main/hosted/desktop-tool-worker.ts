@@ -1,9 +1,11 @@
 import {
-  HostedDesktopInvocationSchema,
-  HostedDesktopResultSchema,
+  DesktopInvocationV3Schema,
+  DesktopResultV3Schema,
+  type DesktopInvocationV3,
+  type DesktopResultV3,
+} from '../../shared/agent-runtime-protocol';
+import {
   type GoalSpec,
-  type HostedDesktopInvocation,
-  type HostedDesktopResult,
   type ProposedAction,
 } from '../../shared/contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
@@ -17,14 +19,17 @@ import {
   type RustPolicyDecision,
 } from '../engine/rust-desktop-engine-client';
 
+import type { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 import {
-  HOSTED_AGENT_TOOL_SCHEMA_DIGEST,
+  HOSTED_AGENT_PROTOCOL_DIGEST,
+  HOSTED_AGENT_TOOL_CATALOG_DIGEST,
   hostedToolMetadata,
 } from './desktop-worker-protocol';
 
 export interface DesktopToolWorkerOptions {
   approvalProvider?: (runId: string, action: ProposedAction) => Promise<boolean>;
-  commitResult(result: HostedDesktopResult): Promise<void>;
+  commitResult(result: DesktopResultV3): Promise<void>;
+  permissionCoordinator?: Pick<ComputerPermissionCoordinator, 'requireReady'>;
   dispatcher: Pick<RuntimeToolDispatcher, 'dispatch'>;
   evaluatePolicy(input: EvaluateRustPolicyInput): Promise<RustPolicyDecision>;
   goalProvider(runId: string): GoalSpec | undefined;
@@ -37,10 +42,10 @@ export interface DesktopToolWorkerOptions {
   requestExecuting(
     invocationId: string,
     metadata: {
-      effect: HostedDesktopInvocation['effect'];
+      effect: DesktopInvocationV3['effect'];
       intentRevision: number;
       approvalRequired: boolean;
-      authorizationSource: HostedDesktopInvocation['authorizationSource'];
+      authorizationSource: DesktopInvocationV3['authorizationSource'];
       consequential: boolean;
     },
   ): Promise<boolean>;
@@ -50,13 +55,13 @@ export interface DesktopToolWorkerOptions {
 const MAX_RECENT_RESULTS = 500;
 
 export class DesktopToolWorker {
-  private readonly recent = new Map<string, HostedDesktopResult>();
+  private readonly recent = new Map<string, DesktopResultV3>();
   private readonly latestObservations = new Map<string, DesktopObservation>();
 
   constructor(private readonly options: DesktopToolWorkerOptions) {}
 
-  async handle(input: unknown, signal = new AbortController().signal): Promise<HostedDesktopResult> {
-    const envelope = HostedDesktopInvocationSchema.parse(input);
+  async handle(input: unknown, signal = new AbortController().signal): Promise<DesktopResultV3> {
+    const envelope = DesktopInvocationV3Schema.parse(input);
     const cached = this.recent.get(envelope.invocationId);
     if (cached) {
       await this.options.commitResult(cached);
@@ -68,17 +73,20 @@ export class DesktopToolWorker {
       summary: error instanceof Error ? error.message.slice(0, 1_000) : 'Desktop execution failed.',
       evidence: [],
     }));
-    const parsed = HostedDesktopResultSchema.parse(result);
+    const parsed = DesktopResultV3Schema.parse(result);
     this.remember(parsed);
     await this.options.commitResult(parsed);
     return parsed;
   }
 
   private async execute(
-    envelope: HostedDesktopInvocation,
+    envelope: DesktopInvocationV3,
     signal: AbortSignal,
-  ): Promise<HostedDesktopResult> {
-    if (envelope.schemaDigest !== HOSTED_AGENT_TOOL_SCHEMA_DIGEST) {
+  ): Promise<DesktopResultV3> {
+    if (
+      envelope.protocolDigest !== HOSTED_AGENT_PROTOCOL_DIGEST ||
+      envelope.toolCatalogDigest !== HOSTED_AGENT_TOOL_CATALOG_DIGEST
+    ) {
       return this.result(
         envelope,
         'not_executed',
@@ -172,6 +180,27 @@ export class DesktopToolWorker {
         };
       }
     }
+    if (metadata.prerequisites.length > 0) {
+      const outcome = await this.options.permissionCoordinator?.requireReady({
+        invocation: envelope,
+        requirements: metadata.prerequisites,
+        taskId,
+      });
+      if (!outcome) {
+        return this.result(
+          envelope,
+          'not_executed',
+          'Computer permission is required before this tool can run.',
+        );
+      }
+      if (outcome === 'continue_without_computer') {
+        return this.result(
+          envelope,
+          'not_executed',
+          'Computer use was skipped at the user\'s request.',
+        );
+      }
+    }
     if (!await this.options.requestExecuting(envelope.invocationId, executionMetadata)) {
       return this.result(envelope, 'not_executed', 'The backend did not grant the one-time executing transition.');
     }
@@ -226,7 +255,7 @@ export class DesktopToolWorker {
         summary: outcome.summary,
       };
     });
-    return HostedDesktopResultSchema.parse({
+    return DesktopResultV3Schema.parse({
       invocationId: envelope.invocationId,
       status: outcome.status,
       summary: outcome.summary,
@@ -249,11 +278,11 @@ export class DesktopToolWorker {
   }
 
   private result(
-    envelope: HostedDesktopInvocation,
-    status: HostedDesktopResult['status'],
+    envelope: DesktopInvocationV3,
+    status: DesktopResultV3['status'],
     summary: string,
-  ): HostedDesktopResult {
-    return HostedDesktopResultSchema.parse({
+  ): DesktopResultV3 {
+    return DesktopResultV3Schema.parse({
       invocationId: envelope.invocationId,
       status,
       summary,
@@ -266,7 +295,7 @@ export class DesktopToolWorker {
     });
   }
 
-  private remember(result: HostedDesktopResult): void {
+  private remember(result: DesktopResultV3): void {
     this.recent.set(result.invocationId, result);
     while (this.recent.size > MAX_RECENT_RESULTS) {
       const oldest = this.recent.keys().next().value;

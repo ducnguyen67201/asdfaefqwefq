@@ -130,6 +130,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "companion image generation",
             include_str!("../migrations/024_companion_image_generation.sql"),
         ),
+        migration(
+            25,
+            "canonical agent runtime contract v3",
+            include_str!("../migrations/025_agent_runtime_contract_v3.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

@@ -14,8 +14,8 @@ use trocode_api::{
     PgPool,
     app::AppState,
     config::{
-        AdminConfig, AgentRuntimeConfig, Config, CostGuardConfig, CostGuardMode, KnowledgeConfig,
-        RolloutConfig,
+        AdminConfig, AgentRuntimeConfig, AgentRuntimeV3Mode, Config, CostGuardConfig,
+        CostGuardMode, KnowledgeConfig, RolloutConfig,
     },
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -730,6 +730,7 @@ fn test_config(database_url: String) -> Config {
             playwright_cdp_enabled: false,
             protocol_version: 2,
             rollout_percent: 100,
+            v3_mode: AgentRuntimeV3Mode::Observe,
         },
         cost_guard: CostGuardConfig {
             daily_micro_usd: 8_000_000,

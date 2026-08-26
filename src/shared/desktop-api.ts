@@ -5,6 +5,7 @@ import type {
   AppUpdateStatus,
   AuthStatus,
   ActivateCompanionCandidateRequest,
+  CancelAgentTaskRequestV3,
   CompanionAppearance,
   CompanionCustomizationStatus,
   CompanionGuidance,
@@ -96,6 +97,7 @@ import type {
   KnowledgeRoomRevocation,
   OpenClassroomDirectiveRequest,
   ResolveKnowledgeAttemptHelpRequest,
+  ResolveComputerPermissionRequest,
   ReviewKnowledgeAttemptRequest,
   RevokeKnowledgeRoomCodeRequest,
   SetClassroomLinkConsentRequest,
@@ -143,6 +145,7 @@ export const IPC_CHANNELS = {
   getVoiceStatus: 'voice:status',
   getWorkspaceRuntimeAvailability: 'workspace:runtime-availability',
   openSystemPermissionSettings: 'system:open-permission-settings',
+  resolveComputerPermission: 'cua:resolve-task-permission',
   recordVoiceTranscript: 'voice:record-transcript',
   reportVoiceDiagnostic: 'voice:diagnostic',
   restartAndInstallAppUpdate: 'update:restart-and-install',
@@ -206,7 +209,10 @@ export interface DesktopApi {
     request: ActivateMembershipRequest,
   ): Promise<MembershipStatus>;
   continueWithFree(): Promise<MembershipStatus>;
-  cancelTask(taskId: string): Promise<TaskSnapshot>;
+  cancelTask(
+    taskId: string,
+    source?: CancelAgentTaskRequestV3['source'],
+  ): Promise<TaskSnapshot>;
   checkForAppUpdates(): Promise<AppUpdateStatus>;
   configureVoice(request: ConfigureVoiceRequest): Promise<VoiceStatus>;
   connectComputer(): Promise<CuaStatus>;
@@ -294,6 +300,9 @@ export interface DesktopApi {
   ): () => void;
   onVoiceShortcut(listener: (event: VoiceShortcutEvent) => void): () => void;
   openSystemPermissionSettings(permission: SystemPermission): Promise<void>;
+  resolveComputerPermission(
+    request: ResolveComputerPermissionRequest,
+  ): Promise<void>;
   recordVoiceTranscript(request: RecordVoiceTranscriptRequest): Promise<void>;
   reportVoiceDiagnostic(diagnostic: VoiceDiagnostic): Promise<void>;
   restartAndInstallAppUpdate(): Promise<void>;

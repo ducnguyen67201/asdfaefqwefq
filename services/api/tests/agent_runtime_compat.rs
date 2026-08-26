@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 use trocode_api::{
     agent::{AgentService, TOOL_SCHEMA_DIGEST},
     auth::AgentStateCrypto,
-    config::{AgentRuntimeConfig, CostGuardConfig, CostGuardMode, RolloutConfig},
+    config::{
+        AgentRuntimeConfig, AgentRuntimeV3Mode, CostGuardConfig, CostGuardMode, RolloutConfig,
+    },
     db,
     postgres::PgPoolOptions,
     providers::ResponsesService,
@@ -47,39 +49,21 @@ impl Respond for AgentResponder {
         } else if input_text.contains("consequential") {
             json!([{
                 "arguments":serde_json::to_string(&json!({
-                    "effect":{
-                        "communication":"none",
-                        "externality":"local",
-                        "kind":"workspace_write",
-                        "overwrite":"requested",
-                        "resourceKind":"workspace_file",
-                        "reversibility":"reversible",
-                        "sensitiveDataTransfer":false
-                    },
-                    "input":{"path":"fixture.txt","text":"changed"},
-                    "operation":"write_file"
+                    "content":"changed",
+                    "path":"fixture.txt"
                 })).unwrap(),
                 "call_id":format!("call-{}", self.calls.load(Ordering::Relaxed)),
-                "name":"workspace__filesystem",
+                "name":"workspace_filesystem",
                 "type":"function_call"
             }])
         } else {
             json!([{
                 "arguments":serde_json::to_string(&json!({
-                    "effect":{
-                        "communication":"none",
-                        "externality":"local",
-                        "kind":"none",
-                        "overwrite":"none",
-                        "resourceKind":null,
-                        "reversibility":"none",
-                        "sensitiveDataTransfer":false
-                    },
-                    "input":{"application":"chrome"},
-                    "operation":"launch"
+                    "application":"chrome",
+                    "reason":"Open Chrome for the requested task."
                 })).unwrap(),
                 "call_id":format!("call-{}", self.calls.load(Ordering::Relaxed)),
-                "name":"application__launch",
+                "name":"open_application",
                 "type":"function_call"
             }])
         };
@@ -146,6 +130,7 @@ fn runtime_config() -> AgentRuntimeConfig {
         playwright_cdp_enabled: false,
         protocol_version: 2,
         rollout_percent: 0,
+        v3_mode: AgentRuntimeV3Mode::Observe,
     }
 }
 
@@ -443,10 +428,9 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     let (malformed_run, _, _) =
         submit(&agent, "Handle a malformed provider response safely.").await;
     assert!(agent.run_once().await.unwrap());
-    assert_eq!(
-        agent.get(USER, malformed_run).await.unwrap().unwrap()["state"],
-        "blocked"
-    );
+    let malformed = agent.get(USER, malformed_run).await.unwrap().unwrap();
+    assert_eq!(malformed["state"], "failed");
+    assert_eq!(malformed["failureCode"], "internal_runtime_error");
 
     let (cancel_run, _, _) = submit(&agent, "Cancel this queued task.").await;
     let cancelled = agent.cancel(USER, cancel_run).await.unwrap().unwrap();

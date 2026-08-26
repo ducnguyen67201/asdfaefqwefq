@@ -37,6 +37,7 @@ import {
   UpdateOrganizationResponseSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
+  ResolveComputerPermissionRequestSchema,
   SetVoiceAudioDuckingRequestSchema,
   StartTaskRequestSchema,
   SteerTaskRequestSchema,
@@ -566,8 +567,8 @@ const desktopApi: DesktopApi = {
     return TaskSnapshotSchema.parse(response);
   },
 
-  async cancelTask(taskId) {
-    const request = CancelTaskRequestSchema.parse({ taskId });
+  async cancelTask(taskId, source = 'stop_button') {
+    const request = CancelTaskRequestSchema.parse({ taskId, source });
     const response: unknown = await ipcRenderer.invoke(
       IPC_CHANNELS.cancelTask,
       request,
@@ -631,6 +632,11 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.openSystemPermissionSettings,
       permission,
     );
+  },
+
+  async resolveComputerPermission(input) {
+    const request = ResolveComputerPermissionRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.resolveComputerPermission, request);
   },
 
   async getVoiceStatus() {

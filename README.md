@@ -119,8 +119,9 @@ can be added to the registry without changing request classification.
 When a host-created task reaches `ready`, Tro starts its selected task-scoped
 runtime. CUA remains stopped unless the agent requests a desktop tool.
 The visible **Stop task** control and
-the system-wide **Escape** shortcut cancel a nonterminal task, including while
-the main window is hidden for desktop work. The loop observes after every
+**Escape while Tro is focused** can cancel a server-cancellable task. Escape is
+suppressed for editors, modals, and permission waits, and is never registered
+system-wide. The loop observes after every
 admitted action, and consequential actions still pause on an exact approval
 card before anything is dispatched.
 

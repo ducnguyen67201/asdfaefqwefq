@@ -1,5 +1,8 @@
+pub mod lifecycle;
 mod policy;
+pub mod protocol;
 mod service;
+pub mod tool_catalog;
 
 pub use policy::{
     compile_intent_authorization, empty_intent_authorization, evaluate_action,

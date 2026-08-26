@@ -1,3 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
+import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
+import {
+  AgentRuntimeErrorV3Schema,
+  AgentRuntimeStatusV3Schema,
+  AgentTaskEventV3Schema,
+  AgentTaskListV3Schema,
+  AgentTaskRecordV3Schema,
+  type AgentTaskEventV3,
+  type AgentTaskRecordV3,
+} from '../../shared/agent-runtime-protocol';
 import {
   HostedTaskEventSchema,
   HostedTaskListSchema,
@@ -7,25 +19,7 @@ import {
   TaskSnapshotSchema,
   type TaskSnapshot,
 } from '../../shared/contracts';
-
-function phaseFor(state: HostedTaskRecord['state']): TaskSnapshot['phase'] {
-  switch (state) {
-    case 'queued':
-    case 'compiling_outcomes': return 'ready';
-    case 'planning':
-    case 'recovering': return 'planning';
-    case 'awaiting_worker': return 'paused';
-    case 'executing_tool': return 'acting';
-    case 'awaiting_input': return 'awaiting_input';
-    case 'awaiting_approval': return 'awaiting_approval';
-    case 'verifying': return 'verifying';
-    case 'completed': return 'completed';
-    case 'blocked': return 'blocked';
-    case 'failed':
-    case 'expired': return 'failed';
-    case 'cancelled': return 'cancelled';
-  }
-}
+import { legacyTaskPhaseForHostedState } from '../../shared/legacy-agent-runtime-v2';
 
 export function projectHostedTask(
   run: HostedTaskRecord,
@@ -33,7 +27,8 @@ export function projectHostedTask(
   previous?: TaskSnapshot,
 ): TaskSnapshot {
   const timestamp = event?.createdAt ?? run.updatedAt;
-  const phase = event?.type === 'run.completed' ? 'completed' : phaseFor(run.state);
+  const lifecycle = event?.lifecycle ?? run.lifecycle ?? null;
+  const phase = lifecycle?.phase ?? legacyTaskPhaseForHostedState(run.state);
   const messages = previous?.messages ?? [{
     messageId: run.clientTaskId,
     taskId: run.taskId,
@@ -77,6 +72,7 @@ export function projectHostedTask(
     taskId: run.taskId,
     request: run.request,
     phase,
+    lifecycle,
     goal: previous?.goal ?? null,
     messages: withFinal.slice(-200),
     pendingInteraction: previous?.pendingInteraction ?? null,
@@ -91,6 +87,50 @@ export function projectHostedTask(
   });
 }
 
+function legacyRecordFromV3(run: AgentTaskRecordV3): HostedTaskRecord {
+  return HostedTaskRecordSchema.parse({
+    id: run.id,
+    taskId: run.taskId,
+    clientTaskId: run.clientTaskId,
+    request: run.request,
+    executionProfile: run.executionProfile,
+    workspaceSelectionId: run.workspaceSelectionId,
+    state: run.projection.state,
+    protocolVersion: run.protocolVersion,
+    protocolDigest: run.protocolDigest,
+    toolCatalogDigest: run.toolCatalogDigest,
+    runVersion: run.projection.runVersion,
+    outcomeRevision: run.outcomeRevision,
+    publicSummary: run.publicSummary,
+    contractSchemaVersion: run.authorityContract.schemaVersion,
+    autonomyMode: run.authorityContract.autonomyMode,
+    outcomeContract: run.authorityContract.outcomeContract,
+    intentAuthorization: run.authorityContract.intentAuthorization,
+    contract: run.authorityContract,
+    activity: run.authorityContract.activity,
+    lifecycle: run.projection,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    newlyCreated: run.newlyCreated,
+  });
+}
+
+function legacyEventFromV3(event: AgentTaskEventV3): HostedTaskEvent {
+  return HostedTaskEventSchema.parse({
+    id: event.id,
+    runId: event.runId,
+    sequence: event.sequence,
+    runVersion: event.projection.runVersion,
+    type: event.eventType,
+    summary: event.summary,
+    ...(event.finalOutput ? { finalOutput: event.finalOutput } : {}),
+    ...(event.outcomeRevision ? { outcomeRevision: event.outcomeRevision } : {}),
+    outcomes: event.outcomes,
+    lifecycle: event.projection,
+    createdAt: event.createdAt,
+  });
+}
+
 export interface HostedTaskClientOptions {
   accessTokenProvider(): Promise<string | null>;
   apiBaseUrl: string;
@@ -99,7 +139,12 @@ export interface HostedTaskClientOptions {
 }
 
 class HostedRequestError extends Error {
-  constructor(message: string, readonly outcomeUnknown: boolean) {
+  constructor(
+    message: string,
+    readonly outcomeUnknown: boolean,
+    readonly status: number | null = null,
+    readonly code: string | null = null,
+  ) {
     super(message);
   }
 }
@@ -111,20 +156,21 @@ export class HostedTaskOutcomeUnknownError extends Error {
   }
 }
 
-function parseEventBlock(block: string): HostedTaskEvent | null {
+function eventDataFromBlock(block: string): unknown | null {
   const data = block
     .replaceAll('\r\n', '\n')
     .split('\n')
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
     .join('\n');
-  return data ? HostedTaskEventSchema.parse(JSON.parse(data)) : null;
+  return data ? JSON.parse(data) : null;
 }
 
 export class HostedTaskClient {
   private readonly apiBaseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly reconnectDelay: NonNullable<HostedTaskClientOptions['reconnectDelay']>;
+  private readonly v3RunIds = new Set<string>();
 
   constructor(private readonly options: HostedTaskClientOptions) {
     this.apiBaseUrl = options.apiBaseUrl.replace(/\/$/u, '');
@@ -145,10 +191,17 @@ export class HostedTaskClient {
   }): Promise<HostedTaskRecord> {
     const submitOnce = async () => {
       try {
-        return HostedTaskRecordSchema.parse(await this.json('/v1/tasks', {
+        const run = AgentTaskRecordV3Schema.parse(await this.json('/v1/agent-runtime/v3/tasks', {
           method: 'POST',
-          body: JSON.stringify(input),
+          body: JSON.stringify({
+            protocolVersion: 3,
+            protocolDigest: manifest.protocolDigest,
+            toolCatalogDigest: manifest.toolCatalogDigest,
+            ...input,
+          }),
         }));
+        this.v3RunIds.add(run.id);
+        return legacyRecordFromV3(run);
       } catch (error) {
         if (error instanceof HostedRequestError) throw error;
         throw new HostedRequestError(
@@ -174,38 +227,119 @@ export class HostedTaskClient {
 
   async status(): Promise<{
     enabled: boolean;
-    protocolVersion: number;
+    protocolVersion: 2 | 3;
     workerRequired: boolean;
+    protocolDigest?: string;
+    toolCatalogDigest?: string;
+    rolloutMode?: 'observe' | 'dual' | 'enforce';
   }> {
-    const value = await this.json('/v1/agent-runtime/status') as {
+    try {
+      const status = AgentRuntimeStatusV3Schema.parse(
+        await this.json('/v1/agent-runtime/v3/status'),
+      );
+      if (
+        status.protocolDigest !== manifest.protocolDigest ||
+        status.toolCatalogDigest !== manifest.toolCatalogDigest
+      ) {
+        throw new Error(
+          'Tro and the hosted runtime must be upgraded before starting new work.',
+        );
+      }
+      return status;
+    } catch (error) {
+      if (!(error instanceof HostedRequestError) || error.status !== 404) {
+        throw error;
+      }
+    }
+    const legacy = await this.json('/v1/agent-runtime/status') as {
       enabled?: unknown;
       protocolVersion?: unknown;
       workerRequired?: unknown;
     };
     if (
-      typeof value.enabled !== 'boolean' ||
-      value.protocolVersion !== 2 ||
-      typeof value.workerRequired !== 'boolean'
+      typeof legacy.enabled !== 'boolean' ||
+      legacy.protocolVersion !== 2 ||
+      typeof legacy.workerRequired !== 'boolean'
     ) {
       throw new Error('Hosted runtime status is incompatible with this desktop.');
     }
     return {
-      enabled: value.enabled,
-      protocolVersion: value.protocolVersion,
-      workerRequired: value.workerRequired,
+      enabled: legacy.enabled,
+      protocolVersion: 2,
+      workerRequired: legacy.workerRequired,
     };
   }
 
   async list(): Promise<HostedTaskRecord[]> {
-    return HostedTaskListSchema.parse(await this.json('/v1/tasks')).items;
+    let v3: HostedTaskRecord[] = [];
+    try {
+      v3 = AgentTaskListV3Schema.parse(
+        await this.json('/v1/agent-runtime/v3/tasks'),
+      ).items.map((run) => {
+        this.v3RunIds.add(run.id);
+        return legacyRecordFromV3(run);
+      });
+    } catch (error) {
+      if (!(error instanceof HostedRequestError) || error.status !== 404) {
+        throw error;
+      }
+    }
+    const legacy = HostedTaskListSchema.parse(await this.json('/v1/tasks')).items;
+    const v3Ids = new Set(v3.map((run) => run.id));
+    return [...v3, ...legacy.filter((run) => !v3Ids.has(run.id))];
   }
 
   async get(runId: string): Promise<HostedTaskRecord> {
+    try {
+      const run = AgentTaskRecordV3Schema.parse(
+        await this.json(`/v1/agent-runtime/v3/tasks/${runId}`),
+      );
+      this.v3RunIds.add(run.id);
+      return legacyRecordFromV3(run);
+    } catch (error) {
+      if (!(error instanceof HostedRequestError) || error.status !== 404) {
+        throw error;
+      }
+    }
     return HostedTaskRecordSchema.parse(await this.json(`/v1/tasks/${runId}`));
   }
 
-  async cancel(runId: string): Promise<HostedTaskRecord> {
-    return HostedTaskRecordSchema.parse(await this.json(`/v1/tasks/${runId}`, { method: 'DELETE' }));
+  async cancel(
+    runId: string,
+    expectedRunVersion?: number,
+    source: 'stop_button' | 'focused_escape' | 'replacement' | 'sign_out' | 'shutdown' = 'stop_button',
+  ): Promise<HostedTaskRecord> {
+    if (this.v3RunIds.has(runId) && expectedRunVersion) {
+      try {
+        return legacyRecordFromV3(
+          AgentTaskRecordV3Schema.parse(
+            await this.json(`/v1/agent-runtime/v3/tasks/${runId}/cancel`, {
+              method: 'POST',
+              body: JSON.stringify({
+                protocolVersion: 3,
+                protocolDigest: manifest.protocolDigest,
+                toolCatalogDigest: manifest.toolCatalogDigest,
+                clientCommandId: randomUUID(),
+                expectedRunVersion,
+                source,
+              }),
+            }),
+          ),
+        );
+      } catch (error) {
+        if (
+          error instanceof HostedRequestError &&
+          error.status === 409 &&
+          ['stale_run_version', 'run_not_cancellable'].includes(error.code ?? '')
+        ) {
+          return await this.get(runId);
+        }
+        throw error;
+      }
+    }
+    return HostedTaskRecordSchema.parse(
+      await this.json(`/v1/tasks/${runId}`, { method: 'DELETE' }),
+    );
   }
 
   async steer(runId: string, clientTurnId: string, instruction: string): Promise<void> {
@@ -235,8 +369,9 @@ export class HostedTaskClient {
     while (!signal.aborted) {
       try {
         const token = await this.requireToken();
+        const v3 = this.v3RunIds.has(runId);
         const response = await this.fetchImpl(
-          `${this.apiBaseUrl}/v1/tasks/${runId}/events?after=${afterSequence}`,
+          `${this.apiBaseUrl}${v3 ? '/v1/agent-runtime/v3/tasks' : '/v1/tasks'}/${runId}/events?after=${afterSequence}`,
           {
             headers: {
               Accept: 'text/event-stream',
@@ -257,7 +392,12 @@ export class HostedTaskClient {
           const blocks = pending.split('\n\n');
           pending = blocks.pop() ?? '';
           for (const block of blocks) {
-            const event = parseEventBlock(block);
+            const data = eventDataFromBlock(block);
+            const event = data
+              ? v3
+                ? legacyEventFromV3(AgentTaskEventV3Schema.parse(data))
+                : HostedTaskEventSchema.parse(data)
+              : null;
             if (!event || event.sequence <= afterSequence) continue;
             afterSequence = event.sequence;
             onEvent(event);
@@ -294,10 +434,16 @@ export class HostedTaskClient {
       );
     }
     if (!response.ok) {
-      const body = await response.json().catch(() => null) as { error?: string } | null;
+      const body = await response.json().catch(() => null) as unknown;
+      const v3Error = AgentRuntimeErrorV3Schema.safeParse(body);
+      const legacy = body as { code?: string; error?: string } | null;
       throw new HostedRequestError(
-        body?.error ?? `Hosted task request failed (${response.status}).`,
+        v3Error.success
+          ? v3Error.data.message
+          : legacy?.error ?? `Hosted task request failed (${response.status}).`,
         response.status >= 500,
+        response.status,
+        v3Error.success ? v3Error.data.code : legacy?.code ?? null,
       );
     }
     if (response.status === 204) return null;

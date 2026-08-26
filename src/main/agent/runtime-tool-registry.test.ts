@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import type { RuntimeToolDefinition } from './runtime-tool-registry';
-import { RuntimeToolRegistry } from './runtime-tool-registry';
+import {
+  defaultRuntimeToolDefinitions,
+  RuntimeToolRegistry,
+} from './runtime-tool-registry';
 
 function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_candidates') {
   return {
@@ -580,8 +583,8 @@ describe('RuntimeToolRegistry', () => {
 
   it('rejects invalid strict schemas locally before they reach the provider', () => {
     const invalidTool: RuntimeToolDefinition = {
-      id: 'music.generate',
-      modelName: 'generate_music',
+      id: 'browser.navigate',
+      modelName: 'open_url',
       description: 'Invalid test tool.',
       operations: ['create_track'],
       parameters: {
@@ -597,7 +600,7 @@ describe('RuntimeToolRegistry', () => {
         kind: 'direct',
         modelName: call.name,
         operation: 'create_track',
-        toolId: 'music.generate',
+        toolId: 'browser.navigate',
       }),
     };
 
@@ -751,7 +754,7 @@ describe('RuntimeToolRegistry', () => {
     });
   });
 
-  it('can register an optional music provider without changing the agent', () => {
+  it('requires optional providers to update the canonical tool catalog first', () => {
     const musicTool: RuntimeToolDefinition<{ prompt: string }> = {
       id: 'music.generate',
       modelName: 'generate_music',
@@ -779,17 +782,9 @@ describe('RuntimeToolRegistry', () => {
         toolId: 'music.generate',
       }),
     };
-    const registry = new RuntimeToolRegistry([musicTool]);
-
-    expect(registry.modelVisibleSpecs()[0]?.name).toBe('generate_music');
-    expect(
-      registry.supports({
-        action: 'write_file',
-        description: 'Generate a playable music track.',
-        toolId: 'music.generate',
-        operation: 'create_track',
-      }),
-    ).toBe(true);
+    expect(() => new RuntimeToolRegistry([musicTool])).toThrow(
+      'missing from the hosted catalog',
+    );
   });
 
   it('hides unavailable tools and rejects duplicate model names', () => {
@@ -815,12 +810,16 @@ describe('RuntimeToolRegistry', () => {
         toolId: 'music.generate',
       }),
     };
-    expect(new RuntimeToolRegistry([unavailable]).modelVisibleSpecs()).toEqual([]);
+    expect(() => new RuntimeToolRegistry([unavailable])).toThrow(
+      'missing from the hosted catalog',
+    );
+    const duplicate = defaultRuntimeToolDefinitions()[0];
+    expect(duplicate).toBeDefined();
     expect(
       () =>
         new RuntimeToolRegistry([
-          unavailable,
-          { ...unavailable, id: 'music.render' },
+          duplicate!,
+          duplicate!,
         ]),
     ).toThrow('already registered');
   });

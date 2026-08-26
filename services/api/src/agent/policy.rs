@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use super::service::TOOLS;
+use super::tool_catalog;
 
 const AUTO_AUTHORIZABLE_EFFECTS: &[&str] = &[
     "create_resource",
@@ -1099,9 +1099,8 @@ fn hosted_tool_supports(action: &ProposedAction) -> bool {
     let (Some(tool), Some(operation)) = (&action.tool_id, &action.operation) else {
         return false;
     };
-    TOOLS.iter().any(|(candidate, operations)| {
-        *candidate == tool && operations.contains(&operation.as_str())
-    })
+    tool_catalog::by_id(tool)
+        .is_some_and(|candidate| candidate.operations.iter().any(|value| value == operation))
 }
 
 fn activity_signal_allowed(goal: &PolicyGoal, action: &ProposedAction) -> bool {

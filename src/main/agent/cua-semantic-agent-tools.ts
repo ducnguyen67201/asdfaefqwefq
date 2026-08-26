@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 import {
+  hostedToolContractById,
+  objectSchema,
+} from '../../shared/agent-tool-contracts';
+import {
   ActionEffectKindSchema,
   ActionEffectSchema,
   ProposedActionSchema,
@@ -224,18 +228,6 @@ export interface PrepareBrowserAccessToolInput {
 export interface CuaSemanticToolOptions {
   browserPrepareAvailable: () => boolean;
   semanticAvailable: () => boolean;
-}
-
-function objectSchema(
-  properties: Record<string, Record<string, unknown>>,
-  required: string[],
-): StrictJsonObjectSchema {
-  return {
-    type: 'object',
-    additionalProperties: false,
-    properties,
-    required,
-  };
 }
 
 const nullableRef = {
@@ -548,7 +540,7 @@ function actionParameters(
 export function createCuaSemanticToolDefinitions(
   options: CuaSemanticToolOptions,
 ): RuntimeToolDefinition[] {
-  return [
+  const definitions: RuntimeToolDefinition[] = [
     {
       id: 'computer.observe',
       modelName: 'observe_surface',
@@ -724,4 +716,17 @@ export function createCuaSemanticToolDefinitions(
       },
     },
   ];
+  return definitions.map((definition) => {
+    const contract = hostedToolContractById(definition.id);
+    if (!contract) {
+      throw new Error(`Runtime tool ${definition.id} is missing from the hosted catalog.`);
+    }
+    return {
+      ...definition,
+      description: contract.description,
+      modelName: contract.modelName,
+      operations: contract.operations,
+      parameters: contract.parameters,
+    };
+  });
 }

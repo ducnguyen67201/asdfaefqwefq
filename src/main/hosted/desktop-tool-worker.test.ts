@@ -11,14 +11,19 @@ import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
 import type { EvaluateRustPolicyInput } from '../engine/rust-desktop-engine-client';
 
 import { DesktopToolWorker } from './desktop-tool-worker';
-import { HOSTED_AGENT_TOOL_SCHEMA_DIGEST } from './desktop-worker-protocol';
+import {
+  HOSTED_AGENT_PROTOCOL_DIGEST,
+  HOSTED_AGENT_TOOL_CATALOG_DIGEST,
+} from './desktop-worker-protocol';
 
 function envelope(overrides: Record<string, unknown> = {}) {
   return {
-    protocolVersion: 2,
-    schemaDigest: HOSTED_AGENT_TOOL_SCHEMA_DIGEST,
+    protocolVersion: 3,
+    protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
+    toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
     invocationId: randomUUID(),
     runId: randomUUID(),
+    runVersion: 1,
     callId: 'call-1',
     toolId: 'application.launch',
     operation: 'launch',
@@ -35,6 +40,8 @@ function envelope(overrides: Record<string, unknown> = {}) {
     approvalRequired: false,
     authorizationSource: 'routine',
     consequential: false,
+    permissionInteractionId: null,
+    permissionRequirements: [],
     input: { application: 'chrome', reason: 'Open Chrome.' },
     obligations: [],
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -162,6 +169,41 @@ describe('DesktopToolWorker', () => {
     expect(commitResult).toHaveBeenCalledTimes(2);
   });
 
+  it('opens Mở YouTube through direct navigation without computer permission', async () => {
+    const dispatch = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'YouTube is open.',
+    }));
+    const requireReady = vi.fn(async () => 'granted' as const);
+    const goal = hostedGoal('Mở YouTube.');
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      evaluatePolicy,
+      goalProvider: () => goal,
+      permissionCoordinator: { requireReady },
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => true),
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'browser.navigate',
+      operation: 'open_url',
+      input: {
+        url: 'https://www.youtube.com/',
+        reason: 'Mở YouTube.',
+      },
+    }));
+
+    expect(result).toMatchObject({
+      status: 'confirmed',
+      summary: 'YouTube is open.',
+    });
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(requireReady).not.toHaveBeenCalled();
+  });
+
   it('upgrades an approved sensitive desktop action before execution', async () => {
     const requestExecuting = vi.fn(async () => true);
     const goal = hostedGoal('Send the visible message.');
@@ -189,6 +231,9 @@ describe('DesktopToolWorker', () => {
         taskId: goal.id,
         text: 'A send button is visible.',
       }),
+      permissionCoordinator: {
+        requireReady: vi.fn(async () => 'granted' as const),
+      },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
       taskIdProvider: () => goal.id,

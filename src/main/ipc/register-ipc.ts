@@ -13,6 +13,7 @@ import {
   GetUsageBudgetRequestSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
+  ResolveComputerPermissionRequestSchema,
   SetVoiceAudioDuckingRequestSchema,
   SystemPermissionSchema,
   TaskUpdateSchema,
@@ -71,6 +72,7 @@ import type { UsageBudgetService } from '../budget/usage-budget-service';
 import type { CompanionCustomizationService } from '../companion/companion-customization-service';
 import type { CuaService } from '../cua/cua-service';
 import type { TaskHistoryService } from '../history/task-history-service';
+import type { ComputerPermissionCoordinator } from '../hosted/computer-permission-coordinator';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
 import type { ActivityWorkspacePreparationService } from '../knowledge/activity-workspace-preparation-service';
 import type { ClassroomDirectiveService } from '../knowledge/classroom-directive-service';
@@ -103,6 +105,10 @@ interface IpcServices {
   >;
   cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
+  computerPermissionCoordinator: Pick<
+    ComputerPermissionCoordinator,
+    'continueWithout' | 'openSettings' | 'refresh'
+  >;
   getCompanionInteractionWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
@@ -258,6 +264,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getVoiceStatus,
     IPC_CHANNELS.getWorkspaceRuntimeAvailability,
     IPC_CHANNELS.openSystemPermissionSettings,
+    IPC_CHANNELS.resolveComputerPermission,
     IPC_CHANNELS.recordVoiceTranscript,
     IPC_CHANNELS.respondToInteraction,
     IPC_CHANNELS.reportVoiceDiagnostic,
@@ -841,6 +848,21 @@ export function registerIpcHandlers(
       await services.openSystemPermissionSettings(
         SystemPermissionSchema.parse(input),
       );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.resolveComputerPermission,
+    async (event, input: unknown) => {
+      await assertAuthorizedSender(event, mainWindow, services.authService);
+      const request = ResolveComputerPermissionRequestSchema.parse(input);
+      if (request.action === 'open_system_settings') {
+        await services.computerPermissionCoordinator.openSettings(request.taskId);
+      } else if (request.action === 'continue_without_computer') {
+        await services.computerPermissionCoordinator.continueWithout(request.taskId);
+      } else {
+        await services.computerPermissionCoordinator.refresh();
+      }
     },
   );
 
