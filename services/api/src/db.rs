@@ -120,6 +120,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "organization profile settings",
             include_str!("../migrations/022_organization_profile_settings.sql"),
         ),
+        migration(
+            23,
+            "user knowledge spaces access",
+            include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

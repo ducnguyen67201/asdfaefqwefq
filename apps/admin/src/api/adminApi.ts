@@ -151,6 +151,11 @@ export const adminApi = {
       `/v1/admin/users/${encodeURIComponent(userId)}/classroom-role`,
       { body: JSON.stringify({ role }), method: 'PATCH' },
     ),
+  setKnowledgeSpacesEnabled: (userId: string, enabled: boolean) =>
+    requestWithoutBody(
+      `/v1/admin/users/${encodeURIComponent(userId)}/knowledge-spaces`,
+      { body: JSON.stringify({ enabled }), method: 'PATCH' },
+    ),
 };
 
 export function isUnauthorized(error: unknown): boolean {

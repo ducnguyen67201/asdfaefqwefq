@@ -31,13 +31,8 @@ pub async fn handle(
     body: &Bytes,
 ) -> ApiResult<Option<Response>> {
     let path = uri.path();
-    if method == Method::GET && path == "/v1/capabilities" {
-        return Ok(Some(json_response(
-            StatusCode::OK,
-            json!({"knowledgeSpaces":{"enabled":state.config.knowledge_spaces.enabled,"contractVersion":2}}),
-        )?));
-    }
-    if !state.config.knowledge_spaces.enabled || !matches_knowledge(path) {
+    let reads_capabilities = method == Method::GET && path == "/v1/capabilities";
+    if !reads_capabilities && !matches_knowledge(path) {
         return Ok(None);
     }
     let current = session(state, headers).await.map_err(|error| {
@@ -58,6 +53,20 @@ pub async fn handle(
             )
         }
     })?;
+    let knowledge_spaces_enabled = state.knowledge.enabled_for(&current.user.id).await?;
+    if reads_capabilities {
+        return Ok(Some(json_response(
+            StatusCode::OK,
+            json!({"knowledgeSpaces":{"enabled":knowledge_spaces_enabled,"contractVersion":2}}),
+        )?));
+    }
+    if !knowledge_spaces_enabled {
+        return Err(ApiError::coded(
+            StatusCode::FORBIDDEN,
+            "knowledge_spaces_disabled",
+            "Knowledge Spaces are disabled for this account.",
+        ));
+    }
     let membership = access(state, &current).await.map_err(|error| {
         if error.status == StatusCode::FORBIDDEN {
             ApiError::coded(
@@ -353,6 +362,13 @@ fn invalid() -> ApiError {
         StatusCode::BAD_REQUEST,
         "invalid_request",
         "Request data is invalid.",
+    )
+}
+fn knowledge_storage_unavailable() -> ApiError {
+    ApiError::coded(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "knowledge_storage_unavailable",
+        "Knowledge file storage is not configured.",
     )
 }
 fn strict_object(input: &Value, allowed: &[&str]) -> ApiResult<()> {
@@ -680,7 +696,7 @@ async fn initiate_upload(
         .knowledge
         .object_store
         .as_ref()
-        .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+        .ok_or_else(knowledge_storage_unavailable)?;
     let mut tx = state.pool.begin().await?;
     let mut pending = Vec::new();
     for (client, name, path, media, size, sha, role) in parsed_files {
@@ -749,7 +765,7 @@ async fn complete_upload(
         .knowledge
         .object_store
         .as_ref()
-        .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+        .ok_or_else(knowledge_storage_unavailable)?;
     let head = store.head(row.get("object_key")).await?;
     let checksum = STANDARD.encode(decode_hex(&row.get::<String, _>("sha256"))?);
     if head.byte_size != row.get::<i64, _>("byte_size")
@@ -1152,7 +1168,7 @@ async fn starter_files(state: &AppState, user: &str, attempt: Uuid) -> ApiResult
             .knowledge
             .object_store
             .as_ref()
-            .ok_or_else(|| ApiError::internal(anyhow::anyhow!("object store unavailable")))?;
+            .ok_or_else(knowledge_storage_unavailable)?;
         files.push(json!({"byteSize":row.get::<i64,_>("byte_size"),"mediaType":row.get::<String,_>("media_type"),"relativePath":row.get::<String,_>("virtual_path"),"sha256":row.get::<String,_>("sha256"),"sourceVersionId":row.get::<Uuid,_>("version_id"),"download":store.get_ticket(row.get("object_key")).await?}));
     }
     json_response(StatusCode::OK, json!({"files":files}))

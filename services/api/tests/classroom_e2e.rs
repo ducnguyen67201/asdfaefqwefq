@@ -749,10 +749,7 @@ fn test_config(database_url: String) -> Config {
         eleven_labs_model_id: "eleven_multilingual_v2".to_owned(),
         eleven_labs_voice_id: None,
         google_client_id: "classroom-e2e.apps.googleusercontent.com".to_owned(),
-        knowledge_spaces: KnowledgeConfig {
-            enabled: true,
-            object_store: None,
-        },
+        knowledge_spaces: KnowledgeConfig { object_store: None },
         openai_api_key: "test-openai-key".to_owned(),
         openai_models: BTreeSet::from(["gpt-5.6-luna".to_owned()]),
         port: 0,

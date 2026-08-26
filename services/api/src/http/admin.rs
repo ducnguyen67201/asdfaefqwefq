@@ -256,6 +256,18 @@ pub async fn handle(
                 .ok_or_else(invalid)?;
             return Ok(Some(set_classroom_role(state, &user, role).await?));
         }
+        if parts[4] == "knowledge-spaces" && method == Method::PATCH {
+            let input = read_json(headers, body, 4_096)?;
+            let enabled = input
+                .as_object()
+                .filter(|map| map.len() == 1)
+                .and_then(|map| map.get("enabled"))
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid)?;
+            return Ok(Some(
+                set_knowledge_spaces_enabled(state, &user, enabled).await?,
+            ));
+        }
         if parts[4] == "access-code" && method == Method::POST {
             let input = read_json(headers, body, 4_096)?;
             let code = input
@@ -423,7 +435,7 @@ async fn list_users(state: &AppState, uri: &Uri) -> ApiResult<Response> {
     .bind(classroom)
     .fetch_one(&state.pool)
     .await?;
-    let rows=sqlx::query("SELECT users.id,users.email,users.name,users.plan,users.classroom_role,users.blocked_at,users.created_at,
+    let rows=sqlx::query("SELECT users.id,users.email,users.name,users.plan,users.classroom_role,users.knowledge_spaces_enabled,users.blocked_at,users.created_at,
                                 redemptions.access_code_id,codes.label code_label,latest_session.last_seen_at,
                                 COUNT(*)OVER()::int filtered_total
                          FROM users
@@ -440,7 +452,7 @@ async fn list_users(state: &AppState, uri: &Uri) -> ApiResult<Response> {
     );
     json_response(
         StatusCode::OK,
-        json!({"items":rows.into_iter().map(|row|{let blocked=row.get::<Option<time::OffsetDateTime>,_>("blocked_at");json!({"accessCodeId":row.get::<Option<Uuid>,_>("access_code_id"),"blockedAt":blocked.map(format_time),"classroomRole":row.get::<String,_>("classroom_role"),"codeLabel":row.get::<Option<String>,_>("code_label"),"createdAt":format_time(row.get("created_at")),"email":row.get::<String,_>("email"),"id":row.get::<String,_>("id"),"lastSeenAt":row.get::<Option<time::OffsetDateTime>,_>("last_seen_at").map(format_time),"name":row.get::<String,_>("name"),"plan":row.get::<String,_>("plan"),"status":if blocked.is_some(){"blocked"}else{"active"}})}).collect::<Vec<_>>(),"page":{"limit":limit,"offset":offset,"total":total},"summary":{"activeUsers":summary.get::<i32,_>("active_users"),"blockedUsers":summary.get::<i32,_>("blocked_users"),"totalUsers":summary.get::<i32,_>("total_users")}}),
+        json!({"items":rows.into_iter().map(|row|{let blocked=row.get::<Option<time::OffsetDateTime>,_>("blocked_at");json!({"accessCodeId":row.get::<Option<Uuid>,_>("access_code_id"),"blockedAt":blocked.map(format_time),"classroomRole":row.get::<String,_>("classroom_role"),"codeLabel":row.get::<Option<String>,_>("code_label"),"createdAt":format_time(row.get("created_at")),"email":row.get::<String,_>("email"),"id":row.get::<String,_>("id"),"knowledgeSpacesEnabled":row.get::<bool,_>("knowledge_spaces_enabled"),"lastSeenAt":row.get::<Option<time::OffsetDateTime>,_>("last_seen_at").map(format_time),"name":row.get::<String,_>("name"),"plan":row.get::<String,_>("plan"),"status":if blocked.is_some(){"blocked"}else{"active"}})}).collect::<Vec<_>>(),"page":{"limit":limit,"offset":offset,"total":total},"summary":{"activeUsers":summary.get::<i32,_>("active_users"),"blockedUsers":summary.get::<i32,_>("blocked_users"),"totalUsers":summary.get::<i32,_>("total_users")}}),
     )
 }
 async fn set_classroom_role(state: &AppState, user: &str, classroom: &str) -> ApiResult<Response> {
@@ -490,6 +502,37 @@ async fn set_classroom_role(state: &AppState, user: &str, classroom: &str) -> Ap
     json_response(
         StatusCode::OK,
         json!({"classroomRole":updated.get::<String,_>("classroom_role"),"id":updated.get::<String,_>("id"),"kind":"updated"}),
+    )
+}
+async fn set_knowledge_spaces_enabled(
+    state: &AppState,
+    user: &str,
+    enabled: bool,
+) -> ApiResult<Response> {
+    let mut tx = state.pool.begin().await?;
+    let row = sqlx::query("SELECT id,knowledge_spaces_enabled FROM users WHERE id=$1 FOR UPDATE")
+        .bind(user)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| {
+            ApiError::coded(StatusCode::NOT_FOUND, "user_not_found", "User not found.")
+        })?;
+    let updated = sqlx::query(
+        "UPDATE users SET knowledge_spaces_enabled=$2,updated_at=NOW() WHERE id=$1 RETURNING id,knowledge_spaces_enabled",
+    )
+    .bind(user)
+    .bind(enabled)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO admin_audit_events(action,target_user_id,detail)VALUES('user.knowledge_spaces_access_updated',$1,$2)")
+        .bind(user)
+        .bind(json!({"from":row.get::<bool,_>("knowledge_spaces_enabled"),"to":enabled}))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    json_response(
+        StatusCode::OK,
+        json!({"id":updated.get::<String,_>("id"),"kind":"updated","knowledgeSpacesEnabled":updated.get::<bool,_>("knowledge_spaces_enabled")}),
     )
 }
 async fn list_usage(state: &AppState, uri: &Uri) -> ApiResult<Response> {

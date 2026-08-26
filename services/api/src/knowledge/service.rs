@@ -145,6 +145,15 @@ impl KnowledgeService {
             hmac_key: hmac_key.to_owned(),
         }
     }
+    pub async fn enabled_for(&self, user: &str) -> ApiResult<bool> {
+        Ok(sqlx::query_scalar(
+            "SELECT knowledge_spaces_enabled FROM users WHERE id=$1 AND blocked_at IS NULL",
+        )
+        .bind(user)
+        .fetch_optional(&self.pool)
+        .await?
+        .unwrap_or(false))
+    }
     pub async fn role(&self, user: &str, space: Uuid, allowed: &[&str]) -> ApiResult<&'static str> {
         let row=sqlx::query("SELECT members.role,users.classroom_role FROM knowledge_space_members members JOIN users ON users.id=members.user_id WHERE members.space_id=$1 AND members.user_id=$2 AND members.removed_at IS NULL").bind(space).bind(user).fetch_optional(&self.pool).await?;
         let Some(row) = row else {

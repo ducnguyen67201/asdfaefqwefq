@@ -130,10 +130,7 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
         eleven_labs_model_id: "eleven_multilingual_v2".to_owned(),
         eleven_labs_voice_id: None,
         google_client_id: "http-test.apps.googleusercontent.com".to_owned(),
-        knowledge_spaces: KnowledgeConfig {
-            enabled: true,
-            object_store,
-        },
+        knowledge_spaces: KnowledgeConfig { object_store },
         openai_api_key: "test-openai-key".to_owned(),
         openai_models: BTreeSet::from([
             "gpt-5.6-luna".to_owned(),
@@ -385,9 +382,8 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         StatusCode::OK,
     );
     let capabilities = send(&router, Method::GET, "/v1/capabilities", None, None).await;
-    assert_status(&capabilities, StatusCode::OK);
-    assert_eq!(capabilities.json()["knowledgeSpaces"]["enabled"], true);
-    assert_eq!(capabilities.json()["knowledgeSpaces"]["contractVersion"], 2);
+    assert_status(&capabilities, StatusCode::UNAUTHORIZED);
+    assert_eq!(capabilities.json()["code"], "authentication_required");
     let asset = send(&router, Method::GET, "/source/admin", None, None).await;
     assert_status(&asset, StatusCode::OK);
     assert!(asset.headers.contains_key("content-security-policy"));
@@ -429,6 +425,17 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let owner_token = issue_user(&state, "http-owner").await;
     let participant_token = issue_user(&state, "http-participant").await;
     let facilitator_token = issue_user(&state, "http-facilitator").await;
+    let capabilities = send(
+        &router,
+        Method::GET,
+        "/v1/capabilities",
+        Some(&owner_token),
+        None,
+    )
+    .await;
+    assert_status(&capabilities, StatusCode::OK);
+    assert_eq!(capabilities.json()["knowledgeSpaces"]["enabled"], true);
+    assert_eq!(capabilities.json()["knowledgeSpaces"]["contractVersion"], 2);
     assert_status(
         &send(
             &router,
@@ -502,17 +509,66 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         assert_status(&assigned, StatusCode::OK);
         assert_eq!(assigned.json()["classroomRole"], role);
     }
-    assert_status(
-        &send(
-            &router,
-            Method::GET,
-            "/v1/admin/users?status=active&classroomRole=teacher&limit=10",
-            Some(ADMIN_TOKEN),
-            None,
-        )
-        .await,
-        StatusCode::OK,
+    let admin_users = send(
+        &router,
+        Method::GET,
+        "/v1/admin/users?status=active&classroomRole=teacher&limit=10",
+        Some(ADMIN_TOKEN),
+        None,
+    )
+    .await;
+    assert_status(&admin_users, StatusCode::OK);
+    assert!(
+        admin_users.json()["items"]
+            .as_array()
+            .expect("admin users")
+            .iter()
+            .all(|user| user["knowledgeSpacesEnabled"] == true)
     );
+
+    let disabled_knowledge = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-participant/knowledge-spaces",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"enabled":false})),
+    )
+    .await;
+    assert_status(&disabled_knowledge, StatusCode::OK);
+    assert_eq!(disabled_knowledge.json()["knowledgeSpacesEnabled"], false);
+    let disabled_capabilities = send(
+        &router,
+        Method::GET,
+        "/v1/capabilities",
+        Some(&participant_token),
+        None,
+    )
+    .await;
+    assert_status(&disabled_capabilities, StatusCode::OK);
+    assert_eq!(
+        disabled_capabilities.json()["knowledgeSpaces"]["enabled"],
+        false
+    );
+    let disabled_spaces = send(
+        &router,
+        Method::GET,
+        "/v1/spaces",
+        Some(&participant_token),
+        None,
+    )
+    .await;
+    assert_status(&disabled_spaces, StatusCode::FORBIDDEN);
+    assert_eq!(disabled_spaces.json()["code"], "knowledge_spaces_disabled");
+    let enabled_knowledge = send(
+        &router,
+        Method::PATCH,
+        "/v1/admin/users/http-participant/knowledge-spaces",
+        Some(ADMIN_TOKEN),
+        Some(&json!({"enabled":true})),
+    )
+    .await;
+    assert_status(&enabled_knowledge, StatusCode::OK);
+    assert_eq!(enabled_knowledge.json()["knowledgeSpacesEnabled"], true);
     assert_status(
         &send(
             &router,
