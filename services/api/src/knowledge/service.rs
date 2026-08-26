@@ -13,7 +13,8 @@ use crate::{
     auth::{open_invite_code, seal_invite_code},
     error::{ApiError, ApiResult},
     knowledge::{
-        ClassroomRole, ObjectStore, SpaceRole, can_add_member, classroom_role_allows_space_role,
+        ClassroomRole, ObjectStore, SpaceRole, can_add_member, can_redeem_space_invite,
+        classroom_role_allows_space_role,
     },
     usage::Plan,
     validation::{js_string_len, truncate_js_string, zod_uuid},
@@ -187,12 +188,13 @@ impl KnowledgeService {
         })
     }
     pub async fn list_spaces(&self, user: &str) -> ApiResult<Value> {
-        let classroom_role: Option<String> =
+        let classroom_role: String =
             sqlx::query_scalar("SELECT classroom_role FROM users WHERE id=$1")
                 .bind(user)
                 .fetch_optional(&self.pool)
-                .await?;
-        let mut rows=sqlx::query("SELECT spaces.id,spaces.name,spaces.description,spaces.purpose_label,members.role,spaces.created_at,spaces.updated_at FROM knowledge_spaces spaces JOIN knowledge_space_members members ON members.space_id=spaces.id WHERE members.user_id=$1 AND members.removed_at IS NULL AND spaces.archived_at IS NULL ORDER BY spaces.created_at DESC,spaces.id DESC LIMIT 51").bind(user).fetch_all(&self.pool).await?;
+                .await?
+                .unwrap_or_else(|| "unassigned".to_owned());
+        let mut rows=sqlx::query("SELECT spaces.id,spaces.name,spaces.description,spaces.purpose_label,members.role,spaces.created_at,spaces.updated_at FROM knowledge_spaces spaces JOIN knowledge_space_members members ON members.space_id=spaces.id WHERE members.user_id=$1 AND members.removed_at IS NULL AND spaces.archived_at IS NULL AND($2='teacher'OR($2='student'AND members.role='participant'))ORDER BY spaces.created_at DESC,spaces.id DESC LIMIT 51").bind(user).bind(&classroom_role).fetch_all(&self.pool).await?;
         let has_more = rows.len() > 50;
         rows.truncate(50);
         let next_cursor = if has_more {
@@ -206,7 +208,7 @@ impl KnowledgeService {
             None
         };
         Ok(
-            json!({"classroomRole":classroom_role.unwrap_or_else(||"unassigned".to_owned()),"items":rows.into_iter().map(|row|json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":row.get::<String,_>("role"),"createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))})).collect::<Vec<_>>(),"nextCursor":next_cursor}),
+            json!({"classroomRole":classroom_role,"items":rows.into_iter().map(|row|json!({"id":row.get::<Uuid,_>("id"),"name":row.get::<String,_>("name"),"description":row.get::<String,_>("description"),"purposeLabel":row.get::<Option<String>,_>("purpose_label"),"role":row.get::<String,_>("role"),"createdAt":iso(Some(row.get("created_at"))),"updatedAt":iso(Some(row.get("updated_at")))})).collect::<Vec<_>>(),"nextCursor":next_cursor}),
         )
     }
     pub async fn create_space(
@@ -612,6 +614,19 @@ impl KnowledgeService {
         let revoked: Option<OffsetDateTime> = row.get("revoked_at");
         let expires: Option<OffsetDateTime> = row.get("expires_at");
         let invite_role = SpaceRole::parse(&role).ok_or_else(invalid_request)?;
+        let existing_role: Option<String> = sqlx::query_scalar("SELECT role FROM knowledge_space_members WHERE space_id=$1 AND user_id=$2 AND removed_at IS NULL")
+            .bind(space)
+            .bind(user)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let parsed_existing_role = existing_role.as_deref().and_then(SpaceRole::parse);
+        if !can_redeem_space_invite(invite_role, parsed_existing_role) {
+            return Err(ApiError::coded(
+                http::StatusCode::FORBIDDEN,
+                "classroom_membership_required",
+                "A Teacher must add your account to this class before you can use its codes.",
+            ));
+        }
         let account =
             sqlx::query("SELECT classroom_role,blocked_at FROM users WHERE id=$1 FOR UPDATE")
                 .bind(user)
@@ -636,11 +651,6 @@ impl KnowledgeService {
             .bind(id)
             .bind(user)
             .fetch_one(&mut *tx)
-            .await?;
-        let existing_role: Option<String> = sqlx::query_scalar("SELECT role FROM knowledge_space_members WHERE space_id=$1 AND user_id=$2 AND removed_at IS NULL")
-            .bind(space)
-            .bind(user)
-            .fetch_optional(&mut *tx)
             .await?;
         if already_redeemed {
             tx.commit().await?;

@@ -2,7 +2,7 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::knowledge::{ClassroomRole, SpaceRole, classroom_role_allows_space_role};
+use crate::knowledge::{ClassroomRole, SpaceRole, can_join_live_room};
 use crate::{Row, postgres::PgRow, query, query_scalar};
 
 use super::directives::directive_from_row;
@@ -162,20 +162,21 @@ impl ClassroomService {
             .bind(user_id)
             .fetch_optional(&mut *transaction)
             .await?;
-        let account_can_join = account.is_some_and(|account| {
-            account
-                .get::<Option<OffsetDateTime>, _>("blocked_at")
-                .is_none()
-                && ClassroomRole::parse(&account.get::<String, _>("classroom_role")).is_some_and(
-                    |role| classroom_role_allows_space_role(role, SpaceRole::Participant),
+        let classroom_role = account
+            .as_ref()
+            .filter(|account| {
+                account
+                    .get::<Option<OffsetDateTime>, _>("blocked_at")
+                    .is_none()
+            })
+            .and_then(|account| ClassroomRole::parse(&account.get::<String, _>("classroom_role")))
+            .filter(|role| matches!(role, ClassroomRole::Student))
+            .ok_or_else(|| {
+                ApiError::forbidden(
+                    "classroom_role_mismatch",
+                    "Your account role does not allow joining this class room.",
                 )
-        });
-        if !account_can_join {
-            return Err(ApiError::forbidden(
-                "classroom_role_mismatch",
-                "Your account role does not allow joining this class room.",
-            ));
-        }
+            })?;
         let room = query(
             r#"SELECT codes.id AS code_id,codes.max_uses,codes.used_count,codes.expires_at,
                       codes.revoked_at,runs.id AS run_id,runs.space_id,runs.activity_version_id,
@@ -203,6 +204,22 @@ impl ClassroomService {
             || !definition_bool(&definition, &["sessionPolicy", "allowRoomJoin"])
         {
             return Err(invalid_room_code());
+        }
+        let space_id: Uuid = room.get("space_id");
+        let existing_role: Option<String> = query_scalar(
+            r#"SELECT role FROM knowledge_space_members
+               WHERE space_id=$1 AND user_id=$2 AND removed_at IS NULL"#,
+        )
+        .bind(space_id)
+        .bind(user_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let existing_role = existing_role.as_deref().and_then(SpaceRole::parse);
+        if !can_join_live_room(classroom_role, existing_role) {
+            return Err(ApiError::forbidden(
+                "classroom_membership_required",
+                "A Teacher must add your account to this class before you can join its room.",
+            ));
         }
         let run_id: Uuid = room.get("run_id");
         let prior = query(
@@ -239,20 +256,6 @@ impl ClassroomService {
             .execute(&mut *transaction)
             .await?;
         }
-        let space_id: Uuid = room.get("space_id");
-        query(
-            r#"INSERT INTO knowledge_space_members (space_id,user_id,role)
-               VALUES ($1,$2,'participant')
-               ON CONFLICT (space_id,user_id) DO UPDATE SET
-                 removed_at=NULL,
-                 role=CASE WHEN knowledge_space_members.removed_at IS NULL
-                                AND knowledge_space_members.role IN ('owner','facilitator')
-                           THEN knowledge_space_members.role ELSE 'participant' END"#,
-        )
-        .bind(space_id)
-        .bind(user_id)
-        .execute(&mut *transaction)
-        .await?;
         let assignment_id: Uuid = query_scalar(
             r#"INSERT INTO knowledge_activity_assignments (run_id,user_id)
                VALUES ($1,$2)

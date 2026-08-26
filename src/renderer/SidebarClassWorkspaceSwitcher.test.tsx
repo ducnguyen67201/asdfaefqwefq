@@ -33,7 +33,9 @@ describe('SidebarClassWorkspaceSwitcher', () => {
         appLanguage="en"
         classroomRole="unassigned"
         currentSpace={null}
+        onManageMembers={vi.fn()}
         onOpen={vi.fn()}
+        onOpenAll={vi.fn()}
         spaces={spaces}
       />,
     );
@@ -42,22 +44,61 @@ describe('SidebarClassWorkspaceSwitcher', () => {
     expect(markup).not.toContain('Role pending');
   });
 
-  it('shows the assigned role and every available class below the plan', () => {
+  it('lets a Student switch among Teacher-added learning workspaces', () => {
     const markup = renderToStaticMarkup(
       <SidebarClassWorkspaceSwitcher
         appLanguage="en"
         classroomRole="student"
         currentSpace={null}
+        onManageMembers={vi.fn()}
         onOpen={vi.fn()}
-        spaces={spaces}
+        onOpenAll={vi.fn()}
+        spaces={spaces.filter((space) => space.role === 'participant')}
       />,
     );
 
     expect(markup).toContain('Student');
-    expect(markup).toContain('Choose a class');
+    expect(markup).toContain('Class workspaces');
+    expect(markup).toContain('All class workspaces');
     expect(markup).toContain('Design Lab');
+    expect(markup).toContain('Learning');
+    expect(markup).not.toContain('Teaching');
+    expect(markup).not.toContain('Add members');
+  });
+
+  it('gives a Teacher a direct member action for teaching workspaces', () => {
+    const markup = renderToStaticMarkup(
+      <SidebarClassWorkspaceSwitcher
+        appLanguage="en"
+        classroomRole="teacher"
+        currentSpace={spaces[1] ?? null}
+        onManageMembers={vi.fn()}
+        onOpen={vi.fn()}
+        onOpenAll={vi.fn()}
+        spaces={spaces.filter((space) => space.role !== 'participant')}
+      />,
+    );
+
     expect(markup).toContain('Scratch Club');
     expect(markup).toContain('Teaching');
-    expect(markup).toContain('Learning');
+    expect(markup).toContain('Add members');
+  });
+
+  it('keeps the class workspace entry available before a Teacher owns a class', () => {
+    const markup = renderToStaticMarkup(
+      <SidebarClassWorkspaceSwitcher
+        appLanguage="en"
+        classroomRole="teacher"
+        currentSpace={null}
+        onManageMembers={vi.fn()}
+        onOpen={vi.fn()}
+        onOpenAll={vi.fn()}
+        spaces={[]}
+      />,
+    );
+
+    expect(markup).toContain('Teacher');
+    expect(markup).toContain('Switch class workspace');
+    expect(markup).toContain('All class workspaces');
   });
 });

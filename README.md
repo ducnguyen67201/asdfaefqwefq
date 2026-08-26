@@ -18,10 +18,10 @@ The desktop application uses Electron, React, TypeScript, and [CUA Driver](https
 Implemented:
 
 - Feature-flagged Knowledge Spaces with a private versioned Library, reusable
-  Activities, groups and expiring join codes, live/async/hybrid Runs, private
-  Attempts, starter Workspaces, scoped source search, explicit submissions,
-  and evidence-based facilitator dashboards. PostgreSQL is authoritative; no
-  manifest or Firebase is required.
+  Activities, Teacher-managed rosters and groups, live/async/hybrid Runs,
+  private Attempts, starter Workspaces, scoped source search, explicit
+  submissions, and evidence-based facilitator dashboards. PostgreSQL is
+  authoritative; no manifest or Firebase is required.
 
 - Live classroom rooms built on the same Run and Attempt model: teacher-only
   material publishing, short-lived room admission, lobby/start/end lifecycle,

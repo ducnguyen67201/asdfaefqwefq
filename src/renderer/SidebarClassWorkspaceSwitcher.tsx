@@ -14,13 +14,17 @@ export function SidebarClassWorkspaceSwitcher({
   appLanguage,
   classroomRole,
   currentSpace,
+  onManageMembers,
   onOpen,
+  onOpenAll,
   spaces,
 }: {
   appLanguage: AppLanguage;
   classroomRole: ClassroomAccountRole;
   currentSpace: KnowledgeSpaceSummary | null;
+  onManageMembers: (space: KnowledgeSpaceSummary) => void;
   onOpen: (space: KnowledgeSpaceSummary) => void;
+  onOpenAll: () => void;
   spaces: KnowledgeSpaceSummary[];
 }) {
   if (!hasAssignedClassroomRole(classroomRole)) return null;
@@ -37,45 +41,92 @@ export function SidebarClassWorkspaceSwitcher({
         <i aria-hidden="true" />
         {t(classroomRole === 'teacher' ? 'Teacher' : 'Student')}
       </span>
-      {spaces.length > 0 && (
-        <label>
-          <span>{t('Class workspace')}</span>
-          <select
-            aria-label={t('Switch class workspace')}
-            onChange={(event) => {
-              const next = spaces.find(
-                (space) => space.id === event.target.value,
-              );
-              if (next) onOpen(next);
+      <details className="sidebar-class-workspace__picker">
+        <summary aria-label={t('Switch class workspace')}>
+          <span>
+            <small>{t('Class workspaces')}</small>
+            <strong>
+              {currentSpace?.name ?? t('All class workspaces')}
+            </strong>
+          </span>
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="m7 9 5 5 5-5" />
+          </svg>
+        </summary>
+        <div className="sidebar-class-workspace__menu">
+          <button
+            aria-current={currentSpace === null ? 'page' : undefined}
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onOpenAll();
             }}
-            value={currentSpace?.id ?? ''}
+            type="button"
           >
-            {!currentSpace && (
-              <option disabled value="">
-                {t('Choose a class')}
-              </option>
-            )}
-            {groupedSpaces.teaching.length > 0 && (
-              <optgroup label={t('Teaching')}>
-                {groupedSpaces.teaching.map((space) => (
-                  <option key={space.id} value={space.id}>
+            {t('All class workspaces')}
+          </button>
+          {groupedSpaces.teaching.length > 0 && (
+            <section aria-label={t('Teaching')}>
+              <span>{t('Teaching')}</span>
+              {groupedSpaces.teaching.map((space) => (
+                <div
+                  className="sidebar-class-workspace__menu-item"
+                  key={space.id}
+                >
+                  <button
+                    aria-current={
+                      currentSpace?.id === space.id ? 'page' : undefined
+                    }
+                    onClick={(event) => {
+                      event.currentTarget
+                        .closest('details')
+                        ?.removeAttribute('open');
+                      onOpen(space);
+                    }}
+                    type="button"
+                  >
                     {space.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {groupedSpaces.learning.length > 0 && (
-              <optgroup label={t('Learning')}>
-                {groupedSpaces.learning.map((space) => (
-                  <option key={space.id} value={space.id}>
-                    {space.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-        </label>
-      )}
+                  </button>
+                  <button
+                    aria-label={`${t('Add members')} — ${space.name}`}
+                    className="sidebar-class-workspace__manage"
+                    onClick={(event) => {
+                      event.currentTarget
+                        .closest('details')
+                        ?.removeAttribute('open');
+                      onManageMembers(space);
+                    }}
+                    type="button"
+                  >
+                    + {t('Add members')}
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+          {groupedSpaces.learning.length > 0 && (
+            <section aria-label={t('Learning')}>
+              <span>{t('Learning')}</span>
+              {groupedSpaces.learning.map((space) => (
+                <button
+                  aria-current={
+                    currentSpace?.id === space.id ? 'page' : undefined
+                  }
+                  key={space.id}
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest('details')
+                      ?.removeAttribute('open');
+                    onOpen(space);
+                  }}
+                  type="button"
+                >
+                  {space.name}
+                </button>
+              ))}
+            </section>
+          )}
+        </div>
+      </details>
     </div>
   );
 }

@@ -21,18 +21,23 @@ import {
 import { FacilitatorRunPage } from './FacilitatorRunPage';
 import { SpaceLibrary } from './SpaceLibrary';
 
-type Tab = 'library' | 'activities' | 'people';
+export type SpaceDetailTab = 'library' | 'activities' | 'people';
 
 export function SpaceDetailPage({
   appLanguage,
+  initialTab = 'library',
   onBack,
   space,
 }: {
   appLanguage: AppLanguage;
+  initialTab?: SpaceDetailTab;
   onBack: () => void;
   space: KnowledgeSpaceSummary;
 }) {
-  const [tab, setTab] = useState<Tab>('library');
+  const canFacilitate = canManageClassPeople(space.role);
+  const [tab, setTab] = useState<SpaceDetailTab>(
+    initialTab === 'people' && !canFacilitate ? 'library' : initialTab,
+  );
   const [sources, setSources] = useState<KnowledgeSourceList['items']>([]);
   const [groups, setGroups] = useState<KnowledgeGroup[]>([]);
   const [members, setMembers] = useState<KnowledgeSpaceMember[]>([]);
@@ -49,7 +54,6 @@ export function SpaceDetailPage({
   );
   const [groupName, setGroupName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState('');
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [activityVersionId, setActivityVersionId] = useState<string | null>(
     null,
   );
@@ -69,7 +73,6 @@ export function SpaceDetailPage({
     ) => translate(appLanguage, message, replacements),
     [appLanguage],
   );
-  const canFacilitate = canManageClassPeople(space.role);
   const availableMemberRoles = rolesAvailableToMemberManager(space.role);
   const studentCount = members.filter(
     (member) => member.role === 'participant',
@@ -217,15 +220,26 @@ export function SpaceDetailPage({
     }
   };
 
-  const tabs: Tab[] = canFacilitate
+  const tabs: SpaceDetailTab[] = canFacilitate
     ? ['library', 'activities', 'people']
     : ['library', 'activities'];
 
   return (
     <section className="knowledge-page knowledge-page--class-detail">
-      <button className="back-link" onClick={onBack} type="button">
-        ← {t('All class workspaces')}
-      </button>
+      <div className="space-detail-toolbar">
+        <button className="back-link" onClick={onBack} type="button">
+          ← {t('All class workspaces')}
+        </button>
+        {canFacilitate && (
+          <button
+            className="secondary-button space-detail-toolbar__members"
+            onClick={() => setTab('people')}
+            type="button"
+          >
+            + {t('Add members')}
+          </button>
+        )}
+      </div>
       <div className="space-tabs" role="tablist">
         {tabs.map((value, index) => (
           <button
@@ -743,7 +757,7 @@ export function SpaceDetailPage({
                 <h3>{t('Groups')}</h3>
                 <p>
                   {t(
-                    'Organize students for focused activities and shared join codes.',
+                    'Organize rostered students for focused activities.',
                   )}
                 </p>
               </div>
@@ -797,51 +811,9 @@ export function SpaceDetailPage({
                       {group.participantCount} {t('participants')}
                     </span>
                   </div>
-                  <button
-                    onClick={() =>
-                      void window.tro
-                        .createKnowledgeInvite({
-                          clientId: randomUUID(),
-                          expiresAt: new Date(
-                            Date.now() + 7 * 24 * 60 * 60 * 1000,
-                          ).toISOString(),
-                          groupId: group.id,
-                          maxUses: 500,
-                          role: 'participant',
-                          spaceId: space.id,
-                        })
-                        .then((invite) => setInviteCode(invite.code))
-                        .catch((cause: unknown) =>
-                          setError(
-                            cause instanceof Error
-                              ? cause.message
-                              : t('Could not create a join code.'),
-                          ),
-                        )
-                    }
-                    type="button"
-                  >
-                    {t('Create 7-day Student join code')}
-                  </button>
                 </li>
               ))}
             </ul>
-            {inviteCode && (
-              <div className="invite-code">
-                <span className="invite-code__mark" aria-hidden="true">
-                  #
-                </span>
-                <div>
-                  <strong>{t('Student join code')}</strong>
-                  <code>{inviteCode}</code>
-                  <p>
-                    {t(
-                      'Only an account assigned as Student can use this code.',
-                    )}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         </section>
       )}

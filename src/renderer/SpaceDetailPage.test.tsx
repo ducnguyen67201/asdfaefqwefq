@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { KnowledgeSpaceSummary } from '../shared/contracts';
 
-import { SpaceDetailPage } from './SpaceDetailPage';
+import {
+  SpaceDetailPage,
+  type SpaceDetailTab,
+} from './SpaceDetailPage';
 
 const space: KnowledgeSpaceSummary = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -15,10 +18,14 @@ const space: KnowledgeSpaceSummary = {
   updatedAt: '2026-08-25T00:00:00.000Z',
 };
 
-function render(role: KnowledgeSpaceSummary['role']): string {
+function render(
+  role: KnowledgeSpaceSummary['role'],
+  initialTab: SpaceDetailTab = 'library',
+): string {
   return renderToStaticMarkup(
     <SpaceDetailPage
       appLanguage="en"
+      initialTab={initialTab}
       onBack={vi.fn()}
       space={{ ...space, role }}
     />,
@@ -44,6 +51,15 @@ describe('SpaceDetailPage role presentation', () => {
       expect(markup).toContain('Upload files');
       expect(markup).toContain('Activities');
       expect(markup).toContain('People');
+      expect(markup).toContain('Add members');
     },
   );
+
+  it('opens the Teacher roster composer from a direct member action', () => {
+    const markup = render('owner', 'people');
+
+    expect(markup).toContain('Build the roster');
+    expect(markup).toContain('Registered account emails');
+    expect(markup).not.toContain('Student join code');
+  });
 });

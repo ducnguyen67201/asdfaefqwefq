@@ -77,6 +77,7 @@ import {
 } from './push-to-talk';
 import { SettingsPage } from './SettingsPage';
 import { SidebarClassWorkspaceSwitcher } from './SidebarClassWorkspaceSwitcher';
+import type { SpaceDetailTab } from './SpaceDetailPage';
 import {
   isTaskCancellable,
   isTaskSteerable,
@@ -182,8 +183,7 @@ function NavigationIcon({
     | 'history'
     | 'insights'
     | 'organization'
-    | 'settings'
-    | 'spaces';
+    | 'settings';
 }) {
   if (name === 'agent') {
     return (
@@ -210,10 +210,6 @@ function NavigationIcon({
         <circle cx="18.5" cy="14.5" r="4" />
       </svg>
     );
-  }
-
-  if (name === 'spaces') {
-    return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6.5h7l2 2h9v10H3z" /><path d="M3 10h18" /></svg>;
   }
 
   if (name === 'assigned') {
@@ -908,6 +904,8 @@ export function App({
   const [classSpacesError, setClassSpacesError] = useState<string | null>(null);
   const [selectedClassSpace, setSelectedClassSpace] =
     useState<KnowledgeSpaceSummary | null>(null);
+  const [selectedClassSpaceTab, setSelectedClassSpaceTab] =
+    useState<SpaceDetailTab>('library');
   const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
@@ -2781,8 +2779,19 @@ export function App({
           appLanguage={appLanguageDraft}
           classroomRole={classroomRole}
           currentSpace={selectedClassSpace}
+          onManageMembers={(space) => {
+            setSelectedClassSpace(space);
+            setSelectedClassSpaceTab('people');
+            setActiveView('spaces');
+          }}
           onOpen={(space) => {
             setSelectedClassSpace(space);
+            setSelectedClassSpaceTab('library');
+            setActiveView('spaces');
+          }}
+          onOpenAll={() => {
+            setSelectedClassSpace(null);
+            setSelectedClassSpaceTab('library');
             setActiveView('spaces');
           }}
           spaces={classSpaces}
@@ -2820,26 +2829,6 @@ export function App({
           </button>
           {classroomAccessAvailable && (
             <>
-              <button
-                aria-label={t('Class workspaces')}
-                aria-current={activeView === 'spaces' ? 'page' : undefined}
-                className={`nav-item ${
-                  activeView === 'spaces' ? 'nav-item--active' : ''
-                }`}
-                onClick={() => {
-                  setSelectedClassSpace(null);
-                  setActiveView('spaces');
-                }}
-                title={
-                  isSidebarCollapsed ? t('Class workspaces') : undefined
-                }
-                type="button"
-              >
-                <NavigationIcon name="spaces" />
-                <span className="sidebar-item-label">
-                  {t('Class workspaces')}
-                </span>
-              </button>
               <button
                 aria-label={t('Classwork')}
                 aria-current={activeView === 'assigned' ? 'page' : undefined}
@@ -3044,8 +3033,12 @@ export function App({
             onAttemptFocusCleared={() => setClassroomAttemptFocus(null)}
             onLaunch={launchKnowledgeActivity}
             onRefreshClassSpaces={refreshClassSpaces}
-            onSelectSpace={setSelectedClassSpace}
+            onSelectSpace={(space) => {
+              setSelectedClassSpace(space);
+              setSelectedClassSpaceTab('library');
+            }}
             space={selectedClassSpace}
+            spaceInitialTab={selectedClassSpaceTab}
           />
         ) : activeView === 'history' ? (
           <HistoryPage
@@ -3075,6 +3068,7 @@ export function App({
               classroomAccessAvailable
                 ? () => {
                     setSelectedClassSpace(null);
+                    setSelectedClassSpaceTab('library');
                     setActiveView('spaces');
                   }
                 : undefined

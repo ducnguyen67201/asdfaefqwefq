@@ -530,6 +530,12 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tạo lớp học rồi thêm Giáo viên và Học sinh đã đăng ký.',
   'A Teacher can add your registered account to a class.':
     'Giáo viên có thể thêm tài khoản đã đăng ký của bạn vào lớp.',
+  'Teacher-managed workspace access':
+    'Quyền truy cập không gian do Giáo viên quản lý',
+  'Your class workspaces appear here only after a Teacher adds your registered account.':
+    'Không gian lớp học chỉ xuất hiện tại đây sau khi Giáo viên thêm tài khoản đã đăng ký của bạn.',
+  'After your Teacher adds you to the class, enter the room code. Tro will wait with you until class starts.':
+    'Sau khi Giáo viên thêm bạn vào lớp, hãy nhập mã phòng. Tro sẽ chờ cùng bạn cho đến khi lớp bắt đầu.',
   'Class owner': 'Chủ lớp học',
   'Open class': 'Mở lớp học',
   'All class workspaces': 'Tất cả không gian lớp học',
@@ -553,6 +559,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Roles are verified before anyone is added.':
     'Vai trò được xác minh trước khi thêm bất kỳ ai.',
   'Add registered accounts': 'Thêm tài khoản đã đăng ký',
+  'Add members': 'Thêm thành viên',
   'Build the roster': 'Xây dựng danh sách lớp',
   'Add people after their account exists and an administrator assigns their Teacher or Student role.':
     'Thêm mọi người sau khi tài khoản đã tồn tại và quản trị viên đã chỉ định vai trò Giáo viên hoặc Học sinh.',
@@ -599,6 +606,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Smaller circles': 'Các nhóm nhỏ',
   'Organize students for focused activities and shared join codes.':
     'Sắp xếp học sinh cho hoạt động tập trung và mã tham gia chung.',
+  'Organize rostered students for focused activities.':
+    'Sắp xếp học sinh trong danh sách lớp cho các hoạt động tập trung.',
   'e.g. Studio A': 'ví dụ: Nhóm A',
   'Resource count': 'Số tài nguyên',
   'Ready to add': 'Sẵn sàng để thêm',
