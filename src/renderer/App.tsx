@@ -14,9 +14,11 @@ import type {
   AppPreferences,
   AppUpdateStatus,
   AuthUser,
+  CompanionCustomizationStatus,
   CuaStatus,
   ExecutionProfile,
   GoalSpec,
+  GenerateCompanionImageRequest,
   MembershipStatus,
   OrganizationSummary,
   PendingInteraction,
@@ -34,11 +36,16 @@ import { VOICE_TRANSCRIPTION_MODEL } from '../shared/contracts';
 
 import { acceptAgentActivity } from './agent-activity-projection';
 import { appLanguageLabel, translate } from './app-language';
-import { navigationTitle, type ActiveView } from './app-navigation';
+import {
+  navigationTitle,
+  organizationSettingsAvailable,
+  type ActiveView,
+} from './app-navigation';
 import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
 import { ClassroomSessionBar } from './ClassroomSessionBar';
+import type { CompanionCustomizationBusy } from './CompanionCustomizationCard';
 import { HistoryPage } from './HistoryPage';
 import { InsightsPage } from './InsightsPage';
 import { KnowledgeHubPage } from './KnowledgeHubPage';
@@ -921,6 +928,11 @@ export function App({
   const [membershipStatus, setMembershipStatus] =
     useState<MembershipStatus | null>(null);
   const [membershipError, setMembershipError] = useState<string | null>(null);
+  const [companionStatus, setCompanionStatus] =
+    useState<CompanionCustomizationStatus | null>(null);
+  const [companionError, setCompanionError] = useState<string | null>(null);
+  const [companionBusy, setCompanionBusy] =
+    useState<CompanionCustomizationBusy>(null);
   const [organization, setOrganization] =
     useState<OrganizationSummary | null>(null);
   const [organizationError, setOrganizationError] = useState<string | null>(
@@ -946,7 +958,10 @@ export function App({
   const isStoppingTaskRef = useRef(false);
   const permissionRefreshIdRef = useRef(0);
   const membershipRefreshIdRef = useRef(0);
+  const companionRefreshIdRef = useRef(0);
+  const companionActionInFlightRef = useRef(false);
   const organizationRefreshIdRef = useRef(0);
+  const openOrganizationAfterActivationRef = useRef(false);
   const t = useCallback(
     (
       message: string,
@@ -1354,28 +1369,62 @@ export function App({
     }
   }, []);
 
-  const refreshOrganization = useCallback(async () => {
-    const refreshId = organizationRefreshIdRef.current + 1;
-    organizationRefreshIdRef.current = refreshId;
-    setIsLoadingOrganization(true);
-    setOrganizationError(null);
+  const refreshCompanionCustomization = useCallback(async () => {
+    const refreshId = companionRefreshIdRef.current + 1;
+    companionRefreshIdRef.current = refreshId;
+    setCompanionBusy('loading');
+    setCompanionError(null);
     try {
-      const response = await window.tro.getOrganization();
-      if (organizationRefreshIdRef.current !== refreshId) return;
-      setOrganization(response.organization);
-    } catch (organizationStatusError) {
-      if (organizationRefreshIdRef.current !== refreshId) return;
-      setOrganizationError(
-        organizationStatusError instanceof Error
-          ? organizationStatusError.message
-          : 'Tro could not load this organization.',
+      const nextStatus = await window.tro.getCompanionCustomizationStatus();
+      if (companionRefreshIdRef.current !== refreshId) return;
+      setCompanionStatus(nextStatus);
+    } catch (statusError) {
+      if (companionRefreshIdRef.current !== refreshId) return;
+      setCompanionStatus(null);
+      setCompanionError(
+        statusError instanceof Error
+          ? statusError.message
+          : 'Tro could not load companion settings.',
       );
     } finally {
-      if (organizationRefreshIdRef.current === refreshId) {
-        setIsLoadingOrganization(false);
+      if (companionRefreshIdRef.current === refreshId) {
+        setCompanionBusy(null);
       }
     }
   }, []);
+
+  const refreshOrganization =
+    useCallback(async (): Promise<OrganizationSummary | null> => {
+      const refreshId = organizationRefreshIdRef.current + 1;
+      organizationRefreshIdRef.current = refreshId;
+      setIsLoadingOrganization(true);
+      setOrganizationError(null);
+      try {
+        const response = await window.tro.getOrganization();
+        if (organizationRefreshIdRef.current !== refreshId) return null;
+        setOrganization(response.organization);
+        if (openOrganizationAfterActivationRef.current) {
+          openOrganizationAfterActivationRef.current = false;
+          if (organizationSettingsAvailable(response.organization)) {
+            setActiveView('organization');
+          }
+        }
+        return response.organization;
+      } catch (organizationStatusError) {
+        if (organizationRefreshIdRef.current !== refreshId) return null;
+        setOrganizationError(
+          organizationStatusError instanceof Error
+            ? organizationStatusError.message
+            : 'Tro could not load this organization.',
+        );
+        openOrganizationAfterActivationRef.current = false;
+        return null;
+      } finally {
+        if (organizationRefreshIdRef.current === refreshId) {
+          setIsLoadingOrganization(false);
+        }
+      }
+    }, []);
   useEffect(() => {
     const handleWindowFocus = (): void => {
       void refreshMembership();
@@ -1391,6 +1440,7 @@ export function App({
   useEffect(() => {
     if (!membershipAllowsAccess(membershipStatus)) {
       organizationRefreshIdRef.current += 1;
+      openOrganizationAfterActivationRef.current = false;
       queueMicrotask(() => {
         setOrganization(null);
         setOrganizationError(null);
@@ -1418,10 +1468,14 @@ export function App({
   }, [activeView, membershipStatus, refreshOrganization]);
 
   useEffect(() => {
-    if (activeView === 'organization' && organization?.role !== 'organizer') {
+    if (
+      activeView === 'organization' &&
+      !isLoadingOrganization &&
+      !organizationSettingsAvailable(organization)
+    ) {
       queueMicrotask(() => setActiveView('agent'));
     }
-  }, [activeView, organization?.role]);
+  }, [activeView, isLoadingOrganization, organization]);
 
   useEffect(() => {
     if (membershipStatus?.state !== 'active' || !membershipStatus.expiresAt) {
@@ -1441,27 +1495,45 @@ export function App({
     return () => clearTimeout(expiryTimer);
   }, [membershipStatus, refreshMembership]);
 
-  const activateMembership = useCallback(async (code: string) => {
-    setIsActivatingMembership(true);
-    setMembershipError(null);
-    try {
-      setMembershipStatus(await window.tro.activateMembership({ code }));
-    } catch (activationError) {
-      setMembershipError(
-        activationError instanceof Error
-          ? activationError.message
-          : 'Tro could not activate this membership code.',
-      );
-    } finally {
-      setIsActivatingMembership(false);
+  useEffect(() => {
+    if (
+      activeView !== 'settings' ||
+      membershipStatus?.state !== 'active'
+    ) {
+      return;
     }
-  }, []);
+
+    queueMicrotask(() => void refreshCompanionCustomization());
+  }, [activeView, membershipStatus?.state, refreshCompanionCustomization]);
+
+  const activateMembership = useCallback(
+    async (code: string) => {
+      setIsActivatingMembership(true);
+      setMembershipError(null);
+      try {
+        setMembershipStatus(await window.tro.activateMembership({ code }));
+        void refreshCompanionCustomization();
+        openOrganizationAfterActivationRef.current = true;
+        await refreshOrganization();
+      } catch (activationError) {
+        setMembershipError(
+          activationError instanceof Error
+            ? activationError.message
+            : 'Tro could not activate this membership code.',
+        );
+      } finally {
+        setIsActivatingMembership(false);
+      }
+    },
+    [refreshCompanionCustomization, refreshOrganization],
+  );
 
   const continueWithFree = useCallback(async () => {
     setIsContinuingFree(true);
     setMembershipError(null);
     try {
       setMembershipStatus(await window.tro.continueWithFree());
+      void refreshCompanionCustomization();
     } catch (continueError) {
       setMembershipError(
         continueError instanceof Error
@@ -1470,6 +1542,87 @@ export function App({
       );
     } finally {
       setIsContinuingFree(false);
+    }
+  }, [refreshCompanionCustomization]);
+
+  const generateCompanion = useCallback(
+    async (request: GenerateCompanionImageRequest): Promise<boolean> => {
+      if (companionActionInFlightRef.current) return false;
+      companionActionInFlightRef.current = true;
+      companionRefreshIdRef.current += 1;
+      setCompanionBusy('generating');
+      setCompanionError(null);
+      try {
+        setCompanionStatus(await window.tro.generateCompanionImage(request));
+        return true;
+      } catch (generationError) {
+        setCompanionError(
+          generationError instanceof Error
+            ? generationError.message
+            : 'Tro could not generate this companion.',
+        );
+        try {
+          setCompanionStatus(
+            await window.tro.getCompanionCustomizationStatus(),
+          );
+        } catch {
+          // Keep the generation error when quota refresh is unavailable.
+        }
+        return false;
+      } finally {
+        companionActionInFlightRef.current = false;
+        setCompanionBusy(null);
+      }
+    },
+    [],
+  );
+
+  const activateCompanion = useCallback(async (candidateId: string) => {
+    if (companionActionInFlightRef.current) return;
+    companionActionInFlightRef.current = true;
+    companionRefreshIdRef.current += 1;
+    setCompanionBusy('activating');
+    setCompanionError(null);
+    try {
+      setCompanionStatus(
+        await window.tro.activateCompanionCandidate({ candidateId }),
+      );
+    } catch (activationError) {
+      setCompanionError(
+        activationError instanceof Error
+          ? activationError.message
+          : 'Tro could not activate this companion.',
+      );
+      try {
+        setCompanionStatus(
+          await window.tro.getCompanionCustomizationStatus(),
+        );
+      } catch {
+        // Preserve the activation error when refreshing an expired candidate fails.
+      }
+    } finally {
+      companionActionInFlightRef.current = false;
+      setCompanionBusy(null);
+    }
+  }, []);
+
+  const useDefaultCompanion = useCallback(async () => {
+    if (companionActionInFlightRef.current) return;
+    companionActionInFlightRef.current = true;
+    companionRefreshIdRef.current += 1;
+    setCompanionBusy('resetting');
+    setCompanionError(null);
+    try {
+      setCompanionStatus(await window.tro.useDefaultCompanion());
+    } catch (resetError) {
+      setCompanionError(
+        resetError instanceof Error
+          ? resetError.message
+          : 'Tro could not restore the default companion.',
+      );
+    } finally {
+      companionActionInFlightRef.current = false;
+      setCompanionBusy(null);
     }
   }, []);
 
@@ -2197,23 +2350,6 @@ export function App({
             <NavigationIcon name="insights" />
             <span className="sidebar-item-label">{t('Insights')}</span>
           </button>
-          {organization?.role === 'organizer' && (
-            <button
-              aria-label={t('Organization')}
-              aria-current={
-                activeView === 'organization' ? 'page' : undefined
-              }
-              className={`nav-item ${
-                activeView === 'organization' ? 'nav-item--active' : ''
-              }`}
-              onClick={() => setActiveView('organization')}
-              title={isSidebarCollapsed ? t('Organization') : undefined}
-              type="button"
-            >
-              <NavigationIcon name="organization" />
-              <span className="sidebar-item-label">{t('Organization')}</span>
-            </button>
-          )}
         </nav>
 
         {hasLiveTask && (
@@ -2244,6 +2380,27 @@ export function App({
 
         <div className="sidebar-bottom">
           <nav aria-label={t('Settings')}>
+            {organizationSettingsAvailable(organization) && (
+              <button
+                aria-label={t('Organization settings')}
+                aria-current={
+                  activeView === 'organization' ? 'page' : undefined
+                }
+                className={`nav-item ${
+                  activeView === 'organization' ? 'nav-item--active' : ''
+                }`}
+                onClick={() => setActiveView('organization')}
+                title={
+                  isSidebarCollapsed ? t('Organization settings') : undefined
+                }
+                type="button"
+              >
+                <NavigationIcon name="organization" />
+                <span className="sidebar-item-label">
+                  {t('Organization settings')}
+                </span>
+              </button>
+            )}
             <button
               aria-label={t('Settings')}
               aria-current={activeView === 'settings' ? 'page' : undefined}
@@ -2370,6 +2527,9 @@ export function App({
             appLanguage={appLanguageDraft}
             error={organizationError}
             isLoading={isLoadingOrganization}
+            onOpenClasses={
+              knowledgeSpacesEnabled ? () => setActiveView('spaces') : undefined
+            }
             onOrganizationChange={setOrganization}
             onRefresh={refreshOrganization}
             organization={organization}
@@ -2380,6 +2540,9 @@ export function App({
             autonomyMode={autonomyModeDraft}
             appUpdateError={appUpdateError}
             appUpdateStatus={appUpdateStatus}
+            companionBusy={companionBusy}
+            companionError={companionError}
+            companionStatus={companionStatus}
             error={settingsError}
             hasChanges={
               appPreferences?.appLanguage !== appLanguageDraft ||
@@ -2393,6 +2556,10 @@ export function App({
             isUpdatingApp={isUpdatingApp}
             membershipError={membershipError}
             membershipStatus={membershipStatus}
+            onActivateCompanion={activateCompanion}
+            organization={organization}
+            organizationError={organizationError}
+            isLoadingOrganization={isLoadingOrganization}
             onAppLanguageChange={(language) => {
               setAppLanguageDraft(language);
               setSettingsError(null);
@@ -2404,6 +2571,7 @@ export function App({
               setSettingsSaveMessage(null);
             }}
             onCheckForUpdates={() => void checkForAppUpdates()}
+            onGenerateCompanion={generateCompanion}
             onLanguageChange={(language) => {
               setLanguageDraft(language);
               setSettingsError(null);
@@ -2415,8 +2583,11 @@ export function App({
               setSettingsError(null);
               setSettingsSaveMessage(null);
             }}
+            onOpenOrganization={() => setActiveView('organization')}
+            onRefreshOrganization={() => void refreshOrganization()}
             onRestartAndInstall={() => void restartAndInstallAppUpdate()}
             onSave={() => void saveSettings()}
+            onUseDefaultCompanion={useDefaultCompanion}
             primaryLanguage={languageDraft}
             saveMessage={settingsSaveMessage}
             muteSystemAudioWhileSpeaking={muteSystemAudioWhileSpeakingDraft}

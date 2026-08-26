@@ -51,6 +51,12 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   classroomOpenDirective: ReturnType<typeof vi.fn>;
   createClassroomDirective: ReturnType<typeof vi.fn>;
   checkForUpdates: ReturnType<typeof vi.fn>;
+  companionCustomizationService: {
+    activateCandidate: ReturnType<typeof vi.fn>;
+    generate: ReturnType<typeof vi.fn>;
+    getStatus: ReturnType<typeof vi.fn>;
+    useDefault: ReturnType<typeof vi.fn>;
+  };
   transcribeVoiceSegment: ReturnType<typeof vi.fn>;
   getAppPreferences: ReturnType<typeof vi.fn>;
   getTaskHistory: ReturnType<typeof vi.fn>;
@@ -65,6 +71,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     cancelMember: ReturnType<typeof vi.fn>;
     getCurrent: ReturnType<typeof vi.fn>;
     listMembers: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   onAuthSignedIn: ReturnType<typeof vi.fn>;
   restartAndInstallUpdate: ReturnType<typeof vi.fn>;
@@ -272,6 +279,25 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     summary: 'Workspace mode is available through the Tro service.',
   }));
   const workspaceSelect = vi.fn(async () => null);
+  const companionStatus = {
+    appearance: { kind: 'default' as const },
+    candidate: null,
+    quota: {
+      limit: 5 as const,
+      periodEndsAt: '2026-09-01T00:00:00.000Z',
+      periodStartsAt: '2026-08-01T00:00:00.000Z',
+      remaining: 5,
+      used: 0,
+    },
+    state: 'available' as const,
+    summary: 'Ready.',
+  };
+  const companionCustomizationService = {
+    activateCandidate: vi.fn(async () => companionStatus),
+    generate: vi.fn(async () => companionStatus),
+    getStatus: vi.fn(async () => companionStatus),
+    useDefault: vi.fn(async () => companionStatus),
+  };
   const classroomSession = {
     attemptId: '11111111-1111-4111-8111-111111111111',
     attemptState: 'assigned' as const,
@@ -352,6 +378,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       organization,
       page: { ...input, total: 1 },
     })),
+    update: vi.fn(async (input: { name: string }) => ({
+      organization: { ...organization, name: input.name },
+    })),
   };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
@@ -366,6 +395,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       update: updateAppPreferences,
     },
     authService,
+    companionCustomizationService,
     classroomDirectiveService,
     classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
@@ -426,6 +456,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     classroomJoin,
     classroomOpenDirective,
     checkForUpdates,
+    companionCustomizationService,
     transcribeVoiceSegment,
     cuaConnect,
     cuaGetStatus,
@@ -457,6 +488,78 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
 }
 
 describe('registerIpcHandlers auth boundary', () => {
+  it('authorizes and parses every companion customization operation', async () => {
+    const {
+      companionCustomizationService,
+      event,
+      membershipService,
+      unregister,
+    } = setup(true);
+    const generateRequest = {
+      imageBase64: Buffer.from('png').toString('base64'),
+      mimeType: 'image/png',
+      prompt: 'Make it blue.',
+      requestId: '11111111-1111-4111-8111-111111111111',
+    } as const;
+    const activateRequest = {
+      candidateId: '22222222-2222-4222-8222-222222222222',
+    } as const;
+
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionCustomizationStatus)
+        ?.(event),
+    ).resolves.toMatchObject({ state: 'available' });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionGenerateImage)
+        ?.(event, generateRequest),
+    ).resolves.toMatchObject({ state: 'available' });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionActivateCandidate)
+        ?.(event, activateRequest),
+    ).resolves.toMatchObject({ state: 'available' });
+    await expect(
+      electronMock.handlers.get(IPC_CHANNELS.companionUseDefault)?.(event),
+    ).resolves.toMatchObject({ state: 'available' });
+    expect(companionCustomizationService.generate).toHaveBeenCalledWith(
+      generateRequest,
+    );
+    expect(companionCustomizationService.activateCandidate).toHaveBeenCalledWith(
+      activateRequest,
+    );
+    expect(membershipService.assertActive).toHaveBeenCalledTimes(4);
+
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionGenerateImage)
+        ?.(event, { ...generateRequest, filesystemPath: '/private/image.png' }),
+    ).rejects.toThrow();
+    expect(companionCustomizationService.generate).toHaveBeenCalledOnce();
+    unregister();
+  });
+
+  it('rejects companion customization from subframes and inactive accounts', async () => {
+    const untrusted = setup(true);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionCustomizationStatus)
+        ?.({ sender: { id: 42 }, senderFrame: {} }),
+    ).rejects.toThrow('untrusted renderer');
+    expect(untrusted.companionCustomizationService.getStatus).not.toHaveBeenCalled();
+    untrusted.unregister();
+
+    const inactive = setup(true, false);
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.companionCustomizationStatus)
+        ?.(inactive.event),
+    ).rejects.toThrow('active membership');
+    expect(inactive.companionCustomizationService.getStatus).not.toHaveBeenCalled();
+    inactive.unregister();
+  });
+
   it('returns sign-in immediately, reveals Tro, and finishes setup in the background', async () => {
     const { event, onAuthSignedIn, revealMainWindow, unregister } = setup(false);
     let finishSetup: () => void = () => undefined;
@@ -921,6 +1024,13 @@ describe('registerIpcHandlers auth boundary', () => {
     });
     await expect(
       electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(event, { name: '  Greenfield School  ' }),
+    ).resolves.toMatchObject({
+      organization: { name: 'Greenfield School' },
+    });
+    await expect(
+      electronMock.handlers
         .get(IPC_CHANNELS.listOrganizationMembers)
         ?.(event, { limit: 25, offset: 0 }),
     ).resolves.toMatchObject({ page: { limit: 25, offset: 0 } });
@@ -936,6 +1046,9 @@ describe('registerIpcHandlers auth boundary', () => {
     ).resolves.toMatchObject({ kind: 'cancelled', memberId });
 
     expect(organizationClient.getCurrent).toHaveBeenCalledOnce();
+    expect(organizationClient.update).toHaveBeenCalledWith({
+      name: 'Greenfield School',
+    });
     expect(organizationClient.listMembers).toHaveBeenCalledWith({
       limit: 25,
       offset: 0,
@@ -959,15 +1072,35 @@ describe('registerIpcHandlers auth boundary', () => {
         .get(IPC_CHANNELS.cancelOrganizationMember)
         ?.(active.event, { memberId: 'not-a-uuid' }),
     ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, { name: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, {
+          name: 'Greenfield School',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+        }),
+    ).rejects.toThrow();
     expect(active.organizationClient.addMember).not.toHaveBeenCalled();
     expect(active.organizationClient.cancelMember).not.toHaveBeenCalled();
+    expect(active.organizationClient.update).not.toHaveBeenCalled();
     active.unregister();
 
     const inactive = setup(true, false);
     await expect(
       electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(inactive.event),
     ).rejects.toThrow('active membership');
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(inactive.event, { name: 'Greenfield School' }),
+    ).rejects.toThrow('active membership');
     expect(inactive.organizationClient.getCurrent).not.toHaveBeenCalled();
+    expect(inactive.organizationClient.update).not.toHaveBeenCalled();
     inactive.unregister();
 
     const untrusted = setup(true);

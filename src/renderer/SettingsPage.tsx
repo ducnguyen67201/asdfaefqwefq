@@ -2,7 +2,10 @@ import type {
   AutonomyMode,
   AppLanguage,
   AppUpdateStatus,
+  CompanionCustomizationStatus,
+  GenerateCompanionImageRequest,
   MembershipStatus,
+  OrganizationSummary,
   PrimaryLanguage,
 } from '../shared/contracts';
 
@@ -11,6 +14,10 @@ import {
   appLanguageLabel,
   translate,
 } from './app-language';
+import {
+  CompanionCustomizationCard,
+  type CompanionCustomizationBusy,
+} from './CompanionCustomizationCard';
 import {
   PRIMARY_LANGUAGE_OPTIONS,
   primaryLanguageLabel,
@@ -22,6 +29,9 @@ interface SettingsPageProps {
   appLanguage: AppLanguage;
   appUpdateError: string | null;
   appUpdateStatus: AppUpdateStatus | null;
+  companionBusy: CompanionCustomizationBusy;
+  companionError: string | null;
+  companionStatus: CompanionCustomizationStatus | null;
   error: string | null;
   hasChanges: boolean;
   isSaving: boolean;
@@ -29,15 +39,25 @@ interface SettingsPageProps {
   isUpdatingApp: boolean;
   membershipError: string | null;
   membershipStatus: MembershipStatus | null;
+  organization: OrganizationSummary | null;
+  organizationError: string | null;
+  isLoadingOrganization: boolean;
   muteSystemAudioWhileSpeaking: boolean;
   onAutonomyModeChange(mode: AutonomyMode): void;
   onAppLanguageChange(language: AppLanguage): void;
+  onActivateCompanion(candidateId: string): Promise<void>;
   onCheckForUpdates(): void;
+  onGenerateCompanion(
+    request: GenerateCompanionImageRequest,
+  ): Promise<boolean>;
   onLanguageChange(language: PrimaryLanguage): void;
   onActivateMembership(code: string): void;
   onMuteSystemAudioWhileSpeakingChange(enabled: boolean): void;
+  onOpenOrganization(): void;
+  onRefreshOrganization(): void;
   onRestartAndInstall(): void;
   onSave(): void;
+  onUseDefaultCompanion(): Promise<void>;
   primaryLanguage: PrimaryLanguage;
   saveMessage: string | null;
   systemAudioMuteSupported: boolean;
@@ -78,6 +98,9 @@ export function SettingsPage({
   appLanguage,
   appUpdateError,
   appUpdateStatus,
+  companionBusy,
+  companionError,
+  companionStatus,
   error,
   hasChanges,
   isSaving,
@@ -85,15 +108,23 @@ export function SettingsPage({
   isUpdatingApp,
   membershipError,
   membershipStatus,
+  organization,
+  organizationError,
+  isLoadingOrganization,
   muteSystemAudioWhileSpeaking,
   onAutonomyModeChange,
+  onActivateCompanion,
   onAppLanguageChange,
   onCheckForUpdates,
+  onGenerateCompanion,
   onLanguageChange,
   onActivateMembership,
   onMuteSystemAudioWhileSpeakingChange,
+  onOpenOrganization,
+  onRefreshOrganization,
   onRestartAndInstall,
   onSave,
+  onUseDefaultCompanion,
   primaryLanguage,
   saveMessage,
   systemAudioMuteSupported,
@@ -127,7 +158,7 @@ export function SettingsPage({
         <h1 id="settings-heading">{t('Settings')}</h1>
         <p>
           {t(
-            'Manage Tro’s interface language, voice input, and installed application.',
+            'Manage Tro’s companion, interface language, voice input, and installed application.',
           )}
         </p>
       </div>
@@ -201,6 +232,107 @@ export function SettingsPage({
           </form>
         )}
       </section>
+
+      <CompanionCustomizationCard
+        appLanguage={appLanguage}
+        busy={companionBusy}
+        error={companionError}
+        onActivate={onActivateCompanion}
+        onGenerate={onGenerateCompanion}
+        onUseDefault={onUseDefaultCompanion}
+        status={companionStatus}
+      />
+
+      {(organization ||
+        organizationError ||
+        (isLoadingOrganization && membershipStatus?.plan !== 'free')) && (
+        <section
+          className="settings-card settings-organization-card"
+          aria-labelledby="organization-settings-summary-heading"
+        >
+          <div className="settings-card__heading">
+            <div>
+              <p className="eyebrow">{t('Organization access')}</p>
+              <h2 id="organization-settings-summary-heading">
+                {organization?.name ?? t('Organization settings')}
+              </h2>
+            </div>
+            {organization && (
+              <span className="settings-badge settings-badge--neutral">
+                {t(organization.role === 'organizer' ? 'Organizer' : 'Member')}
+              </span>
+            )}
+          </div>
+
+          {organization ? (
+            <>
+              <dl className="settings-organization-summary">
+                <div>
+                  <dt>{t('Plan')}</dt>
+                  <dd>{planTitle(organization.plan)}</dd>
+                </div>
+                <div>
+                  <dt>{t('Assigned seats')}</dt>
+                  <dd>
+                    {t('{assigned} of {maximum}', {
+                      assigned: organization.capacity.assignedSeats,
+                      maximum: organization.capacity.maxSeats,
+                    })}
+                  </dd>
+                </div>
+              </dl>
+              <p className="settings-help">
+                {organization.role === 'organizer'
+                  ? t(
+                      'Manage your organization name and reserve seats by email. Students sign in with that address and do not need your code.',
+                    )
+                  : t(
+                      'Your Tro access is managed by this organization. You do not need to enter its access code.',
+                    )}
+              </p>
+              {organizationError && (
+                <p
+                  className="settings-feedback settings-feedback--error"
+                  role="alert"
+                >
+                  {organizationError}
+                </p>
+              )}
+              <div className="settings-actions">
+                <button
+                  className="primary-button"
+                  onClick={onOpenOrganization}
+                  type="button"
+                >
+                  {t('Open organization settings')}
+                </button>
+              </div>
+            </>
+          ) : isLoadingOrganization ? (
+            <p className="settings-help" aria-live="polite">
+              {t('Loading organization…')}
+            </p>
+          ) : (
+            <>
+              <p
+                className="settings-feedback settings-feedback--error"
+                role="alert"
+              >
+                {organizationError}
+              </p>
+              <div className="settings-actions">
+                <button
+                  className="secondary-button"
+                  onClick={onRefreshOrganization}
+                  type="button"
+                >
+                  {t('Try again')}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       <form
         className="settings-card"

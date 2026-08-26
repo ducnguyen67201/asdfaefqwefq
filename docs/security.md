@@ -42,10 +42,11 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   the revocable Google-backed device session and fail closed when the service
   is unavailable; Electron has no offline membership verifier.
 - Organization-managed access is authorized entirely by the hosted service.
-  The renderer sees only its current organization summary and receives
-  organizer controls only when the server returns `role: organizer`; every
-  list, add, and cancel request repeats session, active-access, role, code-state,
-  and capacity checks. The preload exposes four fixed schema-parsed methods,
+  Every member sees only the current organization's bounded summary (identity,
+  plan, role, and seat capacity) and receives organizer controls only when the
+  server returns `role: organizer`; every rename, list, add, and cancel request
+  repeats session, active-access, role, code-state, and capacity checks. The
+  preload exposes five fixed schema-parsed methods,
   never a generic REST or IPC bridge, plaintext access code, platform admin
   token, or arbitrary organization-ID authority.
 - An organizer reserves a seat by normalized email without looking up or
@@ -55,10 +56,12 @@ TroCode has unusually powerful local permissions. The model is treated as an unt
   PostgreSQL transaction; an expected existing-entitlement conflict leaves the
   reservation untouched while sign-in still succeeds. Access-code row locks
   serialize capacity changes, and pending seats count toward the limit.
-- Organization audit details contain IDs and seat counts only. Request logs do
-  not contain email addresses, names, request bodies, bearer tokens, or
-  plaintext access codes. Active members cannot be removed through the
-  organizer API; only pending reservations can be cancelled.
+- Organization audit details contain IDs and seat counts only. The
+  `organization.profile_updated` event records `{}` and never stores the old or
+  new organization name. Request logs do not contain email addresses, names,
+  request bodies, bearer tokens, or plaintext access codes. Active members
+  cannot be removed through the organizer API; only pending reservations can
+  be cancelled.
 - Assistant text and tool calls share one model session. A model tool call is a
   proposal, not permission or proof that an effect occurred.
 - Approval requirement and consequence are separate. In Balanced mode,
@@ -189,6 +192,24 @@ an ambiguous dispatch retains it and is never retried automatically. Usage rows
 contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
+
+Custom companion generation is available to every authenticated account with
+an active membership. It has no per-feature switch or account allowlist; the
+global paid-call switch remains the shared provider shutdown. ZDR on the exact
+OpenAI project/key is a deployment requirement. The desktop never receives the
+OpenAI key, and callers cannot override the fixed image model, one-output,
+square low-quality PNG, transparent-background, or automatic-moderation
+controls. Logs and usage rows never contain source bytes, prompts, or generated
+PNG bytes.
+
+Source images are limited to one PNG or JPEG of at most 5 MiB and a 1–400
+character prompt. Electron main verifies the image signature and dimensions,
+normalizes it before upload, keeps generated candidates in memory for ten
+minutes, and encrypts only an explicitly activated 128-pixel PNG with
+`safeStorage`. Account changes clear candidate and appearance state. The private
+`trocode-companion` protocol serves only exact candidate or active asset URLs
+with `Cache-Control: no-store`; it exposes no filesystem path or generic fetch
+capability.
 
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling

@@ -2,11 +2,13 @@ import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 
 import {
   ActivateMembershipRequestSchema,
+  ActivateCompanionCandidateRequestSchema,
   AgentActivityUpdateSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionStateSchema,
   CompanionVoiceActivitySchema,
+  GenerateCompanionImageRequestSchema,
   DecideApprovalRequestSchema,
   GetUsageBudgetRequestSchema,
   RecordVoiceTranscriptRequestSchema,
@@ -59,6 +61,7 @@ import {
   RevokeKnowledgeRoomCodeRequestSchema,
   SetClassroomLinkConsentRequestSchema,
   ListOrganizationMembersRequestSchema,
+  UpdateOrganizationRequestSchema,
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
@@ -66,6 +69,7 @@ import type { TaskRuntime } from '../agent/task-runtime';
 import type { TaskApplicationService } from '../application/task-application-service';
 import type { GoogleAuthService } from '../auth/google-auth-service';
 import type { UsageBudgetService } from '../budget/usage-budget-service';
+import type { CompanionCustomizationService } from '../companion/companion-customization-service';
 import type { CuaService } from '../cua/cua-service';
 import type { TaskHistoryService } from '../history/task-history-service';
 import type { ComputerPermissionCoordinator } from '../hosted/computer-permission-coordinator';
@@ -95,6 +99,10 @@ interface IpcServices {
   >;
   appPreferencesService: AppPreferencesService;
   authService: GoogleAuthService;
+  companionCustomizationService: Pick<
+    CompanionCustomizationService,
+    'activateCandidate' | 'generate' | 'getStatus' | 'useDefault'
+  >;
   cancelActiveTasks(): Promise<void> | void;
   cuaService: CuaService;
   computerPermissionCoordinator: Pick<
@@ -233,8 +241,12 @@ export function registerIpcHandlers(
     IPC_CHANNELS.configureVoice,
     IPC_CHANNELS.connectComputer,
     IPC_CHANNELS.companionReportSpeechPlayback,
+    IPC_CHANNELS.companionActivateCandidate,
+    IPC_CHANNELS.companionCustomizationStatus,
+    IPC_CHANNELS.companionGenerateImage,
     IPC_CHANNELS.companionResponseAction,
     IPC_CHANNELS.companionRevealMainWindow,
+    IPC_CHANNELS.companionUseDefault,
     IPC_CHANNELS.transcribeVoiceSegment,
     IPC_CHANNELS.decideApproval,
     IPC_CHANNELS.getAppPreferences,
@@ -243,6 +255,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getAuthStatus,
     IPC_CHANNELS.getMembershipStatus,
     IPC_CHANNELS.getOrganization,
+    IPC_CHANNELS.updateOrganization,
     IPC_CHANNELS.listOrganizationMembers,
     IPC_CHANNELS.addOrganizationMember,
     IPC_CHANNELS.cancelOrganizationMember,
@@ -394,6 +407,16 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(
+    IPC_CHANNELS.updateOrganization,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.update(
+        UpdateOrganizationRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.listOrganizationMembers,
     async (event, input: unknown) => {
       await assertMembershipAuthorizedSender(event, mainWindow, services);
@@ -425,6 +448,36 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.getAppPreferences, async (event) => {
     await assertAuthorizedSender(event, mainWindow, services.authService);
     return services.appPreferencesService.get();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.companionCustomizationStatus, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.companionCustomizationService.getStatus();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.companionGenerateImage,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.companionCustomizationService.generate(
+        GenerateCompanionImageRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.companionActivateCandidate,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.companionCustomizationService.activateCandidate(
+        ActivateCompanionCandidateRequestSchema.parse(input),
+      );
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.companionUseDefault, async (event) => {
+    await assertMembershipAuthorizedSender(event, mainWindow, services);
+    return services.companionCustomizationService.useDefault();
   });
 
   ipcMain.handle(IPC_CHANNELS.getKnowledgeCapabilities, async (event) => {

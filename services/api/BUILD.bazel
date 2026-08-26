@@ -118,7 +118,10 @@ trocode_rust_integration_test(
     name = "organization_managed_access_test",
     size = "small",
     src = "tests/organization_managed_access.rs",
-    compile_data = ["migrations/021_organization_managed_access.sql"],
+    compile_data = [
+        "migrations/021_organization_managed_access.sql",
+        "migrations/022_organization_profile_settings.sql",
+    ],
 )
 
 trocode_rust_integration_test(

@@ -96,6 +96,29 @@ membership, budgets, encrypted agent state, evidence, and billing ledgers are
 all PostgreSQL-backed Rust services. Screenshots and original-resolution crops
 remain bounded device memory and are not written to task history.
 
+## Custom companion image path
+
+Custom companion generation is an explicit Settings workflow, separate from
+the task agent and CUA capabilities:
+
+```text
+Settings card
+  -> schema-validated narrow preload/IPC request
+  -> Electron main MIME, signature, dimensions, decode, and <=1024px PNG normalization
+  -> authenticated hosted Rust API
+  -> atomic image-lane cost + five-per-UTC-month reservation
+  -> one fixed OpenAI Images edit request
+  -> provider modality-usage settlement
+  -> 10-minute main-memory candidate
+  -> explicit activation to 128px safeStorage-encrypted account asset
+  -> private trocode-companion URL + live overlay appearance event
+```
+
+The renderer owns only the unsubmitted `File`, object URL, and prompt. Source
+bytes and prompts never enter global renderer state, local storage, PostgreSQL,
+analytics, or content-bearing logs. Electron main owns candidate expiry,
+account-bound encryption, and exact private-protocol authorization.
+
 ## Failure behavior
 
 Missing API configuration, an incompatible Rust contract, a failed sidecar

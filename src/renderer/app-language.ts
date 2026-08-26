@@ -579,8 +579,121 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Liệt kê dữ kiện đã biết, xác định khái niệm hoặc công thức kết nối chúng, rồi kiểm tra bằng một ví dụ đơn giản hơn.',
   'Break the assignment into one smaller question, explain the first step in your own words, then practise a similar example.':
     'Chia bài tập thành một câu hỏi nhỏ hơn, tự giải thích bước đầu tiên, rồi luyện tập với một ví dụ tương tự.',
+  Personalization: 'Cá nhân hóa',
+  'Custom companion': 'Bạn đồng hành tùy chỉnh',
+  'Start with any picture, choose a style, then preview your tiny cursor companion.':
+    'Bắt đầu bằng một bức ảnh, chọn phong cách, rồi xem trước bạn đồng hành nhỏ bên con trỏ.',
+  'Getting your companion ready…': 'Đang chuẩn bị bạn đồng hành…',
+  Active: 'Đang dùng',
+  'Following your cursor now': 'Đang đi theo con trỏ',
+  'All previews used this month': 'Đã dùng hết lượt xem trước tháng này',
+  'You can create more on {date}. Your current companion stays active.':
+    'Bạn có thể tạo thêm vào {date}. Bạn đồng hành hiện tại vẫn hoạt động.',
+  'Choose a picture': 'Chọn một bức ảnh',
+  'A pet, drawing, character, or anything that feels like you.':
+    'Thú cưng, tranh vẽ, nhân vật hoặc bất cứ điều gì thể hiện bạn.',
+  'Picture ready': 'Ảnh đã sẵn sàng',
+  'Drop, paste, or click to choose': 'Thả, dán hoặc bấm để chọn',
+  'Click to choose another': 'Bấm để chọn ảnh khác',
+  'PNG or JPEG · up to 5 MiB': 'PNG hoặc JPEG · tối đa 5 MiB',
+  Change: 'Đổi',
+  Browse: 'Chọn ảnh',
+  'Describe the vibe': 'Mô tả phong cách',
+  'Try a style, mood, and a few colors.':
+    'Thử nêu phong cách, cảm xúc và một vài màu sắc.',
+  'Your idea': 'Ý tưởng của bạn',
+  'A cheerful pixel-art fox in sunny yellow and orange':
+    'Một chú cáo pixel vui vẻ với màu vàng nắng và cam',
+  'Ready for a first look?': 'Sẵn sàng xem thử chưa?',
+  '{used} of {limit} previews used · resets {date}':
+    'Đã dùng {used} trên {limit} lượt xem trước · đặt lại vào {date}',
+  'Creating your preview…': 'Đang tạo bản xem trước…',
+  'Add an image to continue': 'Thêm ảnh để tiếp tục',
+  'Describe a style to continue': 'Mô tả phong cách để tiếp tục',
+  'This can take up to 2 minutes. Keep Tro open.':
+    'Quá trình này có thể mất đến 2 phút. Hãy để Tro mở.',
+  'Private by design': 'Riêng tư ngay từ thiết kế',
+  'Sent once to OpenAI; your source and prompt are not saved by Tro.':
+    'Chỉ gửi một lần đến OpenAI; Tro không lưu ảnh nguồn và lời nhắc của bạn.',
+  'Privacy and monthly slots': 'Quyền riêng tư và lượt dùng hàng tháng',
+  'Meet your new companion': 'Gặp bạn đồng hành mới',
+  'Nothing changes until you choose to use it.':
+    'Sẽ không có gì thay đổi cho đến khi bạn chọn sử dụng.',
+  'Preview ready': 'Bản xem trước đã sẵn sàng',
+  'Made for your cursor': 'Dành riêng cho con trỏ của bạn',
+  'Turn an image into a small custom companion that follows your cursor in Tro.':
+    'Biến một hình ảnh thành bạn đồng hành nhỏ đi theo con trỏ của bạn trong Tro.',
+  '{remaining} of {limit} left this month':
+    'Còn {remaining} trên {limit} trong tháng này',
+  'Loading companion settings…': 'Đang tải cài đặt bạn đồng hành…',
+  'Current companion': 'Bạn đồng hành hiện tại',
+  'Your custom companion is active.':
+    'Bạn đồng hành tùy chỉnh của bạn đang hoạt động.',
+  'Tro’s default companion is active.':
+    'Bạn đồng hành mặc định của Tro đang hoạt động.',
+  'Use default companion': 'Dùng bạn đồng hành mặc định',
+  'Using the default removes this account’s encrypted custom image from this device.':
+    'Dùng hình mặc định sẽ xóa ảnh tùy chỉnh được mã hóa của tài khoản này khỏi thiết bị.',
+  'Restoring…': 'Đang khôi phục…',
+  'Generation unavailable': 'Không thể tạo hình',
+  'Add a source image': 'Thêm ảnh nguồn',
+  'Paste, drop, or choose a PNG or JPEG up to 5 MiB.':
+    'Dán, thả hoặc chọn ảnh PNG hay JPEG tối đa 5 MiB.',
+  'Choose image': 'Chọn ảnh',
+  'Choose a PNG or JPEG image.': 'Hãy chọn ảnh PNG hoặc JPEG.',
+  'Choose an image no larger than 5 MiB.':
+    'Hãy chọn ảnh không lớn hơn 5 MiB.',
+  'Selected source': 'Ảnh nguồn đã chọn',
+  'How should Tro customize it?': 'Bạn muốn Tro tùy chỉnh ảnh thế nào?',
+  'For example: a cheerful pixel-art fox with a transparent background':
+    'Ví dụ: một chú cáo pixel vui vẻ với nền trong suốt',
+  '{count} of 400 characters': '{count} trên 400 ký tự',
+  '{used} of {limit} generations used this month. Resets {date}.':
+    'Đã dùng {used} trên {limit} lượt tạo trong tháng này. Đặt lại vào {date}.',
+  'Your source image and prompt are sent to OpenAI only for this generation; Tro does not save them. A companion you activate stays encrypted on this device. OpenAI may retain images flagged for child-safety review. An uncertain provider outcome may use one monthly slot, and Tro will not retry it automatically.':
+    'Ảnh nguồn và lời nhắc chỉ được gửi đến OpenAI cho lượt tạo này; Tro không lưu chúng. Bạn đồng hành được kích hoạt sẽ lưu ở dạng mã hóa trên thiết bị này. OpenAI có thể lưu ảnh bị đánh dấu để xem xét an toàn trẻ em. Một kết quả không chắc chắn từ nhà cung cấp có thể dùng một lượt trong tháng và Tro sẽ không tự động thử lại.',
+  'Generating… this can take up to 2 minutes':
+    'Đang tạo… quá trình này có thể mất đến 2 phút',
+  'Monthly limit reached': 'Đã đạt giới hạn tháng',
+  'Generate preview': 'Tạo bản xem trước',
+  'Generated preview': 'Bản xem trước đã tạo',
+  'Preview available until {time}.': 'Bản xem trước có hiệu lực đến {time}.',
+  'Use this companion': 'Dùng bạn đồng hành này',
+  'Tro could not read this image.': 'Tro không thể đọc ảnh này.',
+  'Manage Tro’s companion, interface language, voice input, and installed application.':
+    'Quản lý bạn đồng hành, ngôn ngữ giao diện, nhập liệu bằng giọng nói và ứng dụng Tro đã cài đặt.',
+  'Create up to five cursor companions each month.':
+    'Tạo tối đa năm bạn đồng hành con trỏ mỗi tháng.',
+  'Companion generation is not available for this account.':
+    'Tính năng tạo bạn đồng hành không khả dụng cho tài khoản này.',
+  'Companion image generation is disabled.':
+    'Tính năng tạo ảnh bạn đồng hành đang tắt.',
   Organization: 'Tổ chức',
+  'Organization settings': 'Cài đặt tổ chức',
   'Organization access': 'Quyền truy cập tổ chức',
+  'Organization profile': 'Hồ sơ tổ chức',
+  'Organization name': 'Tên tổ chức',
+  'Organization name was not saved': 'Chưa lưu được tên tổ chức',
+  'Organization name must be between 1 and 100 characters.':
+    'Tên tổ chức phải có từ 1 đến 100 ký tự.',
+  'Organization name is already up to date.':
+    'Tên tổ chức đã được cập nhật.',
+  'Organization name saved.': 'Đã lưu tên tổ chức.',
+  'Tro could not save the organization name.':
+    'Tro không thể lưu tên tổ chức.',
+  'Save name': 'Lưu tên',
+  'Saving name…': 'Đang lưu tên…',
+  '{count} of 100 characters': '{count} trên 100 ký tự',
+  Member: 'Thành viên',
+  'Manage your organization profile and access seats.':
+    'Quản lý hồ sơ tổ chức và các chỗ truy cập.',
+  'View the organization that manages your Tro access.':
+    'Xem tổ chức đang quản lý quyền truy cập Tro của bạn.',
+  'Managed access': 'Quyền truy cập được quản lý',
+  'Your access is managed by this organization':
+    'Quyền truy cập của bạn do tổ chức này quản lý',
+  'You joined automatically with your verified Google email. You do not need to enter the organization code.':
+    'Bạn đã tự động tham gia bằng email Google đã xác minh. Bạn không cần nhập mã của tổ chức.',
   'Manage organization': 'Quản lý tổ chức',
   'Loading organization…': 'Đang tải tổ chức…',
   'No organization to manage': 'Không có tổ chức để quản lý',
@@ -595,12 +708,16 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Cancel a pending reservation before adding another person.':
     'Hủy một chỗ đang chờ trước khi thêm người khác.',
   'Access capacity': 'Sức chứa truy cập',
+  'Access seats': 'Chỗ truy cập',
   '{assigned} of {maximum} seats assigned':
     'Đã phân bổ {assigned} trên {maximum} chỗ',
   '{remaining} remaining': 'Còn {remaining} chỗ',
   '{percent}% of seats assigned': 'Đã phân bổ {percent}% số chỗ',
-  'Add a person by email': 'Thêm người bằng email',
-  'teacher@example.com': 'giaovien@example.com',
+  'Invite a student or staff member': 'Mời học sinh hoặc nhân viên',
+  'Google account email': 'Email tài khoản Google',
+  'student@example.com': 'hocsinh@example.com',
+  'Reserve the exact Google account email. Tro does not send an invitation email, and the person does not need your organization code. They join automatically when they sign in.':
+    'Giữ chỗ bằng đúng email tài khoản Google. Tro không gửi email mời và người đó không cần mã tổ chức của bạn. Họ sẽ tự động tham gia khi đăng nhập.',
   'Reserving…': 'Đang giữ chỗ…',
   'Reserve seat': 'Giữ chỗ',
   '{count} assigned seats': '{count} chỗ đã phân bổ',
@@ -622,6 +739,22 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro could not reserve this seat.': 'Tro không thể giữ chỗ này.',
   'Tro could not cancel this reserved seat.':
     'Tro không thể hủy chỗ được giữ này.',
+  Plan: 'Gói',
+  'Assigned seats': 'Chỗ đã phân bổ',
+  '{assigned} of {maximum}': '{assigned} trên {maximum}',
+  'Open organization settings': 'Mở cài đặt tổ chức',
+  'Manage your organization name and reserve seats by email. Students sign in with that address and do not need your code.':
+    'Quản lý tên tổ chức và giữ chỗ bằng email. Học sinh đăng nhập bằng địa chỉ đó và không cần mã của bạn.',
+  'Your Tro access is managed by this organization. You do not need to enter its access code.':
+    'Quyền truy cập Tro của bạn do tổ chức này quản lý. Bạn không cần nhập mã truy cập của tổ chức.',
+  'Next step: class enrollment': 'Bước tiếp theo: ghi danh vào lớp',
+  'Add active students to a class separately':
+    'Thêm riêng học sinh đang hoạt động vào lớp',
+  'An organization seat provides Tro access, but it does not enroll someone in a class.':
+    'Chỗ trong tổ chức cấp quyền truy cập Tro nhưng không ghi danh người đó vào lớp.',
+  'After the account exists and has the Student role, open Class workspaces, choose the class, then use People to add them.':
+    'Sau khi tài khoản tồn tại và có vai trò Học sinh, hãy mở Không gian lớp học, chọn lớp rồi dùng mục Mọi người để thêm họ.',
+  'Open Class workspaces': 'Mở Không gian lớp học',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

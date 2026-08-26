@@ -1,17 +1,60 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppUpdateStatus } from '../shared/contracts';
+import type {
+  AppLanguage,
+  AppUpdateStatus,
+  CompanionCustomizationStatus,
+  OrganizationSummary,
+} from '../shared/contracts';
 
 import { SettingsPage } from './SettingsPage';
 
-function renderSettings(appUpdateStatus: AppUpdateStatus): string {
+const COMPANION_STATUS: CompanionCustomizationStatus = {
+  appearance: { kind: 'default' },
+  candidate: null,
+  quota: {
+    limit: 5,
+    periodEndsAt: '2026-09-01T00:00:00.000Z',
+    periodStartsAt: '2026-08-01T00:00:00.000Z',
+    remaining: 5,
+    used: 0,
+  },
+  state: 'available',
+  summary: 'Companion generation is available.',
+};
+
+const ORGANIZATION: OrganizationSummary = {
+  capacity: {
+    assignedSeats: 4,
+    maxSeats: 25,
+    remainingSeats: 21,
+    state: 'available',
+  },
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Greenfield School',
+  plan: 'pro',
+  role: 'organizer',
+};
+
+function renderSettings(
+  appUpdateStatus: AppUpdateStatus,
+  options: {
+    appLanguage?: AppLanguage;
+    isLoadingOrganization?: boolean;
+    organization?: OrganizationSummary | null;
+    organizationError?: string | null;
+  } = {},
+): string {
   return renderToStaticMarkup(
     SettingsPage({
-      appLanguage: 'en',
+      appLanguage: options.appLanguage ?? 'en',
       autonomyMode: 'balanced',
       appUpdateError: null,
       appUpdateStatus,
+      companionBusy: null,
+      companionError: null,
+      companionStatus: COMPANION_STATUS,
       error: null,
       hasChanges: false,
       isActivatingMembership: false,
@@ -26,15 +69,24 @@ function renderSettings(appUpdateStatus: AppUpdateStatus): string {
         state: 'active',
         summary: 'Free plan active.',
       },
+      organization:
+        'organization' in options ? (options.organization ?? null) : null,
+      organizationError: options.organizationError ?? null,
+      isLoadingOrganization: options.isLoadingOrganization ?? false,
       muteSystemAudioWhileSpeaking: false,
       onActivateMembership: vi.fn(),
+      onActivateCompanion: vi.fn(),
       onAppLanguageChange: vi.fn(),
       onAutonomyModeChange: vi.fn(),
       onCheckForUpdates: vi.fn(),
+      onGenerateCompanion: vi.fn(),
       onLanguageChange: vi.fn(),
       onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+      onOpenOrganization: vi.fn(),
+      onRefreshOrganization: vi.fn(),
       onRestartAndInstall: vi.fn(),
       onSave: vi.fn(),
+      onUseDefaultCompanion: vi.fn(),
       primaryLanguage: 'en',
       saveMessage: null,
       systemAudioMuteSupported: true,
@@ -108,6 +160,9 @@ describe('SettingsPage app language', () => {
           phase: 'up_to_date',
           targetVersion: null,
         },
+        companionBusy: null,
+        companionError: null,
+        companionStatus: COMPANION_STATUS,
         error: null,
         hasChanges: true,
         isActivatingMembership: false,
@@ -122,15 +177,23 @@ describe('SettingsPage app language', () => {
           state: 'active',
           summary: 'Free plan active.',
         },
+        organization: null,
+        organizationError: null,
+        isLoadingOrganization: false,
         muteSystemAudioWhileSpeaking: true,
         onActivateMembership: vi.fn(),
+        onActivateCompanion: vi.fn(),
         onAppLanguageChange: vi.fn(),
         onAutonomyModeChange: vi.fn(),
         onCheckForUpdates: vi.fn(),
+        onGenerateCompanion: vi.fn(),
         onLanguageChange: vi.fn(),
         onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+        onOpenOrganization: vi.fn(),
+        onRefreshOrganization: vi.fn(),
         onRestartAndInstall: vi.fn(),
         onSave: vi.fn(),
+        onUseDefaultCompanion: vi.fn(),
         primaryLanguage: 'vi',
         saveMessage: null,
         systemAudioMuteSupported: true,
@@ -142,6 +205,9 @@ describe('SettingsPage app language', () => {
     expect(markup).toContain('Ngôn ngữ nói');
     expect(markup).toContain('Lưu tùy chọn');
     expect(markup).toContain('Tắt âm thanh khác khi đang nói');
+    expect(markup).toContain('Bạn đồng hành tùy chỉnh');
+    expect(markup).toContain('Còn 5 trên 5 trong tháng này');
+    expect(markup).not.toContain('Custom companion');
   });
 });
 
@@ -188,5 +254,57 @@ describe('SettingsPage promo codes', () => {
     expect(markup).toContain('Tro Free');
     expect(markup).toContain('name="promoCode"');
     expect(markup).toContain('Apply promo code');
+  });
+});
+
+describe('SettingsPage organization summary', () => {
+  const updateStatus: AppUpdateStatus = {
+    currentVersion: '0.1.0',
+    message: 'No updates found.',
+    phase: 'up_to_date',
+    targetVersion: null,
+  };
+
+  it('shows organizer identity, capacity, and the settings action', () => {
+    const markup = renderSettings(updateStatus, {
+      organization: ORGANIZATION,
+    });
+
+    expect(markup).toContain('Organization access');
+    expect(markup).toContain('Greenfield School');
+    expect(markup).toContain('Organizer');
+    expect(markup).toContain('4 of 25');
+    expect(markup).toContain('Open organization settings');
+    expect(markup).not.toContain('student@example.com');
+  });
+
+  it('shows a localized read-only member summary', () => {
+    const markup = renderSettings(updateStatus, {
+      appLanguage: 'vi',
+      organization: { ...ORGANIZATION, role: 'member' },
+    });
+
+    expect(markup).toContain('Greenfield School');
+    expect(markup).toContain('Thành viên');
+    expect(markup).toContain('Mở cài đặt tổ chức');
+    expect(markup).toContain('không cần nhập mã');
+  });
+
+  it('hides a successful null organization result and shows bounded failures', () => {
+    expect(renderSettings(updateStatus)).not.toContain(
+      'settings-organization-card',
+    );
+
+    const loadingMarkup = renderSettings(updateStatus, {
+      isLoadingOrganization: true,
+    });
+    expect(loadingMarkup).not.toContain('settings-organization-card');
+
+    const errorMarkup = renderSettings(updateStatus, {
+      organizationError: 'Organization service unavailable.',
+    });
+    expect(errorMarkup).toContain('role="alert"');
+    expect(errorMarkup).toContain('Organization service unavailable.');
+    expect(errorMarkup).toContain('Try again');
   });
 });

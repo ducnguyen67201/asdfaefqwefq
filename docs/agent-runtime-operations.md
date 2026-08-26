@@ -10,7 +10,7 @@ fail-closed; there is no TypeScript rollback loop.
 
 1. Generate and commit the contract with `npm run agent:protocol:generate`, then
    require `npm run agent:protocol:check` in review and CI.
-2. Deploy migration 024 and a backend with `AGENT_RUNTIME_V3_MODE=observe`.
+2. Deploy migration 025 and a backend with `AGENT_RUNTIME_V3_MODE=observe`.
    Observe records compatibility diagnostics but preserves v2 new-work paths.
 3. Deploy v3 desktops, verify both digests, then switch the backend to `dual`.
    Dual accepts explicitly tagged, exactly matching v3 work while existing v2

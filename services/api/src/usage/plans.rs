@@ -4,6 +4,8 @@ use crate::error::{ApiError, ApiResult};
 pub struct Plan {
     pub id: &'static str,
     pub active_runs: i64,
+    pub companion_generations_per_minute: i64,
+    pub companion_generations_per_month: i64,
     pub daily_micro_usd: i64,
     pub group_participants: i64,
     pub knowledge_queries_per_minute: i64,
@@ -22,6 +24,8 @@ pub struct Plan {
 pub const FREE: Plan = Plan {
     id: "free",
     active_runs: 0,
+    companion_generations_per_minute: 2,
+    companion_generations_per_month: 5,
     daily_micro_usd: 250_000,
     group_participants: 0,
     knowledge_queries_per_minute: 0,
@@ -40,6 +44,8 @@ pub const FREE: Plan = Plan {
 pub const BASIC: Plan = Plan {
     id: "basic",
     active_runs: 5,
+    companion_generations_per_minute: 2,
+    companion_generations_per_month: 5,
     daily_micro_usd: 1_000_000,
     group_participants: 200,
     knowledge_queries_per_minute: 60,
@@ -58,6 +64,8 @@ pub const BASIC: Plan = Plan {
 pub const PRO: Plan = Plan {
     id: "pro",
     active_runs: 25,
+    companion_generations_per_minute: 2,
+    companion_generations_per_month: 5,
     daily_micro_usd: 3_000_000,
     group_participants: 1_000,
     knowledge_queries_per_minute: 180,
@@ -76,6 +84,8 @@ pub const PRO: Plan = Plan {
 pub const MAX: Plan = Plan {
     id: "max",
     active_runs: 100,
+    companion_generations_per_minute: 2,
+    companion_generations_per_month: 5,
     daily_micro_usd: 8_000_000,
     group_participants: 2_000,
     knowledge_queries_per_minute: 360,
@@ -116,5 +126,13 @@ mod tests {
             MAX.weekly_messages,
         ];
         assert!(weekly.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn every_plan_has_the_same_limited_companion_allowance() {
+        for plan in [FREE, BASIC, PRO, MAX] {
+            assert_eq!(plan.companion_generations_per_minute, 2);
+            assert_eq!(plan.companion_generations_per_month, 5);
+        }
     }
 }

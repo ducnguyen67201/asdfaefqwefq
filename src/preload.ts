@@ -6,6 +6,9 @@ import {
   AppPreferencesSchema,
   AppUpdateStatusSchema,
   AuthStatusSchema,
+  ActivateCompanionCandidateRequestSchema,
+  CompanionAppearanceSchema,
+  CompanionCustomizationStatusSchema,
   CompanionPositionSchema,
   CancelTaskRequestSchema,
   CompanionGuidanceSchema,
@@ -17,6 +20,7 @@ import {
   CompanionSpeechPlaybackReportSchema,
   CompanionStateSchema,
   CompanionVoiceActivitySchema,
+  GenerateCompanionImageRequestSchema,
   ConfigureVoiceRequestSchema,
   TranscribeVoiceSegmentRequestSchema,
   CuaStatusSchema,
@@ -29,6 +33,8 @@ import {
   ListOrganizationMembersRequestSchema,
   OrganizationCurrentResponseSchema,
   OrganizationMemberListSchema,
+  UpdateOrganizationRequestSchema,
+  UpdateOrganizationResponseSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
   ResolveComputerPermissionRequestSchema,
@@ -111,6 +117,31 @@ import {
 } from './shared/desktop-api';
 
 const desktopApi: DesktopApi = {
+  async activateCompanionCandidate(input) {
+    const request = ActivateCompanionCandidateRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.companionActivateCandidate,
+      request,
+    );
+    return CompanionCustomizationStatusSchema.parse(response);
+  },
+
+  async generateCompanionImage(input) {
+    const request = GenerateCompanionImageRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.companionGenerateImage,
+      request,
+    );
+    return CompanionCustomizationStatusSchema.parse(response);
+  },
+
+  async getCompanionCustomizationStatus() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.companionCustomizationStatus,
+    );
+    return CompanionCustomizationStatusSchema.parse(response);
+  },
+
   async getKnowledgeCapabilities() {
     const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getKnowledgeCapabilities);
     return KnowledgeCapabilitiesSchema.parse(response);
@@ -406,6 +437,15 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.getOrganization,
     );
     return OrganizationCurrentResponseSchema.parse(response);
+  },
+
+  async updateOrganization(input) {
+    const request = UpdateOrganizationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.updateOrganization,
+      request,
+    );
+    return UpdateOrganizationResponseSchema.parse(response);
   },
 
   async listOrganizationMembers(input) {
@@ -707,6 +747,13 @@ const desktopApi: DesktopApi = {
     return () =>
       ipcRenderer.removeListener(IPC_CHANNELS.voiceShortcut, eventHandler);
   },
+
+  async useDefaultCompanion() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.companionUseDefault,
+    );
+    return CompanionCustomizationStatusSchema.parse(response);
+  },
 };
 
 const companionApi: CompanionApi = {
@@ -725,6 +772,22 @@ const companionApi: CompanionApi = {
       IPC_CHANNELS.companionReportSpeechPlayback,
       report,
     );
+  },
+
+  onAppearanceChange(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(CompanionAppearanceSchema.parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.companionAppearanceChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.companionAppearanceChanged,
+        eventHandler,
+      );
   },
 
   async performResponseAction(input) {

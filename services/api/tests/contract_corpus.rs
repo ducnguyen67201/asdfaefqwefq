@@ -110,7 +110,9 @@ fn route_inventory_is_unique_and_covers_every_family() {
         );
         families.insert(route["family"].as_str().expect("family"));
     }
-    assert!(routes.len() >= 70);
+    assert!(routes.len() >= 72);
+    assert!(keys.contains("GET /v1/companion-images/quota"));
+    assert!(keys.contains("POST /v1/openai/images/companion-edits"));
     assert_eq!(
         families,
         HashSet::from([
@@ -158,7 +160,8 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/021_organization_managed_access.sql"),
         include_str!("../migrations/022_organization_profile_settings.sql"),
         include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
-        include_str!("../migrations/024_agent_runtime_contract_v3.sql"),
+        include_str!("../migrations/024_companion_image_generation.sql"),
+        include_str!("../migrations/025_agent_runtime_contract_v3.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

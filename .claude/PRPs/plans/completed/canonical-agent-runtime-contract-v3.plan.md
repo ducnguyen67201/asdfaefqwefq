@@ -548,11 +548,11 @@ Generated artifact paths are created by implementation and must not be hand-edit
 | `services/api/src/http/agent_runtime.rs` | UPDATE | v3 routes and bounded v2 adapter |
 | `services/api/src/providers/responses.rs` | UPDATE if needed | Preserve certainty/status/request ID for classification |
 | `services/api/src/error.rs` | UPDATE | Generated error response shape |
-| `services/api/migrations/024_agent_runtime_contract_v3.sql` | CREATE | Digests/metadata/permission states/checks/indexes |
+| `services/api/migrations/025_agent_runtime_contract_v3.sql` | CREATE | Digests/metadata/permission states/checks/indexes |
 | `services/api/tests/agent_runtime_contract.rs` | CREATE | Rust corpus/catalog/lifecycle/digest tests |
 | `services/api/tests/agent_runtime_compat.rs` | UPDATE | PG/provider/permission/cancel v3 |
 | `services/api/tests/http_compat.rs` | UPDATE | Negotiation/errors/SSE/legacy enforcement |
-| `services/api/tests/contract_corpus.rs` | UPDATE | Migration 024 and manifest/DB inventory |
+| `services/api/tests/contract_corpus.rs` | UPDATE | Migration 025 and manifest/DB inventory |
 | `services/api/tests/fixtures/schema_inventory.json` | UPDATE | Migration count and complete states |
 | `services/api/Cargo.toml`, `Cargo.lock` | UPDATE | Typify 0.7.0 |
 | `services/api/BUILD.bazel`, `BUILD.bazel`, `MODULE.bazel.lock` | UPDATE | Proc macro/compile data/lock |
@@ -601,7 +601,7 @@ Generated artifact paths are created by implementation and must not be hand-edit
 
 ### Task 3: Centralize lifecycle and migrate durable state
 
-- **ACTION**: Add pure lifecycle module and forward-only migration 024; route every mutation through it.
+- **ACTION**: Add pure lifecycle module and forward-only migration 025; route every mutation through it.
 - **IMPLEMENT**:
   - Exhaustive `transition(from, command/context)` and `project(state, metadata)` implement the table.
   - Replace ad hoc transitions/direct state SQL/string terminal predicates with a repository helper: lock row, verify expected state/version/lease, apply decision, increment version, update metadata, append typed event atomically.
@@ -858,7 +858,7 @@ cargo test --manifest-path services/api/Cargo.toml --locked \
   --test http_compat -- agent_runtime --ignored --test-threads=1
 ```
 
-EXPECT: migration 024 and v3 lifecycle/provider/permission/cancel pass with disposable PostgreSQL 17 and Wiremock.
+EXPECT: migration 025 and v3 lifecycle/provider/permission/cancel pass with disposable PostgreSQL 17 and Wiremock.
 
 ### Static/dependency checks
 

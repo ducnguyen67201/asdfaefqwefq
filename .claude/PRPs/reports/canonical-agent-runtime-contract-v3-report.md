@@ -26,7 +26,7 @@ Generated contract identity:
 |---|---|---|---|
 | 1 | Generate canonical protocol and tool contracts | [done] Complete | Deterministic Zod → JSON Schema/catalog/manifest/fixtures; Typify compiles under Cargo and Bazel. |
 | 2 | Add typed Rust v3 HTTP and worker boundaries | [done] Complete | Typed status/task/event/cancel/permission DTOs with exact digest negotiation; v2 reads retained. |
-| 3 | Centralize lifecycle and persistence | [done] Complete | Migration 024, pure lifecycle projection/transition rules, authoritative actions/failures/waits. |
+| 3 | Centralize lifecycle and persistence | [done] Complete | Migration 025, pure lifecycle projection/transition rules, authoritative actions/failures/waits. |
 | 4 | Replace generic provider tools with exact catalog tools | [done] Complete | Thirteen one-to-one tools; recursively closed parameters; direct URL/app paths need no CUA. |
 | 5 | Classify provider failures safely | [done] Complete | Definite rejection/unavailability becomes failed; ambiguous dispatch/outcome becomes terminal blocked. |
 | 6 | Make computer permission durable | [done] Complete | Stable interaction/invocation IDs, ready-only exactly-once resume, continue-without result, narrow IPC. |
@@ -53,7 +53,7 @@ Generated contract identity:
 | `scripts/generate-agent-runtime-contract.mts` | CREATED | Deterministic write/check generator |
 | `protocol/*`, `test/fixtures/agent-runtime-v3/*` | CREATED | Schema, catalog, manifest, Bazel data, shared fixtures |
 | `services/api/src/agent/{protocol,lifecycle,tool_catalog}.rs` | CREATED | Typify DTOs, pure lifecycle, generated catalog consumer |
-| `services/api/migrations/024_agent_runtime_contract_v3.sql` | CREATED | Additive v3 lifecycle/digest/permission persistence |
+| `services/api/migrations/025_agent_runtime_contract_v3.sql` | CREATED | Additive v3 lifecycle/digest/permission persistence |
 | `services/api/tests/agent_runtime_contract.rs` | CREATED | Cross-language corpus and direct-navigation contract tests |
 | `src/main/hosted/computer-permission-coordinator.ts` and test | CREATED | Durable ready-only permission orchestration |
 | `src/shared/legacy-agent-runtime-v2.ts` | CREATED | Single read-only v2 inference boundary |
@@ -75,7 +75,7 @@ Generated contract identity:
 
 1. Typify initially rejected Zod's anonymous reused definitions; fixed in the generator without handwritten DTOs.
 2. Forge required `rewriteRelativeImportExtensions` for the native TypeScript generator imports; enabled and package rerun successfully.
-3. Live PostgreSQL testing found migration 024 missing from the embedded migrator; it is now included.
+3. Live PostgreSQL testing found the v3 migration missing from the embedded migrator; it is now included as migration 025 after integrating `main`'s migration 024.
 4. Live durable-agent testing found the generic operation selector treated file content as an operation. Presence-based selectors now resolve their declared `presentValue`; a regression covers workspace writes.
 5. The existing v2 fake provider used obsolete generic function names/arguments. It now exercises the exact catalog schemas while preserving v2 worker/read compatibility.
 

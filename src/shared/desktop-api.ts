@@ -4,7 +4,10 @@ import type {
   AppPreferences,
   AppUpdateStatus,
   AuthStatus,
+  ActivateCompanionCandidateRequest,
   CancelAgentTaskRequestV3,
+  CompanionAppearance,
+  CompanionCustomizationStatus,
   CompanionGuidance,
   CompanionGuidanceVisual,
   CompanionInteraction,
@@ -15,6 +18,7 @@ import type {
   CompanionSpeechPlaybackReport,
   CompanionState,
   CompanionVoiceActivity,
+  GenerateCompanionImageRequest,
   ConfigureVoiceRequest,
   TranscribeVoiceSegmentRequest,
   CuaStatus,
@@ -27,6 +31,8 @@ import type {
   ListOrganizationMembersRequest,
   OrganizationCurrentResponse,
   OrganizationMemberList,
+  UpdateOrganizationRequest,
+  UpdateOrganizationResponse,
   RecordVoiceTranscriptRequest,
   RespondToInteractionRequest,
   SetVoiceAudioDuckingRequest,
@@ -105,6 +111,11 @@ export const IPC_CHANNELS = {
   cancelTask: 'task:cancel',
   checkForAppUpdates: 'update:check',
   companionPositionChanged: 'companion:position-changed',
+  companionAppearanceChanged: 'companion:appearance-changed',
+  companionActivateCandidate: 'companion-customization:activate-candidate',
+  companionCustomizationStatus: 'companion-customization:status',
+  companionGenerateImage: 'companion-customization:generate',
+  companionUseDefault: 'companion-customization:use-default',
   companionGuidanceChanged: 'companion:guidance-changed',
   companionGuidanceVisualChanged: 'companion:guidance-visual-changed',
   companionInteractionChanged: 'companion:interaction-changed',
@@ -125,6 +136,7 @@ export const IPC_CHANNELS = {
   getAuthStatus: 'auth:status',
   getMembershipStatus: 'membership:status',
   getOrganization: 'organization:get',
+  updateOrganization: 'organization:update',
   listOrganizationMembers: 'organization:members:list',
   addOrganizationMember: 'organization:members:add',
   cancelOrganizationMember: 'organization:members:cancel',
@@ -208,11 +220,21 @@ export interface DesktopApi {
     request: TranscribeVoiceSegmentRequest,
   ): Promise<VoiceSegmentTranscription>;
   decideApproval(request: DecideApprovalRequest): Promise<TaskSnapshot>;
+  activateCompanionCandidate(
+    request: ActivateCompanionCandidateRequest,
+  ): Promise<CompanionCustomizationStatus>;
+  generateCompanionImage(
+    request: GenerateCompanionImageRequest,
+  ): Promise<CompanionCustomizationStatus>;
   getAppPreferences(): Promise<AppPreferences>;
   getAppUpdateStatus(): Promise<AppUpdateStatus>;
   getComputerStatus(): Promise<CuaStatus>;
+  getCompanionCustomizationStatus(): Promise<CompanionCustomizationStatus>;
   getMembershipStatus(): Promise<MembershipStatus>;
   getOrganization(): Promise<OrganizationCurrentResponse>;
+  updateOrganization(
+    request: UpdateOrganizationRequest,
+  ): Promise<UpdateOrganizationResponse>;
   listOrganizationMembers(
     request: ListOrganizationMembersRequest,
   ): Promise<OrganizationMemberList>;
@@ -301,10 +323,14 @@ export interface DesktopApi {
   updateAppPreferences(
     request: UpdateAppPreferencesRequest,
   ): Promise<AppPreferences>;
+  useDefaultCompanion(): Promise<CompanionCustomizationStatus>;
 }
 
 export interface CompanionApi {
   decideApproval(request: DecideApprovalRequest): Promise<TaskSnapshot>;
+  onAppearanceChange(
+    listener: (appearance: CompanionAppearance) => void,
+  ): () => void;
   onGuidanceChange(
     listener: (guidance: CompanionGuidance | null) => void,
   ): () => void;

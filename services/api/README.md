@@ -41,7 +41,7 @@ npm run admin:build
 npm run api:build
 ```
 
-The API preserves the installed desktop client's REST, binary, and SSE contracts. Provider requests are budget-reserved before dispatch, use bounded responses, and are never retried after acceptance may have occurred. The durable agent uses encrypted Rust checkpoint version 2; it cannot resume a nonterminal legacy Agents SDK checkpoint, so the production drain gate in `docs/operations/rust-backend-cutover.md` is mandatory when upgrading an older deployment.
+The API preserves the installed desktop client's REST, binary, and SSE contracts. Provider requests are budget-reserved before dispatch, use bounded responses, and are never retried after acceptance may have occurred. Companion generation is available to every authenticated member, with a shared two-per-minute limit and an always-enforced five-per-UTC-month allowance. The durable agent uses encrypted Rust checkpoint version 2; it cannot resume a nonterminal legacy Agents SDK checkpoint, so the production drain gate in `docs/operations/rust-backend-cutover.md` is mandatory when upgrading an older deployment.
 
 Live-classroom endpoints are part of this same binary and database migration
 set. They cover room admission, teacher directives, participant help and review

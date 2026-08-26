@@ -333,12 +333,15 @@ fn parse_usage(
             cache_write_tokens: cache_write,
             cached_input_tokens: cached,
             input_tokens: input,
+            input_text_tokens: 0,
+            input_image_tokens: 0,
             model: value
                 .get("model")
                 .and_then(Value::as_str)
                 .unwrap_or(expected)
                 .to_owned(),
             output_tokens: output,
+            output_image_tokens: 0,
             reasoning_tokens: reasoning,
         },
         value

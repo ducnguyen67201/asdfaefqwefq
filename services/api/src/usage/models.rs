@@ -4,6 +4,8 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 
 pub const DEFAULT_CATALOG_VERSION: &str = "2026-08-20";
+pub const IMAGE_CATALOG_VERSION: &str = "2026-04-21";
+pub const GPT_IMAGE_MODEL: &str = "gpt-image-2-2026-04-21";
 const MAX_TOKEN_COUNT: i64 = 2_000_000_000;
 const TOKENS_PER_MILLION: i128 = 1_000_000;
 
@@ -21,10 +23,23 @@ pub struct ProviderUsage {
     pub cache_write_tokens: i64,
     pub cached_input_tokens: i64,
     pub input_tokens: i64,
+    #[serde(default)]
+    pub input_text_tokens: i64,
+    #[serde(default)]
+    pub input_image_tokens: i64,
     pub model: String,
     pub output_tokens: i64,
     #[serde(default)]
+    pub output_image_tokens: i64,
+    #[serde(default)]
     pub reasoning_tokens: i64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ImageUsage {
+    pub input_image_tokens: i64,
+    pub input_text_tokens: i64,
+    pub output_image_tokens: i64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -95,6 +110,25 @@ impl ModelCatalog {
         i64::try_from(result).map_err(ApiError::internal)
     }
 
+    pub fn calculate_image_usage_cost(&self, usage: &ImageUsage) -> ApiResult<i64> {
+        for (name, count) in [
+            ("inputTextTokens", usage.input_text_tokens),
+            ("inputImageTokens", usage.input_image_tokens),
+            ("outputImageTokens", usage.output_image_tokens),
+        ] {
+            if !(0..=MAX_TOKEN_COUNT).contains(&count) {
+                return Err(ApiError::internal(anyhow::anyhow!(
+                    "{name} must be a bounded nonnegative integer."
+                )));
+            }
+        }
+        let numerator = i128::from(usage.input_text_tokens) * 5_000_000_i128
+            + i128::from(usage.input_image_tokens) * 8_000_000_i128
+            + i128::from(usage.output_image_tokens) * 30_000_000_i128;
+        let result = (numerator + TOKENS_PER_MILLION - 1) / TOKENS_PER_MILLION;
+        i64::try_from(result).map_err(ApiError::internal)
+    }
+
     pub fn estimate_responses_reservation(&self, body: &Value) -> ApiResult<i64> {
         let model = body
             .get("model")
@@ -129,8 +163,11 @@ impl ModelCatalog {
             cache_write_tokens: 0,
             cached_input_tokens: 0,
             input_tokens,
+            input_text_tokens: 0,
+            input_image_tokens: 0,
             model: model.to_owned(),
             output_tokens,
+            output_image_tokens: 0,
             reasoning_tokens: 0,
         })
     }
@@ -147,11 +184,26 @@ mod tests {
                 cache_write_tokens: 0,
                 cached_input_tokens: 0,
                 input_tokens: 1,
+                input_text_tokens: 0,
+                input_image_tokens: 0,
                 model: "gpt-5.6-luna".to_owned(),
                 output_tokens: 0,
+                output_image_tokens: 0,
                 reasoning_tokens: 0,
             })
             .expect("cost");
         assert_eq!(value, 1);
+    }
+
+    #[test]
+    fn image_cost_matches_the_javascript_release_oracle() {
+        let value = ModelCatalog
+            .calculate_image_usage_cost(&ImageUsage {
+                input_image_tokens: 2,
+                input_text_tokens: 3,
+                output_image_tokens: 4,
+            })
+            .expect("image cost");
+        assert_eq!(value, 151);
     }
 }
