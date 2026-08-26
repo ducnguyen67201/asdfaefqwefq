@@ -21,6 +21,7 @@ const MAX_OUTPUT_BYTES: usize = 8 * 1_024 * 1_024;
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 12 * 1_024 * 1_024;
 const MAX_TOKEN_COUNT: i64 = 2_000_000_000;
 const PNG_SIGNATURE: &[u8] = &[137, 80, 78, 71, 13, 10, 26, 10];
+const RESERVATION_MICRO_USD: i64 = 50_000;
 
 #[derive(Clone)]
 pub struct CompanionImageService {
@@ -64,13 +65,8 @@ struct ParsedPayload {
 
 impl CompanionImageService {
     #[must_use]
-    pub fn new(
-        budget: BudgetService,
-        client: reqwest::Client,
-        key: &str,
-        reservation_micro_usd: i64,
-    ) -> Self {
-        Self::new_with_endpoint(budget, client, key, reservation_micro_usd, URL)
+    pub fn new(budget: BudgetService, client: reqwest::Client, key: &str) -> Self {
+        Self::new_with_endpoint(budget, client, key, RESERVATION_MICRO_USD, URL)
     }
 
     #[doc(hidden)]

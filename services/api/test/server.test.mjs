@@ -255,12 +255,6 @@ async function withApi(
         }),
       },
     config: {
-      companionImages: {
-        eligibleUsers: new Set(),
-        enabled: false,
-        reservationMicroUsd: 50_000,
-        zdrConfirmed: false,
-      },
       costGuard: { enabled: true },
       elevenLabsApiKey: null,
       elevenLabsModelId: 'eleven_flash_v2_5',
@@ -1211,23 +1205,31 @@ test('realtime calls accept only SDP and language and build provider form data',
   );
 });
 
-test('companion quota is authenticated, access-gated, and fail-closed', async () => {
+test('companion quota is authenticated, access-gated, and available to every member', async () => {
   await withApi(async ({ baseUrl }) => {
     const unauthenticated = await fetch(`${baseUrl}/v1/companion-images/quota`);
     assert.equal(unauthenticated.status, 401);
 
     const session = await signInAndActivate(baseUrl);
-    const disabled = await fetch(`${baseUrl}/v1/companion-images/quota`, {
+    const response = await fetch(`${baseUrl}/v1/companion-images/quota`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    assert.equal(disabled.status, 200);
-    assert.deepEqual(await disabled.json(), {
-      quota: null,
-      state: 'unavailable',
-      summary: 'Companion generation is not available for this account.',
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      quota: {
+        limit: 5,
+        periodEndsAt: '2026-09-01T00:00:00.000Z',
+        periodStartsAt: '2026-08-01T00:00:00.000Z',
+        remaining: 3,
+        used: 2,
+      },
+      state: 'available',
+      summary: 'Create up to five cursor companions each month.',
     });
   });
+});
 
+test('companion quota respects the global paid-call shutdown', async () => {
   await withApi(
     async ({ baseUrl }) => {
       const session = await signInAndActivate(baseUrl);
@@ -1236,26 +1238,14 @@ test('companion quota is authenticated, access-gated, and fail-closed', async ()
       });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), {
-        quota: {
-          limit: 5,
-          periodEndsAt: '2026-09-01T00:00:00.000Z',
-          periodStartsAt: '2026-08-01T00:00:00.000Z',
-          remaining: 3,
-          used: 2,
-        },
-        state: 'available',
-        summary: 'Create up to five cursor companions each month.',
+        quota: null,
+        state: 'unavailable',
+        summary: 'Companion generation is not available for this account.',
       });
     },
     {
       configOverride: {
-        companionImages: {
-          eligibleUsers: new Set([TEST_USER.id]),
-          enabled: true,
-          reservationMicroUsd: 50_000,
-          zdrConfirmed: true,
-        },
-        costGuard: { enabled: true },
+        costGuard: { enabled: false },
       },
     },
   );
@@ -1320,15 +1310,6 @@ test('companion edit route validates exact input and returns output-only data', 
           };
         },
       },
-      configOverride: {
-        companionImages: {
-          eligibleUsers: new Set([TEST_USER.id]),
-          enabled: true,
-          reservationMicroUsd: 50_000,
-          zdrConfirmed: true,
-        },
-        costGuard: { enabled: true },
-      },
       rateLimiter: {
         consume: async ({ limit }) => {
           limits.push(limit);
@@ -1339,7 +1320,7 @@ test('companion edit route validates exact input and returns output-only data', 
   );
 });
 
-test('companion edit route does not reveal rollout prerequisites', async () => {
+test('companion edit route respects the global paid-call shutdown', async () => {
   await withApi(
     async ({ baseUrl }) => {
       const session = await signInAndActivate(baseUrl);
@@ -1363,13 +1344,7 @@ test('companion edit route does not reveal rollout prerequisites', async () => {
     },
     {
       configOverride: {
-        companionImages: {
-          eligibleUsers: new Set(['someone-else']),
-          enabled: true,
-          reservationMicroUsd: 50_000,
-          zdrConfirmed: true,
-        },
-        costGuard: { enabled: true },
+        costGuard: { enabled: false },
       },
     },
   );

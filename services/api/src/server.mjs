@@ -679,12 +679,7 @@ export function createApiHandler({
       if (request.method === 'GET' && path === '/v1/companion-images/quota') {
         const session = await requireSession(request, sessionRepository);
         const access = await requireAccess(session, accessCodeRepository);
-        const available = Boolean(
-          config.costGuard?.enabled &&
-            config.companionImages?.enabled &&
-            config.companionImages.zdrConfirmed &&
-            config.companionImages.eligibleUsers.has(session.user.id),
-        );
+        const available = Boolean(config.costGuard?.enabled);
         sendJson(
           response,
           200,
@@ -712,12 +707,7 @@ export function createApiHandler({
       ) {
         const session = await requireSession(request, sessionRepository);
         const access = await requireAccess(session, accessCodeRepository);
-        if (
-          !config.costGuard?.enabled ||
-          !config.companionImages?.enabled ||
-          !config.companionImages.zdrConfirmed ||
-          !config.companionImages.eligibleUsers.has(session.user.id)
-        ) {
+        if (!config.costGuard?.enabled) {
           throw companionUnavailable();
         }
         await enforceSharedRateLimit(rateLimiter, {

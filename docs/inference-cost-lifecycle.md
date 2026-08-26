@@ -142,9 +142,10 @@ pauses can reduce cost only when local VAD trims silent audio.
 `TROCODE_COST_GUARD_MODE=enforce` is the default. `observe` persists usage and
 records would-deny facts without blocking and is available for reconciliation
 against provider billing. `TROCODE_PAID_CALLS_ENABLED=false` is the kill switch.
-`TROCODE_COMPANION_IMAGES_ENABLED=false` is the narrower companion-generation
-rollback switch; it does not prevent an already encrypted local companion from
-rendering.
+Companion generation has no separate feature flag or account allowlist; every
+authenticated member receives the same quota. The global kill switch prevents
+new companion generations but does not prevent an already encrypted local
+companion from rendering.
 Shared fixed-window rate limits remain abuse protection; the atomic monthly
 user-turn and provider-cost reservations are the spend quotas.
 

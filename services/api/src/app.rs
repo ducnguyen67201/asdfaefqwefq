@@ -43,12 +43,8 @@ impl AppState {
         let budget = BudgetService::new(pool.clone(), config.cost_guard.clone());
         let responses =
             ResponsesService::new(budget.clone(), client.clone(), &config.openai_api_key);
-        let companion_images = CompanionImageService::new(
-            budget.clone(),
-            client.clone(),
-            &config.openai_api_key,
-            config.companion_images.reservation_micro_usd,
-        );
+        let companion_images =
+            CompanionImageService::new(budget.clone(), client.clone(), &config.openai_api_key);
         let store = match &config.knowledge_spaces.object_store {
             Some(value) => Some(ObjectStore::new(value).await),
             None => None,

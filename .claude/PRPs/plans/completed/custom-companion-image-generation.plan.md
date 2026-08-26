@@ -556,10 +556,9 @@ Build one narrow vertical slice through the existing architecture:
 - **ACTION**: Implement the only provider call and expose authenticated quota/generation endpoints.
 - **IMPLEMENT**:
   - Add config:
-    - `TROCODE_COMPANION_IMAGES_ENABLED=false`
-    - `TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED=false`
-    - `TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS=` (deduplicated user IDs)
-    - `TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD=50000`
+    - Companion generation has no feature-specific environment variables.
+    - Every authenticated member is eligible, and each attempt uses a fixed
+      50,000 micro-USD reservation.
     - fixed model/snapshot in code, not client-controlled.
   - `loadConfig()` must throw if images are enabled while ZDR confirmation is false or eligible users are empty. The status route still works when disabled and reports unavailable without revealing which safety prerequisite failed.
   - Create `OpenAiCompanionImageService` with constants for endpoint, snapshot, catalog version, provider timeout 130s, source max 5 MiB, and provider response max 12 MiB.
@@ -716,7 +715,7 @@ Build one narrow vertical slice through the existing architecture:
   - `docs/architecture.md`: add Settings -> IPC -> main normalization -> hosted API -> usage ledger -> Images edit -> memory candidate -> encrypted local asset -> overlay event.
   - `README.md`: list the narrowly implemented companion-image exception while keeping general media/music generation out of scope; add environment variables, operator rollout checklist, quota behavior, and user validation steps.
   - `.env.example`: add comments that `ZDR_CONFIRMED` is an operator assertion, eligible IDs require externally established permission, and provider/model verification is a release prerequisite.
-  - Rollout checklist must require: OpenAI organization verification; ZDR approval enabled on the exact project/key; legal/privacy review for served ages/jurisdictions; allowlisted accounts with documented eligibility/consent; test moderation and escalation channel; cost reconciliation; then enable flag. Rollback is setting `TROCODE_COMPANION_IMAGES_ENABLED=false`; existing custom local images continue rendering but no new generation occurs.
+  - Deployment checklist must require: OpenAI organization verification; ZDR approval enabled on the exact project/key; legal/privacy review for served ages/jurisdictions; documented eligibility/consent where required; moderation and escalation testing; and cost reconciliation. The global paid-call shutdown stops new generation while existing custom local images continue rendering.
 - **MIRROR**: Current privacy provider bullets, `docs/security.md:130-144` narrow media-boundary prose, and `docs/inference-cost-lifecycle.md:102-135` reservation semantics.
 - **IMPORTS**: N/A.
 - **GOTCHA**: Do not claim "OpenAI never retains images". ZDR eliminates normal customer-content retention for eligible Images calls, but documented child-safety review is an exception. Do not claim the app itself establishes parental consent.
@@ -946,7 +945,7 @@ EXPECT: Provider key remains backend-only; expected transient fields appear only
 ## Notes
 
 - "Five per month" is deliberately an entitlement, not a money estimate. It is always enforced even when `TROCODE_COST_GUARD_MODE=observe`.
-- The existing `TROCODE_PAID_CALLS_ENABLED=false` remains the global paid-call kill switch. `TROCODE_COMPANION_IMAGES_ENABLED=false` is the narrower rollback switch.
+- The existing `TROCODE_PAID_CALLS_ENABLED=false` remains the global paid-call kill switch; companion generation has no narrower rollout switch.
 - Local rendering remains available after the generation kill switch is turned off; users do not lose a previously chosen local companion.
 - The candidate TTL and active file format are internal contracts; expose only Zod descriptors, never paths or encrypted payloads.
 - If the provider snapshot or ZDR eligibility changes, keep the feature disabled until docs, model catalog, and safety review are updated together.

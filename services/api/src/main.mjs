@@ -98,7 +98,6 @@ const companionImageService = new OpenAiCompanionImageService({
   budgetService,
   catalog: modelCatalog,
   openAiApiKey: config.openAiApiKey,
-  reservationMicroUsd: config.companionImages.reservationMicroUsd,
 });
 const spaceRepository = new PostgresKnowledgeSpaceRepository(pool);
 const sourceRepository = new PostgresKnowledgeSourceRepository(pool);

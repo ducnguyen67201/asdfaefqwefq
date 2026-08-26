@@ -52,7 +52,6 @@ function harness(fetchImpl, overrides = {}) {
       fetchImpl,
       logger: { info: (value) => logs.push(value) },
       openAiApiKey: 'sk-test-not-real',
-      reservationMicroUsd: 50_000,
     }),
   };
 }

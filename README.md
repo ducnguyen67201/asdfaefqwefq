@@ -67,8 +67,8 @@ Implemented:
 - Railway-hosted Responses, GPT Transcribe, and optional ElevenLabs
   access; provider keys are never compiled into or stored by the customer
   application.
-- A narrowly scoped custom cursor companion generator in Settings: an eligible
-  signed-in user can explicitly edit one PNG/JPEG through the hosted OpenAI
+- A narrowly scoped custom cursor companion generator in Settings: any signed-in
+  user with an active membership can explicitly edit one PNG/JPEG through the hosted OpenAI
   Images API, preview it in memory, and activate an account-scoped,
   operating-system-encrypted local 128-pixel PNG. Every plan receives five
   generations per UTC month.
@@ -254,10 +254,6 @@ The API requires these production variables:
 - optional server-owned budget overrides documented in `.env.example`
 - optional `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and
   `ELEVENLABS_MODEL_ID`
-- `TROCODE_COMPANION_IMAGES_ENABLED=false`
-- `TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED=false`
-- `TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS=` (comma-separated verified user IDs)
-- `TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD=50000`
 
 Provider endpoints require the opaque session, atomically reserve spend before
 dispatch, enforce per-user message/task/day/month limits and bounded bodies,
@@ -267,41 +263,40 @@ multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
 Native computer-use policy remains in the trusted Electron main process.
 
-#### Custom companion rollout
+#### Custom companion availability
 
-Companion image generation fails closed unless the global paid-call switch,
-companion flag, ZDR assertion, active membership, and account allowlist all
-permit it. The entitlement is five successful or uncertain generations per
-account per UTC month, with a separate two-request-per-minute abuse limit.
-Definitive pre-inference rejection releases a slot; an outcome that may have
-reached the provider remains counted and is never retried automatically.
+Companion image generation is available to every signed-in account with an
+active membership. It has no companion-specific feature flag or user allowlist;
+the global paid-call switch remains the emergency shutdown for every hosted
+model call. The entitlement is five successful or uncertain generations per
+account per UTC month, with a separate two-request-per-minute abuse limit and a
+fixed 50,000 micro-USD reservation per attempt. Definitive pre-inference
+rejection releases a slot; an outcome that may have reached the provider remains
+counted and is never retried automatically.
 
-Before enabling `TROCODE_COMPANION_IMAGES_ENABLED`, operators must complete and
-record all of these gates:
+Before deploying a server that supports companion generation, operators must
+complete and record all of these requirements:
 
 1. Verify the OpenAI organization and the exact Images model used in production.
-2. Obtain and enable ZDR approval on the exact OpenAI project and API key, then
-   set `TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED=true` only as that assertion.
+2. Obtain and enable ZDR approval on the exact OpenAI project and API key.
 3. Complete legal and privacy review for the ages and jurisdictions served.
-4. Add only canary account IDs with externally documented eligibility and
-   consent to `TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS`; Tro does not establish
-   parental consent.
+4. Establish any required eligibility or consent outside Tro; Tro does not
+   establish parental consent.
 5. Test moderation behavior and the operator's child-safety escalation channel.
-6. Reconcile a canary's provider modality usage and integer micro-USD settlement
+6. Reconcile provider modality usage and integer micro-USD settlement
    against OpenAI billing, and verify that logs and PostgreSQL contain no image
    or prompt bodies.
-7. Enable the feature flag only after every prior gate passes.
 
-Rollback is immediate: set `TROCODE_COMPANION_IMAGES_ENABLED=false`. Existing
-encrypted custom images continue rendering locally, but no new generation is
-available.
+For an emergency provider shutdown, set the existing global
+`TROCODE_PAID_CALLS_ENABLED=false`. Existing encrypted custom images continue
+rendering locally, but no new generation or other hosted model call is available.
 
-The in-place Rust backend implements the companion configuration, quota
-accounting, image-token pricing and settlement, provider adapter, and both HTTP
-routes. Keep companion generation disabled during Rust canaries until the ZDR,
-privacy, moderation, billing-reconciliation, and no-sensitive-logging gates
-above pass. The JavaScript implementation remains only as a release-parity and
-rollback oracle until the same-service cutover is approved.
+The in-place Rust backend implements companion quota accounting, image-token
+pricing and settlement, the provider adapter, and both HTTP routes. Validate the
+ZDR, privacy, moderation, billing-reconciliation, and no-sensitive-logging
+requirements above before deploying it. The JavaScript implementation remains
+only as a release-parity and rollback oracle until the same-service cutover is
+approved.
 
 For a user validation pass, open **Settings → Custom companion**, paste/drop or
 choose a PNG/JPEG no larger than 5 MiB, enter a 1–400 character prompt, and make

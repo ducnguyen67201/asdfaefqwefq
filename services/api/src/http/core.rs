@@ -386,7 +386,7 @@ pub async fn handle(
     if method == Method::GET && path == "/v1/companion-images/quota" {
         let current = session(state, headers).await?;
         let membership = access(state, &current).await?;
-        if companion_available(state, &current.user.id) {
+        if hosted_model_calls_available(state) {
             return json_response(
                 StatusCode::OK,
                 json!({
@@ -411,7 +411,7 @@ pub async fn handle(
     if method == Method::POST && path == "/v1/openai/images/companion-edits" {
         let current = session(state, headers).await?;
         let membership = access(state, &current).await?;
-        if !companion_available(state, &current.user.id) {
+        if !hosted_model_calls_available(state) {
             return Err(ApiError::coded(
                 StatusCode::FORBIDDEN,
                 "companion_generation_unavailable",
@@ -518,15 +518,8 @@ pub async fn handle(
     Err(ApiError::new(StatusCode::NOT_FOUND, "Endpoint not found."))
 }
 
-fn companion_available(state: &AppState, user_id: &str) -> bool {
+fn hosted_model_calls_available(state: &AppState) -> bool {
     state.config.cost_guard.enabled
-        && state.config.companion_images.enabled
-        && state.config.companion_images.zdr_confirmed
-        && state
-            .config
-            .companion_images
-            .eligible_users
-            .contains(user_id)
 }
 
 fn validate_responses(state: &AppState, input: &mut Value) -> ApiResult<()> {

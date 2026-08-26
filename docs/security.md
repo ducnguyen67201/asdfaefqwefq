@@ -159,15 +159,16 @@ contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
 
-Custom companion generation is a narrow media exception with its own fail-
-closed boundary. It requires the global paid-call switch, the companion feature
-switch, an operator assertion that ZDR is active for the exact OpenAI
-project/key, an active account, and membership in the canary user allowlist.
-The desktop never receives the OpenAI key. The hosted request fixes the image
-model, one output, square low-quality PNG, transparent background, and automatic
-moderation; callers cannot override those provider controls. Logs and usage
-rows contain request IDs, status, model/catalog versions, token modality counts,
-cost, and duration only—not source bytes, prompts, or generated PNG bytes.
+Custom companion generation is a narrow media exception available to every
+authenticated account with an active membership. It has no per-feature switch
+or account allowlist; the global paid-call switch remains the shared provider
+shutdown. ZDR on the exact OpenAI project/key is a deployment requirement, not
+an application environment assertion. The desktop never receives the OpenAI
+key. The hosted request fixes the image model, one output, square low-quality
+PNG, transparent background, and automatic moderation; callers cannot override
+those provider controls. Logs and usage rows contain request IDs, status,
+model/catalog versions, token modality counts, cost, and duration only—not
+source bytes, prompts, or generated PNG bytes.
 
 At the renderer, main, and API boundaries, source images are limited to one PNG
 or JPEG of at most 5 MiB and a 1–400 character prompt. Electron main verifies

@@ -112,12 +112,6 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
             protocol_version: 2,
             rollout_percent: 0,
         },
-        companion_images: trocode_api::config::CompanionImageConfig {
-            eligible_users: BTreeSet::from(["http-owner".to_owned()]),
-            enabled: true,
-            reservation_micro_usd: 50_000,
-            zdr_confirmed: true,
-        },
         cost_guard: CostGuardConfig {
             daily_micro_usd: 8_000_000,
             enabled: true,
@@ -517,7 +511,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_status(&companion_quota, StatusCode::OK);
     assert_eq!(companion_quota.json()["state"], "available");
     assert_eq!(companion_quota.json()["quota"]["remaining"], 5);
-    let unavailable_quota = send(
+    let participant_quota = send(
         &router,
         Method::GET,
         "/v1/companion-images/quota",
@@ -525,33 +519,14 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         None,
     )
     .await;
-    assert_status(&unavailable_quota, StatusCode::OK);
-    assert_eq!(unavailable_quota.json()["state"], "unavailable");
-    let blocked_companion_request = Uuid::new_v4().to_string();
-    let blocked_companion = send_with_headers(
-        &router,
-        Method::POST,
-        "/v1/openai/images/companion-edits",
-        Some(&participant_token),
-        Some(&json!({
-            "imageBase64": STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0]),
-            "mimeType": "image/png",
-            "prompt": "blue space cat"
-        })),
-        &[("x-trocode-request-id", &blocked_companion_request)],
-    )
-    .await;
-    assert_status(&blocked_companion, StatusCode::FORBIDDEN);
-    assert_eq!(
-        blocked_companion.json()["code"],
-        "companion_generation_unavailable"
-    );
+    assert_status(&participant_quota, StatusCode::OK);
+    assert_eq!(participant_quota.json()["state"], "available");
     let companion_request_id = Uuid::new_v4().to_string();
     let companion = send_with_headers(
         &router,
         Method::POST,
         "/v1/openai/images/companion-edits",
-        Some(&owner_token),
+        Some(&participant_token),
         Some(&json!({
             "imageBase64": STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0]),
             "mimeType": "image/png",

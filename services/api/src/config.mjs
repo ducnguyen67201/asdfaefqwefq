@@ -79,29 +79,6 @@ export function loadConfig(environment = process.env) {
     environment.TROCODE_KNOWLEDGE_SPACES_ENABLED,
     false,
   );
-  const companionImagesEnabled = booleanValue(
-    'TROCODE_COMPANION_IMAGES_ENABLED',
-    environment.TROCODE_COMPANION_IMAGES_ENABLED,
-    false,
-  );
-  const companionImagesZdrConfirmed = booleanValue(
-    'TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED',
-    environment.TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED,
-    false,
-  );
-  const companionImageEligibleUsers = new Set(
-    commaSeparated(environment.TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS),
-  );
-  if (companionImagesEnabled && !companionImagesZdrConfirmed) {
-    throw new Error(
-      'TROCODE_COMPANION_IMAGES_ZDR_CONFIRMED must be true when companion images are enabled.',
-    );
-  }
-  if (companionImagesEnabled && companionImageEligibleUsers.size === 0) {
-    throw new Error(
-      'TROCODE_COMPANION_IMAGE_ELIGIBLE_USERS is required when companion images are enabled.',
-    );
-  }
   const adminAccessToken = environment.TROCODE_ADMIN_ACCESS_TOKEN?.trim() || null;
   if (adminAccessToken && adminAccessToken.length < MIN_SECRET_LENGTH) {
     throw new Error(
@@ -249,16 +226,6 @@ export function loadConfig(environment = process.env) {
         environment.TROCODE_BUDGET_WARNING_PERCENT,
         80,
       ),
-    },
-    companionImages: {
-      eligibleUsers: companionImageEligibleUsers,
-      enabled: companionImagesEnabled,
-      reservationMicroUsd: positiveInteger(
-        'TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD',
-        environment.TROCODE_COMPANION_IMAGE_RESERVATION_MICRO_USD,
-        50_000,
-      ),
-      zdrConfirmed: companionImagesZdrConfirmed,
     },
     databaseUrl: required('DATABASE_URL', environment),
     databasePoolMax: positiveInteger(

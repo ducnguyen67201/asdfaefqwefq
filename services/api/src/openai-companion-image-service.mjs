@@ -149,7 +149,7 @@ export class OpenAiCompanionImageService {
     fetchImpl = fetch,
     logger = console,
     openAiApiKey,
-    reservationMicroUsd,
+    reservationMicroUsd = 50_000,
   }) {
     this.budgetService = budgetService;
     this.catalog = catalog;
