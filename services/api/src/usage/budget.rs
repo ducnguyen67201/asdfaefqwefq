@@ -79,6 +79,16 @@ pub struct MessagePeriod {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CompanionGenerationSnapshot {
+    pub limit: i64,
+    pub period_ends_at: String,
+    pub period_starts_at: String,
+    pub remaining: i64,
+    pub used: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Pricing {
     pub currency: &'static str,
     pub monthly_cents: i64,
@@ -207,8 +217,19 @@ impl BudgetService {
             None
         };
         let committed = sqlx::query(
-            "SELECT COALESCE(SUM(CASE WHEN created_at >= date_trunc('month',NOW()) THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint month_total, COALESCE(SUM(CASE WHEN created_at >= date_trunc('day',NOW()) THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint day_total, COALESCE(SUM(CASE WHEN task_id=$2 THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint task_total FROM model_budget_reservations WHERE user_id=$1 AND status IN ('reserved','settled','uncertain')",
+            "SELECT COALESCE(SUM(CASE WHEN created_at >= date_trunc('month',NOW()) THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint month_total, COALESCE(SUM(CASE WHEN created_at >= date_trunc('day',NOW()) THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint day_total, COALESCE(SUM(CASE WHEN task_id=$2 THEN COALESCE(actual_micro_usd,reserved_micro_usd) ELSE 0 END),0)::bigint task_total, COUNT(*) FILTER (WHERE lane='image_generation' AND created_at>=date_trunc('month',NOW()))::bigint month_image_generations FROM model_budget_reservations WHERE user_id=$1 AND status IN ('reserved','settled','uncertain')",
         ).bind(input.user_id).bind(input.task_id).fetch_one(&mut *tx).await?;
+        if input.lane == "image_generation"
+            && committed.get::<i64, _>("month_image_generations")
+                >= plan.companion_generations_per_month
+        {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                http::StatusCode::TOO_MANY_REQUESTS,
+                "companion_generation_limit_reached",
+                "You have used all 5 companion generations for this month.",
+            ));
+        }
         let denial = if committed
             .get::<i64, _>("month_total")
             .saturating_add(input.reserved_micro_usd)
@@ -351,9 +372,9 @@ impl BudgetService {
                 "Cannot settle a {current_status} reservation."
             )));
         }
-        sqlx::query("INSERT INTO model_usage_events (request_id,user_id,task_id,lane,model,catalog_version,input_tokens,cached_input_tokens,cache_write_tokens,output_tokens,reasoning_tokens,duration_ms,audio_duration_ms,character_count,amount_micro_usd,usage_source,disposition,provider_response_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT (user_id,request_id) DO NOTHING")
+        sqlx::query("INSERT INTO model_usage_events (request_id,user_id,task_id,lane,model,catalog_version,input_tokens,cached_input_tokens,cache_write_tokens,output_tokens,reasoning_tokens,input_text_tokens,input_image_tokens,output_image_tokens,duration_ms,audio_duration_ms,character_count,amount_micro_usd,usage_source,disposition,provider_response_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) ON CONFLICT (user_id,request_id) DO NOTHING")
                 .bind(input.request_id).bind(input.user_id).bind(row.get::<Uuid,_>("task_id")).bind(row.get::<String,_>("lane")).bind(row.get::<String,_>("model")).bind(row.get::<String,_>("catalog_version"))
-                .bind(input.usage.input_tokens).bind(input.usage.cached_input_tokens).bind(input.usage.cache_write_tokens).bind(input.usage.output_tokens).bind(input.usage.reasoning_tokens).bind(input.duration_ms.max(0)).bind(input.audio_duration_ms.max(0)).bind(input.character_count.max(0)).bind(input.actual_micro_usd.max(0)).bind(input.usage_source).bind("completed").bind(input.provider_response_id).execute(&mut *tx).await?;
+                .bind(input.usage.input_tokens).bind(input.usage.cached_input_tokens).bind(input.usage.cache_write_tokens).bind(input.usage.output_tokens).bind(input.usage.reasoning_tokens).bind(input.usage.input_text_tokens).bind(input.usage.input_image_tokens).bind(input.usage.output_image_tokens).bind(input.duration_ms.max(0)).bind(input.audio_duration_ms.max(0)).bind(input.character_count.max(0)).bind(input.actual_micro_usd.max(0)).bind(input.usage_source).bind("completed").bind(input.provider_response_id).execute(&mut *tx).await?;
         sqlx::query("UPDATE model_budget_reservations SET status='settled',actual_micro_usd=$3,disposition='completed',settled_at=NOW(),updated_at=NOW() WHERE user_id=$1 AND request_id=$2")
             .bind(input.user_id).bind(input.request_id).bind(input.actual_micro_usd).execute(&mut *tx).await?;
         if let Some(turn) = row.get::<Option<Uuid>, _>("agent_turn_id") {
@@ -448,6 +469,49 @@ impl BudgetService {
             warning_threshold_micro_usd: monthly_limit
                 .saturating_mul(i64::from(self.options.warning_percent))
                 / 100,
+        })
+    }
+
+    pub async fn companion_generation_snapshot(
+        &self,
+        user_id: &str,
+        plan_id: &str,
+    ) -> ApiResult<CompanionGenerationSnapshot> {
+        let used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)::bigint FROM model_budget_reservations WHERE user_id=$1 AND lane='image_generation' AND status IN ('reserved','settled','uncertain') AND created_at>=date_trunc('month',NOW())",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
+        let plan = plan_for(plan_id)?;
+        let now = OffsetDateTime::now_utc();
+        let month_start = now
+            .replace_day(1)
+            .map_err(ApiError::internal)?
+            .replace_hour(0)
+            .map_err(ApiError::internal)?
+            .replace_minute(0)
+            .map_err(ApiError::internal)?
+            .replace_second(0)
+            .map_err(ApiError::internal)?
+            .replace_nanosecond(0)
+            .map_err(ApiError::internal)?;
+        let month_end = (month_start + Duration::days(32))
+            .replace_day(1)
+            .map_err(ApiError::internal)?;
+        let format = |value: OffsetDateTime| {
+            value
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        };
+        let limit = plan.companion_generations_per_month;
+        let used = used.min(limit);
+        Ok(CompanionGenerationSnapshot {
+            limit,
+            period_ends_at: format(month_end),
+            period_starts_at: format(month_start),
+            remaining: (limit - used).max(0),
+            used,
         })
     }
 }

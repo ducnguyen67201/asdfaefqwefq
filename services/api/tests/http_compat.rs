@@ -22,7 +22,7 @@ use trocode_api::{
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
-    providers::{ResponsesService, TranscriptionService},
+    providers::{CompanionImageService, ResponsesService, TranscriptionService},
     query, query_scalar,
 };
 use url::Url;
@@ -357,6 +357,22 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         )
         .mount(&provider)
         .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/images/edits"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_json(json!({
+                    "data":[{"b64_json":STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0])}],
+                    "usage":{
+                        "input_tokens":12,
+                        "input_tokens_details":{"image_tokens":8,"text_tokens":4},
+                        "output_tokens":16
+                    }
+                })),
+        )
+        .mount(&provider)
+        .await;
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
@@ -371,6 +387,13 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         reqwest::Client::new(),
         "test-key",
         &format!("{}/v1/audio/transcriptions", provider.uri()),
+    );
+    state.companion_images = CompanionImageService::new_with_endpoint(
+        state.budget.clone(),
+        reqwest::Client::new(),
+        "test-key",
+        50_000,
+        &format!("{}/v1/images/edits", provider.uri()),
     );
     let router = trocode_api::http::router(state.clone());
 
@@ -569,6 +592,44 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&enabled_knowledge, StatusCode::OK);
     assert_eq!(enabled_knowledge.json()["knowledgeSpacesEnabled"], true);
+    let companion_quota = send(
+        &router,
+        Method::GET,
+        "/v1/companion-images/quota",
+        Some(&owner_token),
+        None,
+    )
+    .await;
+    assert_status(&companion_quota, StatusCode::OK);
+    assert_eq!(companion_quota.json()["state"], "available");
+    assert_eq!(companion_quota.json()["quota"]["remaining"], 5);
+    let participant_quota = send(
+        &router,
+        Method::GET,
+        "/v1/companion-images/quota",
+        Some(&participant_token),
+        None,
+    )
+    .await;
+    assert_status(&participant_quota, StatusCode::OK);
+    assert_eq!(participant_quota.json()["state"], "available");
+    let companion_request_id = Uuid::new_v4().to_string();
+    let companion = send_with_headers(
+        &router,
+        Method::POST,
+        "/v1/openai/images/companion-edits",
+        Some(&participant_token),
+        Some(&json!({
+            "imageBase64": STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0]),
+            "mimeType": "image/png",
+            "prompt": "blue space cat"
+        })),
+        &[("x-trocode-request-id", &companion_request_id)],
+    )
+    .await;
+    assert_status(&companion, StatusCode::OK);
+    assert_eq!(companion.json()["model"], "gpt-image-2-2026-04-21");
+    assert_eq!(companion.json()["quota"]["remaining"], 4);
     assert_status(
         &send(
             &router,

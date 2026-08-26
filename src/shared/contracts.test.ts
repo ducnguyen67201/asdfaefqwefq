@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ActivateCompanionCandidateRequestSchema,
   ActivateMembershipRequestSchema,
   ActionEffectSchema,
   AgentActivityUpdateSchema,
@@ -11,6 +12,10 @@ import {
   AgentTaskContractV5Schema,
   AgentTaskContractV6Schema,
   AppPreferencesSchema,
+  CompanionAppearanceSchema,
+  CompanionCustomizationStatusSchema,
+  CompanionGenerationQuotaSchema,
+  GenerateCompanionImageRequestSchema,
   HostedDesktopInvocationSchema,
   IntentAuthorizationContractSchema,
   CompanionResponseActionRequestSchema,
@@ -30,6 +35,7 @@ import {
   PlanIdSchema,
   SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
+  MAX_COMPANION_IMAGE_BYTES,
   TaskComposerFocusRequestSchema,
   TaskHistorySchema,
   TaskProgressSchema,
@@ -39,6 +45,108 @@ import {
   VoiceStatusSchema,
   VOICE_TRANSCRIPTION_MODEL,
 } from './contracts';
+
+describe('companion customization contracts', () => {
+  const candidateId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const activeHash = 'a'.repeat(64);
+  const quota = {
+    limit: 5,
+    periodEndsAt: '2026-09-01T00:00:00.000Z',
+    periodStartsAt: '2026-08-01T00:00:00.000Z',
+    remaining: 2,
+    used: 3,
+  } as const;
+
+  it('accepts bounded strict image generation and activation requests', () => {
+    const imageBase64 = Buffer.from('png').toString('base64');
+    expect(
+      GenerateCompanionImageRequestSchema.parse({
+        imageBase64,
+        mimeType: 'image/png',
+        prompt: '  Make it a blue space cat.  ',
+        requestId: candidateId,
+      }),
+    ).toMatchObject({ prompt: 'Make it a blue space cat.' });
+    expect(
+      ActivateCompanionCandidateRequestSchema.parse({ candidateId }),
+    ).toEqual({ candidateId });
+    expect(
+      GenerateCompanionImageRequestSchema.safeParse({
+        extra: true,
+        imageBase64,
+        mimeType: 'image/png',
+        prompt: 'cat',
+        requestId: candidateId,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects malformed base64 and decoded images above five MiB', () => {
+    const oversized = Buffer.alloc(MAX_COMPANION_IMAGE_BYTES + 1).toString(
+      'base64',
+    );
+    for (const imageBase64 of ['not base64', 'AAA', 'AAAA=', oversized]) {
+      expect(
+        GenerateCompanionImageRequestSchema.safeParse({
+          imageBase64,
+          mimeType: 'image/jpeg',
+          prompt: 'cat',
+          requestId: candidateId,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('accepts only exact credential-free companion asset URLs', () => {
+    for (const assetUrl of [
+      `trocode-companion://asset/active/${activeHash}`,
+      `trocode-companion://asset/candidate/${candidateId}`,
+    ]) {
+      expect(
+        CompanionAppearanceSchema.safeParse({
+          assetUrl,
+          kind: 'custom',
+          revision: activeHash,
+        }).success,
+      ).toBe(true);
+    }
+    for (const assetUrl of [
+      `file:///active/${activeHash}`,
+      `https://asset/active/${activeHash}`,
+      `trocode-companion://user:pass@asset/active/${activeHash}`,
+      `trocode-companion://asset/active/${activeHash}?token=secret`,
+      `trocode-companion://asset/active/${activeHash.toUpperCase()}`,
+      `trocode-companion://asset/../active/${activeHash}`,
+    ]) {
+      expect(
+        CompanionAppearanceSchema.safeParse({
+          assetUrl,
+          kind: 'custom',
+          revision: activeHash,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('requires internally consistent quota and available status', () => {
+    expect(CompanionGenerationQuotaSchema.parse(quota)).toEqual(quota);
+    expect(
+      CompanionGenerationQuotaSchema.safeParse({
+        ...quota,
+        remaining: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      CompanionCustomizationStatusSchema.safeParse({
+        appearance: { kind: 'default' },
+        candidate: null,
+        quota: null,
+        state: 'available',
+        summary: 'Ready.',
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe('organization management contracts', () => {
   const organization = {

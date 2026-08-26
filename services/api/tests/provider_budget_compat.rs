@@ -9,7 +9,8 @@ use trocode_api::{
     db,
     postgres::PgPoolOptions,
     providers::{
-        ProviderBody, ResponsesInput, ResponsesService, TranscriptionBody, TranscriptionInput,
+        CompanionImageBody, CompanionImageInput, CompanionImageService, ProviderBody,
+        ResponsesInput, ResponsesService, TranscriptionBody, TranscriptionInput,
         TranscriptionService,
     },
     query, query_scalar,
@@ -216,6 +217,41 @@ async fn execute_transcription(
     (request, result)
 }
 
+fn png() -> Vec<u8> {
+    vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]
+}
+
+async fn execute_companion_image(
+    budget: &BudgetService,
+    server: &MockServer,
+) -> (
+    Uuid,
+    trocode_api::error::ApiResult<trocode_api::providers::CompanionImageResult>,
+) {
+    let request = Uuid::new_v4();
+    let service = CompanionImageService::new_with_endpoint(
+        budget.clone(),
+        reqwest::Client::new(),
+        "test-key",
+        50_000,
+        &format!("{}/v1/images/edits", server.uri()),
+    );
+    let result = service
+        .execute(CompanionImageInput {
+            body: CompanionImageBody {
+                image_base64: STANDARD.encode(png()),
+                mime_type: "image/png".to_owned(),
+                prompt: "private blue space cat".to_owned(),
+            },
+            plan_id: "basic",
+            request_id: request,
+            safety_identifier: "companion-test-safety",
+            user_id: USER,
+        })
+        .await;
+    (request, result)
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
 async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() {
@@ -404,6 +440,141 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
         assert_eq!(reservation_status(&pool, request).await, "uncertain");
     }
 
+    let companion_success = mock_endpoint(
+        "/v1/images/edits",
+        200,
+        "application/json",
+        serde_json::to_vec(&json!({
+            "data": [{"b64_json": STANDARD.encode(png())}],
+            "usage": {
+                "input_tokens": 2,
+                "input_tokens_details": {"image_tokens": 1, "text_tokens": 1},
+                "output_tokens": 200
+            }
+        }))
+        .unwrap(),
+    )
+    .await;
+    let (request, result) = execute_companion_image(&budget, &companion_success).await;
+    let result = result.expect("companion image success");
+    assert_eq!(result.image_base64, STANDARD.encode(png()));
+    assert_eq!(result.model, "gpt-image-2-2026-04-21");
+    assert_eq!(result.quota.used, 1);
+    assert_eq!(reservation_status(&pool, request).await, "settled");
+    let image_usage: (i64, i64, i64, i64) = query(
+        "SELECT input_text_tokens,input_image_tokens,output_image_tokens,amount_micro_usd FROM model_usage_events WHERE user_id=$1 AND request_id=$2",
+    )
+    .bind(USER)
+    .bind(request)
+    .map(|row: trocode_api::postgres::PgRow| {
+        use trocode_api::Row as _;
+        (row.get(0), row.get(1), row.get(2), row.get(3))
+    })
+    .fetch_one(&pool)
+    .await
+    .expect("persisted image modality usage");
+    assert_eq!(image_usage, (1, 1, 200, 6_013));
+    let received = companion_success
+        .received_requests()
+        .await
+        .expect("received companion request");
+    let multipart = String::from_utf8_lossy(&received[0].body);
+    for expected in [
+        "name=\"image[]\"; filename=\"reference.png\"",
+        "name=\"background\"",
+        "transparent",
+        "name=\"moderation\"",
+        "name=\"quality\"",
+        "low",
+        "<student_customization>",
+        "private blue space cat",
+    ] {
+        assert!(
+            multipart.contains(expected),
+            "missing multipart field {expected}"
+        );
+    }
+
+    for (upstream_status, expected_code, expected_status) in [
+        (400, "companion_image_rejected", "released"),
+        (500, "ambiguous_dispatch", "uncertain"),
+    ] {
+        let server = mock_endpoint(
+            "/v1/images/edits",
+            upstream_status,
+            "application/json",
+            br#"{"error":"private provider detail"}"#.to_vec(),
+        )
+        .await;
+        let (request, error) = execute_companion_image(&budget, &server).await;
+        let error = error.expect_err("companion provider rejection must fail");
+        assert_eq!(error.code, Some(expected_code));
+        assert_eq!(reservation_status(&pool, request).await, expected_status);
+    }
+
+    let malformed_companion = mock_endpoint(
+        "/v1/images/edits",
+        200,
+        "application/json",
+        serde_json::to_vec(&json!({"data": [{"b64_json": STANDARD.encode(png())}]})).unwrap(),
+    )
+    .await;
+    let (request, error) = execute_companion_image(&budget, &malformed_companion).await;
+    assert_eq!(
+        error.expect_err("missing usage must be ambiguous").code,
+        Some("ambiguous_response")
+    );
+    assert_eq!(reservation_status(&pool, request).await, "uncertain");
+
+    let mut image_count: i64 = query_scalar(
+        "SELECT COUNT(*)::bigint FROM model_budget_reservations WHERE user_id=$1 AND lane='image_generation' AND status IN ('reserved','settled','uncertain') AND created_at>=date_trunc('month',NOW())",
+    )
+    .bind(USER)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    while image_count < 5 {
+        let request_id = Uuid::new_v4();
+        budget
+            .reserve(ReservationInput {
+                agent_turn_id: None,
+                catalog_version: "2026-04-21",
+                lane: "image_generation",
+                model: "gpt-image-2-2026-04-21",
+                plan_id: "basic",
+                request_id,
+                reserved_micro_usd: 50_000,
+                task_id: request_id,
+                user_id: USER,
+            })
+            .await
+            .expect("first five companion slots");
+        image_count += 1;
+    }
+    let observe_image_budget = BudgetService::new(pool.clone(), cost_guard(CostGuardMode::Observe));
+    let sixth = Uuid::new_v4();
+    let limit_error = observe_image_budget
+        .reserve(ReservationInput {
+            agent_turn_id: None,
+            catalog_version: "2026-04-21",
+            lane: "image_generation",
+            model: "gpt-image-2-2026-04-21",
+            plan_id: "basic",
+            request_id: sixth,
+            reserved_micro_usd: 50_000,
+            task_id: sixth,
+            user_id: USER,
+        })
+        .await
+        .expect_err("sixth monthly generation is always denied");
+    assert_eq!(limit_error.status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(limit_error.code, Some("companion_generation_limit_reached"));
+    let image_quota = budget
+        .companion_generation_snapshot(USER, "basic")
+        .await
+        .expect("image quota");
+    assert_eq!((image_quota.used, image_quota.remaining), (5, 0));
+
     let disabled = BudgetService::new(
         pool.clone(),
         CostGuardConfig {
@@ -525,8 +696,11 @@ async fn provider_outcomes_and_budget_transitions_are_durable_and_fail_closed() 
         cache_write_tokens: 0,
         cached_input_tokens: 0,
         input_tokens: 0,
+        input_text_tokens: 0,
+        input_image_tokens: 0,
         model: "test".to_owned(),
         output_tokens: 0,
+        output_image_tokens: 0,
         reasoning_tokens: 0,
     };
     let settlement = SettlementInput {

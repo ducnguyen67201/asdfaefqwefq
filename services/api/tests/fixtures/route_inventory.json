@@ -18,6 +18,8 @@
     {"method":"POST","path":"/v1/agent-turns","family":"usage"},
     {"method":"POST","path":"/v1/openai/responses","family":"provider"},
     {"method":"GET","path":"/v1/usage/budget","family":"usage"},
+    {"method":"GET","path":"/v1/companion-images/quota","family":"usage"},
+    {"method":"POST","path":"/v1/openai/images/companion-edits","family":"provider"},
     {"method":"POST","path":"/v1/openai/audio/transcriptions","family":"provider"},
     {"method":"POST","path":"/v1/openai/realtime/calls","family":"provider"},
     {"method":"POST","path":"/v1/elevenlabs/speech","family":"provider"},

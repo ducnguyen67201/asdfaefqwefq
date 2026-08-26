@@ -193,6 +193,24 @@ contain IDs, lane/model, counts, integer micro-USD, disposition, and timestamps
 only—never prompts, outputs, screenshots, base64, URLs, recipients, file paths,
 secrets, or raw tool arguments.
 
+Custom companion generation is available to every authenticated account with
+an active membership. It has no per-feature switch or account allowlist; the
+global paid-call switch remains the shared provider shutdown. ZDR on the exact
+OpenAI project/key is a deployment requirement. The desktop never receives the
+OpenAI key, and callers cannot override the fixed image model, one-output,
+square low-quality PNG, transparent-background, or automatic-moderation
+controls. Logs and usage rows never contain source bytes, prompts, or generated
+PNG bytes.
+
+Source images are limited to one PNG or JPEG of at most 5 MiB and a 1–400
+character prompt. Electron main verifies the image signature and dimensions,
+normalizes it before upload, keeps generated candidates in memory for ten
+minutes, and encrypts only an explicitly activated 128-pixel PNG with
+`safeStorage`. Account changes clear candidate and appearance state. The private
+`trocode-companion` protocol serves only exact candidate or active asset URLs
+with `Cache-Control: no-store`; it exposes no filesystem path or generic fetch
+capability.
+
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling
 does not widen authority or bypass exact-action approvals.

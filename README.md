@@ -75,6 +75,10 @@ Implemented:
 - Railway-hosted Responses, GPT Transcribe, and optional ElevenLabs
   access; provider keys are never compiled into or stored by the customer
   application.
+- A custom cursor companion generator in Settings: any signed-in user with an
+  active membership can edit one PNG/JPEG through the hosted OpenAI Images API,
+  preview it in memory, and activate an account-scoped, operating-system-
+  encrypted local PNG. Every plan receives five generations per UTC month.
 - PostHog product analytics for count-only app, model, and tool activity; task
   text, voice transcripts, screenshots, and tool arguments are excluded.
 - Account-scoped PostgreSQL task history that saves the latest validated task
@@ -102,7 +106,9 @@ Not implemented yet:
   explicit exclusion of Tro's own windows.
 - Direct Gmail/Calendar connectors and app-specific independent verifiers.
 - Persistent screenshot-rich execution trajectory storage.
-- Direct media/music generation providers and release-credential provisioning.
+- General-purpose media/music generation providers and release-credential
+  provisioning. Custom cursor companion edits are the only implemented media
+  generation path.
 
 Music and other creative work can already be performed through an installed or
 browser-based application using navigation, visible guidance, clicks, hotkeys,
@@ -273,6 +279,23 @@ Computer-use policy is evaluated by Rust; Electron owns schema validation,
 trusted workspace binding, approval presentation, and exactly-once native
 dispatch.
 
+#### Custom companion availability
+
+Companion image generation is available to every signed-in account with an
+active membership. It has no companion-specific feature flag or user allowlist;
+the global paid-call switch remains the emergency shutdown for every hosted
+model call. Each account receives five successful or uncertain generations per
+UTC month, with a separate two-request-per-minute abuse limit and a fixed
+50,000 micro-USD reservation per attempt. Definitive pre-inference rejection
+releases a slot; an outcome that may have reached the provider remains counted
+and is never retried automatically.
+
+Before deploying, verify the exact OpenAI Images model and project, enable ZDR
+on that project/key, complete privacy and child-safety review, test moderation,
+and reconcile provider usage against Tro's integer micro-USD settlements.
+Existing encrypted custom images continue rendering when the global paid-call
+shutdown prevents new provider calls.
+
 ### PostgreSQL task history
 
 PostgreSQL belongs exclusively to the Rust API. Local development may start the
@@ -345,12 +368,12 @@ an already-reserved verified email complete its automatic join.
 
 The API tier catalog is the pricing and entitlement source of truth:
 
-| Plan  | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM |
-| ----- | ----------------: | ------------------: | ----------------------: | ------------: |
-| Free  |                $0 |                  25 |                      $1 |            15 |
-| Basic |               $20 |                 300 |                      $8 |            30 |
-| Pro   |               $50 |                 750 |                     $20 |            45 |
-| Max   |              $100 |               1,875 |                     $45 |            60 |
+| Plan  | Recommended price | Agent messages/week | Provider-cost cap/month | Responses RPM | Companion images/month |
+| ----- | ----------------: | ------------------: | ----------------------: | ------------: | ---------------------: |
+| Free  |                $0 |                  25 |                      $1 |            15 |                      5 |
+| Basic |               $20 |                 300 |                      $8 |            30 |                      5 |
+| Pro   |               $50 |                 750 |                     $20 |            45 |                      5 |
+| Max   |              $100 |               1,875 |                     $45 |            60 |                      5 |
 
 #### Admin dashboard
 

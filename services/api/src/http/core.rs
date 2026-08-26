@@ -18,11 +18,14 @@ use crate::{
     error::{ApiError, ApiResult},
     http::{bearer, bytes_response, json_response, read_json, request_ip},
     providers::{
-        ProviderBody, ResponsesInput, TranscriptionBody, TranscriptionInput, is_supported_language,
+        CompanionImageBody, CompanionImageInput, ProviderBody, ResponsesInput, TranscriptionBody,
+        TranscriptionInput, is_supported_language,
     },
     usage::{ProviderUsage, ReservationInput, SettlementInput, plan_for},
     validation::{api_uuid, js_string_len},
 };
+
+const MAX_COMPANION_IMAGE_BODY_BYTES: usize = ((5_usize * 1_024 * 1_024).div_ceil(3) * 4) + 2_048;
 
 pub async fn session(state: &AppState, headers: &HeaderMap) -> ApiResult<DeviceSession> {
     let token = bearer(headers)
@@ -380,6 +383,75 @@ pub async fn handle(
                 .await?,
         );
     }
+    if method == Method::GET && path == "/v1/companion-images/quota" {
+        let current = session(state, headers).await?;
+        let membership = access(state, &current).await?;
+        if hosted_model_calls_available(state) {
+            return json_response(
+                StatusCode::OK,
+                json!({
+                    "quota": state.budget.companion_generation_snapshot(
+                        &current.user.id,
+                        membership.plan.as_deref().unwrap_or("free"),
+                    ).await?,
+                    "state": "available",
+                    "summary": "Create up to five cursor companions each month.",
+                }),
+            );
+        }
+        return json_response(
+            StatusCode::OK,
+            json!({
+                "quota": null,
+                "state": "unavailable",
+                "summary": "Companion generation is not available for this account.",
+            }),
+        );
+    }
+    if method == Method::POST && path == "/v1/openai/images/companion-edits" {
+        let current = session(state, headers).await?;
+        let membership = access(state, &current).await?;
+        if !hosted_model_calls_available(state) {
+            return Err(ApiError::coded(
+                StatusCode::FORBIDDEN,
+                "companion_generation_unavailable",
+                "Companion generation is not available for this account.",
+            ));
+        }
+        let plan = plan_for(membership.plan.as_deref().unwrap_or("free"))?;
+        limit(
+            state,
+            "companion-images.minute",
+            &current.user.id,
+            plan.companion_generations_per_minute,
+            Duration::from_secs(60),
+        )
+        .await?;
+        let input_value = read_json(headers, bytes, MAX_COMPANION_IMAGE_BODY_BYTES)?;
+        let input: CompanionImageBody = serde_json::from_value(input_value).map_err(|_| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Companion image request is invalid.",
+            )
+        })?;
+        let header_request = uuid_header(headers, "x-trocode-request-id").map_err(|_| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Companion image request is invalid.",
+            )
+        })?;
+        let result = state
+            .companion_images
+            .execute(CompanionImageInput {
+                body: input,
+                plan_id: plan.id,
+                request_id: header_request,
+                safety_identifier: &safety(&current.user.id),
+                user_id: &current.user.id,
+            })
+            .await?;
+        return json_response(StatusCode::OK, result);
+    }
     if method == Method::POST && path == "/v1/openai/audio/transcriptions" {
         let current = session(state, headers).await?;
         let membership = access(state, &current).await?;
@@ -445,6 +517,11 @@ pub async fn handle(
     }
     Err(ApiError::new(StatusCode::NOT_FOUND, "Endpoint not found."))
 }
+
+fn hosted_model_calls_available(state: &AppState) -> bool {
+    state.config.cost_guard.enabled
+}
+
 fn validate_responses(state: &AppState, input: &mut Value) -> ApiResult<()> {
     let object = input
         .as_object_mut()
@@ -576,8 +653,11 @@ async fn realtime(
             cache_write_tokens: 0,
             cached_input_tokens: 0,
             input_tokens: 0,
+            input_text_tokens: 0,
+            input_image_tokens: 0,
             model: "gpt-realtime-whisper".to_owned(),
             output_tokens: 0,
+            output_image_tokens: 0,
             reasoning_tokens: 0,
         };
         state
@@ -738,8 +818,11 @@ async fn speech(
         cache_write_tokens: 0,
         cached_input_tokens: 0,
         input_tokens: 0,
+        input_text_tokens: 0,
+        input_image_tokens: 0,
         model: state.config.eleven_labs_model_id.clone(),
         output_tokens: 0,
+        output_image_tokens: 0,
         reasoning_tokens: 0,
     };
     state

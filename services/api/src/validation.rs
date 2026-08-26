@@ -6,6 +6,31 @@ pub fn js_string_len(value: &str) -> usize {
 }
 
 #[must_use]
+pub fn js_trim(value: &str) -> &str {
+    value.trim_matches(|character| {
+        matches!(
+            character,
+            '\u{0009}'
+                | '\u{000A}'
+                | '\u{000B}'
+                | '\u{000C}'
+                | '\u{000D}'
+                | '\u{0020}'
+                | '\u{00A0}'
+                | '\u{1680}'
+                | '\u{2000}'
+                ..='\u{200A}'
+                    | '\u{2028}'
+                    | '\u{2029}'
+                    | '\u{202F}'
+                    | '\u{205F}'
+                    | '\u{3000}'
+                    | '\u{FEFF}'
+        )
+    })
+}
+
+#[must_use]
 pub fn truncate_js_string(value: &str, max_code_units: usize) -> String {
     let mut used = 0usize;
     value
@@ -60,13 +85,19 @@ fn parse_uuid(value: &str, allow_sentinels: bool) -> Option<Uuid> {
 
 #[cfg(test)]
 mod tests {
-    use super::{api_uuid, js_string_len, truncate_js_string, zod_uuid};
+    use super::{api_uuid, js_string_len, js_trim, truncate_js_string, zod_uuid};
 
     #[test]
     fn javascript_length_counts_utf16_code_units() {
         assert_eq!(js_string_len("Tro"), 3);
         assert_eq!(js_string_len("Tiếng Việt"), 10);
         assert_eq!(js_string_len("😀"), 2);
+    }
+
+    #[test]
+    fn javascript_trim_handles_bom_but_not_unicode_nel() {
+        assert_eq!(js_trim("\u{FEFF} Tro \u{FEFF}"), "Tro");
+        assert_eq!(js_trim("\u{0085}Tro\u{0085}"), "\u{0085}Tro\u{0085}");
     }
 
     #[test]

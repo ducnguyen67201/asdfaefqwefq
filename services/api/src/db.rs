@@ -125,6 +125,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "user knowledge spaces access",
             include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
         ),
+        migration(
+            24,
+            "companion image generation",
+            include_str!("../migrations/024_companion_image_generation.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

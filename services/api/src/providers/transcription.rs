@@ -237,8 +237,11 @@ impl TranscriptionService {
             cache_write_tokens: 0,
             cached_input_tokens: 0,
             input_tokens: 0,
+            input_text_tokens: 0,
+            input_image_tokens: 0,
             model: MODEL.to_owned(),
             output_tokens: 0,
+            output_image_tokens: 0,
             reasoning_tokens: 0,
         };
         self.budget

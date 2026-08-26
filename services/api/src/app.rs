@@ -15,7 +15,7 @@ use crate::{
     error::ApiError,
     http,
     knowledge::{IngestionWorker, KnowledgeService, ObjectStore},
-    providers::{ResponsesService, TranscriptionService},
+    providers::{CompanionImageService, ResponsesService, TranscriptionService},
     usage::{BudgetService, RateLimiter},
 };
 
@@ -28,6 +28,7 @@ pub struct AppState {
     pub organizations: OrganizationRepository,
     pub rate_limiter: RateLimiter,
     pub budget: BudgetService,
+    pub companion_images: CompanionImageService,
     pub responses: ResponsesService,
     pub transcription: TranscriptionService,
     pub google: GoogleVerifier,
@@ -48,6 +49,8 @@ impl AppState {
         let budget = BudgetService::new(pool.clone(), config.cost_guard.clone());
         let responses =
             ResponsesService::new(budget.clone(), client.clone(), &config.openai_api_key);
+        let companion_images =
+            CompanionImageService::new(budget.clone(), client.clone(), &config.openai_api_key);
         let store = match &config.knowledge_spaces.object_store {
             Some(value) => Some(ObjectStore::new(value).await),
             None => None,
@@ -84,6 +87,7 @@ impl AppState {
             config: Arc::new(config),
             pool,
             budget,
+            companion_images,
             responses,
             knowledge,
             classroom,

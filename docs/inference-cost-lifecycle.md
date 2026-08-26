@@ -117,6 +117,21 @@ Malformed post-dispatch responses leave the reservation uncertain and are never
 retried automatically. ElevenLabs speech settles from actual character count.
 UI copy separates settled spend from reserved or estimated spend.
 
+Custom companion edits use a separate `image` usage lane. Every explicit
+generation reserves 50,000 micro-USD before the OpenAI Images request. A
+successful response must contain complete provider-reported input-text,
+input-image, and output-image modality usage; the API settles those counts with
+the versioned image price catalog and integer ceiling math. Client-provided
+prices or usage are ignored.
+
+Every plan includes five companion generations per account per UTC month. This
+slot limit is always enforced, including while the money guard is in `observe`
+mode. A successful, settled image and any post-dispatch `uncertain` outcome
+consume a slot. A definitive rejection known to occur before inference releases
+the reservation and returns the slot. Timeouts, connection loss, provider 5xx,
+oversized or malformed successes, and missing modality usage stay uncertain and
+are never retried automatically.
+
 At published model rates, one minute costs $0.0045 with `gpt-transcribe` versus
 $0.006 with `whisper-1`, a 25% model-rate reduction. Segmentation is primarily a
 latency technique: forced 12-second cuts add 300 ms overlap, while natural
@@ -127,6 +142,10 @@ pauses can reduce cost only when local VAD trims silent audio.
 `TROCODE_COST_GUARD_MODE=enforce` is the default. `observe` persists usage and
 records would-deny facts without blocking and is available for reconciliation
 against provider billing. `TROCODE_PAID_CALLS_ENABLED=false` is the kill switch.
+Companion generation has no separate feature flag or account allowlist; every
+authenticated member receives the same quota. The global kill switch prevents
+new companion generations but does not prevent an already encrypted local
+companion from rendering.
 Shared fixed-window rate limits remain abuse protection; the atomic monthly
 user-turn and provider-cost reservations are the spend quotas.
 
