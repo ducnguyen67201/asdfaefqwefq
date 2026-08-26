@@ -3,6 +3,7 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "allowJs": false,
+    "allowImportingTsExtensions": true,
     "module": "ESNext",
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -15,8 +16,9 @@
     "outDir": "dist",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "rewriteRelativeImportExtensions": true,
     "jsx": "react-jsx",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["apps/admin/**/*", "src/**/*", "vitest.config.mts"]
+  "include": ["apps/admin/**/*", "scripts/**/*.mts", "src/**/*", "vitest.config.mts"]
 }

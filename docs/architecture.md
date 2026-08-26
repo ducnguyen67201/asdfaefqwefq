@@ -47,6 +47,19 @@ hard-confirm effects, and limits. Electron rejects responses without that exact
 contract and projects it into renderer state. It never fills missing authority
 with locally compiled defaults.
 
+Protocol v3 is the executable boundary shared by Rust, Electron, preload, and
+React. Its Zod source and exact hosted-tool catalog live in
+`src/shared/agent-runtime-protocol.ts` and
+`src/shared/agent-tool-contracts.ts`. Generation commits a closed JSON Schema,
+the tool catalog, separate SHA-256 digests, a manifest, and shared fixtures.
+Rust DTOs are compiled from that schema with Typify. New v3 work begins only
+when protocol version, protocol digest, and tool-catalog digest all match.
+
+The Rust projection owns state, phase, terminality, waiting reason, failure,
+cancellation source, and available actions. Electron and React may format this
+projection but cannot infer lifecycle semantics from event names or local phase
+lists. Protocol v2 remains a read-only history adapter after enforcement.
+
 The selected Workspace root is intentionally device-local. The API binds the
 contract to an opaque selection ID; Electron resolves that ID to the previously
 trusted canonical path and rejects a mismatch. File paths remain confined to
@@ -55,11 +68,16 @@ that root, while shell commands receive only an allowlisted environment.
 ## Tool execution
 
 The Rust supervisor chooses tools and persists the lifecycle. A durable tool
-envelope includes a schema digest, expiration, effect, intent revision,
+envelope includes both contract digests, expiration, effect, intent revision,
 authorization source, approval requirement, and verification obligations.
 Electron parses and normalizes the envelope, asks the bundled Rust policy
 engine to independently validate it, obtains the API's one-time executing
 transition, and dispatches the native adapter once.
+
+Every model tool is emitted directly from the generated exact catalog. Nested
+objects are closed and required according to their individual schema; the
+backend does not wrap tools in a generic `{ input: ... }` object. Direct tools
+such as browser navigation therefore do not acquire computer-use permissions.
 
 If a consequential operation begins and connectivity is lost, the result is
 unknown and is never retried. Exact approval is bound to the full normalized

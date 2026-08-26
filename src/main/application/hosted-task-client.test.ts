@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
+import { HOST_ALWAYS_CONFIRM_EFFECTS } from '../../shared/contracts';
+
 import { HostedTaskClient, HostedTaskOutcomeUnknownError } from './hosted-task-client';
 
 const input = {
@@ -20,13 +23,61 @@ const record = {
   request: input.request,
   executionProfile: input.executionProfile,
   workspaceSelectionId: null,
-  state: 'queued',
-  protocolVersion: 2,
-  runVersion: 1,
+  protocolVersion: 3,
+  protocolDigest: manifest.protocolDigest,
+  toolCatalogDigest: manifest.toolCatalogDigest,
   outcomeRevision: 1,
   publicSummary: 'Queued.',
+  authorityContract: {
+    schemaVersion: 8,
+    id: '00000000-0000-4000-8000-000000000005',
+    originalRequest: input.request,
+    runtimeKind: 'rust_hosted',
+    executionProfile: input.executionProfile,
+    autonomyMode: input.autonomyMode,
+    workspaceSelectionId: null,
+    activity: null,
+    outcomeContract: {
+      schemaVersion: 1,
+      revision: 1,
+      completionMode: 'all_required',
+      criteria: [{
+        id: 'assistant-output',
+        description: 'Return a user-facing answer.',
+        required: true,
+        verifier: { kind: 'assistant_output', constraints: [] },
+      }],
+    },
+    intentAuthorization: {
+      schemaVersion: 1,
+      revision: 1,
+      source: 'user_instruction',
+      grants: [],
+    },
+    approvalPolicy: {
+      alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS],
+    },
+    limits: {
+      maxImages: 20,
+      maxMicroUsd: 5_000_000,
+      maxMinutes: 30,
+      maxModelSamples: 40,
+      maxToolCalls: 30,
+    },
+  },
+  projection: {
+    state: 'queued',
+    runVersion: 1,
+    phase: 'ready',
+    terminal: false,
+    availableActions: ['cancel'],
+    waitingOn: null,
+    failure: null,
+    cancellationSource: null,
+  },
   createdAt: '2026-08-25T00:00:00.000Z',
   updatedAt: '2026-08-25T00:00:00.000Z',
+  newlyCreated: true,
 };
 
 describe('HostedTaskClient.submit', () => {

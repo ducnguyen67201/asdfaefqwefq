@@ -86,20 +86,22 @@ Submission is a separate participant action. The renderer previews relative path
 
 ## Deployment and rollback
 
-Set `TROCODE_KNOWLEDGE_SPACES_ENABLED=true` only on the hosted API after configuring private bucket credentials. Run `./bin/trocode-api ingestion-worker` as a separate Railway worker process, or `cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker` locally. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied.
+Migration 023 adds `users.knowledge_spaces_enabled` with a default of `true`. Administrators can enable or disable Knowledge Spaces per account from the Users dashboard; the API reads that database field for capability discovery and every Knowledge Spaces request. There is no deployment-wide feature flag.
+
+Configure the private bucket credentials before enabling file upload, download, or ingestion workflows. Run `./bin/trocode-api ingestion-worker` as a separate Railway worker process, or `cargo run --manifest-path services/api/Cargo.toml --locked -- ingestion-worker` locally. The bucket role should permit only exact-object `PutObject`, `GetObject`, and `HeadObject`; public access and bucket listing should be denied. Navigation and metadata routes remain available when object storage is absent, while storage-dependent routes return a service-unavailable response.
 
 The Rust API owns the complete live-room, directive, assessment, and dashboard
-route families. It applies migration 020, uses HMAC-authenticated `tro_live_`
+route families. It applies the checked-in migration chain, uses HMAC-authenticated `tro_live_`
 sessions, and preserves the installed Electron response contracts. The same
 binary owns material ingestion through its worker command. Startup with the
-feature enabled fails closed if its database, HMAC key, object store, or
-migration 020 tables are unavailable.
+required database or HMAC key unavailable fails closed. Partially configured
+object storage is rejected at startup.
 
-Back up PostgreSQL metadata and object storage together. Retention deletion must remove metadata and objects through an audited job; never infer object keys in desktop code. To roll back, disable the feature flag first, stop the worker after its current lease, and retain both stores. Disabling the flag hides desktop navigation and rejects feature routes without deleting data.
+Back up PostgreSQL metadata and object storage together. Retention deletion must remove metadata and objects through an audited job; never infer object keys in desktop code. To suspend access without deleting data, disable Knowledge Spaces for the affected accounts in the admin dashboard, stop the worker after its current lease, and retain both stores.
 
-During rollback, redeploy the recorded last-known-good whole backend before
-disabling the feature flag. Never split one mutation family across deployments;
-rollback requires no row conversion or destructive SQL.
+During rollback, redeploy the recorded last-known-good whole backend. Never
+split one mutation family across deployments; rollback requires no row
+conversion or destructive SQL.
 
 The operational load script covers 200/500-row dashboard projection. With
 `TEST_DATABASE_URL`, the PostgreSQL integration suite also admits 200 students

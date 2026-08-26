@@ -20,9 +20,13 @@ screenshot.
 ## Lazy flow
 
 ```text
-model calls observe_surface (when the compatible CUA capability is available)
+model calls an exact computer observation tool (when CUA is available)
+  -> backend persists the invocation before any local dispatch
   -> host checks/starts task-scoped CUA in Auto scope
-  -> if permission is absent, pause for user-clicked Connect computer
+  -> if permission is absent, persist awaiting_permission with stable interaction/invocation IDs
+  -> show Open System Settings and Continue without computer actions
+  -> opening Settings does not answer, cancel, or resume the interaction
+  -> on app focus, resume the same invocation once only when status is ready and available
   -> identify one current non-TroCode browser/native window
   -> try browser semantics, window accessibility, window screenshot, then desktop screenshot
   -> return bounded facts and opaque e1/e2 references to the same call ID
@@ -97,5 +101,13 @@ semantic references. Cancellation aborts model sampling,
 permission work, observation, or adapter work. CUA is ended only if it was
 started, the in-memory model session is erased, and resolved call IDs are
 released. Reference bindings and armed authorization are cleared on task end,
-disconnect, and shutdown. A cancellation received after an atomic external
-effect does not undo or automatically retry that effect.
+disconnect, and shutdown. Stop requests carry a source, command ID, and expected
+run version. A pre-execution stop becomes `cancelled`; a stop after a
+consequential dispatch with no known result becomes terminal `blocked` with an
+unknown-effect failure. It is never described as cancelled or retried.
+
+Escape is window-scoped. It is accepted only while Tro is focused, no modal or
+editable control owns the key, and no permission interaction is waiting. Tro
+does not register a system-wide plain-Escape accelerator. On macOS, opening
+System Settings and pressing Escape there cannot cancel the task; Windows,
+Linux, and unsupported permission states follow the same focus rule.

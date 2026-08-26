@@ -12,6 +12,10 @@ import {
   type HostedTaskRecord,
   type TaskSnapshot,
 } from '../../shared/contracts';
+import {
+  isLegacyHostedTaskTerminal,
+  legacyHostedStateForEvent,
+} from '../../shared/legacy-agent-runtime-v2';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { ActivityContextService } from '../knowledge/activity-context-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
@@ -160,7 +164,11 @@ export class TaskApplicationService {
     if (!hosted || !this.options.hostedTaskClient) {
       throw new Error('The task is not owned by the Rust runtime.');
     }
-    const record = await this.options.hostedTaskClient.cancel(hosted.record.id);
+    const record = await this.options.hostedTaskClient.cancel(
+      hosted.record.id,
+      hosted.record.runVersion,
+      request.source,
+    );
     hosted.record = record;
     hosted.snapshot = projectHostedTask(record, undefined, hosted.snapshot);
     return hosted.snapshot;
@@ -168,15 +176,17 @@ export class TaskApplicationService {
 
   async cancelActiveTasks(): Promise<void> {
     if (!this.options.hostedTaskClient) return;
-    const active = [...this.hostedByTask.entries()].filter(([, hosted]) =>
-      !['completed', 'blocked', 'failed', 'cancelled', 'expired'].includes(
-        hosted.record.state,
-      ),
+    const active = [...this.hostedByTask.entries()].filter(
+      ([, hosted]) =>
+        !(hosted.record.lifecycle?.terminal ??
+          isLegacyHostedTaskTerminal(hosted.record.state)),
     );
     await Promise.allSettled(
       active.map(async ([taskId, hosted]) => {
         const record = await this.options.hostedTaskClient?.cancel(
           hosted.record.id,
+          hosted.record.runVersion,
+          'shutdown',
         );
         if (!record) return;
         hosted.record = record;
@@ -250,8 +260,10 @@ export class TaskApplicationService {
   async restoreHostedRuns(): Promise<number> {
     if (!this.options.hostedTaskClient) return 0;
     const records = await this.options.hostedTaskClient.list();
-    const active = records.filter((record) =>
-      !['completed', 'blocked', 'failed', 'cancelled', 'expired'].includes(record.state),
+    const active = records.filter(
+      (record) =>
+        !(record.lifecycle?.terminal ??
+          isLegacyHostedTaskTerminal(record.state)),
     );
     let restored = 0;
     for (const record of active) {
@@ -303,36 +315,41 @@ export class TaskApplicationService {
         if (controller.signal.aborted) return;
         const current = this.hostedByTask.get(taskId);
         if (!current) return;
-        this.applyHostedEvent(taskId, {
-          id: randomUUID(),
-          runId: current.record.id,
-          sequence: Number.MAX_SAFE_INTEGER,
-          type: 'run.connection_failed',
-          summary: error instanceof Error
-            ? `Hosted task connection failed: ${error.message}`
-            : 'Hosted task connection failed.',
-          createdAt: new Date().toISOString(),
-        });
+        current.snapshot = {
+          ...current.snapshot,
+          updatedAt: new Date().toISOString(),
+          lastEvent: current.snapshot.lastEvent
+            ? {
+                ...current.snapshot.lastEvent,
+                status: 'warning',
+                summary:
+                  error instanceof Error
+                    ? `Hosted task connection failed: ${error.message}`
+                    : 'Hosted task connection failed.',
+              }
+            : null,
+        };
       });
   }
 
   private applyHostedEvent(taskId: string, event: HostedTaskEvent): void {
     const hosted = this.hostedByTask.get(taskId);
     if (!hosted) return;
-    const stateByType: Partial<Record<string, HostedTaskRecord['state']>> = {
-      'run.awaiting_worker': 'awaiting_worker',
-      'run.blocked': 'blocked',
-      'run.cancelled': 'cancelled',
-      'run.completed': 'completed',
-      'run.connection_failed': 'recovering',
-      'run.outcomes_incomplete': 'blocked',
-      'run.planning': 'planning',
-      'tool.completed': 'verifying',
-      'tool.requested': 'awaiting_worker',
-    };
+    if (
+      event.runVersion !== undefined &&
+      event.runVersion < hosted.record.runVersion
+    ) {
+      return;
+    }
+    const lifecycle = event.lifecycle;
+    const legacyState = lifecycle
+      ? undefined
+      : legacyHostedStateForEvent(event.type);
     hosted.record = {
       ...hosted.record,
-      state: stateByType[event.type] ?? hosted.record.state,
+      state: lifecycle?.state ?? legacyState ?? hosted.record.state,
+      runVersion: lifecycle?.runVersion ?? hosted.record.runVersion,
+      ...(lifecycle ? { lifecycle } : {}),
       publicSummary: event.summary,
       updatedAt: event.createdAt,
     };
@@ -341,7 +358,10 @@ export class TaskApplicationService {
     );
     const lastEvent = hosted.snapshot.lastEvent;
     if (!lastEvent) return;
-    if (['completed', 'blocked', 'failed', 'cancelled', 'expired'].includes(hosted.record.state)) {
+    if (
+      hosted.record.lifecycle?.terminal ??
+      isLegacyHostedTaskTerminal(hosted.record.state)
+    ) {
       hosted.controller.abort();
       void this.options.onHostedTerminal?.(taskId);
     }

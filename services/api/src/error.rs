@@ -22,6 +22,10 @@ struct ErrorBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     code: Option<&'static str>,
     error: &'static str,
+    message: &'static str,
+    retryable: bool,
+    #[serde(rename = "currentProjection")]
+    current_projection: Option<serde_json::Value>,
 }
 
 impl ApiError {
@@ -113,6 +117,9 @@ impl IntoResponse for ApiError {
             Json(ErrorBody {
                 code: self.code,
                 error: self.message,
+                message: self.message,
+                retryable: self.retry_after_seconds.is_some(),
+                current_projection: None,
             }),
         )
             .into_response()

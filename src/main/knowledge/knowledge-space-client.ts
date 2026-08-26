@@ -87,7 +87,7 @@ export class KnowledgeSpaceClient {
 
   capabilities(): Promise<KnowledgeCapabilities> {
     if (!this.apiBaseUrl.trim()) return Promise.resolve({ knowledgeSpaces: { enabled: false, contractVersion: 2 } });
-    return this.request('/v1/capabilities', { method: 'GET' }, KnowledgeCapabilitiesSchema, false);
+    return this.request('/v1/capabilities', { method: 'GET' }, KnowledgeCapabilitiesSchema);
   }
   listSpaces(): Promise<KnowledgeSpaceList> { return this.request('/v1/spaces', { method: 'GET' }, KnowledgeSpaceListSchema); }
   createSpace(input: CreateKnowledgeSpaceRequest): Promise<CreateKnowledgeSpaceResponse> { return this.request('/v1/spaces', this.json('POST', input), CreateKnowledgeSpaceResponseSchema); }

@@ -65,6 +65,8 @@ import {
 import { SettingsPage } from './SettingsPage';
 import {
   isTaskCancellable,
+  isTaskSteerable,
+  isTaskTerminal,
   shouldAutoStartTask,
   shouldStopTaskForEscape,
 } from './task-execution';
@@ -105,16 +107,6 @@ const EMPTY_VOICE_STATUS: VoiceStatus = {
   model: VOICE_TRANSCRIPTION_MODEL,
   summary: 'Checking OpenAI GPT Transcribe…',
 };
-
-const TERMINAL_PHASES = new Set(['completed', 'failed', 'cancelled']);
-const STEERABLE_PHASES = new Set([
-  'planning',
-  'observing',
-  'acting',
-  'verifying',
-  'paused',
-  'blocked',
-]);
 
 function appendUniqueEvent(
   currentEvents: TaskEvent[],
@@ -602,10 +594,10 @@ function LiveTaskRail({
                     )
                   : isStarting
                     ? t(
-                        'Starting automatically… Press Escape at any time to stop.',
+                        'Starting automatically… Press Escape while Tro is focused to stop.',
                       )
                     : t(
-                        'Ready. Starting automatically… Press Escape at any time to stop.',
+                        'Ready. Starting automatically… Press Escape while Tro is focused to stop.',
                       )}
             </p>
             {autoStartFailed && (
@@ -979,6 +971,15 @@ export function App({
     dispatchTransientCursorError({ type: 'cleared' });
   }, []);
 
+  const refreshKnowledgeCapabilities = useCallback(async () => {
+    try {
+      const capabilities = await window.tro.getKnowledgeCapabilities();
+      setKnowledgeSpacesEnabled(capabilities.knowledgeSpaces.enabled);
+    } catch {
+      setKnowledgeSpacesEnabled(false);
+    }
+  }, []);
+
   const reportError = useCallback((message: string) => {
     dispatchTransientCursorError({ type: 'reported', message });
   }, []);
@@ -1121,12 +1122,7 @@ export function App({
       .then(setUsageBudget)
       .catch(() => undefined);
 
-    void window.tro
-      .getKnowledgeCapabilities()
-      .then((capabilities) => {
-        setKnowledgeSpacesEnabled(capabilities.knowledgeSpaces.enabled);
-      })
-      .catch(() => setKnowledgeSpacesEnabled(false));
+    queueMicrotask(() => void refreshKnowledgeCapabilities());
 
     void window.tro
       .getTaskHistory()
@@ -1202,7 +1198,30 @@ export function App({
       unsubscribeTaskComposerFocus();
       unsubscribeAppUpdates();
     };
-  }, [recordSnapshot, reportError]);
+  }, [recordSnapshot, refreshKnowledgeCapabilities, reportError]);
+
+  useEffect(() => {
+    const refreshOnFocus = (): void => {
+      void refreshKnowledgeCapabilities();
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    return () => window.removeEventListener('focus', refreshOnFocus);
+  }, [refreshKnowledgeCapabilities]);
+
+  useEffect(() => {
+    if (
+      !knowledgeSpacesEnabled &&
+      (activeView === 'spaces' || activeView === 'assigned')
+    ) {
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) setActiveView('agent');
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [activeView, knowledgeSpacesEnabled]);
 
   useEffect(() => {
     document.documentElement.lang = appLanguageDraft;
@@ -1230,9 +1249,13 @@ export function App({
   }, [membershipAccessAllowed, refreshPermissions]);
 
   const pendingInteraction = snapshot?.pendingInteraction ?? null;
+  const permissionWait =
+    snapshot?.lifecycle?.waitingOn?.kind === 'permission'
+      ? snapshot.lifecycle.waitingOn
+      : null;
   const pendingClarification =
     pendingInteraction?.kind === 'clarification' ? pendingInteraction : null;
-  const isSteering = snapshot ? STEERABLE_PHASES.has(snapshot.phase) : false;
+  const isSteering = isTaskSteerable(snapshot);
 
   const canSubmit =
     input.trim().length >= (pendingClarification || isSteering ? 1 : 2) &&
@@ -1249,13 +1272,11 @@ export function App({
         : t('No active task'),
     [appLanguageDraft, snapshot, t],
   );
-  const isTerminalTask = snapshot
-    ? TERMINAL_PHASES.has(snapshot.phase)
-    : false;
+  const isTerminalTask = isTaskTerminal(snapshot);
   const hasLiveTask = snapshot !== null && !isTerminalTask;
   const sessionTaskSnapshots = Object.values(sessionSnapshots);
   const historyTaskCount = sessionTaskSnapshots.filter((task) =>
-    TERMINAL_PHASES.has(task.phase),
+    isTaskTerminal(task),
   ).length;
   const hero = pendingInteraction
     ? {
@@ -1589,7 +1610,7 @@ export function App({
             instruction: normalizedRequest,
           });
         } else {
-          if (snapshot && !TERMINAL_PHASES.has(snapshot.phase)) {
+          if (snapshot && !isTaskTerminal(snapshot)) {
             recordSnapshot(await window.tro.cancelTask(snapshot.taskId));
           }
           activeTaskIdRef.current = null;
@@ -1647,7 +1668,7 @@ export function App({
       setIsSubmitting(true);
       try {
         const activeSnapshot = latestSnapshotRef.current;
-        if (activeSnapshot && !TERMINAL_PHASES.has(activeSnapshot.phase)) {
+        if (activeSnapshot && !isTaskTerminal(activeSnapshot)) {
           recordSnapshot(await window.tro.cancelTask(activeSnapshot.taskId));
         }
 
@@ -1727,7 +1748,7 @@ export function App({
     try {
       if (
         activeSnapshot &&
-        !TERMINAL_PHASES.has(activeSnapshot.phase)
+        !isTaskTerminal(activeSnapshot)
       ) {
         recordSnapshot(await window.tro.cancelTask(activeSnapshot.taskId));
       }
@@ -1897,7 +1918,7 @@ export function App({
       const latestSnapshot = latestSnapshotRef.current;
       if (
         latestSnapshot?.taskId === taskId &&
-        !TERMINAL_PHASES.has(latestSnapshot.phase)
+        !isTaskTerminal(latestSnapshot)
       ) {
         recordSnapshot(startedSnapshot);
       }
@@ -1969,16 +1990,34 @@ export function App({
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent): void => {
-      if (!shouldStopTaskForEscape(event, latestSnapshotRef.current)) return;
+      if (
+        !shouldStopTaskForEscape(event, latestSnapshotRef.current, {
+          documentHasFocus: document.hasFocus(),
+          modalOpen: Boolean(latestSnapshotRef.current?.pendingInteraction),
+        })
+      ) return;
 
       event.preventDefault();
       event.stopPropagation();
-      void stopTask();
+      const active = latestSnapshotRef.current;
+      if (!active) return;
+      isStoppingTaskRef.current = true;
+      setIsStoppingTask(true);
+      void window.tro
+        .cancelTask(active.taskId, 'focused_escape')
+        .then(recordSnapshot)
+        .catch((error: unknown) =>
+          reportError(error instanceof Error ? error.message : 'The current task could not be cancelled.'),
+        )
+        .finally(() => {
+          isStoppingTaskRef.current = false;
+          setIsStoppingTask(false);
+        });
     };
 
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [stopTask]);
+  }, [recordSnapshot, reportError]);
 
   if (entryGate === 'membership') {
     return (
@@ -2581,17 +2620,48 @@ export function App({
                 appLanguage={appLanguageDraft}
                 interaction={pendingInteraction}
                 isSending={isSubmitting}
-                onAnswerChoice={(answer, choiceId) => {
-                  if (choiceId !== 'connect_computer') {
-                    void sendInput(answer);
-                    return;
-                  }
-                  void openScreenRecordingSettings().then(() =>
-                    sendInput(answer),
-                  );
-                }}
+                onAnswerChoice={(answer) => void sendInput(answer)}
                 onApproval={(decision) => void decideApproval(decision)}
               />
+            )}
+
+            {permissionWait && snapshot && (
+              <section className="pending-interaction" aria-live="polite">
+                <div>
+                  <strong>{t('Computer permission required')}</strong>
+                  <p>
+                    {t(
+                      'Tro is holding the same action until Accessibility and Screen Recording are genuinely ready.',
+                    )}
+                  </p>
+                </div>
+                <div className="pending-interaction__actions">
+                  <button
+                    className="primary-button"
+                    onClick={() =>
+                      void window.tro.resolveComputerPermission({
+                        taskId: snapshot.taskId,
+                        action: 'open_system_settings',
+                      })
+                    }
+                    type="button"
+                  >
+                    {t('Open System Settings')}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      void window.tro.resolveComputerPermission({
+                        taskId: snapshot.taskId,
+                        action: 'continue_without_computer',
+                      })
+                    }
+                    type="button"
+                  >
+                    {t('Continue without computer')}
+                  </button>
+                </div>
+              </section>
             )}
 
             {hasLiveTask && snapshot && (

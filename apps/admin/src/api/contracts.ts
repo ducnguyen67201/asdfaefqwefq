@@ -21,6 +21,7 @@ export const adminUserSchema = z.object({
   createdAt: z.string(),
   email: z.string(),
   id: z.string(),
+  knowledgeSpacesEnabled: z.boolean(),
   lastSeenAt: z.string().nullable(),
   name: z.string(),
   plan: z.string(),

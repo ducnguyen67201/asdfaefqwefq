@@ -51,7 +51,6 @@ pub enum CostGuardMode {
 
 #[derive(Clone, Debug)]
 pub struct KnowledgeConfig {
-    pub enabled: bool,
     pub object_store: Option<ObjectStoreConfig>,
 }
 
@@ -80,7 +79,26 @@ pub struct AgentRuntimeConfig {
     pub payload_ttl_ms: u64,
     pub playwright_cdp_enabled: bool,
     pub protocol_version: u32,
+    pub v3_mode: AgentRuntimeV3Mode,
     pub rollout_percent: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentRuntimeV3Mode {
+    Observe,
+    Dual,
+    Enforce,
+}
+
+impl AgentRuntimeV3Mode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Observe => "observe",
+            Self::Dual => "dual",
+            Self::Enforce => "enforce",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -129,20 +147,38 @@ impl Config {
         if protocol_version != 2 {
             bail!("TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION must be 2.");
         }
+        let v3_mode = match optional(environment, "AGENT_RUNTIME_V3_MODE").as_deref() {
+            None | Some("observe") => AgentRuntimeV3Mode::Observe,
+            Some("dual") => AgentRuntimeV3Mode::Dual,
+            Some("enforce") => AgentRuntimeV3Mode::Enforce,
+            Some(_) => bail!("AGENT_RUNTIME_V3_MODE must be one of: observe, dual, enforce."),
+        };
 
-        let knowledge_enabled = boolean(environment, "TROCODE_KNOWLEDGE_SPACES_ENABLED", false)?;
-        let object_store = if knowledge_enabled {
+        let knowledge_access_key_id = optional(environment, "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID");
+        let knowledge_bucket = optional(environment, "TROCODE_KNOWLEDGE_S3_BUCKET");
+        let knowledge_endpoint = optional(environment, "TROCODE_KNOWLEDGE_S3_ENDPOINT");
+        let knowledge_region = optional(environment, "TROCODE_KNOWLEDGE_S3_REGION");
+        let knowledge_secret_access_key =
+            optional(environment, "TROCODE_KNOWLEDGE_S3_SECRET_ACCESS_KEY");
+        let knowledge_storage_configured = knowledge_access_key_id.is_some()
+            || knowledge_bucket.is_some()
+            || knowledge_endpoint.is_some()
+            || knowledge_region.is_some()
+            || knowledge_secret_access_key.is_some();
+        let object_store = if knowledge_storage_configured {
             Some(ObjectStoreConfig {
-                access_key_id: required(environment, "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID")?,
-                bucket: required(environment, "TROCODE_KNOWLEDGE_S3_BUCKET")?,
-                endpoint: optional(environment, "TROCODE_KNOWLEDGE_S3_ENDPOINT"),
+                access_key_id: knowledge_access_key_id
+                    .context("TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID is required.")?,
+                bucket: knowledge_bucket.context("TROCODE_KNOWLEDGE_S3_BUCKET is required.")?,
+                endpoint: knowledge_endpoint,
                 force_path_style: boolean(
                     environment,
                     "TROCODE_KNOWLEDGE_S3_FORCE_PATH_STYLE",
                     false,
                 )?,
-                region: required(environment, "TROCODE_KNOWLEDGE_S3_REGION")?,
-                secret_access_key: required(environment, "TROCODE_KNOWLEDGE_S3_SECRET_ACCESS_KEY")?,
+                region: knowledge_region.context("TROCODE_KNOWLEDGE_S3_REGION is required.")?,
+                secret_access_key: knowledge_secret_access_key
+                    .context("TROCODE_KNOWLEDGE_S3_SECRET_ACCESS_KEY is required.")?,
             })
         } else {
             None
@@ -235,6 +271,7 @@ impl Config {
                     false,
                 )?,
                 protocol_version,
+                v3_mode,
                 rollout_percent: percentage(
                     environment,
                     "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
@@ -288,10 +325,7 @@ impl Config {
                 .unwrap_or_else(|| "eleven_flash_v2_5".to_owned()),
             eleven_labs_voice_id: optional(environment, "ELEVENLABS_VOICE_ID"),
             google_client_id: required(environment, "GOOGLE_OAUTH_CLIENT_ID")?,
-            knowledge_spaces: KnowledgeConfig {
-                enabled: knowledge_enabled,
-                object_store,
-            },
+            knowledge_spaces: KnowledgeConfig { object_store },
             openai_api_key: required(environment, "OPENAI_API_KEY")?,
             openai_models,
             port: positive_u16(environment, "PORT", 8080)?,
@@ -437,5 +471,49 @@ mod tests {
             "true".to_owned(),
         );
         assert!(Config::from_source(&values).is_err());
+    }
+
+    #[test]
+    fn configures_knowledge_object_storage_without_a_feature_flag() {
+        let mut values = environment();
+        values.extend([
+            (
+                "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID".to_owned(),
+                "access-key".to_owned(),
+            ),
+            (
+                "TROCODE_KNOWLEDGE_S3_BUCKET".to_owned(),
+                "knowledge".to_owned(),
+            ),
+            (
+                "TROCODE_KNOWLEDGE_S3_REGION".to_owned(),
+                "us-east-1".to_owned(),
+            ),
+            (
+                "TROCODE_KNOWLEDGE_S3_SECRET_ACCESS_KEY".to_owned(),
+                "secret-key".to_owned(),
+            ),
+        ]);
+
+        let config = Config::from_source(&values).expect("valid object store config");
+
+        assert!(config.knowledge_spaces.object_store.is_some());
+    }
+
+    #[test]
+    fn rejects_partial_knowledge_object_storage_configuration() {
+        let mut values = environment();
+        values.insert(
+            "TROCODE_KNOWLEDGE_S3_BUCKET".to_owned(),
+            "knowledge".to_owned(),
+        );
+
+        let error = Config::from_source(&values).expect_err("partial object store config");
+
+        assert!(
+            error
+                .to_string()
+                .contains("TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID")
+        );
     }
 }

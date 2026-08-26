@@ -91,7 +91,7 @@ async fn rust_migrations_are_idempotent_on_an_empty_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(sqlx_count, 21);
+    assert_eq!(sqlx_count, 24);
     assert_eq!(table_count, 49, "48 domain tables plus SQLx bookkeeping");
 }
 
@@ -118,15 +118,16 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
     db::migrate(&pool).await.expect("Rust adoption migration");
     db::migrate(&pool).await.expect("Rust second-start no-op");
 
-    let row = query("SELECT email,name FROM users WHERE id='compat-user'")
+    let row = query("SELECT email,name,knowledge_spaces_enabled FROM users WHERE id='compat-user'")
         .fetch_one(&pool)
         .await
         .expect("preserved existing user");
     assert_eq!(row.get::<String, _>("email"), "compat@example.test");
     assert_eq!(row.get::<String, _>("name"), "Compat");
+    assert!(row.get::<bool, _>("knowledge_spaces_enabled"));
     let sqlx_count: i64 = query_scalar("SELECT COUNT(*)::bigint FROM _sqlx_migrations")
         .fetch_one(&pool)
         .await
         .expect("SQLx bookkeeping count");
-    assert_eq!(sqlx_count, 21);
+    assert_eq!(sqlx_count, 24);
 }

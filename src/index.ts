@@ -20,7 +20,6 @@ import type { DesktopCommand } from './main/agent/execution-contracts';
 import {
   TaskExecutionCoordinator,
 } from './main/agent/execution-coordinator';
-import { registerGlobalTaskCancelShortcut } from './main/agent/global-task-cancel-shortcut';
 import {
   defaultRuntimeToolDefinitions,
   RuntimeToolRegistry,
@@ -70,6 +69,7 @@ import { CuaService } from './main/cua/cua-service';
 import { createRustDesktopEngineClient } from './main/engine/rust-desktop-engine-client';
 import { HostedTaskHistoryStore } from './main/history/hosted-task-history-store';
 import { TaskHistoryService } from './main/history/task-history-service';
+import { ComputerPermissionCoordinator } from './main/hosted/computer-permission-coordinator';
 import { DesktopToolWorker } from './main/hosted/desktop-tool-worker';
 import { DesktopWorkerClient } from './main/hosted/desktop-worker-client';
 import { desktopWorkerCapabilities } from './main/hosted/desktop-worker-protocol';
@@ -394,6 +394,15 @@ const desktopWorkerClient = new DesktopWorkerClient({
   accessTokenProvider: () => authService.getAccessToken(),
   apiBaseUrl: trocodeApiBaseUrl,
 });
+const computerPermissionCoordinator = new ComputerPermissionCoordinator({
+  backend: desktopWorkerClient,
+  connectIfPermitted: () => cuaService.connectIfPermitted(),
+  getStatus: () => cuaService.getStatus(),
+  openSystemPermissionSettings: async (permission) =>
+    shell.openExternal(systemPermissionSettingsUrl(permission), {
+      activate: true,
+    }),
+});
 const desktopToolWorker = new DesktopToolWorker({
   approvalProvider: requestHostedApproval,
   commitResult: (result) => desktopWorkerClient.commitResult(result),
@@ -404,6 +413,7 @@ const desktopToolWorker = new DesktopToolWorker({
   evaluatePolicy: (input) => rustDesktopEngine.evaluateAction(input),
   goalProvider: (runId) => taskApplicationService.hostedGoal(runId),
   interactionProvider: requestHostedInteraction,
+  permissionCoordinator: computerPermissionCoordinator,
   registry: runtimeToolRegistry,
   requestExecuting: (invocationId, consequential) =>
     desktopWorkerClient.requestExecuting(invocationId, consequential),
@@ -504,7 +514,6 @@ let lastCompanionPosition: Point | null = null;
 let forcedExitTimer: ReturnType<typeof setTimeout> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let unregisterIpcHandlers: (() => void) | null = null;
-let unregisterGlobalTaskCancelShortcut: (() => void) | null = null;
 let unregisterGlobalVoiceShortcut: (() => void) | null = null;
 let globalNumberedChoiceShortcuts: GlobalNumberedChoiceShortcuts | null = null;
 let removeMainWindowCloseBehavior: (() => void) | null = null;
@@ -1360,13 +1369,12 @@ function prepareApplicationShutdown(): Promise<void> {
   auxiliaryWindowsEnabled = false;
   cancelBackgroundCompletionPresentation();
   stopCompanionFollowing();
-  unregisterGlobalTaskCancelShortcut?.();
-  unregisterGlobalTaskCancelShortcut = null;
   unregisterGlobalVoiceShortcut?.();
   unregisterGlobalVoiceShortcut = null;
   globalNumberedChoiceShortcuts?.dispose();
   globalNumberedChoiceShortcuts = null;
   companionNarrationService.shutdown();
+  computerPermissionCoordinator.dispose();
   protocol.unhandle(TROCODE_AUDIO_SCHEME);
   backgroundTray?.destroy();
   backgroundTray = null;
@@ -1755,20 +1763,6 @@ function ensureGlobalVoiceShortcut(): void {
   });
 }
 
-function ensureGlobalTaskCancelShortcut(): void {
-  if (unregisterGlobalTaskCancelShortcut) return;
-
-  unregisterGlobalTaskCancelShortcut = registerGlobalTaskCancelShortcut({
-    cancelTask: (taskId) => {
-      void taskApplicationService.cancel({ taskId }).catch((error: unknown) => {
-        console.error('[task] Could not cancel hosted task.', error);
-      });
-    },
-    registry: globalShortcut,
-    updates: taskRuntime,
-  });
-}
-
 function companionInteractionShortcutScope(
   interaction: CompanionInteraction,
 ): string {
@@ -1982,6 +1976,7 @@ const createWindow = (): void => {
     classroomDirectiveService,
     classroomSessionService,
     cancelActiveTasks: () => taskApplicationService.cancelActiveTasks(),
+    computerPermissionCoordinator,
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,
     handleCompanionResponseAction,
@@ -2510,7 +2505,11 @@ if (hasSingleInstanceLock) {
     createWindow();
     if (auxiliaryWindowsEnabled) enableAuthenticatedAuxiliaryWindows();
     ensureBackgroundTray();
-    ensureGlobalTaskCancelShortcut();
+    app.on('browser-window-focus', () => {
+      void computerPermissionCoordinator.refresh().catch((error: unknown) => {
+        console.warn('[cua] Could not refresh a pending permission wait.', error);
+      });
+    });
   });
 
   app.on('window-all-closed', () => {

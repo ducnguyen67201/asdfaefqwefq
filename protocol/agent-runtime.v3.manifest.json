@@ -1,0 +1,114 @@
+{
+  "generatorVersion": 1,
+  "inventories": {
+    "actions": [
+      "steer",
+      "cancel",
+      "respond",
+      "approve",
+      "deny",
+      "open_system_settings",
+      "continue_without_computer",
+      "retry_as_new_task"
+    ],
+    "cancellationSources": [
+      "stop_button",
+      "focused_escape",
+      "replacement",
+      "sign_out",
+      "shutdown"
+    ],
+    "errorCodes": [
+      "desktop_upgrade_required",
+      "backend_upgrade_required",
+      "protocol_upgrade_required",
+      "tool_catalog_upgrade_required",
+      "stale_run_version",
+      "transition_rejected",
+      "run_not_cancellable",
+      "permission_interaction_stale",
+      "invalid_agent_runtime_request",
+      "agent_runtime_unavailable"
+    ],
+    "failureCodes": [
+      "provider_request_rejected",
+      "provider_unavailable",
+      "provider_outcome_unknown",
+      "effect_outcome_unknown",
+      "required_outcome_unverified",
+      "internal_runtime_error",
+      "permission_unavailable",
+      "run_expired"
+    ],
+    "failureStages": [
+      "negotiation",
+      "provider_request",
+      "provider_dispatch",
+      "tool_execution",
+      "verification",
+      "runtime"
+    ],
+    "permissions": [
+      "accessibility",
+      "screen_recording"
+    ],
+    "phases": [
+      "ready",
+      "planning",
+      "paused",
+      "awaiting_permission",
+      "awaiting_input",
+      "awaiting_approval",
+      "acting",
+      "verifying",
+      "completed",
+      "blocked",
+      "failed",
+      "cancelled"
+    ],
+    "rolloutModes": [
+      "observe",
+      "dual",
+      "enforce"
+    ],
+    "states": [
+      "queued",
+      "compiling_outcomes",
+      "planning",
+      "awaiting_worker",
+      "awaiting_permission",
+      "executing_tool",
+      "awaiting_input",
+      "awaiting_approval",
+      "verifying",
+      "recovering",
+      "completed",
+      "blocked",
+      "failed",
+      "cancelled",
+      "expired"
+    ],
+    "toolIds": [
+      "activity.signal",
+      "application.launch",
+      "browser.navigate",
+      "browser.prepare",
+      "computer.control",
+      "computer.observe",
+      "desktop.control",
+      "desktop.observe",
+      "knowledge.search",
+      "task.guidance",
+      "task.interaction",
+      "workspace.filesystem",
+      "workspace.terminal"
+    ]
+  },
+  "protocolDigest": "73830587f95a4e6d50fcbfb303c932fb0fab4c2c1c2ce12933c85413fbe35c0f",
+  "schemaVersion": 3,
+  "sourceFiles": [
+    "src/shared/agent-runtime-protocol.ts",
+    "src/shared/agent-tool-contracts.ts"
+  ],
+  "toolCatalogDigest": "a98916e359199bfa2415d87bfcdc8ffc784c9d52e20d752c2628e361f68c3d8e"
+}

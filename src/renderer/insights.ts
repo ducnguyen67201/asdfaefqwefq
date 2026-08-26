@@ -4,9 +4,9 @@ import type {
   TaskEvent,
   TaskSnapshot,
 } from '../shared/contracts';
+import { isLegacyTaskPhaseTerminal } from '../shared/legacy-agent-runtime-v2';
 
 const ACTIVITY_DAY_COUNT = 42;
-const FINISHED_PHASES = new Set(['completed', 'failed', 'cancelled']);
 const LEARNING_TOPIC_MAX_LENGTH = 140;
 const ACADEMIC_CONTEXT_PATTERN =
   /\b(assignment|homework|study|lesson|quiz|exam|essay|worksheet|problem set|equation|algebra|geometry|calculus|math|physics|chemistry|biology|science|history|literature|grammar|thesis|citation|research paper)\b/iu;
@@ -176,8 +176,9 @@ export function createInsightsSummary(
   const completedTasks = tasks.filter(
     (task) => task.phase === 'completed',
   ).length;
-  const finishedTasks = tasks.filter((task) =>
-    FINISHED_PHASES.has(task.phase),
+  const finishedTasks = tasks.filter(
+    (task) =>
+      task.lifecycle?.terminal ?? isLegacyTaskPhaseTerminal(task.phase),
   ).length;
   const behaviorCounts = new Map<TaskBehavior, number>();
 

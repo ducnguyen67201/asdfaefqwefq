@@ -14,8 +14,8 @@ use trocode_api::{
     PgPool,
     app::AppState,
     config::{
-        AdminConfig, AgentRuntimeConfig, Config, CostGuardConfig, CostGuardMode, KnowledgeConfig,
-        RolloutConfig,
+        AdminConfig, AgentRuntimeConfig, AgentRuntimeV3Mode, Config, CostGuardConfig,
+        CostGuardMode, KnowledgeConfig, RolloutConfig,
     },
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -730,6 +730,7 @@ fn test_config(database_url: String) -> Config {
             playwright_cdp_enabled: false,
             protocol_version: 2,
             rollout_percent: 100,
+            v3_mode: AgentRuntimeV3Mode::Observe,
         },
         cost_guard: CostGuardConfig {
             daily_micro_usd: 8_000_000,
@@ -749,10 +750,7 @@ fn test_config(database_url: String) -> Config {
         eleven_labs_model_id: "eleven_multilingual_v2".to_owned(),
         eleven_labs_voice_id: None,
         google_client_id: "classroom-e2e.apps.googleusercontent.com".to_owned(),
-        knowledge_spaces: KnowledgeConfig {
-            enabled: true,
-            object_store: None,
-        },
+        knowledge_spaces: KnowledgeConfig { object_store: None },
         openai_api_key: "test-openai-key".to_owned(),
         openai_models: BTreeSet::from(["gpt-5.6-luna".to_owned()]),
         port: 0,

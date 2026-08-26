@@ -1,3 +1,4 @@
+import type { StrictJsonObjectSchema } from '../../shared/agent-tool-contracts';
 import type { ProposedAction, RuntimeToolId } from '../../shared/contracts';
 
 import type { DesktopObservation } from './execution-contracts';
@@ -10,12 +11,7 @@ export interface ModelToolSpec {
   parameters: StrictJsonObjectSchema;
 }
 
-export interface StrictJsonObjectSchema {
-  type: 'object';
-  additionalProperties: false;
-  properties: Record<string, Record<string, unknown>>;
-  required: string[];
-}
+export type { StrictJsonObjectSchema } from '../../shared/agent-tool-contracts';
 
 export interface AgentToolCall {
   arguments: string;

@@ -1,0 +1,10 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "agent_runtime_v3_contract",
+    srcs = [
+        "agent-runtime.v3.manifest.json",
+        "agent-runtime.v3.schema.json",
+        "agent-tools.v3.json",
+    ],
+)
