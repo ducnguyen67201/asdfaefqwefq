@@ -125,3 +125,74 @@ describe('HostedTaskClient.submit', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
+
+describe('HostedTaskClient.list', () => {
+  it('restores legacy protocol-v2 runs whose unavailable digests are null', async () => {
+    const legacyRecord = {
+      id: '10000000-0000-4000-8000-000000000001',
+      taskId: '10000000-0000-4000-8000-000000000002',
+      clientTaskId: '10000000-0000-4000-8000-000000000003',
+      request: 'Open YouTube.',
+      executionProfile: 'everyday',
+      workspaceSelectionId: null,
+      state: 'completed',
+      protocolVersion: 2,
+      protocolDigest: null,
+      toolCatalogDigest: null,
+      runVersion: 1,
+      outcomeRevision: 1,
+      publicSummary: 'Opened YouTube.',
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:01:00.000Z',
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ items: [] }))
+      .mockResolvedValueOnce(Response.json({ items: [legacyRecord] }));
+    const client = new HostedTaskClient({
+      accessTokenProvider: async () => 'token',
+      apiBaseUrl: 'https://api.example.com',
+      fetchImpl,
+    });
+
+    const runs = await client.list();
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      id: legacyRecord.id,
+      protocolVersion: 2,
+    });
+    expect(runs[0]?.protocolDigest).toBeUndefined();
+    expect(runs[0]?.toolCatalogDigest).toBeUndefined();
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      'https://api.example.com/v1/agent-runtime/v3/tasks',
+      expect.any(Object),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      'https://api.example.com/v1/tasks',
+      expect.any(Object),
+    );
+  });
+
+  it('keeps canonical protocol-v3 digest validation strict', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({
+        items: [{
+          ...record,
+          protocolDigest: null,
+          toolCatalogDigest: null,
+        }],
+      }));
+    const client = new HostedTaskClient({
+      accessTokenProvider: async () => 'token',
+      apiBaseUrl: 'https://api.example.com',
+      fetchImpl,
+    });
+
+    await expect(client.list()).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});
