@@ -4793,7 +4793,8 @@ h1 {
   height: 26px;
 }
 
-.companion-customization-source-preview img {
+.companion-customization-source-preview img,
+.companion-customization-source-preview canvas {
   width: 100%;
   height: 100%;
   object-fit: cover;

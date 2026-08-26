@@ -22,7 +22,7 @@ use trocode_api::{
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
-    providers::{ResponsesService, TranscriptionService},
+    providers::{CompanionImageService, ResponsesService, TranscriptionService},
     query, query_scalar,
 };
 use url::Url;
@@ -357,6 +357,22 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         )
         .mount(&provider)
         .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/images/edits"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_json(json!({
+                    "data":[{"b64_json":STANDARD.encode([137,80,78,71,13,10,26,10,0,0,0,0])}],
+                    "usage":{
+                        "input_tokens":12,
+                        "input_tokens_details":{"image_tokens":8,"text_tokens":4},
+                        "output_tokens":16
+                    }
+                })),
+        )
+        .mount(&provider)
+        .await;
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
@@ -371,6 +387,13 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         reqwest::Client::new(),
         "test-key",
         &format!("{}/v1/audio/transcriptions", provider.uri()),
+    );
+    state.companion_images = CompanionImageService::new_with_endpoint(
+        state.budget.clone(),
+        reqwest::Client::new(),
+        "test-key",
+        50_000,
+        &format!("{}/v1/images/edits", provider.uri()),
     );
     let router = trocode_api::http::router(state.clone());
 

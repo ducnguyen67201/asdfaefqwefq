@@ -29,7 +29,6 @@ interface CompanionCustomizationCardProps {
 
 interface SelectedSource {
   file: File;
-  previewUrl: string;
 }
 
 function readFileAsBase64(file: File): Promise<string> {
@@ -58,6 +57,55 @@ function firstClipboardImage(items: DataTransferItemList): File | null {
     (item) => item.kind === 'file' && item.type.startsWith('image/'),
   );
   return imageItem?.getAsFile() ?? null;
+}
+
+function LocalImagePreview({ file, label }: { file: File; label: string }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let bitmap: ImageBitmap | null = null;
+    void createImageBitmap(file)
+      .then((decoded) => {
+        if (!active) {
+          decoded.close();
+          return;
+        }
+        bitmap = decoded;
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext('2d');
+        if (!canvas || !context) return;
+        const scale = Math.max(
+          canvas.width / decoded.width,
+          canvas.height / decoded.height,
+        );
+        const width = decoded.width * scale;
+        const height = decoded.height * scale;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(
+          decoded,
+          (canvas.width - width) / 2,
+          (canvas.height - height) / 2,
+          width,
+          height,
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      bitmap?.close();
+    };
+  }, [file]);
+
+  return (
+    <canvas
+      aria-label={label}
+      height={132}
+      ref={canvasRef}
+      role="img"
+      width={132}
+    />
+  );
 }
 
 function ImageIcon() {
@@ -117,13 +165,6 @@ export function CompanionCustomizationCard({
       }).format(new Date(quota.periodEndsAt))
     : null;
 
-  useEffect(
-    () => () => {
-      if (selectedSource) URL.revokeObjectURL(selectedSource.previewUrl);
-    },
-    [selectedSource],
-  );
-
   const selectSource = (file: File | null): void => {
     setIsDragging(false);
     if (!file) {
@@ -139,7 +180,7 @@ export function CompanionCustomizationCard({
       return;
     }
     setLocalError(null);
-    setSelectedSource({ file, previewUrl: URL.createObjectURL(file) });
+    setSelectedSource({ file });
   };
 
   const openImagePicker = (): void => {
@@ -349,9 +390,9 @@ export function CompanionCustomizationCard({
                   >
                     <span className="companion-customization-source-preview">
                       {selectedSource ? (
-                        <img
-                          alt={t('Selected source')}
-                          src={selectedSource.previewUrl}
+                        <LocalImagePreview
+                          file={selectedSource.file}
+                          label={t('Selected source')}
                         />
                       ) : (
                         <ImageIcon />
