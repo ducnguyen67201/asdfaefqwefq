@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { OrganizationClient } from './organization-client';
 
 const TOKEN = `tro_live_${'a'.repeat(43)}`;
+const BANNER_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 const ORGANIZATION = {
   capacity: {
     assignedSeats: 1,
@@ -10,6 +12,7 @@ const ORGANIZATION = {
     remainingSeats: 9,
     state: 'available',
   },
+  homeBanner: null,
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Math Teachers',
   plan: 'pro',
@@ -70,6 +73,35 @@ describe('OrganizationClient', () => {
         },
         method: 'PATCH',
         signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it('sends an organization-scoped image banner through the same bounded route', async () => {
+    const updated = {
+      ...ORGANIZATION,
+      homeBanner: { imageDataUrl: BANNER_DATA_URL },
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ organization: updated }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    );
+    const client = new OrganizationClient(
+      'https://api.trocode.example/',
+      vi.fn(async () => TOKEN),
+      fetchImpl,
+    );
+
+    await expect(
+      client.update({ homeBannerImageDataUrl: BANNER_DATA_URL }),
+    ).resolves.toEqual({ organization: updated });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.trocode.example/v1/organizations/me',
+      expect.objectContaining({
+        body: JSON.stringify({ homeBannerImageDataUrl: BANNER_DATA_URL }),
+        method: 'PATCH',
       }),
     );
   });

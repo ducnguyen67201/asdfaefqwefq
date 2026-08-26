@@ -5,6 +5,9 @@ import type { OrganizationSummary } from '../shared/contracts';
 
 import { OrganizationPage } from './OrganizationPage';
 
+const BANNER_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
 function organization(
   overrides: Partial<OrganizationSummary> = {},
 ): OrganizationSummary {
@@ -15,6 +18,7 @@ function organization(
       remainingSeats: 9,
       state: 'available',
     },
+    homeBanner: null,
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Math Teachers',
     plan: 'pro',
@@ -58,6 +62,10 @@ describe('OrganizationPage', () => {
     expect(markup).toContain('type="email"');
     expect(markup).toContain('id="organization-name"');
     expect(markup).toContain('Save name');
+    expect(markup).toContain('Organization home banner');
+    expect(markup).toContain('Choose an image');
+    expect(markup).toContain('accept="image/png,image/jpeg,image/webp"');
+    expect(markup).toContain('Default Tro banner');
     expect(markup).toContain('Invite a student or staff member');
     expect(markup).toContain('does not send an invitation email');
     expect(markup).toContain('does not need your organization code');
@@ -84,6 +92,19 @@ describe('OrganizationPage', () => {
     expect(markup).toMatch(
       /<button(?=[^>]*type="submit")(?=[^>]*disabled)[^>]*>/u,
     );
+  });
+
+  it('previews the organization image and keeps reset available', () => {
+    const markup = renderPage({
+      organization: organization({
+        homeBanner: { imageDataUrl: BANNER_DATA_URL },
+      }),
+    });
+
+    expect(markup).toContain('Organization home banner preview');
+    expect(markup).toContain(BANNER_DATA_URL);
+    expect(markup).toContain('Choose another image');
+    expect(markup).toContain('Use default Tro banner');
   });
 
   it('renders Vietnamese labels and a persistent server error', () => {
@@ -119,6 +140,8 @@ describe('OrganizationPage', () => {
     expect(markup).toContain('1 of 10 seats assigned');
     expect(markup).not.toContain('id="organization-name"');
     expect(markup).not.toContain('Save name');
+    expect(markup).not.toContain('Organization home banner');
+    expect(markup).not.toContain('type="file"');
     expect(markup).not.toContain('type="email"');
     expect(markup).not.toContain('Reserve seat');
     expect(markup).not.toContain('organization-members');

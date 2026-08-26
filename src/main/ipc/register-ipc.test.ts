@@ -350,6 +350,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       remainingSeats: 9,
       state: 'available' as const,
     },
+    homeBanner: null,
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Math Teachers',
     plan: 'pro' as const,
@@ -381,9 +382,23 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       organization,
       page: { ...input, total: 1 },
     })),
-    update: vi.fn(async (input: { name: string }) => ({
-      organization: { ...organization, name: input.name },
-    })),
+    update: vi.fn(
+      async (
+        input:
+          | { name: string }
+          | { homeBannerImageDataUrl: string | null },
+      ) => ({
+        organization:
+          'name' in input
+            ? { ...organization, name: input.name }
+            : {
+                ...organization,
+                homeBanner: input.homeBannerImageDataUrl
+                  ? { imageDataUrl: input.homeBannerImageDataUrl }
+                  : null,
+              },
+      }),
+    ),
   };
   const services = {
     agentActivityService: { off: vi.fn(), on: vi.fn() },
@@ -1030,6 +1045,8 @@ describe('registerIpcHandlers auth boundary', () => {
   it('authorizes and validates exact organization operations at the IPC boundary', async () => {
     const { event, organizationClient, unregister } = setup(true);
     const memberId = '22222222-2222-4222-8222-222222222222';
+    const bannerDataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
     await expect(
       electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(event),
@@ -1042,6 +1059,13 @@ describe('registerIpcHandlers auth boundary', () => {
         ?.(event, { name: '  Greenfield School  ' }),
     ).resolves.toMatchObject({
       organization: { name: 'Greenfield School' },
+    });
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(event, { homeBannerImageDataUrl: bannerDataUrl }),
+    ).resolves.toMatchObject({
+      organization: { homeBanner: { imageDataUrl: bannerDataUrl } },
     });
     await expect(
       electronMock.handlers
@@ -1062,6 +1086,9 @@ describe('registerIpcHandlers auth boundary', () => {
     expect(organizationClient.getCurrent).toHaveBeenCalledOnce();
     expect(organizationClient.update).toHaveBeenCalledWith({
       name: 'Greenfield School',
+    });
+    expect(organizationClient.update).toHaveBeenCalledWith({
+      homeBannerImageDataUrl: bannerDataUrl,
     });
     expect(organizationClient.listMembers).toHaveBeenCalledWith({
       limit: 25,
@@ -1090,6 +1117,13 @@ describe('registerIpcHandlers auth boundary', () => {
       electronMock.handlers
         .get(IPC_CHANNELS.updateOrganization)
         ?.(active.event, { name: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, {
+          homeBannerImageDataUrl: 'data:image/svg+xml;base64,PHN2Zz4=',
+        }),
     ).rejects.toThrow();
     await expect(
       electronMock.handlers

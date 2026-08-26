@@ -1392,6 +1392,10 @@ export function App({
               'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.',
             ),
           };
+  const organizationHomeBanner =
+    !pendingInteraction && !hasLiveTask
+      ? (organization?.homeBanner ?? null)
+      : null;
   const permissionChecklist = useMemo(
     () =>
       createPermissionChecklist(
@@ -2717,30 +2721,48 @@ export function App({
         ) : (
           <div className="content-grid" id="task">
             <section className="task-column">
-              <section className={`agent-stage agent-stage--${hero.state}`}>
-                <div className={`hero-copy hero-copy--${hero.state}`}>
-                  <p className="eyebrow">{hero.eyebrow}</p>
-                  <h1>{hero.heading}</h1>
-                  <p>{hero.description}</p>
-                </div>
+              <section
+                className={`agent-stage agent-stage--${hero.state} ${
+                  organizationHomeBanner
+                    ? 'agent-stage--organization-banner'
+                    : ''
+                }`}
+              >
+                {organizationHomeBanner ? (
+                  <img
+                    alt={t('Announcement from {organization}', {
+                      organization: organization?.name ?? t('your organization'),
+                    })}
+                    className="agent-stage__organization-banner"
+                    src={organizationHomeBanner.imageDataUrl}
+                  />
+                ) : (
+                  <>
+                    <div className={`hero-copy hero-copy--${hero.state}`}>
+                      <p className="eyebrow">{hero.eyebrow}</p>
+                      <h1>{hero.heading}</h1>
+                      <p>{hero.description}</p>
+                    </div>
 
-                <div className="agent-stage__map" aria-hidden="true">
-                  <div className="agent-stage__orbit agent-stage__orbit--outer" />
-                  <div className="agent-stage__orbit agent-stage__orbit--inner" />
-                  <span className="agent-stage__node agent-stage__node--scope">
-                    {t('Outcome first')}
-                  </span>
-                  <span className="agent-stage__node agent-stage__node--act">
-                    {t('Act')}
-                  </span>
-                  <span className="agent-stage__node agent-stage__node--verify">
-                    {t('Success looks like')}
-                  </span>
-                  <span className="agent-stage__core">
-                    <BrandMark className="agent-stage__mark" />
-                    <i />
-                  </span>
-                </div>
+                    <div className="agent-stage__map" aria-hidden="true">
+                      <div className="agent-stage__orbit agent-stage__orbit--outer" />
+                      <div className="agent-stage__orbit agent-stage__orbit--inner" />
+                      <span className="agent-stage__node agent-stage__node--scope">
+                        {t('Outcome first')}
+                      </span>
+                      <span className="agent-stage__node agent-stage__node--act">
+                        {t('Act')}
+                      </span>
+                      <span className="agent-stage__node agent-stage__node--verify">
+                        {t('Success looks like')}
+                      </span>
+                      <span className="agent-stage__core">
+                        <BrandMark className="agent-stage__mark" />
+                        <i />
+                      </span>
+                    </div>
+                  </>
+                )}
               </section>
 
             <form

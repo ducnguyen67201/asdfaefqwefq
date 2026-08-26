@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use http::StatusCode;
 use serde::Serialize;
 use sqlx::{PgPool, Row};
@@ -6,7 +7,9 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 
-const CURRENT_MEMBERSHIP: &str = "SELECT memberships.id membership_id,memberships.organization_id,memberships.role,organizations.access_code_id,organizations.name organization_name,codes.max_users,codes.paused_at,codes.plan,(SELECT COUNT(*)::int FROM organization_memberships assigned WHERE assigned.organization_id=organizations.id AND assigned.removed_at IS NULL)assigned_seats FROM organization_memberships memberships JOIN organizations ON organizations.id=memberships.organization_id JOIN access_codes codes ON codes.id=organizations.access_code_id WHERE memberships.user_id=$1 AND memberships.removed_at IS NULL";
+const CURRENT_MEMBERSHIP: &str = "SELECT memberships.id membership_id,memberships.organization_id,memberships.role,organizations.access_code_id,organizations.name organization_name,organizations.home_banner_mime_type,organizations.home_banner_bytes,codes.max_users,codes.paused_at,codes.plan,(SELECT COUNT(*)::int FROM organization_memberships assigned WHERE assigned.organization_id=organizations.id AND assigned.removed_at IS NULL)assigned_seats FROM organization_memberships memberships JOIN organizations ON organizations.id=memberships.organization_id JOIN access_codes codes ON codes.id=organizations.access_code_id WHERE memberships.user_id=$1 AND memberships.removed_at IS NULL";
+
+pub const MAX_ORGANIZATION_HOME_BANNER_BYTES: usize = 750_000;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,8 +22,15 @@ pub struct OrganizationCapacity {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OrganizationHomeBanner {
+    pub image_data_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrganizationSummary {
     pub capacity: OrganizationCapacity,
+    pub home_banner: Option<OrganizationHomeBanner>,
     pub id: Uuid,
     pub name: String,
     pub plan: String,
@@ -93,8 +103,18 @@ pub fn organization_capacity(max_users: i32, assigned_seats: i64) -> Organizatio
 
 fn summary(row: &sqlx::postgres::PgRow, assigned: Option<i64>) -> OrganizationSummary {
     let assigned_seats = assigned.unwrap_or_else(|| i64::from(row.get::<i32, _>("assigned_seats")));
+    let home_banner = match (
+        row.get::<Option<String>, _>("home_banner_mime_type"),
+        row.get::<Option<Vec<u8>>, _>("home_banner_bytes"),
+    ) {
+        (Some(mime_type), Some(bytes)) => Some(OrganizationHomeBanner {
+            image_data_url: format!("data:{mime_type};base64,{}", STANDARD.encode(bytes)),
+        }),
+        _ => None,
+    };
     OrganizationSummary {
         capacity: organization_capacity(row.get("max_users"), assigned_seats),
+        home_banner,
         id: row.get("organization_id"),
         name: row.get("organization_name"),
         plan: row.get("plan"),
@@ -141,6 +161,27 @@ pub fn normalize_organization_name(value: &str) -> Option<String> {
         return None;
     }
     Some(name.to_owned())
+}
+
+pub fn decode_organization_home_banner(value: &str) -> Option<(String, Vec<u8>)> {
+    let (header, encoded) = value.split_once(',')?;
+    let mime_type = match header {
+        "data:image/png;base64" => "image/png",
+        "data:image/jpeg;base64" => "image/jpeg",
+        "data:image/webp;base64" => "image/webp",
+        _ => return None,
+    };
+    let bytes = STANDARD.decode(encoded).ok()?;
+    if bytes.is_empty() || bytes.len() > MAX_ORGANIZATION_HOME_BANNER_BYTES {
+        return None;
+    }
+    let signature_is_valid = match mime_type {
+        "image/png" => bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]) && bytes.ends_with(&[0xff, 0xd9]),
+        "image/webp" => bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP",
+        _ => false,
+    };
+    signature_is_valid.then(|| (mime_type.to_owned(), bytes))
 }
 
 impl OrganizationRepository {
@@ -199,6 +240,58 @@ impl OrganizationRepository {
         tx.commit().await?;
         let mut organization = summary(&current, None);
         organization.name = updated_name;
+        Ok(organization)
+    }
+
+    pub async fn update_home_banner(
+        &self,
+        user_id: &str,
+        image_data_url: Option<&str>,
+    ) -> ApiResult<OrganizationSummary> {
+        let banner = match image_data_url {
+            Some(value) => Some(decode_organization_home_banner(value).ok_or_else(|| {
+                ApiError::coded(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "Use a PNG, JPEG, or WebP image no larger than 750 KB.",
+                )
+            })?),
+            None => None,
+        };
+        let mut tx = self.pool.begin().await?;
+        let current = sqlx::query(CURRENT_MEMBERSHIP)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(current) = current.filter(|row| row.get::<String, _>("role") == "organizer")
+        else {
+            tx.rollback().await?;
+            return Err(ApiError::coded(
+                StatusCode::FORBIDDEN,
+                "organization_organizer_required",
+                "Organization organizer access is required.",
+            ));
+        };
+        let organization_id: Uuid = current.get("organization_id");
+        let mime_type = banner.as_ref().map(|(mime_type, _)| mime_type.as_str());
+        let bytes = banner.as_ref().map(|(_, bytes)| bytes.as_slice());
+        sqlx::query("UPDATE organizations SET home_banner_mime_type=$2,home_banner_bytes=$3,updated_at=NOW() WHERE id=$1")
+            .bind(organization_id)
+            .bind(mime_type)
+            .bind(bytes)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO organization_audit_events(organization_id,actor_user_id,action,detail)VALUES($1,$2,'organization.home_banner_updated',$3)")
+            .bind(organization_id)
+            .bind(user_id)
+            .bind(serde_json::json!({"custom": banner.is_some(), "byteSize": bytes.map_or(0, <[u8]>::len)}))
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        let mut organization = summary(&current, None);
+        organization.home_banner = banner.map(|(mime_type, bytes)| OrganizationHomeBanner {
+            image_data_url: format!("data:{mime_type};base64,{}", STANDARD.encode(bytes)),
+        });
         Ok(organization)
     }
 
@@ -407,5 +500,32 @@ impl OrganizationRepository {
             member_id: membership_id,
             organization,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_ORGANIZATION_HOME_BANNER_BYTES, decode_organization_home_banner};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    #[test]
+    fn validates_supported_banner_signatures() {
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        let value = format!("data:image/png;base64,{}", STANDARD.encode(png));
+        assert_eq!(
+            decode_organization_home_banner(&value),
+            Some(("image/png".to_owned(), png.to_vec()))
+        );
+
+        assert!(decode_organization_home_banner("data:image/svg+xml;base64,PHN2Zz4=").is_none());
+        assert!(decode_organization_home_banner("data:image/png;base64,bm90IGEgcG5n").is_none());
+        let oversized = vec![0_u8; MAX_ORGANIZATION_HOME_BANNER_BYTES + 1];
+        assert!(
+            decode_organization_home_banner(&format!(
+                "data:image/png;base64,{}",
+                STANDARD.encode(oversized)
+            ))
+            .is_none()
+        );
     }
 }

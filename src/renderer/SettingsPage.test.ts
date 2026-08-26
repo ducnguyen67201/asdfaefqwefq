@@ -32,6 +32,7 @@ const ORGANIZATION: OrganizationSummary = {
     remainingSeats: 21,
     state: 'available',
   },
+  homeBanner: null,
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Greenfield School',
   plan: 'pro',

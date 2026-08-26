@@ -116,23 +116,55 @@ pub async fn handle(
             60,
         )
         .await?;
-        let input = read_json(headers, body, 4_096)?;
-        let name = input
+        let input = read_json(headers, body, 1_100_000)?;
+        let object = input
             .as_object()
             .filter(|object| object.len() == 1)
-            .and_then(|object| object.get("name"))
-            .and_then(Value::as_str)
-            .and_then(normalize_organization_name)
             .ok_or_else(|| {
                 ApiError::coded(
                     StatusCode::BAD_REQUEST,
                     "invalid_request",
-                    "A valid organization name is required.",
+                    "Update exactly one organization setting.",
                 )
             })?;
+        let organization = if let Some(name_value) = object.get("name") {
+            let name = name_value
+                .as_str()
+                .and_then(normalize_organization_name)
+                .ok_or_else(|| {
+                    ApiError::coded(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "A valid organization name is required.",
+                    )
+                })?;
+            state.organizations.update_name(user_id, &name).await?
+        } else if let Some(banner_value) = object.get("homeBannerImageDataUrl") {
+            let image_data_url = if banner_value.is_null() {
+                None
+            } else {
+                Some(banner_value.as_str().ok_or_else(|| {
+                    ApiError::coded(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "Use a PNG, JPEG, or WebP image no larger than 750 KB.",
+                    )
+                })?)
+            };
+            state
+                .organizations
+                .update_home_banner(user_id, image_data_url)
+                .await?
+        } else {
+            return Err(ApiError::coded(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Unknown organization setting.",
+            ));
+        };
         return Ok(Some(json_response(
             StatusCode::OK,
-            json!({"organization":state.organizations.update_name(user_id, &name).await?}),
+            json!({"organization":organization}),
         )?));
     }
     if method == Method::GET && path == "/v1/organizations/me/members" {

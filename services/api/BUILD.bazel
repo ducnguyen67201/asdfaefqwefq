@@ -121,6 +121,7 @@ trocode_rust_integration_test(
     compile_data = [
         "migrations/021_organization_managed_access.sql",
         "migrations/022_organization_profile_settings.sql",
+        "migrations/026_organization_home_banners.sql",
     ],
 )
 
