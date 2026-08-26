@@ -12,11 +12,11 @@ import {
 
 import type { CuaAuthorizationBroker } from './cua-authorization-broker';
 import {
-  CuaActionStructuredSchema,
   CuaBrowserStateSchema,
   CuaWindowListSchema,
   CuaWindowStateSchema,
   parseCuaStructuredResult,
+  normalizedCuaActionEffect,
   type CuaBrowserElement,
   type CuaOpenToolResult,
   type CuaSemanticCapabilities,
@@ -30,6 +30,7 @@ import {
   type CuaBoundReference,
   type CuaSurfaceBinding,
 } from './cua-surface-reference-store';
+import { selectExternalWindow } from './cua-window-selection';
 
 const MAX_PUBLIC_ELEMENTS = 400;
 const MAX_TEXT_LENGTH = 100_000;
@@ -37,7 +38,6 @@ const MAX_STRUCTURED_STATE_LENGTH = 500_000;
 const CODE_EDITOR_PATTERN = /\b(?:code|code-oss|visual studio code|vscode)\b/iu;
 const BROWSER_PATTERN =
   /\b(?:arc|brave|chrome|chromium|edge|opera|vivaldi)\b/iu;
-const TROCODE_PATTERN = /\btro(?:\s*code)?\b/iu;
 const SECRET_ROLE_PATTERN = /(?:password|secure)/iu;
 const STALE_OR_REFUSED_PATTERN =
   /(?:stale|not[_ -]?found|invalid[_ -]?(?:ref|token)|owner_pid_mismatch|permission_required|refus)/iu;
@@ -104,41 +104,6 @@ function surfaceBounds(window: CuaWindow) {
     width: Math.max(1, Math.round(window.bounds.width)),
     height: Math.max(1, Math.round(window.bounds.height)),
   };
-}
-
-function selectWindow(
-  windows: readonly CuaWindow[],
-  ownProcessId: number,
-  previous?: CuaSurfaceBinding,
-): CuaWindow | undefined {
-  const candidates = windows.filter(
-    (window) =>
-      window.pid !== ownProcessId &&
-      !TROCODE_PATTERN.test(window.app_name) &&
-      window.is_on_screen &&
-      window.on_current_space &&
-      window.bounds.width > 0 &&
-      window.bounds.height > 0,
-  );
-  if (candidates.length === 0) return undefined;
-
-  if (previous) {
-    const retained = candidates.find(
-      (window) =>
-        window.pid === previous.processId &&
-        window.window_id === previous.windowId,
-    );
-    if (retained) return retained;
-  }
-
-  const ranked = candidates.filter(
-    (window): window is CuaWindow & { z_index: number } =>
-      typeof window.z_index === 'number',
-  );
-  if (ranked.length === 0) return candidates.length === 1 ? candidates[0] : undefined;
-  const highest = Math.max(...ranked.map((window) => window.z_index));
-  const leaders = ranked.filter((window) => window.z_index === highest);
-  return leaders.length === 1 ? leaders[0] : undefined;
 }
 
 function semanticFingerprint(element: Omit<SurfaceElement, 'ref'>): string {
@@ -233,29 +198,8 @@ function summarizedElements(elements: readonly SurfaceElement[]): string {
     .slice(0, MAX_TEXT_LENGTH);
 }
 
-function actionEffect(result: CuaOpenToolResult): string | undefined {
-  if (result.structuredJson || result.rawJson) {
-    try {
-      return parseCuaStructuredResult(result, CuaActionStructuredSchema).effect;
-    } catch {
-      // Fall through to the generated numeric ActionEffect contract.
-    }
-  }
-  return result.action?.effect === 0
-    ? 'confirmed'
-    : result.action?.effect === 1
-      ? 'partial'
-      : result.action?.effect === 2
-        ? 'unverifiable'
-        : result.action?.effect === 3
-          ? 'suspected_noop'
-          : result.action?.effect === 4
-            ? 'refused'
-            : undefined;
-}
-
 function refusedBeforeExecution(result: CuaOpenToolResult): boolean {
-  if (actionEffect(result) === 'refused') return true;
+  if (normalizedCuaActionEffect(result) === 'refused') return true;
   return STALE_OR_REFUSED_PATTERN.test(
     `${result.errorCode ?? ''} ${result.text}`.slice(0, 4_000),
   );
@@ -313,7 +257,7 @@ export class CuaSurfaceRouter {
     } catch {
       return undefined;
     }
-    const window = selectWindow(
+    const window = selectExternalWindow(
       windows,
       this.ownProcessId,
       this.referenceStore.current(taskId),
@@ -394,7 +338,7 @@ export class CuaSurfaceRouter {
       });
     }
 
-    const effect = actionEffect(result);
+    const effect = normalizedCuaActionEffect(result);
     let fresh: SurfaceSnapshot | undefined;
     try {
       fresh = await this.observeBoundSurface(taskId, binding, {}, signal);
@@ -960,4 +904,4 @@ export class CuaSurfaceRouter {
   }
 }
 
-export { selectWindow };
+export { selectExternalWindow as selectWindow };

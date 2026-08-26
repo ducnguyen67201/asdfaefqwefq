@@ -15,6 +15,7 @@ import type {
   AppUpdateStatus,
   AuthUser,
   ClassroomAccountRole,
+  CompanionVoiceActivity,
   CompanionCustomizationStatus,
   CuaStatus,
   ExecutionProfile,
@@ -33,8 +34,10 @@ import type {
   WorkspaceRuntimeAvailability,
   WorkspaceSelection,
   SubmitTaskRequest,
+  VoiceMode,
 } from '../shared/contracts';
 import { VOICE_TRANSCRIPTION_MODEL } from '../shared/contracts';
+import { voiceShortcutDescriptor } from '../shared/voice-mode';
 
 import { acceptAgentActivity } from './agent-activity-projection';
 import { appLanguageLabel, translate } from './app-language';
@@ -94,8 +97,17 @@ import {
 import {
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
+  type VoiceAttemptDecision,
   type VoiceInputStatus,
+  type VoiceTurnContext,
+  type VoiceTurnEndReason,
 } from './use-push-to-talk';
+import {
+  applyDictationTranscript,
+  captureVoiceDraftSnapshot,
+  type VoiceDraftSnapshot,
+} from './voice-draft';
+import { voiceTurnRoute } from './voice-route';
 
 const EXAMPLE_TASKS = [
   'Open YouTube for me',
@@ -242,15 +254,23 @@ function voiceStatusMessage(
   status: VoiceInputStatus,
   platform: PushToTalkPlatform,
   appLanguage: AppLanguage,
+  mode: VoiceMode | null,
 ): string {
   switch (status) {
     case 'listening':
       return translate(
         appLanguage,
-        'Listening… Release the voice shortcut to send.',
+        mode === 'task'
+          ? 'Giving Tro a task… Release to transcribe, then press Escape to cancel.'
+          : 'Dictating… Release to insert text without sending.',
       );
     case 'processing':
       return translate(appLanguage, 'Finishing transcript…');
+    case 'committing':
+      return translate(
+        appLanguage,
+        mode === 'task' ? 'Sending voice task…' : 'Inserting dictated text…',
+      );
     case 'requesting_permission':
       return translate(appLanguage, 'Waiting for microphone access…');
     case 'unavailable':
@@ -337,19 +357,41 @@ function ComputerConnection({
   );
 }
 
-function VoiceShortcut({ platform }: { platform: PushToTalkPlatform }) {
+function VoiceShortcuts({
+  appLanguage,
+  platform,
+}: {
+  appLanguage: AppLanguage;
+  platform: PushToTalkPlatform;
+}) {
   if (platform === 'unsupported') return null;
 
-  const keys = platform === 'windows' ? ['Left Alt', 'Left Ctrl'] : ['⌘', '⌃'];
+  const shortcuts = (['dictation', 'task'] as const).map((mode) => ({
+    descriptor: voiceShortcutDescriptor(platform, mode),
+    label: translate(appLanguage, mode === 'dictation' ? 'Dictation' : 'Task'),
+    mode,
+  }));
 
   return (
     <span
-      className="voice-shortcut"
-      aria-label={pushToTalkShortcutName(platform)}
+      className="voice-shortcuts"
+      aria-label={translate(appLanguage, 'Voice shortcuts')}
     >
-      <kbd>{keys[0]}</kbd>
-      <span aria-hidden="true">+</span>
-      <kbd>{keys[1]}</kbd>
+      {shortcuts.map(({ descriptor, label, mode }) => (
+        <span
+          className={`voice-shortcut voice-shortcut--${mode}`}
+          aria-label={`${label}: ${descriptor.accessibleName}`}
+          key={mode}
+        >
+          <span className="voice-shortcut__label">{label}</span>
+          {descriptor.keys.map((key, index) => (
+            <span className="voice-shortcut__key" key={key}>
+              {index > 0 && <span aria-hidden="true">+</span>}
+              <kbd>{key}</kbd>
+            </span>
+          ))}
+        </span>
+      ))}
     </span>
   );
 }
@@ -870,6 +912,11 @@ export function App({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceDestination, setVoiceDestination] = useState<
+    CompanionVoiceActivity['destination']
+  >({ kind: 'tro_composer', label: 'Tro composer' });
+  const [voiceActivityOverride, setVoiceActivityOverride] =
+    useState<CompanionVoiceActivity | null>(null);
   const [snapshot, setSnapshot] = useState<TaskSnapshot | null>(null);
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [agentActivity, setAgentActivity] =
@@ -966,6 +1013,15 @@ export function App({
   const activeTaskIdRef = useRef<string | null>(null);
   const latestSnapshotRef = useRef<TaskSnapshot | null>(null);
   const taskRequestRef = useRef<HTMLTextAreaElement | null>(null);
+  const preparedGlobalDictationsRef = useRef(new Set<string>());
+  const voiceDraftSnapshotsRef = useRef(new Map<string, VoiceDraftSnapshot>());
+  const voiceDestinationsRef = useRef(
+    new Map<string, CompanionVoiceActivity['destination']>(),
+  );
+  const latestVoiceTranscriptRef = useRef('');
+  const voiceActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const autoStartAttemptedTaskIdsRef = useRef(new Set<string>());
   const isSendingRef = useRef(false);
   const isStoppingTaskRef = useRef(false);
@@ -1827,7 +1883,7 @@ export function App({
   }, []);
 
   const sendInput = useCallback(
-    async (requestText = input, source: 'typed' | 'voice' = 'typed') => {
+    async (requestText = input): Promise<boolean> => {
       const normalizedRequest = requestText.trim();
       const minimumLength = pendingClarification || isSteering ? 1 : 2;
       if (
@@ -1835,7 +1891,7 @@ export function App({
         isSubmitting ||
         isSendingRef.current
       ) {
-        return;
+        return false;
       }
 
       isSendingRef.current = true;
@@ -1843,14 +1899,6 @@ export function App({
       setIsSubmitting(true);
 
       try {
-        if (source === 'voice') {
-          // Analytics belongs off the task hot path. Task submission performs
-          // its own auth and membership checks at the trusted IPC boundary.
-          void window.tro
-            .recordVoiceTranscript({ text: normalizedRequest })
-            .catch(() => undefined);
-        }
-
         let nextSnapshot: TaskSnapshot;
         if (pendingClarification && snapshot) {
           nextSnapshot = await window.tro.respondToInteraction({
@@ -1889,12 +1937,14 @@ export function App({
         activeTaskIdRef.current = nextSnapshot.taskId;
         recordSnapshot(nextSnapshot);
         setInput('');
+        return true;
       } catch (submitError) {
         reportError(
           submitError instanceof Error
             ? submitError.message
             : 'The task could not accept that input.',
         );
+        return false;
       } finally {
         isSendingRef.current = false;
         setIsSubmitting(false);
@@ -2025,17 +2075,368 @@ export function App({
     }
   }, [clearError, recordSnapshot, reportError, snapshot]);
 
-  const handleVoiceAttemptStart = useCallback(() => {
-    clearError();
-    setVoiceTranscript('');
-  }, [clearError]);
-  const handleVoiceTranscriptChange = useCallback((transcript: string) => {
-    setInput(transcript);
-    setVoiceTranscript(transcript);
+  const showVoiceTerminalActivity = useCallback(
+    (activity: CompanionVoiceActivity, durationMs: number): void => {
+      if (voiceActivityTimerRef.current) {
+        clearTimeout(voiceActivityTimerRef.current);
+      }
+      setVoiceActivityOverride(activity);
+      voiceActivityTimerRef.current = setTimeout(() => {
+        setVoiceActivityOverride(null);
+        voiceActivityTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
+
+  const recordVoiceOutcome = useCallback(
+    (
+      context: VoiceTurnContext,
+      transcript: string,
+      destination: CompanionVoiceActivity['destination']['kind'],
+      disposition:
+        | 'delivery_unverified'
+        | 'draft_updated'
+        | 'inserted'
+        | 'not_inserted'
+        | 'task_submitted',
+    ): void => {
+      void window.tro
+        .recordVoiceTranscript({
+          characterCount: transcript.length,
+          destination,
+          disposition,
+          mode: context.mode,
+        })
+        .catch(() => undefined);
+    },
+    [],
+  );
+
+  const keepVoiceRecoveryDraft = useCallback((transcript: string): void => {
+    setInput((current) =>
+      applyDictationTranscript(
+        captureVoiceDraftSnapshot(current, null, null, false),
+        transcript,
+      ).value,
+    );
   }, []);
+
+  const handleVoiceAttemptStart = useCallback(
+    async (context: VoiceTurnContext): Promise<VoiceAttemptDecision> => {
+      clearError();
+      latestVoiceTranscriptRef.current = '';
+      setVoiceTranscript('');
+      setVoiceActivityOverride(null);
+      if (voiceActivityTimerRef.current) {
+        clearTimeout(voiceActivityTimerRef.current);
+        voiceActivityTimerRef.current = null;
+      }
+
+      const route = voiceTurnRoute(context);
+      if (route === 'task') {
+        const destination = { kind: 'task' as const, label: t('Tro task') };
+        voiceDestinationsRef.current.set(context.turnId, destination);
+        setVoiceDestination(destination);
+        return { accepted: true, destination };
+      }
+
+      if (route === 'local_dictation') {
+        const textarea = taskRequestRef.current;
+        const snapshot = captureVoiceDraftSnapshot(
+          input,
+          textarea?.selectionStart ?? null,
+          textarea?.selectionEnd ?? null,
+          Boolean(textarea && document.activeElement === textarea),
+        );
+        const destination = {
+          kind: 'tro_composer' as const,
+          label: t('Tro composer'),
+        };
+        voiceDraftSnapshotsRef.current.set(context.turnId, snapshot);
+        voiceDestinationsRef.current.set(context.turnId, destination);
+        setVoiceDestination(destination);
+        return { accepted: true, destination };
+      }
+
+      try {
+        const result = await window.tro.beginDictation({
+          turnId: context.turnId,
+        });
+        if (result.status !== 'ready') {
+          const destination = {
+            kind: 'application' as const,
+            label: t('Current application'),
+          };
+          voiceDestinationsRef.current.set(context.turnId, destination);
+          setVoiceDestination(destination);
+          reportError(result.summary);
+          showVoiceTerminalActivity(
+            {
+              appLanguage: appLanguageDraft,
+              destination,
+              message: result.summary.slice(0, 240),
+              mode: 'dictation',
+              phase: 'error',
+              transcript: '',
+            },
+            2_500,
+          );
+          return { accepted: false, destination };
+        }
+        const destination = {
+          kind: 'application' as const,
+          label: result.targetApplication,
+        };
+        preparedGlobalDictationsRef.current.add(context.turnId);
+        voiceDestinationsRef.current.set(context.turnId, destination);
+        setVoiceDestination(destination);
+        return { accepted: true, destination };
+      } catch (preflightError) {
+        const message =
+          preflightError instanceof Error
+            ? preflightError.message
+            : 'Tro could not prepare system-wide dictation.';
+        const destination = {
+          kind: 'application' as const,
+          label: t('Current application'),
+        };
+        voiceDestinationsRef.current.set(context.turnId, destination);
+        setVoiceDestination(destination);
+        reportError(message);
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message: message.slice(0, 240),
+            mode: 'dictation',
+            phase: 'error',
+            transcript: '',
+          },
+          2_500,
+        );
+        return { accepted: false, destination };
+      }
+    },
+    [
+      appLanguageDraft,
+      clearError,
+      input,
+      reportError,
+      showVoiceTerminalActivity,
+      t,
+    ],
+  );
+
+  const handleVoiceTranscriptChange = useCallback(
+    (context: VoiceTurnContext, transcript: string): void => {
+      latestVoiceTranscriptRef.current = transcript;
+      setVoiceTranscript(transcript);
+      const route = voiceTurnRoute(context);
+      if (route === 'task') {
+        setInput(transcript);
+        return;
+      }
+      if (route === 'local_dictation') {
+        const snapshot = voiceDraftSnapshotsRef.current.get(context.turnId);
+        if (snapshot) setInput(applyDictationTranscript(snapshot, transcript).value);
+      }
+    },
+    [],
+  );
+
+  const handleVoiceTranscriptReady = useCallback(
+    async (context: VoiceTurnContext, transcript: string): Promise<void> => {
+      const destination =
+        voiceDestinationsRef.current.get(context.turnId) ?? voiceDestination;
+      const route = voiceTurnRoute(context);
+      if (route === 'task') {
+        if (!(await sendInput(transcript))) {
+          throw new Error('The task could not accept that voice input.');
+        }
+        recordVoiceOutcome(context, transcript, 'task', 'task_submitted');
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message: t('Voice task sent.'),
+            mode: 'task',
+            phase: 'complete',
+            transcript: '',
+          },
+          800,
+        );
+        return;
+      }
+
+      if (route === 'local_dictation') {
+        const draft = voiceDraftSnapshotsRef.current.get(context.turnId);
+        if (!draft) throw new Error('The Tro draft is no longer available.');
+        const result = applyDictationTranscript(draft, transcript);
+        setInput(result.value);
+        recordVoiceOutcome(
+          context,
+          transcript,
+          'tro_composer',
+          'draft_updated',
+        );
+        window.requestAnimationFrame(() => {
+          const textarea = taskRequestRef.current;
+          if (!textarea) return;
+          textarea.focus({ preventScroll: true });
+          textarea.setSelectionRange(result.caret, result.caret);
+        });
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message: t('Dictation added to your Tro draft.'),
+            mode: 'dictation',
+            phase: 'complete',
+            transcript: '',
+          },
+          800,
+        );
+        return;
+      }
+
+      preparedGlobalDictationsRef.current.delete(context.turnId);
+      try {
+        const result = await window.tro.commitDictation({
+          text: transcript,
+          turnId: context.turnId,
+        });
+        recordVoiceOutcome(
+          context,
+          transcript,
+          'application',
+          result.disposition,
+        );
+        if (result.disposition === 'inserted') {
+          latestVoiceTranscriptRef.current = '';
+          setVoiceTranscript('');
+          showVoiceTerminalActivity(
+            {
+              appLanguage: appLanguageDraft,
+              destination,
+              message: t('Dictation inserted.'),
+              mode: 'dictation',
+              phase: 'complete',
+              transcript: '',
+            },
+            800,
+          );
+          return;
+        }
+        keepVoiceRecoveryDraft(transcript);
+        const message = t('Text kept in your Tro draft. {summary}', {
+          summary: result.summary,
+        }).slice(0, 240);
+        reportError(message);
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message,
+            mode: 'dictation',
+            phase: 'error',
+            transcript: '',
+          },
+          3_000,
+        );
+      } catch {
+        void window.tro
+          .cancelDictation({ turnId: context.turnId })
+          .catch(() => undefined);
+        keepVoiceRecoveryDraft(transcript);
+        recordVoiceOutcome(
+          context,
+          transcript,
+          'application',
+          'delivery_unverified',
+        );
+        const message = t(
+          'Insertion could not be verified. Text kept in your Tro draft.',
+        );
+        reportError(message);
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message,
+            mode: 'dictation',
+            phase: 'error',
+            transcript: '',
+          },
+          3_000,
+        );
+      }
+    },
+    [
+      appLanguageDraft,
+      keepVoiceRecoveryDraft,
+      recordVoiceOutcome,
+      reportError,
+      sendInput,
+      showVoiceTerminalActivity,
+      t,
+      voiceDestination,
+    ],
+  );
+
+  const handleVoiceTurnEnd = useCallback(
+    (context: VoiceTurnContext, reason: VoiceTurnEndReason): void => {
+      const draft = voiceDraftSnapshotsRef.current.get(context.turnId);
+      if (draft && reason !== 'completed') setInput(draft.value);
+      voiceDraftSnapshotsRef.current.delete(context.turnId);
+
+      if (
+        context.activation === 'global_hold' &&
+        context.mode === 'dictation' &&
+        reason !== 'completed'
+      ) {
+        preparedGlobalDictationsRef.current.delete(context.turnId);
+        void window.tro
+          .cancelDictation({ turnId: context.turnId })
+          .catch(() => undefined);
+      }
+
+      const destination = voiceDestinationsRef.current.get(context.turnId);
+      voiceDestinationsRef.current.delete(context.turnId);
+      if (
+        destination &&
+        (reason === 'no_speech' ||
+          reason === 'partial_failure' ||
+          reason === 'failed')
+      ) {
+        const message =
+          reason === 'partial_failure'
+            ? t('The draft was restored because part of the recording failed.')
+            : reason === 'no_speech'
+              ? t('No speech was detected. The draft was left unchanged.')
+              : t('Voice input could not be completed.');
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination,
+            message,
+            mode: context.mode,
+            phase: 'error',
+            transcript:
+              reason === 'partial_failure'
+                ? latestVoiceTranscriptRef.current
+                : '',
+          },
+          2_500,
+        );
+      }
+    },
+    [appLanguageDraft, showVoiceTerminalActivity, t],
+  );
 
   const {
     isHolding: isVoiceShortcutHeld,
+    mode: voiceMode,
     platform: voicePlatform,
     status: voiceStatus,
   } = usePushToTalk({
@@ -2051,7 +2452,8 @@ export function App({
     onAttemptStart: handleVoiceAttemptStart,
     onError: reportError,
     onTranscriptChange: handleVoiceTranscriptChange,
-    onTranscriptSubmit: (transcript) => void sendInput(transcript, 'voice'),
+    onTranscriptReady: handleVoiceTranscriptReady,
+    onTurnEnd: handleVoiceTurnEnd,
   });
   const shouldMuteSystemAudio = shouldMuteSystemAudioForVoice(
     appPreferences?.muteSystemAudioWhileSpeaking ?? false,
@@ -2087,20 +2489,36 @@ export function App({
     const voiceActive =
       voiceStatus === 'requesting_permission' ||
       voiceStatus === 'listening' ||
-      voiceStatus === 'processing';
-    void window.tro.setCompanionVoiceActivity(
-      voiceActive
+      voiceStatus === 'processing' ||
+      voiceStatus === 'committing';
+    const activity =
+      voiceActivityOverride ??
+      (voiceActive && voiceMode
         ? {
             appLanguage: appLanguageDraft,
+            destination: voiceDestination,
+            mode: voiceMode,
             phase: voiceStatus,
             transcript: voiceTranscript,
           }
-        : null,
+        : null);
+    void window.tro.setCompanionVoiceActivity(
+      activity,
     );
-  }, [appLanguageDraft, voiceStatus, voiceTranscript]);
+  }, [
+    appLanguageDraft,
+    voiceActivityOverride,
+    voiceDestination,
+    voiceMode,
+    voiceStatus,
+    voiceTranscript,
+  ]);
 
   useEffect(
     () => () => {
+      if (voiceActivityTimerRef.current) {
+        clearTimeout(voiceActivityTimerRef.current);
+      }
       void window.tro.setCompanionVoiceActivity(null);
     },
     [],
@@ -2796,7 +3214,7 @@ export function App({
               </label>
               <div
                 aria-live="polite"
-                className={`voice-status voice-status--${voiceStatus}`}
+                className={`voice-status voice-status--${voiceStatus}${voiceMode ? ` voice-status--${voiceMode}` : ''}`}
               >
                 <span className="voice-indicator" aria-hidden="true" />
                 <span>
@@ -2804,9 +3222,13 @@ export function App({
                     voiceStatus,
                     voicePlatform,
                     appLanguageDraft,
+                    voiceMode,
                   )}
                 </span>
-                <VoiceShortcut platform={voicePlatform} />
+                <VoiceShortcuts
+                  appLanguage={appLanguageDraft}
+                  platform={voicePlatform}
+                />
               </div>
               <textarea
                 id="task-request"
@@ -2814,11 +3236,11 @@ export function App({
                 onChange={(event) => setInput(event.target.value)}
                 placeholder={
                   pendingClarification
-                    ? t('Type or hold the voice shortcut to answer…')
+                    ? t('Type, dictate, or hold Shift with the voice shortcut to answer…')
                     : isSteering
-                      ? t('Pause, stop, or change the next step…')
+                      ? t('Type, dictate, or give Tro a voice task…')
                       : t(
-                          'Open YouTube for me, research a topic, fix code, or guide me through an app…',
+                          'Type a task, or hold Dictation to add text without sending…',
                         )
                 }
                 rows={hasLiveTask || pendingInteraction ? 2 : 4}

@@ -46,6 +46,11 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   };
   cuaConnect: ReturnType<typeof vi.fn>;
   cuaGetStatus: ReturnType<typeof vi.fn>;
+  dictationService: {
+    begin: ReturnType<typeof vi.fn>;
+    cancel: ReturnType<typeof vi.fn>;
+    commit: ReturnType<typeof vi.fn>;
+  };
   callOrder: string[];
   classroomJoin: ReturnType<typeof vi.fn>;
   classroomOpenDirective: ReturnType<typeof vi.fn>;
@@ -247,6 +252,20 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     utteranceId: input.utteranceId,
   }));
   const recordVoiceTranscript = vi.fn(async () => undefined);
+  const dictationService = {
+    begin: vi.fn(async (turnId: string) => ({
+      status: 'ready' as const,
+      targetApplication: 'Notes',
+      turnId,
+    })),
+    cancel: vi.fn(async () => undefined),
+    commit: vi.fn(async () => ({
+      disposition: 'inserted' as const,
+      reason: 'confirmed' as const,
+      summary: 'Tro inserted the dictated text.',
+      targetApplication: 'Notes',
+    })),
+  };
   const getAppPreferences = vi.fn(async () => ({ primaryLanguage: null }));
   const getTaskHistory = vi.fn(async () => ({
     events: [],
@@ -417,6 +436,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     classroomDirectiveService,
     classroomSessionService,
     cuaService: { connect: cuaConnect, getStatus: cuaGetStatus },
+    dictationService,
     cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
     handleCompanionResponseAction,
@@ -478,6 +498,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     transcribeVoiceSegment,
     cuaConnect,
     cuaGetStatus,
+    dictationService,
     createClassroomDirective,
     event,
     interactionEvent,
@@ -1183,11 +1204,95 @@ describe('registerIpcHandlers auth boundary', () => {
 
     expect(handler).toBeTypeOf('function');
     await expect(
-      handler?.(event, { text: '  Open YouTube for me  ' }),
+      handler?.(event, {
+        characterCount: 19,
+        destination: 'task',
+        disposition: 'task_submitted',
+        mode: 'task',
+      }),
     ).resolves.toBeUndefined();
     expect(recordVoiceTranscript).toHaveBeenCalledWith({
-      text: 'Open YouTube for me',
+      characterCount: 19,
+      destination: 'task',
+      disposition: 'task_submitted',
+      mode: 'task',
     });
+    unregister();
+  });
+
+  it('authorizes, validates, and parses dictation begin and commit', async () => {
+    const { dictationService, event, unregister } = setup(true);
+    const turnId = '11111111-1111-4111-8111-111111111111';
+    const begin = electronMock.handlers.get(IPC_CHANNELS.beginDictation);
+    const commit = electronMock.handlers.get(IPC_CHANNELS.commitDictation);
+
+    await expect(begin?.(event, { turnId })).resolves.toEqual({
+      status: 'ready',
+      targetApplication: 'Notes',
+      turnId,
+    });
+    await expect(commit?.(event, { text: 'Hello', turnId })).resolves.toEqual({
+      disposition: 'inserted',
+      reason: 'confirmed',
+      summary: 'Tro inserted the dictated text.',
+      targetApplication: 'Notes',
+    });
+    expect(dictationService.begin).toHaveBeenCalledWith(turnId);
+    expect(dictationService.commit).toHaveBeenCalledWith(turnId, 'Hello');
+    unregister();
+  });
+
+  it('rejects unauthorized or malformed dictation without invoking the service', async () => {
+    const signedOut = setup(false);
+    const turnId = '11111111-1111-4111-8111-111111111111';
+    const begin = electronMock.handlers.get(IPC_CHANNELS.beginDictation);
+    await expect(begin?.(signedOut.event, { turnId })).rejects.toThrow();
+    expect(signedOut.dictationService.begin).not.toHaveBeenCalled();
+    signedOut.unregister();
+
+    const inactive = setup(true, false);
+    const commit = electronMock.handlers.get(IPC_CHANNELS.commitDictation);
+    await expect(
+      commit?.(inactive.event, { text: 'Hello', turnId }),
+    ).rejects.toThrow();
+    expect(inactive.dictationService.commit).not.toHaveBeenCalled();
+    inactive.unregister();
+
+    const malformed = setup(true);
+    const malformedBegin = electronMock.handlers.get(
+      IPC_CHANNELS.beginDictation,
+    );
+    await expect(
+      malformedBegin?.(malformed.event, { extra: true, turnId }),
+    ).rejects.toThrow();
+    expect(malformed.dictationService.begin).not.toHaveBeenCalled();
+    malformed.unregister();
+
+    const untrusted = setup(true);
+    const untrustedBegin = electronMock.handlers.get(
+      IPC_CHANNELS.beginDictation,
+    );
+    await expect(
+      untrustedBegin?.(untrusted.interactionEvent, { turnId }),
+    ).rejects.toThrow();
+    expect(untrusted.dictationService.begin).not.toHaveBeenCalled();
+    untrusted.unregister();
+  });
+
+  it('allows trusted dictation cancellation after sign-out but rejects auxiliary renderers', async () => {
+    const {
+      dictationService,
+      event,
+      interactionEvent,
+      unregister,
+    } = setup(false);
+    const cancel = electronMock.handlers.get(IPC_CHANNELS.cancelDictation);
+    const request = { turnId: '11111111-1111-4111-8111-111111111111' };
+
+    await expect(cancel?.(event, request)).resolves.toBeUndefined();
+    expect(dictationService.cancel).toHaveBeenCalledWith(request.turnId);
+    await expect(cancel?.(interactionEvent, request)).rejects.toThrow();
+    expect(dictationService.cancel).toHaveBeenCalledOnce();
     unregister();
   });
 
@@ -1199,12 +1304,16 @@ describe('registerIpcHandlers auth boundary', () => {
 
     expect(
       handler?.(event, {
+        destination: { kind: 'task', label: 'Tro task' },
+        mode: 'task',
         phase: 'listening',
         transcript: 'Open YouTube',
       }),
     ).toBeUndefined();
     expect(updateCompanionVoiceActivity).toHaveBeenCalledWith({
       appLanguage: 'en',
+      destination: { kind: 'task', label: 'Tro task' },
+      mode: 'task',
       phase: 'listening',
       transcript: 'Open YouTube',
     });

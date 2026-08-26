@@ -469,6 +469,23 @@ export function SettingsPage({
           )}
         </p>
 
+        <div className="settings-voice-shortcuts" aria-label={t('Voice shortcuts')}>
+          <p>
+            <strong>{t('Dictation')}</strong>
+            <span>{t('macOS: Command + Control · Windows: left Control + left Alt')}</span>
+          </p>
+          <p>
+            <strong>{t('Task')}</strong>
+            <span>{t('Add Shift to either Dictation shortcut')}</span>
+          </p>
+        </div>
+
+        <p className="settings-help">
+          {t(
+            'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.',
+          )}
+        </p>
+
         <label className="settings-toggle">
           <input
             checked={muteSystemAudioWhileSpeaking}

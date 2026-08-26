@@ -31,7 +31,9 @@ export function getCompanionState({
   taskPhase,
   voiceStatus,
 }: CompanionStateInput): CompanionState {
-  if (voiceStatus === 'processing') return 'processing';
+  if (voiceStatus === 'processing' || voiceStatus === 'committing') {
+    return 'processing';
+  }
   if (isSending) return 'sending';
 
   if (

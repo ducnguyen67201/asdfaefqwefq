@@ -1,0 +1,108 @@
+import { randomUUID } from 'node:crypto';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  BeginDictationRequestSchema,
+  CommitDictationRequestSchema,
+  CompanionVoiceActivitySchema,
+  DictationCommitResultSchema,
+  RecordVoiceTranscriptRequestSchema,
+  VoiceShortcutEventSchema,
+} from './contracts';
+
+describe('voice mode contracts', () => {
+  it('requires an explicit known mode and rejects extra shortcut keys', () => {
+    expect(
+      VoiceShortcutEventSchema.safeParse({
+        action: 'pressed',
+        source: 'global',
+      }).success,
+    ).toBe(false);
+    expect(
+      VoiceShortcutEventSchema.safeParse({
+        action: 'pressed',
+        mode: 'assistant',
+        source: 'global',
+      }).success,
+    ).toBe(false);
+    expect(
+      VoiceShortcutEventSchema.safeParse({
+        action: 'pressed',
+        extra: true,
+        mode: 'dictation',
+        source: 'global',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('bounds strict dictation mutation requests', () => {
+    const turnId = randomUUID();
+    expect(BeginDictationRequestSchema.parse({ turnId })).toEqual({ turnId });
+    expect(
+      BeginDictationRequestSchema.safeParse({ extra: true, turnId }).success,
+    ).toBe(false);
+    expect(
+      CommitDictationRequestSchema.safeParse({ text: 'x'.repeat(8_000), turnId })
+        .success,
+    ).toBe(true);
+    expect(
+      CommitDictationRequestSchema.safeParse({ text: 'x'.repeat(8_001), turnId })
+        .success,
+    ).toBe(false);
+    expect(
+      CommitDictationRequestSchema.safeParse({ text: 'hello', turnId: 'bad' })
+        .success,
+    ).toBe(false);
+    expect(
+      CommitDictationRequestSchema.parse({ text: '  hello!  ', turnId }).text,
+    ).toBe('hello!');
+  });
+
+  it('allows only content-free analytics dimensions and known results', () => {
+    expect(
+      RecordVoiceTranscriptRequestSchema.parse({
+        characterCount: 8_000,
+        destination: 'application',
+        disposition: 'delivery_unverified',
+        mode: 'dictation',
+      }),
+    ).toMatchObject({ characterCount: 8_000, mode: 'dictation' });
+    expect(
+      RecordVoiceTranscriptRequestSchema.safeParse({
+        characterCount: 5,
+        destination: 'application',
+        disposition: 'retried',
+        mode: 'dictation',
+        text: 'secret',
+      }).success,
+    ).toBe(false);
+    expect(
+      DictationCommitResultSchema.safeParse({
+        disposition: 'inserted',
+        reason: 'maybe',
+        summary: 'Done.',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires redundant bounded island presentation fields', () => {
+    expect(
+      CompanionVoiceActivitySchema.safeParse({
+        destination: { kind: 'task', label: 'Tro task' },
+        mode: 'task',
+        phase: 'listening',
+        transcript: '',
+      }).success,
+    ).toBe(true);
+    expect(
+      CompanionVoiceActivitySchema.safeParse({
+        destination: { kind: 'task', label: 'Tro task' },
+        message: 'x'.repeat(241),
+        mode: 'task',
+        phase: 'error',
+        transcript: '',
+      }).success,
+    ).toBe(false);
+  });
+});

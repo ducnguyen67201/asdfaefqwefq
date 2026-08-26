@@ -8,6 +8,9 @@ import {
   AuthStatusSchema,
   ActivateCompanionCandidateRequestSchema,
   ActivateSavedCompanionRequestSchema,
+  BeginDictationRequestSchema,
+  BeginDictationResultSchema,
+  CancelDictationRequestSchema,
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
   CompanionPositionSchema,
@@ -24,6 +27,8 @@ import {
   CompanionVoiceActivitySchema,
   GenerateCompanionImageRequestSchema,
   ConfigureVoiceRequestSchema,
+  CommitDictationRequestSchema,
+  DictationCommitResultSchema,
   TranscribeVoiceSegmentRequestSchema,
   CuaStatusSchema,
   DecideApprovalRequestSchema,
@@ -119,6 +124,29 @@ import {
 } from './shared/desktop-api';
 
 const desktopApi: DesktopApi = {
+  async beginDictation(input) {
+    const request = BeginDictationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.beginDictation,
+      request,
+    );
+    return BeginDictationResultSchema.parse(response);
+  },
+
+  async cancelDictation(input) {
+    const request = CancelDictationRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.cancelDictation, request);
+  },
+
+  async commitDictation(input) {
+    const request = CommitDictationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.commitDictation,
+      request,
+    );
+    return DictationCommitResultSchema.parse(response);
+  },
+
   async activateCompanionCandidate(input) {
     const request = ActivateCompanionCandidateRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(

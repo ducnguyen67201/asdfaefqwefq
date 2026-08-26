@@ -62,22 +62,30 @@ describe('cursor companion state', () => {
   it('bounds live voice activity sent to the transcript island', () => {
     expect(
       CompanionVoiceActivitySchema.parse({
+        destination: { kind: 'task', label: 'Tro task' },
+        mode: 'task',
         phase: 'listening',
         transcript: 'Open YouTube',
       }),
     ).toEqual({
       appLanguage: 'en',
+      destination: { kind: 'task', label: 'Tro task' },
+      mode: 'task',
       phase: 'listening',
       transcript: 'Open YouTube',
     });
     expect(
       CompanionVoiceActivitySchema.safeParse({
+        destination: { kind: 'task', label: 'Tro task' },
+        mode: 'task',
         phase: 'idle',
         transcript: '',
       }).success,
     ).toBe(false);
     expect(
       CompanionVoiceActivitySchema.safeParse({
+        destination: { kind: 'application', label: 'Editor' },
+        mode: 'dictation',
         phase: 'processing',
         transcript: 'x'.repeat(8_001),
       }).success,
@@ -131,6 +139,15 @@ describe('cursor companion state', () => {
         showTaskCompleted: false,
         taskPhase: null,
         voiceStatus: 'processing',
+      }),
+    ).toBe('processing');
+    expect(
+      getCompanionState({
+        hasError: false,
+        isSending: false,
+        showTaskCompleted: false,
+        taskPhase: null,
+        voiceStatus: 'committing',
       }),
     ).toBe('processing');
     expect(

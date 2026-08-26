@@ -4,6 +4,7 @@ import {
   WINDOWS_VOICE_SHORTCUT_ACTIVE_POLL_INTERVAL_MS,
   WINDOWS_VOICE_SHORTCUT_IDLE_POLL_INTERVAL_MS,
   windowsVoiceShortcutPollInterval,
+  windowsVoiceShortcutWatchScript,
 } from './windows-voice-shortcut-watcher';
 
 describe('Windows voice shortcut polling cadence', () => {
@@ -55,5 +56,32 @@ describe('Windows voice shortcut polling cadence', () => {
         wasDown: false,
       }),
     ).toBe(WINDOWS_VOICE_SHORTCUT_IDLE_POLL_INTERVAL_MS);
+  });
+});
+
+describe('windowsVoiceShortcutWatchScript', () => {
+  it('uses the left-side modifiers and tagged mode protocol', () => {
+    const script = windowsVoiceShortcutWatchScript(120);
+
+    expect(script).toContain('GetAsyncKeyState(0xA2)');
+    expect(script).toContain('GetAsyncKeyState(0xA4)');
+    expect(script).toContain('GetAsyncKeyState(0xA0)');
+    expect(script).toContain("'pressed:dictation'");
+    expect(script).toContain("'released:dictation'");
+    expect(script).toContain("'pressed:task'");
+    expect(script).toContain("'released:task'");
+    expect(script).toContain('$settleMilliseconds = 120');
+    expect(script.indexOf('$now -ge $deadline')).toBeLessThan(
+      script.indexOf('$leftShiftDown)', script.indexOf("$state -eq 'settling'")),
+    );
+  });
+
+  it('normalizes the internal settle duration before interpolation', () => {
+    expect(windowsVoiceShortcutWatchScript(119.6)).toContain(
+      '$settleMilliseconds = 120',
+    );
+    expect(windowsVoiceShortcutWatchScript(-20)).toContain(
+      '$settleMilliseconds = 0',
+    );
   });
 });

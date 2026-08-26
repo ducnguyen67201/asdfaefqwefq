@@ -4,19 +4,19 @@ import { parseMacOSVoiceShortcutOutput } from './macos-voice-shortcut-watcher';
 
 describe('parseMacOSVoiceShortcutOutput', () => {
   it('parses press and release lines across process chunks', () => {
-    const first = parseMacOSVoiceShortcutOutput('', 'ready\npre');
+    const first = parseMacOSVoiceShortcutOutput('', 'ready\npressed:ta');
 
     expect(first.events).toEqual([]);
-    expect(first.remainder).toBe('pre');
+    expect(first.remainder).toBe('pressed:ta');
 
     const second = parseMacOSVoiceShortcutOutput(
       first.remainder,
-      'ssed\nreleased\n',
+      'sk\nreleased:task\n',
     );
 
     expect(second.events).toEqual([
-      { action: 'pressed', source: 'global' },
-      { action: 'released', source: 'global' },
+      { action: 'pressed', mode: 'task', source: 'global' },
+      { action: 'released', mode: 'task', source: 'global' },
     ]);
     expect(second.remainder).toBe('');
   });
@@ -30,11 +30,14 @@ describe('parseMacOSVoiceShortcutOutput', () => {
 
   it('accepts Windows CRLF shortcut events', () => {
     expect(
-      parseMacOSVoiceShortcutOutput('', 'pressed\r\nreleased\r\n'),
+      parseMacOSVoiceShortcutOutput(
+        '',
+        'pressed:dictation\r\nreleased:dictation\r\n',
+      ),
     ).toEqual({
       events: [
-        { action: 'pressed', source: 'global' },
-        { action: 'released', source: 'global' },
+        { action: 'pressed', mode: 'dictation', source: 'global' },
+        { action: 'released', mode: 'dictation', source: 'global' },
       ],
       remainder: '',
     });

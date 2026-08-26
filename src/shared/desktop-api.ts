@@ -6,6 +6,9 @@ import type {
   AuthStatus,
   ActivateCompanionCandidateRequest,
   ActivateSavedCompanionRequest,
+  BeginDictationRequest,
+  BeginDictationResult,
+  CancelDictationRequest,
   CancelAgentTaskRequestV3,
   CompanionAppearance,
   CompanionCustomizationStatus,
@@ -22,6 +25,8 @@ import type {
   CompanionVoiceActivity,
   GenerateCompanionImageRequest,
   ConfigureVoiceRequest,
+  CommitDictationRequest,
+  DictationCommitResult,
   TranscribeVoiceSegmentRequest,
   CuaStatus,
   DecideApprovalRequest,
@@ -130,6 +135,9 @@ export const IPC_CHANNELS = {
   companionStateChanged: 'companion:state-changed',
   companionVoiceActivityChanged: 'companion:voice-activity-changed',
   companionRevealMainWindow: 'companion:reveal-main-window',
+  beginDictation: 'voice:dictation:begin',
+  cancelDictation: 'voice:dictation:cancel',
+  commitDictation: 'voice:dictation:commit',
   configureVoice: 'voice:configure',
   connectComputer: 'cua:connect',
   transcribeVoiceSegment: 'voice:transcribe-segment',
@@ -209,6 +217,7 @@ export const IPC_CHANNELS = {
 } as const;
 
 export interface DesktopApi {
+  beginDictation(request: BeginDictationRequest): Promise<BeginDictationResult>;
   activateMembership(
     request: ActivateMembershipRequest,
   ): Promise<MembershipStatus>;
@@ -219,6 +228,10 @@ export interface DesktopApi {
   ): Promise<TaskSnapshot>;
   checkForAppUpdates(): Promise<AppUpdateStatus>;
   configureVoice(request: ConfigureVoiceRequest): Promise<VoiceStatus>;
+  cancelDictation(request: CancelDictationRequest): Promise<void>;
+  commitDictation(
+    request: CommitDictationRequest,
+  ): Promise<DictationCommitResult>;
   connectComputer(): Promise<CuaStatus>;
   transcribeVoiceSegment(
     request: TranscribeVoiceSegmentRequest,

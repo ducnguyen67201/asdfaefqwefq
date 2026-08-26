@@ -113,6 +113,131 @@ function fakeCuaModule() {
   };
 }
 
+describe('CUA Dictation adapter', () => {
+  it('initializes with Accessibility alone while full CUA still requires Screen Recording', async () => {
+    const driver = {
+      isAvailable: vi.fn(() => true),
+      listToolsJson: vi.fn(async () => '[]'),
+      metadata: vi.fn(async () => ({
+        capabilityVersion: '1',
+        contractVersion: '0.6.0',
+        driverVersion: '0.19.3',
+        toolsListSchemaVersion: '1',
+      })),
+      shutdown: vi.fn(async () => undefined),
+      uniffiDestroy: vi.fn(),
+    };
+    const requestMacOsPermissions = vi.fn();
+    const module = {
+      ...fakeCuaModule(),
+      ConfiguredDriverOptions: recordFactory(),
+      CuaDriver: {
+        createConfiguredWithHostIntegrations: vi.fn(() => driver),
+      },
+      DriverAuthorizationAction: { Allow: 0, Cancel: 1, Deny: 2 },
+      RuntimeAuthorizationOptions: recordFactory(),
+      SessionPermissionMode: { Standard: 0 },
+      currentMacOsPermissionStatus: vi.fn(() => ({
+        accessibility: true,
+        screenRecording: false,
+      })),
+      requestMacOsPermissions,
+    };
+    const service = new CuaService({ platform: 'darwin' });
+    Reflect.set(service, 'cuaModule', module);
+
+    await expect(service.connectForDictation()).resolves.toEqual({
+      state: 'ready',
+      summary: 'System-wide dictation is ready.',
+    });
+    await expect(service.getStatus()).resolves.toMatchObject({
+      state: 'permission_required',
+      permissions: { accessibility: true, screenRecording: false },
+    });
+    expect(requestMacOsPermissions).not.toHaveBeenCalled();
+    expect(module.CuaDriver.createConfiguredWithHostIntegrations).toHaveBeenCalledOnce();
+  });
+
+  it('lists windows without screenshots and sends one scoped background type call', async () => {
+    const sessionId = `dictation:${randomUUID()}`;
+    const callTool = vi.fn(async (name: string) => {
+      if (name === 'list_windows') {
+        return {
+          action: null,
+          degraded: false,
+          images: [],
+          isError: false,
+          rawJson: '{}',
+          structuredJson: JSON.stringify({
+            windows: [{
+              app_name: 'Notes',
+              bounds: { height: 600, width: 800, x: 0, y: 0 },
+              is_on_screen: true,
+              on_current_space: true,
+              pid: 10,
+              title: 'Private title',
+              window_id: 20,
+              z_index: 1,
+            }],
+          }),
+          text: 'One window.',
+        };
+      }
+      return {
+        action: { effect: 0 },
+        degraded: false,
+        images: [],
+        isError: false,
+        rawJson: '{}',
+        text: 'Typed.',
+      };
+    });
+    const driver = {
+      callTool,
+      endSession: vi.fn(async () => ({ active: false })),
+      isAvailable: vi.fn(() => true),
+      startSession: vi.fn(async () => startedWindowSession()),
+    };
+    const service = new CuaService();
+    Reflect.set(service, 'cuaModule', fakeCuaModule());
+    Reflect.set(service, 'driver', driver);
+
+    await service.startDictationSession(sessionId);
+    await expect(service.listDictationWindows()).resolves.toHaveLength(1);
+    await expect(
+      service.typeDictationText({
+        processId: 10,
+        sessionId,
+        text: 'Private dictated text',
+        windowId: 20,
+      }),
+    ).resolves.toEqual({ effect: 'confirmed' });
+    await service.endDictationSession(sessionId);
+
+    expect(callTool).toHaveBeenNthCalledWith(
+      1,
+      'list_windows',
+      JSON.stringify({ on_screen_only: true }),
+      undefined,
+    );
+    expect(callTool).toHaveBeenNthCalledWith(
+      2,
+      'type_text',
+      JSON.stringify({
+        delivery_mode: 'background',
+        pid: 10,
+        session: sessionId,
+        text: 'Private dictated text',
+        window_id: 20,
+      }),
+      undefined,
+    );
+    expect(JSON.stringify(callTool.mock.calls)).not.toMatch(
+      /screenshot|element|press_key|enter/iu,
+    );
+  });
+});
+
 function startedWindowSession() {
   return {
     active: true,

@@ -8,6 +8,7 @@ import {
   isPublicClassroomHostname,
   validateClassroomUrl,
 } from './classroom-url-policy';
+import { VOICE_MODES } from './voice-mode';
 
 export * from './agent-runtime-protocol';
 
@@ -2153,11 +2154,30 @@ export const UsageBudgetSnapshotSchema = z.object({
   warningThresholdMicroUsd: z.number().int().nonnegative(),
 });
 
-export const CompanionVoiceActivitySchema = z.object({
-  appLanguage: AppLanguageSchema.default('en'),
-  phase: z.enum(['requesting_permission', 'listening', 'processing']),
-  transcript: z.string().max(8_000),
-});
+export const VoiceModeSchema = z.enum(VOICE_MODES);
+
+export const CompanionVoiceActivitySchema = z
+  .object({
+    appLanguage: AppLanguageSchema.default('en'),
+    destination: z
+      .object({
+        kind: z.enum(['application', 'tro_composer', 'task']),
+        label: z.string().trim().min(1).max(120),
+      })
+      .strict(),
+    message: z.string().trim().min(1).max(240).optional(),
+    mode: VoiceModeSchema,
+    phase: z.enum([
+      'requesting_permission',
+      'listening',
+      'processing',
+      'committing',
+      'complete',
+      'error',
+    ]),
+    transcript: z.string().max(8_000),
+  })
+  .strict();
 
 export const CompanionPositionSchema = z.object({
   x: z.number().int().min(0).max(100_000),
@@ -2369,9 +2389,102 @@ export const ConfigureVoiceRequestSchema = z.object({
     }),
 });
 
-export const RecordVoiceTranscriptRequestSchema = z.object({
-  text: z.string().trim().min(1).max(8_000),
+export const RecordVoiceTranscriptRequestSchema = z
+  .object({
+    characterCount: z.number().int().min(1).max(8_000),
+    destination: z.enum(['application', 'tro_composer', 'task']),
+    disposition: z.enum([
+      'inserted',
+      'delivery_unverified',
+      'not_inserted',
+      'task_submitted',
+      'draft_updated',
+    ]),
+    mode: VoiceModeSchema,
+  })
+  .strict();
+
+export const BeginDictationRequestSchema = z
+  .object({
+    turnId: z.string().uuid(),
+  })
+  .strict();
+
+export const BeginDictationResultSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('ready'),
+      targetApplication: z.string().trim().min(1).max(120),
+      turnId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      reason: z.literal('accessibility'),
+      status: z.literal('permission_required'),
+      summary: z.string().trim().min(1).max(1_000),
+      turnId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      reason: z.enum(['no_target', 'platform', 'driver']),
+      status: z.literal('unavailable'),
+      summary: z.string().trim().min(1).max(1_000),
+      turnId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      reason: z.literal('busy'),
+      status: z.literal('busy'),
+      summary: z.string().trim().min(1).max(1_000),
+      turnId: z.string().uuid(),
+    })
+    .strict(),
+]);
+
+export const CommitDictationRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(8_000),
+    turnId: z.string().uuid(),
+  })
+  .strict();
+
+const DictationCommitResultBaseSchema = z.object({
+  summary: z.string().trim().min(1).max(1_000),
+  targetApplication: z.string().trim().min(1).max(120).optional(),
 });
+
+export const DictationCommitResultSchema = z.discriminatedUnion(
+  'disposition',
+  [
+    DictationCommitResultBaseSchema.extend({
+      disposition: z.literal('inserted'),
+      reason: z.literal('confirmed'),
+    }).strict(),
+    DictationCommitResultBaseSchema.extend({
+      disposition: z.literal('delivery_unverified'),
+      reason: z.enum(['driver_error', 'cancelled']),
+    }).strict(),
+    DictationCommitResultBaseSchema.extend({
+      disposition: z.literal('not_inserted'),
+      reason: z.enum([
+        'target_changed',
+        'driver_refused',
+        'driver_error',
+        'already_consumed',
+        'cancelled',
+      ]),
+    }).strict(),
+  ],
+);
+
+export const CancelDictationRequestSchema = z
+  .object({
+    turnId: z.string().uuid(),
+  })
+  .strict();
 
 const PcmWavBase64Schema = z
   .string()
@@ -2415,10 +2528,13 @@ export const VoiceDiagnosticSchema = z.object({
   ]),
 });
 
-export const VoiceShortcutEventSchema = z.object({
-  action: z.enum(['pressed', 'released']),
-  source: z.literal('global'),
-});
+export const VoiceShortcutEventSchema = z
+  .object({
+    action: z.enum(['pressed', 'released']),
+    mode: VoiceModeSchema,
+    source: z.literal('global'),
+  })
+  .strict();
 
 export const AuthUserSchema = z.object({
   id: z.string().min(1).max(255),
@@ -2611,6 +2727,7 @@ export type PresentationState = z.infer<typeof PresentationStateSchema>;
 export type CompanionVoiceActivity = z.infer<
   typeof CompanionVoiceActivitySchema
 >;
+export type VoiceMode = z.infer<typeof VoiceModeSchema>;
 export type CompanionGuidance = z.infer<typeof CompanionGuidanceSchema>;
 export type CompanionPetMood = z.infer<typeof CompanionPetMoodSchema>;
 export type CompanionPetNudgeDraft = z.infer<
@@ -2636,6 +2753,19 @@ export type CompanionSpeechPlaybackReport = z.infer<
 >;
 export type ConfigureVoiceRequest = z.infer<
   typeof ConfigureVoiceRequestSchema
+>;
+export type BeginDictationRequest = z.infer<
+  typeof BeginDictationRequestSchema
+>;
+export type BeginDictationResult = z.infer<typeof BeginDictationResultSchema>;
+export type CancelDictationRequest = z.infer<
+  typeof CancelDictationRequestSchema
+>;
+export type CommitDictationRequest = z.infer<
+  typeof CommitDictationRequestSchema
+>;
+export type DictationCommitResult = z.infer<
+  typeof DictationCommitResultSchema
 >;
 export type TranscribeVoiceSegmentRequest = z.infer<
   typeof TranscribeVoiceSegmentRequestSchema

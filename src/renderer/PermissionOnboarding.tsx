@@ -38,19 +38,21 @@ const PERMISSIONS: ReadonlyArray<{
   name: string;
 }> = [
   {
-    description: 'Lets Tro click, type, and control apps for you.',
+    description:
+      'Lets Tro insert Dictation into another app. Full computer use also needs Screen Recording.',
     icon: '⌁',
     key: 'accessibility',
     name: 'Accessibility',
   },
   {
-    description: 'Lets Tro see the screen and verify its work.',
+    description:
+      'Lets full computer use see the screen and verify its work. Dictation does not need it.',
     icon: '▣',
     key: 'screenRecording',
     name: 'Screen Recording',
   },
   {
-    description: 'Lets you use push-to-talk voice commands.',
+    description: 'Lets you dictate text or give Tro a voice Task.',
     icon: '●',
     key: 'microphone',
     name: 'Microphone',
@@ -102,7 +104,7 @@ export function PermissionOnboarding({
           </h1>
           <p>
             {t(
-              'Text tasks work without microphone or computer permissions. Choose your spoken language now; voice and computer use remain optional and can be connected only when you need them.',
+              'Text tasks work without microphone or computer permissions. Dictation and voice Tasks use the microphone; inserting Dictation into another app also uses Accessibility.',
             )}
           </p>
           <label

@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CuaStatus } from '../shared/contracts';
@@ -10,6 +11,7 @@ import {
   requestScreenRecordingPermission,
   shouldConnectAfterPermissionRefresh,
 } from './permission-onboarding';
+import { PermissionOnboarding } from './PermissionOnboarding';
 
 const READY_CUA_STATUS: CuaStatus = {
   state: 'ready',
@@ -24,6 +26,33 @@ const READY_CUA_STATUS: CuaStatus = {
 };
 
 describe('permission onboarding', () => {
+  it('explains the narrower Dictation permission profile', () => {
+    const markup = renderToStaticMarkup(
+      PermissionOnboarding({
+        appLanguage: 'en',
+        checklist: {
+          accessibility: 'required',
+          microphone: 'required',
+          screenRecording: 'required',
+        },
+        computerStatus: READY_CUA_STATUS,
+        error: null,
+        isChecking: false,
+        isLanguageLoading: false,
+        isRequesting: false,
+        onEnable: vi.fn(),
+        onLanguageChange: vi.fn(),
+        onOpenScreenRecordingSettings: vi.fn(),
+        onRefresh: vi.fn(),
+        primaryLanguage: 'en',
+      }),
+    );
+
+    expect(markup).toContain('Dictation and voice Tasks use the microphone');
+    expect(markup).toContain('inserting Dictation into another app');
+    expect(markup).toContain('Dictation does not need it');
+  });
+
   it('maps each macOS grant independently', () => {
     const checklist = createPermissionChecklist(
       {

@@ -425,7 +425,7 @@ describe('AnalyticsService', () => {
     );
   });
 
-  it('captures only voice transcript counts, never transcript content', async () => {
+  it('captures only allowlisted voice dimensions, never transcript or app content', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -436,17 +436,25 @@ describe('AnalyticsService', () => {
     );
 
     await service.trackVoiceTranscript({
-      text: '  Open YouTube and find the latest Tro demo  ',
+      characterCount: 43,
+      destination: 'application',
+      disposition: 'delivery_unverified',
+      mode: 'dictation',
     });
 
     expect(client.events.at(-1)).toMatchObject({
       distinctId: 'account-42',
       event: 'voice transcription completed',
       properties: {
-        character_count: 'Open YouTube and find the latest Tro demo'.length,
+        character_count: 43,
+        destination: 'application',
+        disposition: 'delivery_unverified',
+        mode: 'dictation',
       },
     });
-    expect(JSON.stringify(client.events.at(-1))).not.toContain('Open YouTube');
+    const serialized = JSON.stringify(client.events.at(-1));
+    expect(serialized).not.toContain('VOICE_SECRET_SENTINEL_7f4c');
+    expect(serialized).not.toContain('Private Notes window');
   });
 
   it('links login activity to an identified user and rotates identity on logout', async () => {

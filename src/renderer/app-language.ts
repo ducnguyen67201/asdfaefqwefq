@@ -107,6 +107,17 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Deny: 'Từ chối',
   Description: 'Mô tả',
   'Describe the outcome': 'Mô tả kết quả mong muốn',
+  'Dictating': 'Đang đọc chính tả',
+  'Dictating… Release to insert text without sending.':
+    'Đang đọc chính tả… Thả phím để chèn văn bản mà không gửi.',
+  Dictation: 'Chính tả',
+  'Dictation added to your Tro draft.':
+    'Đã thêm nội dung chính tả vào bản nháp Tro.',
+  'Dictation complete': 'Chính tả hoàn tất',
+  'Dictation inserted.': 'Đã chèn nội dung chính tả.',
+  'Dictation needs attention': 'Chính tả cần chú ý',
+  'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.':
+    'Chính tả thêm văn bản mà không gửi. Tác vụ chuyển yêu cầu bằng giọng nói cho Tro sau khoảng một giây để nhấn Escape hủy.',
   'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.':
     'Mô tả đích đến. Tro sẽ xác định phạm vi giới hạn, chọn công cụ và xác minh kết quả.',
   'Desktop agent': 'Trợ lý máy tính',
@@ -142,6 +153,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Finished tasks will settle here.': 'Tác vụ đã kết thúc sẽ xuất hiện ở đây.',
   'Finish setup': 'Hoàn tất thiết lập',
   'Finishing transcript…': 'Đang hoàn tất bản ghi âm…',
+  'Finishing safely…': 'Đang hoàn tất an toàn…',
   'Finishing setup…': 'Đang hoàn tất thiết lập…',
   'General-purpose agent': 'Trợ lý đa năng',
   Guide: 'Hướng dẫn',
@@ -163,6 +175,13 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Listening: 'Đang nghe',
   'Listening… Release the voice shortcut to send.':
     'Đang nghe… Thả phím tắt giọng nói để gửi.',
+  'Giving Tro a task': 'Đang giao việc cho Tro',
+  'Giving Tro a task… Release to transcribe, then press Escape to cancel.':
+    'Đang giao việc cho Tro… Thả phím để phiên âm, sau đó nhấn Escape để hủy.',
+  'Inserting Dictation': 'Đang chèn nội dung chính tả',
+  'Inserting dictated text…': 'Đang chèn văn bản đã đọc…',
+  'Insertion could not be verified. Text kept in your Tro draft.':
+    'Không thể xác minh việc chèn. Văn bản đã được giữ trong bản nháp Tro.',
   'Live activity': 'Hoạt động trực tiếp',
   'Live lifecycle': 'Vòng đời trực tiếp',
   'Live session': 'Phiên trực tiếp',
@@ -252,6 +271,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Signing out…': 'Đang đăng xuất…',
   'Something needs attention': 'Có nội dung cần chú ý',
   'Speak now…': 'Hãy nói ngay…',
+  'Sending voice Task': 'Đang gửi tác vụ giọng nói',
+  'Sending voice task…': 'Đang gửi tác vụ giọng nói…',
   'Spoken language': 'Ngôn ngữ nói',
   'Starting microphone': 'Đang khởi động micrô',
   'Start task': 'Bắt đầu tác vụ',
@@ -271,6 +292,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'System audio muting is currently available on macOS.':
     'Tính năng tắt âm thanh hệ thống hiện có trên macOS.',
   task: 'tác vụ',
+  Task: 'Tác vụ',
   tasks: 'tác vụ',
   Tasks: 'Tác vụ',
   'TASK COMPLETION RATE': 'TỶ LỆ HOÀN THÀNH TÁC VỤ',
@@ -280,6 +302,28 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Task events will appear here.': 'Sự kiện tác vụ sẽ xuất hiện ở đây.',
   'Task in motion': 'Tác vụ đang thực hiện',
   'Task needs attention': 'Tác vụ cần chú ý',
+  'Text kept in your Tro draft.': 'Văn bản đã được giữ trong bản nháp Tro.',
+  'Text kept in your Tro draft. {summary}':
+    'Văn bản đã được giữ trong bản nháp Tro. {summary}',
+  'To {destination}': 'Tới {destination}',
+  'Transcribing Dictation': 'Đang phiên âm chính tả',
+  'Transcribing Task': 'Đang phiên âm tác vụ',
+  'Preparing Dictation': 'Đang chuẩn bị chính tả',
+  'Preparing voice Task': 'Đang chuẩn bị tác vụ giọng nói',
+  'Voice Task needs attention': 'Tác vụ giọng nói cần chú ý',
+  'Voice Task sent': 'Đã gửi tác vụ giọng nói',
+  'Voice task sent.': 'Đã gửi tác vụ giọng nói.',
+  'Voice input could not be completed.':
+    'Không thể hoàn tất đầu vào giọng nói.',
+  'Voice shortcuts': 'Phím tắt giọng nói',
+  'Add Shift to either Dictation shortcut':
+    'Thêm Shift vào phím tắt Chính tả',
+  'macOS: Command + Control · Windows: left Control + left Alt':
+    'macOS: Command + Control · Windows: Control trái + Alt trái',
+  'No speech was detected. The draft was left unchanged.':
+    'Không phát hiện giọng nói. Bản nháp không thay đổi.',
+  'The draft was restored because part of the recording failed.':
+    'Bản nháp đã được khôi phục vì một phần bản ghi bị lỗi.',
   'Task stopped safely': 'Tác vụ đã dừng an toàn',
   'Task trail': 'Dấu vết tác vụ',
   Target: 'Đích',
@@ -798,6 +842,24 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tro không thể khôi phục biểu ngữ mặc định.',
   'Announcement from {organization}': 'Thông báo từ {organization}',
   'your organization': 'tổ chức của bạn',
+  Complete: 'Hoàn tất',
+  'Current application': 'Ứng dụng hiện tại',
+  'Lets Tro insert Dictation into another app. Full computer use also needs Screen Recording.':
+    'Cho phép Tro chèn nội dung Chính tả vào ứng dụng khác. Tính năng điều khiển máy tính đầy đủ còn cần quyền Ghi màn hình.',
+  'Lets full computer use see the screen and verify its work. Dictation does not need it.':
+    'Cho phép tính năng điều khiển máy tính xem màn hình và xác minh công việc. Chính tả không cần quyền này.',
+  'Lets you dictate text or give Tro a voice Task.':
+    'Cho phép bạn đọc chính tả hoặc giao Tác vụ cho Tro bằng giọng nói.',
+  'Text tasks work without microphone or computer permissions. Dictation and voice Tasks use the microphone; inserting Dictation into another app also uses Accessibility.':
+    'Tác vụ văn bản không cần quyền micrô hay máy tính. Chính tả và Tác vụ giọng nói dùng micrô; chèn Chính tả vào ứng dụng khác còn dùng quyền Trợ năng.',
+  'Tro composer': 'Trình soạn thảo Tro',
+  'Tro task': 'Tác vụ Tro',
+  'Type, dictate, or hold Shift with the voice shortcut to answer…':
+    'Nhập, đọc chính tả hoặc giữ thêm Shift cùng phím tắt giọng nói để trả lời…',
+  'Type, dictate, or give Tro a voice task…':
+    'Nhập, đọc chính tả hoặc giao việc cho Tro bằng giọng nói…',
+  'Type a task, or hold Dictation to add text without sending…':
+    'Nhập tác vụ, hoặc giữ Chính tả để thêm văn bản mà không gửi…',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
