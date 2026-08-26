@@ -115,6 +115,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "organization managed access",
             include_str!("../migrations/021_organization_managed_access.sql"),
         ),
+        migration(
+            22,
+            "organization profile settings",
+            include_str!("../migrations/022_organization_profile_settings.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

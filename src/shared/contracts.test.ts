@@ -25,6 +25,8 @@ import {
   CancelOrganizationMemberRequestSchema,
   OrganizationCurrentResponseSchema,
   OrganizationMemberListSchema,
+  UpdateOrganizationRequestSchema,
+  UpdateOrganizationResponseSchema,
   PlanIdSchema,
   SaveKnowledgeActivityRequestSchema,
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
@@ -88,6 +90,36 @@ describe('organization management contracts', () => {
     expect(
       CancelOrganizationMemberRequestSchema.safeParse({ memberId: 'member-1' })
         .success,
+    ).toBe(false);
+  });
+
+  it('normalizes bounded organization names and rejects delegated authority', () => {
+    expect(
+      UpdateOrganizationRequestSchema.parse({
+        name: '  Greenfield School  ',
+      }),
+    ).toEqual({ name: 'Greenfield School' });
+    expect(
+      UpdateOrganizationResponseSchema.parse({
+        organization: { ...organization, name: 'Greenfield School' },
+      }),
+    ).toMatchObject({ organization: { name: 'Greenfield School' } });
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: '   ' }).success,
+    ).toBe(false);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: 'a'.repeat(100) })
+        .success,
+    ).toBe(true);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({ name: 'a'.repeat(101) })
+        .success,
+    ).toBe(false);
+    expect(
+      UpdateOrganizationRequestSchema.safeParse({
+        name: 'Greenfield School',
+        organizationId: organization.id,
+      }).success,
     ).toBe(false);
   });
 });

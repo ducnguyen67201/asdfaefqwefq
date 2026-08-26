@@ -1,14 +1,39 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AppUpdateStatus } from '../shared/contracts';
+import type {
+  AppLanguage,
+  AppUpdateStatus,
+  OrganizationSummary,
+} from '../shared/contracts';
 
 import { SettingsPage } from './SettingsPage';
 
-function renderSettings(appUpdateStatus: AppUpdateStatus): string {
+const ORGANIZATION: OrganizationSummary = {
+  capacity: {
+    assignedSeats: 4,
+    maxSeats: 25,
+    remainingSeats: 21,
+    state: 'available',
+  },
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Greenfield School',
+  plan: 'pro',
+  role: 'organizer',
+};
+
+function renderSettings(
+  appUpdateStatus: AppUpdateStatus,
+  options: {
+    appLanguage?: AppLanguage;
+    isLoadingOrganization?: boolean;
+    organization?: OrganizationSummary | null;
+    organizationError?: string | null;
+  } = {},
+): string {
   return renderToStaticMarkup(
     SettingsPage({
-      appLanguage: 'en',
+      appLanguage: options.appLanguage ?? 'en',
       autonomyMode: 'balanced',
       appUpdateError: null,
       appUpdateStatus,
@@ -26,6 +51,10 @@ function renderSettings(appUpdateStatus: AppUpdateStatus): string {
         state: 'active',
         summary: 'Free plan active.',
       },
+      organization:
+        'organization' in options ? (options.organization ?? null) : null,
+      organizationError: options.organizationError ?? null,
+      isLoadingOrganization: options.isLoadingOrganization ?? false,
       muteSystemAudioWhileSpeaking: false,
       onActivateMembership: vi.fn(),
       onAppLanguageChange: vi.fn(),
@@ -33,6 +62,8 @@ function renderSettings(appUpdateStatus: AppUpdateStatus): string {
       onCheckForUpdates: vi.fn(),
       onLanguageChange: vi.fn(),
       onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+      onOpenOrganization: vi.fn(),
+      onRefreshOrganization: vi.fn(),
       onRestartAndInstall: vi.fn(),
       onSave: vi.fn(),
       primaryLanguage: 'en',
@@ -122,6 +153,9 @@ describe('SettingsPage app language', () => {
           state: 'active',
           summary: 'Free plan active.',
         },
+        organization: null,
+        organizationError: null,
+        isLoadingOrganization: false,
         muteSystemAudioWhileSpeaking: true,
         onActivateMembership: vi.fn(),
         onAppLanguageChange: vi.fn(),
@@ -129,6 +163,8 @@ describe('SettingsPage app language', () => {
         onCheckForUpdates: vi.fn(),
         onLanguageChange: vi.fn(),
         onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+        onOpenOrganization: vi.fn(),
+        onRefreshOrganization: vi.fn(),
         onRestartAndInstall: vi.fn(),
         onSave: vi.fn(),
         primaryLanguage: 'vi',
@@ -188,5 +224,57 @@ describe('SettingsPage promo codes', () => {
     expect(markup).toContain('Tro Free');
     expect(markup).toContain('name="promoCode"');
     expect(markup).toContain('Apply promo code');
+  });
+});
+
+describe('SettingsPage organization summary', () => {
+  const updateStatus: AppUpdateStatus = {
+    currentVersion: '0.1.0',
+    message: 'No updates found.',
+    phase: 'up_to_date',
+    targetVersion: null,
+  };
+
+  it('shows organizer identity, capacity, and the settings action', () => {
+    const markup = renderSettings(updateStatus, {
+      organization: ORGANIZATION,
+    });
+
+    expect(markup).toContain('Organization access');
+    expect(markup).toContain('Greenfield School');
+    expect(markup).toContain('Organizer');
+    expect(markup).toContain('4 of 25');
+    expect(markup).toContain('Open organization settings');
+    expect(markup).not.toContain('student@example.com');
+  });
+
+  it('shows a localized read-only member summary', () => {
+    const markup = renderSettings(updateStatus, {
+      appLanguage: 'vi',
+      organization: { ...ORGANIZATION, role: 'member' },
+    });
+
+    expect(markup).toContain('Greenfield School');
+    expect(markup).toContain('Thành viên');
+    expect(markup).toContain('Mở cài đặt tổ chức');
+    expect(markup).toContain('không cần nhập mã');
+  });
+
+  it('hides a successful null organization result and shows bounded failures', () => {
+    expect(renderSettings(updateStatus)).not.toContain(
+      'settings-organization-card',
+    );
+
+    const loadingMarkup = renderSettings(updateStatus, {
+      isLoadingOrganization: true,
+    });
+    expect(loadingMarkup).not.toContain('settings-organization-card');
+
+    const errorMarkup = renderSettings(updateStatus, {
+      organizationError: 'Organization service unavailable.',
+    });
+    expect(errorMarkup).toContain('role="alert"');
+    expect(errorMarkup).toContain('Organization service unavailable.');
+    expect(errorMarkup).toContain('Try again');
   });
 });

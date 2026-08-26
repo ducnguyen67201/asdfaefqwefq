@@ -11,6 +11,7 @@
     {"method":"POST","path":"/v1/access-code-redemptions","family":"access"},
     {"method":"POST","path":"/v1/access-code-redemptions/free","family":"access"},
     {"method":"GET","path":"/v1/organizations/me","family":"organization"},
+    {"method":"PATCH","path":"/v1/organizations/me","family":"organization"},
     {"method":"GET","path":"/v1/organizations/me/members","family":"organization"},
     {"method":"POST","path":"/v1/organizations/me/members","family":"organization"},
     {"method":"DELETE","path":"/v1/organizations/me/members/{membershipId}","family":"organization"},

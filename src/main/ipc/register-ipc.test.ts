@@ -65,6 +65,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     cancelMember: ReturnType<typeof vi.fn>;
     getCurrent: ReturnType<typeof vi.fn>;
     listMembers: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   onAuthSignedIn: ReturnType<typeof vi.fn>;
   restartAndInstallUpdate: ReturnType<typeof vi.fn>;
@@ -351,6 +352,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       items: [pendingMember],
       organization,
       page: { ...input, total: 1 },
+    })),
+    update: vi.fn(async (input: { name: string }) => ({
+      organization: { ...organization, name: input.name },
     })),
   };
   const services = {
@@ -921,6 +925,13 @@ describe('registerIpcHandlers auth boundary', () => {
     });
     await expect(
       electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(event, { name: '  Greenfield School  ' }),
+    ).resolves.toMatchObject({
+      organization: { name: 'Greenfield School' },
+    });
+    await expect(
+      electronMock.handlers
         .get(IPC_CHANNELS.listOrganizationMembers)
         ?.(event, { limit: 25, offset: 0 }),
     ).resolves.toMatchObject({ page: { limit: 25, offset: 0 } });
@@ -936,6 +947,9 @@ describe('registerIpcHandlers auth boundary', () => {
     ).resolves.toMatchObject({ kind: 'cancelled', memberId });
 
     expect(organizationClient.getCurrent).toHaveBeenCalledOnce();
+    expect(organizationClient.update).toHaveBeenCalledWith({
+      name: 'Greenfield School',
+    });
     expect(organizationClient.listMembers).toHaveBeenCalledWith({
       limit: 25,
       offset: 0,
@@ -959,15 +973,35 @@ describe('registerIpcHandlers auth boundary', () => {
         .get(IPC_CHANNELS.cancelOrganizationMember)
         ?.(active.event, { memberId: 'not-a-uuid' }),
     ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, { name: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(active.event, {
+          name: 'Greenfield School',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+        }),
+    ).rejects.toThrow();
     expect(active.organizationClient.addMember).not.toHaveBeenCalled();
     expect(active.organizationClient.cancelMember).not.toHaveBeenCalled();
+    expect(active.organizationClient.update).not.toHaveBeenCalled();
     active.unregister();
 
     const inactive = setup(true, false);
     await expect(
       electronMock.handlers.get(IPC_CHANNELS.getOrganization)?.(inactive.event),
     ).rejects.toThrow('active membership');
+    await expect(
+      electronMock.handlers
+        .get(IPC_CHANNELS.updateOrganization)
+        ?.(inactive.event, { name: 'Greenfield School' }),
+    ).rejects.toThrow('active membership');
     expect(inactive.organizationClient.getCurrent).not.toHaveBeenCalled();
+    expect(inactive.organizationClient.update).not.toHaveBeenCalled();
     inactive.unregister();
 
     const untrusted = setup(true);

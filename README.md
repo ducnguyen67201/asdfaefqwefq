@@ -288,12 +288,18 @@ session-only TypeScript persistence backend.
 Access checks are bypassed by raw local development (`npm start`). In hosted
 builds, every Google account must complete the plan-choice screen after sign-in.
 New access codes are organization-managed by default: one person claims the
-code as organizer, then reserves the remaining seats by email from Tro. A
-person with a reserved seat joins the organization automatically on their next
-verified Google sign-in and never needs to enter the code. Users can still
+code as organizer, then opens **Settings → Organization settings** to name the
+organization and reserve the remaining seats by exact Google email. No
+invitation email is sent. A person with a reserved seat joins the organization
+automatically on their next verified Google sign-in and never needs to enter
+the organizer's code. Users can still
 explicitly continue on the Free plan and enter a promo code later from
 Settings. The Free choice is stored per account so it remains complete across
 devices. Packaged builds require the hosted API.
+
+An organization seat grants plan access; it does not enroll the account in a
+Class workspace. After the account is registered and an administrator assigns
+the Student role, a Teacher adds it from **Class workspaces → class → People**.
 
 Hosted builds configured with `TROCODE_API_BASE_URL` store each account's plan,
 access codes, organizations, reserved seats, and code redemptions in

@@ -26,6 +26,8 @@ import type {
   ListOrganizationMembersRequest,
   OrganizationCurrentResponse,
   OrganizationMemberList,
+  UpdateOrganizationRequest,
+  UpdateOrganizationResponse,
   RecordVoiceTranscriptRequest,
   RespondToInteractionRequest,
   SetVoiceAudioDuckingRequest,
@@ -123,6 +125,7 @@ export const IPC_CHANNELS = {
   getAuthStatus: 'auth:status',
   getMembershipStatus: 'membership:status',
   getOrganization: 'organization:get',
+  updateOrganization: 'organization:update',
   listOrganizationMembers: 'organization:members:list',
   addOrganizationMember: 'organization:members:add',
   cancelOrganizationMember: 'organization:members:cancel',
@@ -207,6 +210,9 @@ export interface DesktopApi {
   getComputerStatus(): Promise<CuaStatus>;
   getMembershipStatus(): Promise<MembershipStatus>;
   getOrganization(): Promise<OrganizationCurrentResponse>;
+  updateOrganization(
+    request: UpdateOrganizationRequest,
+  ): Promise<UpdateOrganizationResponse>;
   listOrganizationMembers(
     request: ListOrganizationMembersRequest,
   ): Promise<OrganizationMemberList>;

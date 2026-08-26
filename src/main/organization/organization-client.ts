@@ -5,12 +5,15 @@ import {
   CancelOrganizationMemberResponseSchema,
   OrganizationCurrentResponseSchema,
   OrganizationMemberListSchema,
+  UpdateOrganizationResponseSchema,
   type AddOrganizationMemberRequest,
   type AddOrganizationMemberResponse,
   type CancelOrganizationMemberResponse,
   type ListOrganizationMembersRequest,
   type OrganizationCurrentResponse,
   type OrganizationMemberList,
+  type UpdateOrganizationRequest,
+  type UpdateOrganizationResponse,
 } from '../../shared/contracts';
 
 const HostedErrorSchema = z
@@ -32,6 +35,16 @@ export class OrganizationClient {
       '/v1/organizations/me',
       { method: 'GET' },
       OrganizationCurrentResponseSchema,
+    );
+  }
+
+  update(
+    input: UpdateOrganizationRequest,
+  ): Promise<UpdateOrganizationResponse> {
+    return this.request(
+      '/v1/organizations/me',
+      this.json('PATCH', input),
+      UpdateOrganizationResponseSchema,
     );
   }
 

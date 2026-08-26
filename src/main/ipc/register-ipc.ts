@@ -58,6 +58,7 @@ import {
   RevokeKnowledgeRoomCodeRequestSchema,
   SetClassroomLinkConsentRequestSchema,
   ListOrganizationMembersRequestSchema,
+  UpdateOrganizationRequestSchema,
 } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 import type { AgentActivityService } from '../agent/agent-activity-service';
@@ -237,6 +238,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getAuthStatus,
     IPC_CHANNELS.getMembershipStatus,
     IPC_CHANNELS.getOrganization,
+    IPC_CHANNELS.updateOrganization,
     IPC_CHANNELS.listOrganizationMembers,
     IPC_CHANNELS.addOrganizationMember,
     IPC_CHANNELS.cancelOrganizationMember,
@@ -385,6 +387,16 @@ export function registerIpcHandlers(
     await assertMembershipAuthorizedSender(event, mainWindow, services);
     return services.organizationClient.getCurrent();
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.updateOrganization,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      return services.organizationClient.update(
+        UpdateOrganizationRequestSchema.parse(input),
+      );
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.listOrganizationMembers,

@@ -56,4 +56,21 @@ describe('app language', () => {
       ),
     ).not.toContain('continuous cursor');
   });
+
+  it('translates organization settings and seat onboarding copy', () => {
+    expect(translate('vi', 'Organization settings')).toBe('Cài đặt tổ chức');
+    expect(translate('vi', 'Member')).toBe('Thành viên');
+    expect(translate('vi', 'Invite a student or staff member')).toBe(
+      'Mời học sinh hoặc nhân viên',
+    );
+    expect(
+      translate('vi', '{assigned} of {maximum}', {
+        assigned: 4,
+        maximum: 25,
+      }),
+    ).toBe('4 trên 25');
+    expect(translate('vi', 'Open Class workspaces')).toBe(
+      'Mở Không gian lớp học',
+    );
+  });
 });

@@ -29,6 +29,8 @@ import {
   ListOrganizationMembersRequestSchema,
   OrganizationCurrentResponseSchema,
   OrganizationMemberListSchema,
+  UpdateOrganizationRequestSchema,
+  UpdateOrganizationResponseSchema,
   RecordVoiceTranscriptRequestSchema,
   RespondToInteractionRequestSchema,
   SetVoiceAudioDuckingRequestSchema,
@@ -405,6 +407,15 @@ const desktopApi: DesktopApi = {
       IPC_CHANNELS.getOrganization,
     );
     return OrganizationCurrentResponseSchema.parse(response);
+  },
+
+  async updateOrganization(input) {
+    const request = UpdateOrganizationRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.updateOrganization,
+      request,
+    );
+    return UpdateOrganizationResponseSchema.parse(response);
   },
 
   async listOrganizationMembers(input) {

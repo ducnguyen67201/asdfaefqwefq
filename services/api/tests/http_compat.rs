@@ -674,6 +674,48 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_status(&organizer_claim, StatusCode::CREATED);
     assert_eq!(organizer_claim.json()["usedUsers"], 1);
 
+    let renamed_organization = send(
+        &router,
+        Method::PATCH,
+        "/v1/organizations/me",
+        Some(&organizer_token),
+        Some(&json!({"name":"  Greenfield School  "})),
+    )
+    .await;
+    assert_status(&renamed_organization, StatusCode::OK);
+    assert_eq!(
+        renamed_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    let current_organization = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me",
+        Some(&organizer_token),
+        None,
+    )
+    .await;
+    assert_status(&current_organization, StatusCode::OK);
+    assert_eq!(
+        current_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    for invalid_profile in [
+        json!({"name":"   "}),
+        json!({"name":"School","id":"forbidden"}),
+    ] {
+        let invalid_update = send(
+            &router,
+            Method::PATCH,
+            "/v1/organizations/me",
+            Some(&organizer_token),
+            Some(&invalid_profile),
+        )
+        .await;
+        assert_status(&invalid_update, StatusCode::BAD_REQUEST);
+        assert_eq!(invalid_update.json()["code"], "invalid_request");
+    }
+
     let outsider_token = issue_user(&state, "http-outsider").await;
     let forwarded_claim = send(
         &router,
@@ -733,6 +775,45 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     assert_status(&invited_access, StatusCode::OK);
     assert_eq!(invited_access.json()["state"], "active");
     assert_eq!(invited_access.json()["plan"], "pro");
+    let invited_organization = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&invited_organization, StatusCode::OK);
+    assert_eq!(
+        invited_organization.json()["organization"]["role"],
+        "member"
+    );
+    assert_eq!(
+        invited_organization.json()["organization"]["name"],
+        "Greenfield School"
+    );
+    let member_update = send(
+        &router,
+        Method::PATCH,
+        "/v1/organizations/me",
+        Some(&invited_token),
+        Some(&json!({"name":"Member rename"})),
+    )
+    .await;
+    assert_status(&member_update, StatusCode::FORBIDDEN);
+    assert_eq!(
+        member_update.json()["code"],
+        "organization_organizer_required"
+    );
+    let member_roster = send(
+        &router,
+        Method::GET,
+        "/v1/organizations/me/members",
+        Some(&invited_token),
+        None,
+    )
+    .await;
+    assert_status(&member_roster, StatusCode::FORBIDDEN);
     let active_removal = send(
         &router,
         Method::DELETE,

@@ -43,6 +43,37 @@ describe('OrganizationClient', () => {
     );
   });
 
+  it('updates the current organization through a fixed schema-parsed route', async () => {
+    const updated = { ...ORGANIZATION, name: 'Greenfield School' };
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ organization: updated }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    );
+    const client = new OrganizationClient(
+      'https://api.trocode.example/',
+      vi.fn(async () => TOKEN),
+      fetchImpl,
+    );
+
+    await expect(
+      client.update({ name: 'Greenfield School' }),
+    ).resolves.toEqual({ organization: updated });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.trocode.example/v1/organizations/me',
+      expect.objectContaining({
+        body: JSON.stringify({ name: 'Greenfield School' }),
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'PATCH',
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
   it('builds bounded member pagination and mutation requests', async () => {
     const member = {
       createdAt: '2026-08-25T08:00:00.000Z',
@@ -136,6 +167,9 @@ describe('OrganizationClient', () => {
       ),
     );
     await expect(malformedClient.getCurrent()).rejects.toThrow();
+    await expect(
+      malformedClient.update({ name: 'Greenfield School' }),
+    ).rejects.toThrow();
   });
 
   it('fails closed without a hosted URL or access token', async () => {

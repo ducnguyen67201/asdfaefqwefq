@@ -2234,6 +2234,14 @@ export const OrganizationCurrentResponseSchema = z
   .object({ organization: OrganizationSummarySchema.nullable() })
   .strict();
 
+export const UpdateOrganizationRequestSchema = z
+  .object({ name: z.string().trim().min(1).max(100) })
+  .strict();
+
+export const UpdateOrganizationResponseSchema = z
+  .object({ organization: OrganizationSummarySchema })
+  .strict();
+
 export const OrganizationMemberSchema = z
   .object({
     createdAt: z.string().datetime(),
@@ -2377,6 +2385,12 @@ export type MembershipStatus = z.infer<typeof MembershipStatusSchema>;
 export type OrganizationSummary = z.infer<typeof OrganizationSummarySchema>;
 export type OrganizationCurrentResponse = z.infer<
   typeof OrganizationCurrentResponseSchema
+>;
+export type UpdateOrganizationRequest = z.infer<
+  typeof UpdateOrganizationRequestSchema
+>;
+export type UpdateOrganizationResponse = z.infer<
+  typeof UpdateOrganizationResponseSchema
 >;
 export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>;
 export type OrganizationMemberList = z.infer<

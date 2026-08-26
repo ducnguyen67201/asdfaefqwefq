@@ -133,7 +133,7 @@ fn schema_inventory_matches_embedded_migrations() {
     let value = fixture("schema");
     let tables = value["tables"].as_array().expect("tables");
     assert_eq!(tables.len(), 48);
-    assert_eq!(value["migrationCount"], 21);
+    assert_eq!(value["migrationCount"], 22);
     let migration_sources = [
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),
@@ -156,6 +156,7 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/019_invite_idempotency.sql"),
         include_str!("../migrations/020_live_classroom_room_flow.sql"),
         include_str!("../migrations/021_organization_managed_access.sql"),
+        include_str!("../migrations/022_organization_profile_settings.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

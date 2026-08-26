@@ -580,7 +580,31 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Break the assignment into one smaller question, explain the first step in your own words, then practise a similar example.':
     'Chia bài tập thành một câu hỏi nhỏ hơn, tự giải thích bước đầu tiên, rồi luyện tập với một ví dụ tương tự.',
   Organization: 'Tổ chức',
+  'Organization settings': 'Cài đặt tổ chức',
   'Organization access': 'Quyền truy cập tổ chức',
+  'Organization profile': 'Hồ sơ tổ chức',
+  'Organization name': 'Tên tổ chức',
+  'Organization name was not saved': 'Chưa lưu được tên tổ chức',
+  'Organization name must be between 1 and 100 characters.':
+    'Tên tổ chức phải có từ 1 đến 100 ký tự.',
+  'Organization name is already up to date.':
+    'Tên tổ chức đã được cập nhật.',
+  'Organization name saved.': 'Đã lưu tên tổ chức.',
+  'Tro could not save the organization name.':
+    'Tro không thể lưu tên tổ chức.',
+  'Save name': 'Lưu tên',
+  'Saving name…': 'Đang lưu tên…',
+  '{count} of 100 characters': '{count} trên 100 ký tự',
+  Member: 'Thành viên',
+  'Manage your organization profile and access seats.':
+    'Quản lý hồ sơ tổ chức và các chỗ truy cập.',
+  'View the organization that manages your Tro access.':
+    'Xem tổ chức đang quản lý quyền truy cập Tro của bạn.',
+  'Managed access': 'Quyền truy cập được quản lý',
+  'Your access is managed by this organization':
+    'Quyền truy cập của bạn do tổ chức này quản lý',
+  'You joined automatically with your verified Google email. You do not need to enter the organization code.':
+    'Bạn đã tự động tham gia bằng email Google đã xác minh. Bạn không cần nhập mã của tổ chức.',
   'Manage organization': 'Quản lý tổ chức',
   'Loading organization…': 'Đang tải tổ chức…',
   'No organization to manage': 'Không có tổ chức để quản lý',
@@ -595,12 +619,16 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Cancel a pending reservation before adding another person.':
     'Hủy một chỗ đang chờ trước khi thêm người khác.',
   'Access capacity': 'Sức chứa truy cập',
+  'Access seats': 'Chỗ truy cập',
   '{assigned} of {maximum} seats assigned':
     'Đã phân bổ {assigned} trên {maximum} chỗ',
   '{remaining} remaining': 'Còn {remaining} chỗ',
   '{percent}% of seats assigned': 'Đã phân bổ {percent}% số chỗ',
-  'Add a person by email': 'Thêm người bằng email',
-  'teacher@example.com': 'giaovien@example.com',
+  'Invite a student or staff member': 'Mời học sinh hoặc nhân viên',
+  'Google account email': 'Email tài khoản Google',
+  'student@example.com': 'hocsinh@example.com',
+  'Reserve the exact Google account email. Tro does not send an invitation email, and the person does not need your organization code. They join automatically when they sign in.':
+    'Giữ chỗ bằng đúng email tài khoản Google. Tro không gửi email mời và người đó không cần mã tổ chức của bạn. Họ sẽ tự động tham gia khi đăng nhập.',
   'Reserving…': 'Đang giữ chỗ…',
   'Reserve seat': 'Giữ chỗ',
   '{count} assigned seats': '{count} chỗ đã phân bổ',
@@ -622,6 +650,22 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro could not reserve this seat.': 'Tro không thể giữ chỗ này.',
   'Tro could not cancel this reserved seat.':
     'Tro không thể hủy chỗ được giữ này.',
+  Plan: 'Gói',
+  'Assigned seats': 'Chỗ đã phân bổ',
+  '{assigned} of {maximum}': '{assigned} trên {maximum}',
+  'Open organization settings': 'Mở cài đặt tổ chức',
+  'Manage your organization name and reserve seats by email. Students sign in with that address and do not need your code.':
+    'Quản lý tên tổ chức và giữ chỗ bằng email. Học sinh đăng nhập bằng địa chỉ đó và không cần mã của bạn.',
+  'Your Tro access is managed by this organization. You do not need to enter its access code.':
+    'Quyền truy cập Tro của bạn do tổ chức này quản lý. Bạn không cần nhập mã truy cập của tổ chức.',
+  'Next step: class enrollment': 'Bước tiếp theo: ghi danh vào lớp',
+  'Add active students to a class separately':
+    'Thêm riêng học sinh đang hoạt động vào lớp',
+  'An organization seat provides Tro access, but it does not enroll someone in a class.':
+    'Chỗ trong tổ chức cấp quyền truy cập Tro nhưng không ghi danh người đó vào lớp.',
+  'After the account exists and has the Student role, open Class workspaces, choose the class, then use People to add them.':
+    'Sau khi tài khoản tồn tại và có vai trò Học sinh, hãy mở Không gian lớp học, chọn lớp rồi dùng mục Mọi người để thêm họ.',
+  'Open Class workspaces': 'Mở Không gian lớp học',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

@@ -36,6 +36,7 @@ function renderPage(
       appLanguage={input.appLanguage ?? 'en'}
       error={input.error ?? null}
       isLoading={input.isLoading ?? false}
+      onOpenClasses={vi.fn()}
       onOrganizationChange={vi.fn()}
       onRefresh={vi.fn(async () => undefined)}
       organization={
@@ -55,6 +56,12 @@ describe('OrganizationPage', () => {
     expect(markup).toContain('aria-valuemax="10"');
     expect(markup).toContain('aria-valuenow="1"');
     expect(markup).toContain('type="email"');
+    expect(markup).toContain('id="organization-name"');
+    expect(markup).toContain('Save name');
+    expect(markup).toContain('Invite a student or staff member');
+    expect(markup).toContain('does not send an invitation email');
+    expect(markup).toContain('does not need your organization code');
+    expect(markup).toContain('Open Class workspaces');
   });
 
   it('keeps a full-capacity alert visible and disables seat reservation', () => {
@@ -85,8 +92,9 @@ describe('OrganizationPage', () => {
       error: 'Không thể kết nối dịch vụ.',
     });
 
-    expect(markup).toContain('Quyền truy cập tổ chức');
-    expect(markup).toContain('Thêm người bằng email');
+    expect(markup).toContain('Cài đặt tổ chức');
+    expect(markup).toContain('Mời học sinh hoặc nhân viên');
+    expect(markup).toContain('Email tài khoản Google');
     expect(markup).toContain('Giữ chỗ');
     expect(markup).toContain('Không thể kết nối dịch vụ.');
     expect(markup).toContain('role="alert"');
@@ -99,5 +107,22 @@ describe('OrganizationPage', () => {
     expect(renderPage({ organization: null })).toContain(
       'No organization to manage',
     );
+  });
+
+  it('shows members a bounded summary without organizer controls or identities', () => {
+    const markup = renderPage({
+      organization: organization({ role: 'member' }),
+    });
+
+    expect(markup).toContain('Member');
+    expect(markup).toContain('Your access is managed by this organization');
+    expect(markup).toContain('1 of 10 seats assigned');
+    expect(markup).not.toContain('id="organization-name"');
+    expect(markup).not.toContain('Save name');
+    expect(markup).not.toContain('type="email"');
+    expect(markup).not.toContain('Reserve seat');
+    expect(markup).not.toContain('organization-members');
+    expect(markup).not.toContain('Cancel reservation');
+    expect(markup).not.toContain('Open Class workspaces');
   });
 });
