@@ -1680,6 +1680,11 @@ export const HostedTaskAuthorityContractSchema = z
   })
   .strict();
 
+const LegacyHostedDigestSchema = z.preprocess(
+  (value) => value === null ? undefined : value,
+  z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+);
+
 export const HostedTaskRecordSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
@@ -1689,8 +1694,11 @@ export const HostedTaskRecordSchema = z.object({
   workspaceSelectionId: z.string().uuid().nullable(),
   state: HostedTaskStateSchema,
   protocolVersion: z.number().int().positive(),
-  protocolDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-  toolCatalogDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  // Protocol-v2 rows predate these columns and the legacy API serializes their
+  // absent database values as null. Keep that transport quirk inside this
+  // compatibility boundary; canonical protocol-v3 schemas require both hashes.
+  protocolDigest: LegacyHostedDigestSchema,
+  toolCatalogDigest: LegacyHostedDigestSchema,
   runVersion: z.number().int().positive(),
   outcomeRevision: z.number().int().positive(),
   contractSchemaVersion: z.union([z.literal(7), z.literal(8)]).optional(),
