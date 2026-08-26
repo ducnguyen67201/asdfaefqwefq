@@ -12,6 +12,7 @@ import type {
   CompanionGuidance,
   CompanionGuidanceVisual,
   CompanionInteraction,
+  CompanionPetNudge,
   CompanionPosition,
   CompanionResponseActionRequest,
   CompanionResponseCard,
@@ -121,6 +122,7 @@ export const IPC_CHANNELS = {
   companionGuidanceChanged: 'companion:guidance-changed',
   companionGuidanceVisualChanged: 'companion:guidance-visual-changed',
   companionInteractionChanged: 'companion:interaction-changed',
+  companionPetNudgeChanged: 'companion:pet-nudge-changed',
   companionResponseAction: 'companion:response-action',
   companionResponseChanged: 'companion:response-changed',
   companionSpeechChanged: 'companion:speech-changed',
@@ -346,6 +348,9 @@ export interface CompanionApi {
     listener: (interaction: CompanionInteraction | null) => void,
   ): () => void;
   onPositionChange(listener: (position: CompanionPosition) => void): () => void;
+  onPetNudgeChange(
+    listener: (nudge: CompanionPetNudge | null) => void,
+  ): () => void;
   onResponseChange(
     listener: (response: CompanionResponseCard | null) => void,
   ): () => void;

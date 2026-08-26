@@ -1705,6 +1705,53 @@ html.voice-island-mode #root {
   -webkit-line-clamp: 6;
 }
 
+.classroom-pet-nudge {
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  padding: 12px 15px;
+  overflow: hidden;
+  border-color: rgba(76, 91, 69, 0.28);
+  background: rgba(255, 254, 247, 0.98);
+  color: #20271f;
+  pointer-events: none;
+}
+
+.classroom-pet-nudge--encouraging {
+  border-color: rgba(70, 112, 101, 0.34);
+  background: rgba(244, 253, 248, 0.98);
+}
+
+.classroom-pet-nudge--waiting {
+  border-color: rgba(151, 115, 38, 0.34);
+  background: rgba(255, 250, 235, 0.98);
+}
+
+.classroom-pet-nudge--celebrating {
+  border-color: rgba(139, 106, 0, 0.36);
+  background: rgba(255, 249, 220, 0.98);
+}
+
+.classroom-pet-nudge--encouraging .guidance-callout__avatar {
+  background: #a8dbc5;
+  color: #173d32;
+}
+
+.classroom-pet-nudge--waiting .guidance-callout__avatar {
+  background: #f2cf83;
+  color: #4c3500;
+}
+
+.classroom-pet-nudge--celebrating .guidance-callout__avatar {
+  background: #f2c94c;
+  color: #2c2300;
+}
+
+.classroom-pet-nudge__message {
+  color: #20271f;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+}
+
 .companion-response-card {
   display: grid;
   width: calc(100% - 12px);

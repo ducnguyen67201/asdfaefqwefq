@@ -16,6 +16,8 @@ import {
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
   CompanionGenerationQuotaSchema,
+  CompanionPetNudgeDraftSchema,
+  CompanionPetNudgeSchema,
   GenerateCompanionImageRequestSchema,
   HostedDesktopInvocationSchema,
   IntentAuthorizationContractSchema,
@@ -530,6 +532,47 @@ describe('shared task contracts', () => {
     }
   });
 
+  it('validates strict, bounded classroom pet nudges', () => {
+    const id = randomUUID();
+    const message = 'x'.repeat(160);
+
+    for (const mood of ['encouraging', 'waiting', 'celebrating'] as const) {
+      expect(
+        CompanionPetNudgeSchema.parse({
+          id,
+          language: 'en',
+          message,
+          mood,
+          side: 'right',
+        }),
+      ).toEqual({ id, language: 'en', message, mood, side: 'right' });
+    }
+
+    expect(
+      CompanionPetNudgeDraftSchema.parse({
+        id,
+        language: 'vi',
+        message: '<img src=x onerror=alert(1)>',
+        mood: 'encouraging',
+      }).message,
+    ).toBe('<img src=x onerror=alert(1)>');
+
+    for (const invalid of [
+      { id: 'invalid', language: 'en', message: 'Keep going', mood: 'encouraging' },
+      { id, language: 'en', message: '', mood: 'encouraging' },
+      { id, language: 'en', message: 'x'.repeat(161), mood: 'encouraging' },
+      { id, language: 'en', message: 'Keep going', mood: 'watching' },
+      { id, language: 'en', message: 'Keep going', mood: 'encouraging', extra: true },
+      { id, language: 'en', message: 'Keep going', mood: 'encouraging', side: 'center' },
+      { id, language: 'en', message: 'Keep going', mood: 'encouraging', side: 'right', extra: true },
+    ]) {
+      const schema = 'side' in invalid
+        ? CompanionPetNudgeSchema
+        : CompanionPetNudgeDraftSchema;
+      expect(schema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
   it('limits companion response actions to stable card and task identifiers', () => {
     const cardId = randomUUID();
     const taskId = randomUUID();
@@ -782,7 +825,7 @@ describe('shared task contracts', () => {
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
       }),
-    ).toMatchObject({ autonomyMode: 'balanced' });
+    ).toMatchObject({ autonomyMode: 'balanced', classroomPetEnabled: true });
   });
 
   it('loads mixed persisted v1 through v4 history', () => {

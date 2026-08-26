@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -11,6 +12,7 @@ import {
 const EMPTY_PREFERENCES: AppPreferences = {
   appLanguage: 'en',
   autonomyMode: 'balanced',
+  classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: null,
 };
@@ -50,6 +52,8 @@ export class FileAppPreferencesStore implements AppPreferencesStore {
 }
 
 export class AppPreferencesService {
+  private readonly events = new EventEmitter();
+
   constructor(private readonly store: AppPreferencesStore) {}
 
   async get(): Promise<AppPreferences> {
@@ -63,7 +67,17 @@ export class AppPreferencesService {
     const update = UpdateAppPreferencesRequestSchema.parse(input);
     const preferences = AppPreferencesSchema.parse(update);
     await this.store.write(preferences);
-    return preferences;
+    const snapshot = AppPreferencesSchema.parse(preferences);
+    this.events.emit('change', AppPreferencesSchema.parse(snapshot));
+    return AppPreferencesSchema.parse(snapshot);
+  }
+
+  onChange(listener: (preferences: AppPreferences) => void): () => void {
+    const safeListener = (preferences: AppPreferences): void => {
+      listener(AppPreferencesSchema.parse(preferences));
+    };
+    this.events.on('change', safeListener);
+    return () => this.events.off('change', safeListener);
   }
 
   async getPrimaryLanguage(

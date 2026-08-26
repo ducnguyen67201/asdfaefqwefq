@@ -15,6 +15,7 @@ import {
   CompanionGuidanceSchema,
   CompanionGuidanceVisualSchema,
   CompanionInteractionSchema,
+  CompanionPetNudgeSchema,
   CompanionResponseActionRequestSchema,
   CompanionResponseCardSchema,
   CompanionSpeechSchema,
@@ -868,6 +869,22 @@ const companionApi: CompanionApi = {
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.companionPositionChanged,
+        eventHandler,
+      );
+  },
+
+  onPetNudgeChange(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(CompanionPetNudgeSchema.nullable().parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.companionPetNudgeChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.companionPetNudgeChanged,
         eventHandler,
       );
   },

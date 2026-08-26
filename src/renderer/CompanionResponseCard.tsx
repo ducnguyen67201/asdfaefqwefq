@@ -18,12 +18,14 @@ interface CompanionResponseCardProps {
 interface CompanionCalloutAvailability {
   hasGuidance: boolean;
   hasInteraction: boolean;
+  hasPetNudge?: boolean;
   hasResponse: boolean;
 }
 
 export type CompanionCalloutKind =
   | 'guidance'
   | 'interaction'
+  | 'pet_nudge'
   | 'response'
   | null;
 
@@ -80,11 +82,13 @@ export function getCompanionResponseNumberAction(
 export function getCompanionCalloutKind({
   hasGuidance,
   hasInteraction,
+  hasPetNudge = false,
   hasResponse,
 }: CompanionCalloutAvailability): CompanionCalloutKind {
   if (hasInteraction) return 'interaction';
   if (hasGuidance) return 'guidance';
   if (hasResponse) return 'response';
+  if (hasPetNudge) return 'pet_nudge';
   return null;
 }
 
