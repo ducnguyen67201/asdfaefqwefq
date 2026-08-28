@@ -9,7 +9,7 @@ import {
 
 import { getCompanionState } from './companion-state';
 
-describe('cursor companion state', () => {
+describe('desktop companion state', () => {
   it('accepts only supported IPC state values', () => {
     expect(CompanionStateSchema.parse('guiding')).toBe('guiding');
     expect(CompanionStateSchema.parse('sending')).toBe('sending');

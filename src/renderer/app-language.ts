@@ -72,9 +72,10 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Checking your membership…': 'Đang kiểm tra tư cách thành viên…',
   'Choose the language used for navigation, settings, and other Tro controls.':
     'Chọn ngôn ngữ dùng cho điều hướng, cài đặt và các thành phần điều khiển khác của Tro.',
-  'Classroom pet messages': 'Tin nhắn từ thú cưng lớp học',
-  'During a live class, Tro can show occasional local encouragement. It does not watch apps, websites, cursor activity, or share pet messages with teachers.':
-    'Trong lớp học trực tiếp, Tro có thể thỉnh thoảng gửi lời động viên ngay trên thiết bị. Tro không theo dõi ứng dụng, trang web, hoạt động con trỏ hoặc chia sẻ tin nhắn thú cưng với giáo viên.',
+  'Desktop pet': 'Thú cưng trên màn hình',
+  'Show desktop pet': 'Hiển thị thú cưng trên màn hình',
+  'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.':
+    'Hiển thị một bạn đồng hành nhỏ có chuyển động trên màn hình. Bạn có thể kéo thú cưng đến bất cứ đâu; thú cưng di chuyển độc lập và có thể động viên bạn ngay trên thiết bị trong lớp học trực tiếp. Thú cưng không theo dõi ứng dụng, trang web, hoạt động con trỏ hay thao tác gõ phím.',
   'Keep going': 'Tiếp tục nhé',
   'While you wait': 'Trong lúc chờ',
   'Nice work': 'Làm tốt lắm',
@@ -130,6 +131,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Usage details unavailable': 'Chưa có thông tin mức dùng',
   'Downloading update…': 'Đang tải bản cập nhật…',
   Enabled: 'Đã bật',
+  Disabled: 'Đã tắt',
   'Enable all permissions': 'Bật tất cả quyền',
   'Enable Tro to work for you': 'Cho phép Tro làm việc cho bạn',
   'Enter the access code provided by the Tro team. Each account can use one code, and each code has a limited number of users.':
@@ -641,11 +643,12 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Chia bài tập thành một câu hỏi nhỏ hơn, tự giải thích bước đầu tiên, rồi luyện tập với một ví dụ tương tự.',
   Personalization: 'Cá nhân hóa',
   'Custom companion': 'Bạn đồng hành tùy chỉnh',
-  'Start with any picture, choose a style, then preview your tiny cursor companion.':
-    'Bắt đầu bằng một bức ảnh, chọn phong cách, rồi xem trước bạn đồng hành nhỏ bên con trỏ.',
+  'Start with any picture, choose a style, then preview your tiny desktop companion.':
+    'Bắt đầu bằng một bức ảnh, chọn phong cách, rồi xem trước bạn đồng hành nhỏ trên màn hình.',
   'Getting your companion ready…': 'Đang chuẩn bị bạn đồng hành…',
   Active: 'Đang dùng',
-  'Following your cursor now': 'Đang đi theo con trỏ',
+  Selected: 'Đã chọn',
+  'Ready for your desktop': 'Sẵn sàng trên màn hình của bạn',
   'All previews used this month': 'Đã dùng hết lượt xem trước tháng này',
   'You can create more on {date}. Your current companion stays active.':
     'Bạn có thể tạo thêm vào {date}. Bạn đồng hành hiện tại vẫn hoạt động.',
@@ -680,9 +683,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Nothing changes until you choose to use it.':
     'Sẽ không có gì thay đổi cho đến khi bạn chọn sử dụng.',
   'Preview ready': 'Bản xem trước đã sẵn sàng',
-  'Made for your cursor': 'Dành riêng cho con trỏ của bạn',
-  'Turn an image into a small custom companion that follows your cursor in Tro.':
-    'Biến một hình ảnh thành bạn đồng hành nhỏ đi theo con trỏ của bạn trong Tro.',
+  'Made for your desktop': 'Dành riêng cho màn hình của bạn',
+  'Turn an image into a small custom companion for your desktop in Tro.':
+    'Biến một hình ảnh thành bạn đồng hành nhỏ trên màn hình của bạn trong Tro.',
   '{remaining} of {limit} left this month':
     'Còn {remaining} trên {limit} trong tháng này',
   'Loading companion settings…': 'Đang tải cài đặt bạn đồng hành…',
@@ -732,8 +735,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro could not read this image.': 'Tro không thể đọc ảnh này.',
   'Manage Tro’s companion, interface language, voice input, and installed application.':
     'Quản lý bạn đồng hành, ngôn ngữ giao diện, nhập liệu bằng giọng nói và ứng dụng Tro đã cài đặt.',
-  'Create up to five cursor companions each month.':
-    'Tạo tối đa năm bạn đồng hành con trỏ mỗi tháng.',
+  'Create up to five desktop companions each month.':
+    'Tạo tối đa năm bạn đồng hành trên màn hình mỗi tháng.',
   'Companion generation is not available for this account.':
     'Tính năng tạo bạn đồng hành không khả dụng cho tài khoản này.',
   'Companion image generation is disabled.':

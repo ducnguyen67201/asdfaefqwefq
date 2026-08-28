@@ -70,7 +70,7 @@ describe('GAN visual preview', () => {
         card({
           ...baseStatus,
           candidate: {
-            assetUrl: '/src/assets/tro-cursor-buddy.png',
+            assetUrl: '/src/assets/tro-desktop-pet.png',
             expiresAt: '2026-08-25T16:30:00.000Z',
             id: 'b17a61bb-6d35-4db4-8d7e-95268663c1e9',
           },

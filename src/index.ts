@@ -49,15 +49,18 @@ import {
 import { UsageBudgetService } from './main/budget/usage-budget-service';
 import { ClassroomPetService } from './main/companion/classroom-pet-service';
 import { CompanionCustomizationService } from './main/companion/companion-customization-service';
-import { nextCompanionFollowSchedule } from './main/companion/companion-follow-policy';
 import {
   isAuthenticatedCompanionSession,
   toCompanionInteraction,
 } from './main/companion/companion-interaction';
 import {
+  clampCompanionPosition,
   getVirtualDisplayBounds,
   interpolateCompanionPosition,
+  interpolateCompanionWanderPosition,
+  placeCompanionAtRest,
   placeCompanionNearCursor,
+  placeCompanionWanderTarget,
   placeGuidanceCallout,
   placeGuidanceTargetMarker,
   placeVoiceIsland,
@@ -484,11 +487,14 @@ const appUpdateService = new AppUpdateService({
   repository: 'ducnguyen67201/TroCode',
   updater: autoUpdater,
 });
-const COMPANION_SIZE = { height: 44, width: 44 } as const;
-const COMPANION_GAP = 8;
+const COMPANION_SIZE = { height: 112, width: 112 } as const;
+const COMPANION_GAP = 14;
 const COMPANION_GLIDE_DURATION_MS = 360;
+const COMPANION_WANDER_DURATION_MS = 3_200;
+const COMPANION_WANDER_MIN_PAUSE_MS = 9_000;
+const COMPANION_WANDER_PAUSE_RANGE_MS = 7_000;
 const GUIDANCE_CALLOUT_SIZE = { height: 176, width: 380 } as const;
-const PET_NUDGE_CALLOUT_SIZE = { height: 126, width: 320 } as const;
+const PET_NUDGE_CALLOUT_SIZE = { height: 92, width: 300 } as const;
 const GUIDANCE_TARGET_MARKER_SIZE = { height: 76, width: 76 } as const;
 const RESPONSE_CALLOUT_SIZE = { height: 360, width: 420 } as const;
 const CLARIFICATION_CALLOUT_SIZE = { height: 286, width: 396 } as const;
@@ -510,9 +516,14 @@ interface CompanionGlide {
   to: Point;
 }
 
-interface CompanionFollowActivity {
-  cursorMoved: boolean;
-  gliding: boolean;
+interface CompanionWander {
+  from: Point;
+  startedAt: number;
+  to: Point;
+}
+
+interface CompanionMotionActivity {
+  nextFrameDelayMs: number | null;
 }
 
 interface DesktopPresentation {
@@ -540,11 +551,12 @@ let companionState: CompanionState = 'idle';
 let activeCompanionVoiceActivity: CompanionVoiceActivity | null = null;
 const activeDesktopControlTasks = new Set<string>();
 const desktopControlStartedAt = new Map<string, number>();
-let companionFollowTimer: ReturnType<typeof setTimeout> | null = null;
+let companionMovementTimer: ReturnType<typeof setTimeout> | null = null;
+let companionWanderTimer: ReturnType<typeof setTimeout> | null = null;
 let companionGlide: CompanionGlide | null = null;
+let companionWander: CompanionWander | null = null;
 let companionPinnedPosition: Point | null = null;
-let companionFollowActiveUntil = 0;
-let lastObservedCursor: Point | null = null;
+let companionUserPosition: Point | null = null;
 let activeGuidanceTargetBounds: Rectangle | null = null;
 let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
@@ -556,6 +568,7 @@ let companionGuidancePreviousState: CompanionState | null = null;
 let lastCompanionPosition: Point | null = null;
 let forcedExitTimer: ReturnType<typeof setTimeout> | null = null;
 let shutdownPromise: Promise<void> | null = null;
+let unregisterAppPreferencesChange: (() => void) | null = null;
 let unregisterIpcHandlers: (() => void) | null = null;
 let unregisterGlobalVoiceShortcut: (() => void) | null = null;
 let globalNumberedChoiceShortcuts: GlobalNumberedChoiceShortcuts | null = null;
@@ -563,6 +576,7 @@ let removeMainWindowCloseBehavior: (() => void) | null = null;
 let backgroundTray: Tray | null = null;
 let isShuttingDown = false;
 let auxiliaryWindowsEnabled = false;
+let companionPetEnabled = true;
 const knownPresentationTaskIds = new Set<string>();
 const backgroundPresentationTaskIds = new Set<string>();
 let backgroundCompletionNarration: AbortController | null = null;
@@ -578,13 +592,14 @@ const companionCustomizationService = new CompanionCustomizationService({
   userDataPath: app.getPath('userData'),
 });
 
-function stopCompanionFollowing(): void {
-  if (companionFollowTimer) clearTimeout(companionFollowTimer);
-  companionFollowTimer = null;
+function stopCompanionMovement(): void {
+  if (companionMovementTimer) clearTimeout(companionMovementTimer);
+  if (companionWanderTimer) clearTimeout(companionWanderTimer);
+  companionMovementTimer = null;
+  companionWanderTimer = null;
   cancelCompanionGlide(isShuttingDown ? createAbortError() : undefined);
+  companionWander = null;
   companionPinnedPosition = null;
-  companionFollowActiveUntil = 0;
-  lastObservedCursor = null;
   lastCompanionPosition = null;
 }
 
@@ -606,8 +621,10 @@ function sendCompanionAppearance(): void {
 
 function updateCompanionState(state: CompanionState): void {
   if (state !== 'idle') classroomPetService.interrupt();
+  if (state !== 'idle') pauseCompanionWandering();
   companionState = state;
   sendCompanionState();
+  if (state === 'idle') scheduleCompanionWander();
 }
 
 function sendCompanionVoiceActivity(): void {
@@ -744,6 +761,7 @@ function resetCompanionPresentation(): void {
   companionPinnedPosition = null;
   dismissCompanionGuidance();
   positionCompanion();
+  scheduleCompanionWander();
 }
 
 function hideGuidanceTargetMarker(): void {
@@ -904,6 +922,7 @@ function currentCompanionOverlayMode() {
 function canPresentClassroomPetNudge(): boolean {
   return (
     auxiliaryWindowsEnabled &&
+    companionPetEnabled &&
     companionState === 'idle' &&
     !activeCompanionPetNudge &&
     selectCompanionOverlayMode({
@@ -1267,7 +1286,11 @@ async function presentCompanionAction(
   }
   const previousCompanionState = companionState;
   const to = companionTargetForCommand(command, presentation);
-  if (!to || !companionWindow || companionWindow.isDestroyed()) {
+  if (!to) return;
+  if (!companionWindow || companionWindow.isDestroyed()) {
+    if (isPointPresentation) {
+      return showGuidancePresentation(command, presentation, signal);
+    }
     return;
   }
   if (command.kind === 'point') {
@@ -1281,6 +1304,7 @@ async function presentCompanionAction(
     );
   }
   if (signal.aborted) throw createAbortError();
+  pauseCompanionWandering();
   if (isGuidancePoint) {
     if (companionGuidancePreviousState === null) {
       companionGuidancePreviousState = previousCompanionState;
@@ -1312,7 +1336,7 @@ async function presentCompanionAction(
     };
     signal.addEventListener('abort', abortListener, { once: true });
     positionCompanion();
-    wakeCompanionFollowing();
+    wakeCompanionMovement();
   });
 
   if (isPointPresentation) {
@@ -1473,6 +1497,23 @@ function enableAuthenticatedAuxiliaryWindows(): void {
   ensureGlobalVoiceShortcut();
 }
 
+function synchronizeCompanionPetPreference(enabled: boolean): void {
+  companionPetEnabled = enabled;
+  if (!auxiliaryWindowsEnabled) return;
+
+  if (enabled) {
+    createCompanionWindow();
+    return;
+  }
+
+  classroomPetService.interrupt();
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionWindow.destroy();
+  } else {
+    stopCompanionMovement();
+  }
+}
+
 function disableAuthenticatedAuxiliaryWindows(): void {
   classroomPetService.interrupt();
   auxiliaryWindowsEnabled = false;
@@ -1484,7 +1525,7 @@ function disableAuthenticatedAuxiliaryWindows(): void {
   dismissCompanionGuidance();
   clearCompanionResponse();
   stopGuidanceSpeech();
-  stopCompanionFollowing();
+  stopCompanionMovement();
   unregisterGlobalVoiceShortcut?.();
   unregisterGlobalVoiceShortcut = null;
   globalNumberedChoiceShortcuts?.deactivate();
@@ -1523,7 +1564,9 @@ function prepareApplicationShutdown(): Promise<void> {
   isShuttingDown = true;
   auxiliaryWindowsEnabled = false;
   cancelBackgroundCompletionPresentation();
-  stopCompanionFollowing();
+  stopCompanionMovement();
+  unregisterAppPreferencesChange?.();
+  unregisterAppPreferencesChange = null;
   unregisterGlobalVoiceShortcut?.();
   unregisterGlobalVoiceShortcut = null;
   globalNumberedChoiceShortcuts?.dispose();
@@ -2229,7 +2272,7 @@ const createWindow = (): void => {
 
 function getCurrentCompanionScreenPosition(): Point {
   if (!companionWindow || companionWindow.isDestroyed()) {
-    return { x: 0, y: 0 };
+    return companionRestingPosition();
   }
 
   if (!shouldUseCompanionOverlay(process.platform)) {
@@ -2245,14 +2288,25 @@ function getCurrentCompanionScreenPosition(): Point {
     };
   }
 
-  const cursor = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursor);
-  return placeCompanionNearCursor(
-    cursor,
-    display.bounds,
-    COMPANION_SIZE,
-    COMPANION_GAP,
-  );
+  return companionRestingPosition();
+}
+
+function companionRestingPosition(): Point {
+  if (companionUserPosition) {
+    const display = screen.getDisplayNearestPoint(companionUserPosition);
+    companionUserPosition = clampCompanionPosition(
+      companionUserPosition,
+      display.workArea,
+      COMPANION_SIZE,
+    );
+    return companionUserPosition;
+  }
+
+  const display =
+    mainWindow && !mainWindow.isDestroyed()
+      ? screen.getDisplayMatching(mainWindow.getBounds())
+      : screen.getPrimaryDisplay();
+  return placeCompanionAtRest(display.workArea, COMPANION_SIZE);
 }
 
 function applyCompanionScreenPosition(position: Point): void {
@@ -2284,9 +2338,9 @@ function applyCompanionScreenPosition(position: Point): void {
   sendCompanionGuidanceVisual(position);
 }
 
-function positionCompanion(now = Date.now()): CompanionFollowActivity {
+function positionCompanion(now = Date.now()): CompanionMotionActivity {
   if (!companionWindow || companionWindow.isDestroyed()) {
-    return { cursorMoved: false, gliding: false };
+    return { nextFrameDelayMs: null };
   }
 
   const glide = companionGlide;
@@ -2295,53 +2349,125 @@ function positionCompanion(now = Date.now()): CompanionFollowActivity {
     const position = interpolateCompanionPosition(glide.from, glide.to, progress);
     applyCompanionScreenPosition(position);
     if (progress >= 1) settleCompanionGlide();
-    return { cursorMoved: false, gliding: progress < 1 };
+    return { nextFrameDelayMs: progress < 1 ? 16 : null };
   }
 
   if (companionPinnedPosition) {
     applyCompanionScreenPosition(companionPinnedPosition);
-    return { cursorMoved: false, gliding: false };
+    return { nextFrameDelayMs: null };
   }
 
-  const cursor = screen.getCursorScreenPoint();
-  const cursorMoved = !pointEqual(lastObservedCursor, cursor);
-  lastObservedCursor = cursor;
-  const display = screen.getDisplayNearestPoint(cursor);
-  applyCompanionScreenPosition(
-    placeCompanionNearCursor(
-      cursor,
-      display.bounds,
-      COMPANION_SIZE,
-      COMPANION_GAP,
-    ),
-  );
-  return { cursorMoved, gliding: false };
+  const wander = companionWander;
+  if (wander) {
+    const progress =
+      (now - wander.startedAt) / COMPANION_WANDER_DURATION_MS;
+    applyCompanionScreenPosition(
+      interpolateCompanionWanderPosition(wander.from, wander.to, progress),
+    );
+    if (progress >= 1) {
+      companionWander = null;
+      scheduleCompanionWander();
+      return { nextFrameDelayMs: null };
+    }
+    return { nextFrameDelayMs: 32 };
+  }
+
+  applyCompanionScreenPosition(companionRestingPosition());
+  return { nextFrameDelayMs: null };
 }
 
-function scheduleCompanionFollowing(delayMs: number): void {
+function scheduleCompanionMovement(delayMs: number): void {
   if (!companionWindow || companionWindow.isDestroyed()) return;
 
-  companionFollowTimer = setTimeout(runCompanionFollowLoop, delayMs);
+  companionMovementTimer = setTimeout(runCompanionMovementLoop, delayMs);
 }
 
-function runCompanionFollowLoop(): void {
-  companionFollowTimer = null;
-  const now = Date.now();
-  const activity = positionCompanion(now);
-  const schedule = nextCompanionFollowSchedule({
-    activeUntil: companionFollowActiveUntil,
-    cursorMoved: activity.cursorMoved,
-    gliding: activity.gliding,
-    now,
-  });
-  companionFollowActiveUntil = schedule.activeUntil;
-  scheduleCompanionFollowing(schedule.delayMs);
+function runCompanionMovementLoop(): void {
+  companionMovementTimer = null;
+  const activity = positionCompanion();
+  if (activity.nextFrameDelayMs !== null) {
+    scheduleCompanionMovement(activity.nextFrameDelayMs);
+  }
 }
 
-function wakeCompanionFollowing(): void {
-  if (companionFollowTimer) clearTimeout(companionFollowTimer);
-  companionFollowTimer = null;
-  scheduleCompanionFollowing(0);
+function wakeCompanionMovement(): void {
+  if (companionMovementTimer) clearTimeout(companionMovementTimer);
+  companionMovementTimer = null;
+  scheduleCompanionMovement(0);
+}
+
+function pauseCompanionWandering(): void {
+  if (companionWanderTimer) clearTimeout(companionWanderTimer);
+  companionWanderTimer = null;
+  companionWander = null;
+}
+
+function rememberCompanionUserPosition(bounds: Rectangle): void {
+  if (companionState !== 'idle') return;
+
+  if (companionMovementTimer) clearTimeout(companionMovementTimer);
+  companionMovementTimer = null;
+  pauseCompanionWandering();
+  companionPinnedPosition = null;
+
+  const display = screen.getDisplayMatching(bounds);
+  companionUserPosition = clampCompanionPosition(
+    { x: bounds.x, y: bounds.y },
+    display.workArea,
+    COMPANION_SIZE,
+  );
+}
+
+function scheduleCompanionWander(): void {
+  if (
+    companionWanderTimer ||
+    companionWander ||
+    companionGlide ||
+    companionPinnedPosition ||
+    companionUserPosition ||
+    companionState !== 'idle' ||
+    !companionPetEnabled ||
+    !companionWindow ||
+    companionWindow.isDestroyed()
+  ) {
+    return;
+  }
+
+  const delayMs =
+    COMPANION_WANDER_MIN_PAUSE_MS +
+    Math.round(Math.random() * COMPANION_WANDER_PAUSE_RANGE_MS);
+  companionWanderTimer = setTimeout(startCompanionWander, delayMs);
+}
+
+function startCompanionWander(): void {
+  companionWanderTimer = null;
+  if (
+    companionGlide ||
+    companionPinnedPosition ||
+    companionUserPosition ||
+    companionState !== 'idle' ||
+    !companionPetEnabled ||
+    !companionWindow ||
+    companionWindow.isDestroyed()
+  ) {
+    scheduleCompanionWander();
+    return;
+  }
+
+  const from = getCurrentCompanionScreenPosition();
+  const display = screen.getDisplayNearestPoint(from);
+  companionWander = {
+    from,
+    startedAt: Date.now(),
+    to: placeCompanionWanderTarget(
+      from,
+      display.workArea,
+      COMPANION_SIZE,
+      Math.random(),
+      Math.random(),
+    ),
+  };
+  wakeCompanionMovement();
 }
 
 function createDesktopControlIndicatorWindow(): void {
@@ -2406,7 +2532,7 @@ function createDesktopControlIndicatorWindow(): void {
 }
 
 const createCompanionWindow = (): void => {
-  if (!auxiliaryWindowsEnabled) return;
+  if (!auxiliaryWindowsEnabled || !companionPetEnabled) return;
   if (companionWindow && !companionWindow.isDestroyed()) return;
 
   const useOverlayCompanion = shouldUseCompanionOverlay(process.platform);
@@ -2415,12 +2541,14 @@ const createCompanionWindow = (): void => {
     : { ...COMPANION_SIZE, x: 0, y: 0 };
 
   companionWindow = new BrowserWindow({
+    acceptFirstMouse: !useOverlayCompanion,
     alwaysOnTop: true,
     backgroundColor: '#00000000',
     focusable: false,
     frame: false,
     hasShadow: false,
     height: companionBounds.height,
+    movable: !useOverlayCompanion,
     resizable: false,
     show: false,
     skipTaskbar: true,
@@ -2438,7 +2566,9 @@ const createCompanionWindow = (): void => {
     },
   });
 
-  companionWindow.setIgnoreMouseEvents(true, { forward: true });
+  if (useOverlayCompanion) {
+    companionWindow.setIgnoreMouseEvents(true, { forward: true });
+  }
   companionWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   companionWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   companionWindow.webContents.on('did-finish-load', () => {
@@ -2446,10 +2576,16 @@ const createCompanionWindow = (): void => {
     sendCompanionAppearance();
     lastCompanionPosition = null;
     positionCompanion();
+    scheduleCompanionWander();
   });
   companionWindow.webContents.on('will-navigate', (event) => {
     event.preventDefault();
   });
+  if (!useOverlayCompanion) {
+    companionWindow.on('will-move', (_event, bounds) => {
+      rememberCompanionUserPosition(bounds);
+    });
+  }
 
   const companionUrl = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
   companionUrl.searchParams.set('mode', 'companion');
@@ -2459,18 +2595,18 @@ const createCompanionWindow = (): void => {
   );
 
   companionWindow.once('ready-to-show', () => {
-    if (!auxiliaryWindowsEnabled) return;
+    if (!auxiliaryWindowsEnabled || !companionPetEnabled) return;
     positionCompanion();
     companionWindow?.showInactive();
+    scheduleCompanionWander();
   });
   companionWindow.on('closed', () => {
     companionWindow = null;
-    stopCompanionFollowing();
+    stopCompanionMovement();
   });
 
   void companionWindow.loadURL(companionUrl.toString());
   positionCompanion();
-  wakeCompanionFollowing();
 };
 
 function positionVoiceIsland(): void {
@@ -2670,6 +2806,12 @@ if (hasSingleInstanceLock) {
     registerCompanionImageProtocol();
     appUpdateService.start();
     classroomPetService.start();
+    unregisterAppPreferencesChange = appPreferencesService.onChange(
+      (preferences) =>
+        synchronizeCompanionPetPreference(preferences.classroomPetEnabled),
+    );
+    const initialPreferences = await appPreferencesService.get();
+    synchronizeCompanionPetPreference(initialPreferences.classroomPetEnabled);
     void appUpdateService.checkForUpdates();
     analyticsService = new AnalyticsService({
       appVersion: app.getVersion(),

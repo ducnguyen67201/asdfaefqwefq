@@ -38,20 +38,18 @@ export function ClassroomPetNudge({
       className={`guidance-callout classroom-pet-nudge classroom-pet-nudge--${nudge.mood} guidance-callout--${nudge.side}`}
       role="status"
     >
-      <div className="guidance-callout__header">
-        <span className="guidance-callout__avatar" aria-hidden="true">
-          T
-        </span>
-        <span className="guidance-callout__name" id="classroom-pet-nudge-title">
-          Tro pet
-        </span>
-        <span
-          className="guidance-callout__status"
-          id="classroom-pet-nudge-mood"
-        >
-          {classroomPetMoodLabel(nudge.language, nudge.mood)}
-        </span>
-      </div>
+      <span
+        className="classroom-pet-nudge__identity"
+        id="classroom-pet-nudge-title"
+      >
+        Tro pet
+      </span>
+      <span
+        className="classroom-pet-nudge__mood"
+        id="classroom-pet-nudge-mood"
+      >
+        {classroomPetMoodLabel(nudge.language, nudge.mood)}
+      </span>
       <p className="classroom-pet-nudge__message">{nudge.message}</p>
     </aside>
   );
