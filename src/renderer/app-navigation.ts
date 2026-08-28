@@ -8,8 +8,7 @@ export type ActiveView =
   | 'assigned'
   | 'history'
   | 'insights'
-  | 'organization'
-  | 'settings';
+  | 'organization';
 
 export function organizationSettingsAvailable(
   organization: OrganizationSummary | null,
@@ -24,7 +23,6 @@ export function navigationTitle(view: ActiveView, language: AppLanguage): { kick
     case 'history': return { kicker: translate(language, 'Session task record'), title: translate(language, 'History') };
     case 'insights': return { kicker: translate(language, 'Private on-device summary'), title: translate(language, 'Insights overview') };
     case 'organization': return { kicker: translate(language, 'Account settings'), title: translate(language, 'Organization') };
-    case 'settings': return { kicker: translate(language, 'Personal preferences'), title: translate(language, 'Language & settings') };
     case 'agent': return { kicker: translate(language, 'General-purpose agent'), title: translate(language, 'Current task') };
   }
 }

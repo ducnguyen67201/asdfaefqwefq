@@ -29,6 +29,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Act: 'Thực hiện',
   'A view of how Tro is working across your saved tasks and lifecycle activity.':
     'Góc nhìn về cách Tro hoạt động trên các tác vụ đã lưu và vòng đời của chúng.',
+  About: 'Giới thiệu',
   'About Tro': 'Về Tro',
   'Access code': 'Mã truy cập',
   'Access required': 'Yêu cầu quyền truy cập',
@@ -72,6 +73,11 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Checking your membership…': 'Đang kiểm tra tư cách thành viên…',
   'Choose the language used for navigation, settings, and other Tro controls.':
     'Chọn ngôn ngữ dùng cho điều hướng, cài đặt và các thành phần điều khiển khác của Tro.',
+  'Close settings': 'Đóng cài đặt',
+  Companion: 'Bạn đồng hành',
+  Connections: 'Kết nối',
+  'Connect tools Tro can use on your behalf.':
+    'Kết nối các công cụ Tro có thể dùng thay bạn.',
   'Desktop pet': 'Thú cưng trên màn hình',
   'Show desktop pet': 'Hiển thị thú cưng trên màn hình',
   'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.':
@@ -108,7 +114,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Deny: 'Từ chối',
   Description: 'Mô tả',
   'Describe the outcome': 'Mô tả kết quả mong muốn',
-  'Dictating': 'Đang đọc chính tả',
+  Dictating: 'Đang đọc chính tả',
   'Dictating… Release to insert text without sending.':
     'Đang đọc chính tả… Thả phím để chèn văn bản mà không gửi.',
   Dictation: 'Chính tả',
@@ -131,7 +137,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Usage details unavailable': 'Chưa có thông tin mức dùng',
   'Downloading update…': 'Đang tải bản cập nhật…',
   Enabled: 'Đã bật',
-  Disabled: 'Đã tắt',
   'Enable all permissions': 'Bật tất cả quyền',
   'Enable Tro to work for you': 'Cho phép Tro làm việc cho bạn',
   'Enter the access code provided by the Tro team. Each account can use one code, and each code has a limited number of users.':
@@ -157,7 +162,10 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Finishing transcript…': 'Đang hoàn tất bản ghi âm…',
   'Finishing safely…': 'Đang hoàn tất an toàn…',
   'Finishing setup…': 'Đang hoàn tất thiết lập…',
+  General: 'Chung',
   'General-purpose agent': 'Trợ lý đa năng',
+  'Language, behavior, and task safety.':
+    'Ngôn ngữ, hành vi và an toàn tác vụ.',
   Guide: 'Hướng dẫn',
   guide: 'hướng dẫn',
   History: 'Lịch sử',
@@ -231,6 +239,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Open permission settings': 'Mở cài đặt quyền',
   'Opening Free…': 'Đang mở gói Miễn phí…',
   'Plan access': 'Quyền truy cập gói',
+  'Plan, access, and organization details.':
+    'Thông tin về gói, quyền truy cập và tổ chức.',
+  Product: 'Sản phẩm',
   'Promo code': 'Mã khuyến mãi',
   'Promo or access code': 'Mã khuyến mãi hoặc mã truy cập',
   'Apply promo code': 'Áp dụng mã khuyến mãi',
@@ -266,6 +277,11 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Session summary': 'Tóm tắt phiên',
   'RECENT LEARNING SIGNAL': 'TÍN HIỆU HỌC TẬP GẦN ĐÂY',
   Settings: 'Cài đặt',
+  'Settings sections': 'Các mục cài đặt',
+  'Shape how Tro appears beside your work.':
+    'Điều chỉnh cách Tro xuất hiện bên cạnh công việc của bạn.',
+  'Speech, shortcuts, and audio behavior.':
+    'Giọng nói, phím tắt và cách xử lý âm thanh.',
   latest: 'mới nhất',
   'Show me how to organize my Downloads folder':
     'Chỉ tôi cách sắp xếp thư mục Tải về',
@@ -318,8 +334,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Voice input could not be completed.':
     'Không thể hoàn tất đầu vào giọng nói.',
   'Voice shortcuts': 'Phím tắt giọng nói',
-  'Add Shift to either Dictation shortcut':
-    'Thêm Shift vào phím tắt Chính tả',
+  'Add Shift to either Dictation shortcut': 'Thêm Shift vào phím tắt Chính tả',
   'macOS: Command + Control · Windows: left Control + left Alt':
     'macOS: Command + Control · Windows: Control trái + Alt trái',
   'No speech was detected. The draft was left unchanged.':
@@ -370,6 +385,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Use the app in': 'Sử dụng ứng dụng bằng',
   'Version {version}': 'Phiên bản {version}',
   'Voice and language': 'Giọng nói và ngôn ngữ',
+  Voice: 'Giọng nói',
   'Voice input': 'Đầu vào giọng nói',
   'Voice ready. Hold {shortcut} to talk.':
     'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói.',
@@ -382,6 +398,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Waiting for microphone access…': 'Đang chờ quyền truy cập micrô…',
   Transcribing: 'Đang phiên âm',
   Workspace: 'Không gian làm việc',
+  'Version, updates, and product details.':
+    'Phiên bản, bản cập nhật và thông tin sản phẩm.',
   'What language will you usually speak?': 'Bạn thường sẽ nói ngôn ngữ nào?',
   'What felt difficult': 'Nội dung bạn có thể đang gặp khó khăn',
   'What should we accomplish?': 'Chúng ta cần hoàn thành điều gì?',
@@ -643,12 +661,11 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Chia bài tập thành một câu hỏi nhỏ hơn, tự giải thích bước đầu tiên, rồi luyện tập với một ví dụ tương tự.',
   Personalization: 'Cá nhân hóa',
   'Custom companion': 'Bạn đồng hành tùy chỉnh',
-  'Start with any picture, choose a style, then preview your tiny desktop companion.':
-    'Bắt đầu bằng một bức ảnh, chọn phong cách, rồi xem trước bạn đồng hành nhỏ trên màn hình.',
+  'Start with any picture, choose a style, then preview your tiny cursor companion.':
+    'Bắt đầu bằng một bức ảnh, chọn phong cách, rồi xem trước bạn đồng hành nhỏ bên con trỏ.',
   'Getting your companion ready…': 'Đang chuẩn bị bạn đồng hành…',
   Active: 'Đang dùng',
-  Selected: 'Đã chọn',
-  'Ready for your desktop': 'Sẵn sàng trên màn hình của bạn',
+  'Following your cursor now': 'Đang đi theo con trỏ',
   'All previews used this month': 'Đã dùng hết lượt xem trước tháng này',
   'You can create more on {date}. Your current companion stays active.':
     'Bạn có thể tạo thêm vào {date}. Bạn đồng hành hiện tại vẫn hoạt động.',
@@ -683,9 +700,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Nothing changes until you choose to use it.':
     'Sẽ không có gì thay đổi cho đến khi bạn chọn sử dụng.',
   'Preview ready': 'Bản xem trước đã sẵn sàng',
-  'Made for your desktop': 'Dành riêng cho màn hình của bạn',
-  'Turn an image into a small custom companion for your desktop in Tro.':
-    'Biến một hình ảnh thành bạn đồng hành nhỏ trên màn hình của bạn trong Tro.',
+  'Made for your cursor': 'Dành riêng cho con trỏ của bạn',
+  'Turn an image into a small custom companion that follows your cursor in Tro.':
+    'Biến một hình ảnh thành bạn đồng hành nhỏ đi theo con trỏ của bạn trong Tro.',
   '{remaining} of {limit} left this month':
     'Còn {remaining} trên {limit} trong tháng này',
   'Loading companion settings…': 'Đang tải cài đặt bạn đồng hành…',
@@ -714,8 +731,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Dán, thả hoặc chọn ảnh PNG hay JPEG tối đa 5 MiB.',
   'Choose image': 'Chọn ảnh',
   'Choose a PNG or JPEG image.': 'Hãy chọn ảnh PNG hoặc JPEG.',
-  'Choose an image no larger than 5 MiB.':
-    'Hãy chọn ảnh không lớn hơn 5 MiB.',
+  'Choose an image no larger than 5 MiB.': 'Hãy chọn ảnh không lớn hơn 5 MiB.',
   'Selected source': 'Ảnh nguồn đã chọn',
   'How should Tro customize it?': 'Bạn muốn Tro tùy chỉnh ảnh thế nào?',
   'For example: a cheerful pixel-art fox with a transparent background':
@@ -735,8 +751,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro could not read this image.': 'Tro không thể đọc ảnh này.',
   'Manage Tro’s companion, interface language, voice input, and installed application.':
     'Quản lý bạn đồng hành, ngôn ngữ giao diện, nhập liệu bằng giọng nói và ứng dụng Tro đã cài đặt.',
-  'Create up to five desktop companions each month.':
-    'Tạo tối đa năm bạn đồng hành trên màn hình mỗi tháng.',
+  'Create up to five cursor companions each month.':
+    'Tạo tối đa năm bạn đồng hành con trỏ mỗi tháng.',
   'Companion generation is not available for this account.':
     'Tính năng tạo bạn đồng hành không khả dụng cho tài khoản này.',
   'Companion image generation is disabled.':
@@ -749,11 +765,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Organization name was not saved': 'Chưa lưu được tên tổ chức',
   'Organization name must be between 1 and 100 characters.':
     'Tên tổ chức phải có từ 1 đến 100 ký tự.',
-  'Organization name is already up to date.':
-    'Tên tổ chức đã được cập nhật.',
+  'Organization name is already up to date.': 'Tên tổ chức đã được cập nhật.',
   'Organization name saved.': 'Đã lưu tên tổ chức.',
-  'Tro could not save the organization name.':
-    'Tro không thể lưu tên tổ chức.',
+  'Tro could not save the organization name.': 'Tro không thể lưu tên tổ chức.',
   'Save name': 'Lưu tên',
   'Saving name…': 'Đang lưu tên…',
   '{count} of 100 characters': '{count} trên 100 ký tự',
@@ -832,8 +846,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Organization home banner': 'Biểu ngữ trang chủ của tổ chức',
   'Upload one image for your organization. It replaces the Tro artwork when members open the Agent home screen, and the default returns whenever you remove it.':
     'Tải lên một hình ảnh cho tổ chức. Hình này thay thế hình Tro khi thành viên mở trang chủ Trợ lý; hình mặc định sẽ trở lại khi bạn xóa hình tùy chỉnh.',
-  'PNG, JPEG, or WebP · maximum 750 KB':
-    'PNG, JPEG hoặc WebP · tối đa 750 KB',
+  'PNG, JPEG, or WebP · maximum 750 KB': 'PNG, JPEG hoặc WebP · tối đa 750 KB',
   'Organization home banner preview':
     'Bản xem trước biểu ngữ trang chủ của tổ chức',
   'Default Tro banner': 'Biểu ngữ Tro mặc định',
