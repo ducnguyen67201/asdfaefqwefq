@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { config as loadEnvironment } from 'dotenv';
-import { DefinePlugin, type Configuration } from 'webpack';
+import { type Configuration } from 'webpack';
 
 import { plugins } from './webpack.plugins';
 import { rules } from './webpack.rules';
@@ -24,26 +24,7 @@ export const mainConfig: Configuration = {
   module: {
     rules,
   },
-  plugins: [
-    ...plugins,
-    new DefinePlugin({
-      'process.env.GOOGLE_OAUTH_CLIENT_ID': JSON.stringify(
-        process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
-      ),
-      'process.env.POSTHOG_ENVIRONMENT': JSON.stringify(
-        process.env.POSTHOG_ENVIRONMENT ?? '',
-      ),
-      'process.env.POSTHOG_HOST': JSON.stringify(
-        process.env.POSTHOG_HOST ?? '',
-      ),
-      'process.env.POSTHOG_PROJECT_TOKEN': JSON.stringify(
-        process.env.POSTHOG_PROJECT_TOKEN ?? '',
-      ),
-      'process.env.TROCODE_API_BASE_URL': JSON.stringify(
-        process.env.TROCODE_API_BASE_URL ?? '',
-      ),
-    }),
-  ],
+  plugins: [...plugins],
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },
