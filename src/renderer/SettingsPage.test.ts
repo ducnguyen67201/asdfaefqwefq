@@ -215,8 +215,8 @@ describe('SettingsPage app language', () => {
     expect(markup).toContain('Lưu tùy chọn');
     expect(markup).toContain('Tắt âm thanh khác khi đang nói');
     expect(markup).toContain('Bạn đồng hành tùy chỉnh');
-    expect(markup).toContain('Tin nhắn từ thú cưng lớp học');
-    expect(markup).toContain('Tro không theo dõi ứng dụng');
+    expect(markup).toContain('Thú cưng trên màn hình');
+    expect(markup).toContain('không theo dõi ứng dụng');
     expect(markup).toContain('Còn 5 trên 5 trong tháng này');
     expect(markup).not.toContain('Custom companion');
   });
@@ -242,7 +242,7 @@ describe('SettingsPage voice audio preference', () => {
   });
 });
 
-describe('SettingsPage classroom pet preference', () => {
+describe('SettingsPage desktop pet preference', () => {
   const updateStatus: AppUpdateStatus = {
     currentVersion: '0.1.0',
     message: 'No updates found.',
@@ -250,15 +250,16 @@ describe('SettingsPage classroom pet preference', () => {
     targetVersion: null,
   };
 
-  it('shows the explicit local-only privacy explanation', () => {
+  it('shows the independent-motion and local-only privacy explanation', () => {
     const markup = renderSettings(updateStatus);
 
-    expect(markup).toContain('Classroom pet messages');
+    expect(markup).toContain('Desktop pet');
     expect(markup).toContain(
-      'During a live class, Tro can show occasional local encouragement.',
+      'Show a small animated companion on your desktop',
     );
+    expect(markup).toContain('Drag it anywhere you like');
     expect(markup).toContain(
-      'It does not watch apps, websites, cursor activity, or share pet messages with teachers.',
+      'It never watches apps, websites, cursor activity, or typing.',
     );
     expect(markup).toMatch(
       /id="settings-classroom-pet-enabled"[^>]*checked=""/u,

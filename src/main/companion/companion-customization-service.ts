@@ -297,7 +297,7 @@ export class CompanionCustomizationService {
 
   async getStatus(): Promise<CompanionCustomizationStatus> {
     if (!this.currentOwnerKey) {
-      return this.status('unavailable', 'Sign in to customize the cursor companion.');
+      return this.status('unavailable', 'Sign in to customize the desktop companion.');
     }
     if (!(await this.options.safeStorage.isAsyncEncryptionAvailable())) {
       return this.status(
@@ -313,7 +313,7 @@ export class CompanionCustomizationService {
     }
     const accessToken = await this.options.accessTokenProvider();
     if (!accessToken) {
-      return this.status('unavailable', 'Sign in to customize the cursor companion.');
+      return this.status('unavailable', 'Sign in to customize the desktop companion.');
     }
     try {
       const response = await this.fetchImpl(

@@ -25,6 +25,32 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }
 
+export function clampCompanionPosition(
+  position: Point,
+  displayBounds: Rectangle,
+  companionSize: Size,
+): Point {
+  const displayRight = displayBounds.x + displayBounds.width;
+  const displayBottom = displayBounds.y + displayBounds.height;
+
+  return {
+    x: Math.round(
+      clamp(
+        position.x,
+        displayBounds.x,
+        displayRight - companionSize.width,
+      ),
+    ),
+    y: Math.round(
+      clamp(
+        position.y,
+        displayBounds.y,
+        displayBottom - companionSize.height,
+      ),
+    ),
+  };
+}
+
 export function interpolateCompanionPosition(
   from: Point,
   to: Point,
@@ -32,6 +58,21 @@ export function interpolateCompanionPosition(
 ): Point {
   const normalizedProgress = clampUnit(progress);
   const easedProgress = 1 - Math.pow(1 - normalizedProgress, 3);
+
+  return {
+    x: Math.round(from.x + (to.x - from.x) * easedProgress),
+    y: Math.round(from.y + (to.y - from.y) * easedProgress),
+  };
+}
+
+export function interpolateCompanionWanderPosition(
+  from: Point,
+  to: Point,
+  progress: number,
+): Point {
+  const normalizedProgress = clampUnit(progress);
+  const easedProgress =
+    (1 - Math.cos(Math.PI * normalizedProgress)) / 2;
 
   return {
     x: Math.round(from.x + (to.x - from.x) * easedProgress),
@@ -64,6 +105,77 @@ export function placeCompanionNearCursor(
     ),
     y: Math.round(
       clamp(y, displayBounds.y, displayBottom - companionSize.height),
+    ),
+  };
+}
+
+export function placeCompanionAtRest(
+  displayBounds: Rectangle,
+  companionSize: Size,
+  edgeGap = 24,
+): Point {
+  const displayRight = displayBounds.x + displayBounds.width;
+  const displayBottom = displayBounds.y + displayBounds.height;
+
+  return {
+    x: Math.round(
+      clamp(
+        displayRight - companionSize.width - edgeGap,
+        displayBounds.x,
+        displayRight - companionSize.width,
+      ),
+    ),
+    y: Math.round(
+      clamp(
+        displayBottom - companionSize.height - edgeGap,
+        displayBounds.y,
+        displayBottom - companionSize.height,
+      ),
+    ),
+  };
+}
+
+export function placeCompanionWanderTarget(
+  current: Point,
+  displayBounds: Rectangle,
+  companionSize: Size,
+  horizontalProgress: number,
+  verticalProgress: number,
+  edgeGap = 24,
+): Point {
+  const displayRight = displayBounds.x + displayBounds.width;
+  const displayBottom = displayBounds.y + displayBounds.height;
+  const minimumX = clamp(
+    displayBounds.x + edgeGap,
+    displayBounds.x,
+    displayRight - companionSize.width,
+  );
+  const maximumX = Math.max(
+    minimumX,
+    displayRight - companionSize.width - edgeGap,
+  );
+  const midpointX = minimumX + (maximumX - minimumX) / 2;
+  const movingRight = current.x < midpointX;
+  const targetStartX = movingRight ? midpointX : minimumX;
+  const targetEndX = movingRight ? maximumX : midpointX;
+  const minimumY = clamp(
+    displayBounds.y + displayBounds.height * 0.58,
+    displayBounds.y,
+    displayBottom - companionSize.height,
+  );
+  const maximumY = Math.max(
+    minimumY,
+    displayBottom - companionSize.height - edgeGap,
+  );
+
+  return {
+    x: Math.round(
+      targetStartX +
+        (targetEndX - targetStartX) * clampUnit(horizontalProgress),
+    ),
+    y: Math.round(
+      minimumY +
+        (maximumY - minimumY) * clampUnit(verticalProgress),
     ),
   };
 }

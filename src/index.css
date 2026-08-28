@@ -1733,12 +1733,20 @@ html.voice-island-mode #root {
 .classroom-pet-nudge {
   width: calc(100% - 12px);
   height: calc(100% - 12px);
-  padding: 12px 15px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 11px 18px 12px 21px;
   overflow: hidden;
   border-color: rgba(76, 91, 69, 0.28);
+  border-radius: 24px;
   background: rgba(255, 254, 247, 0.98);
   color: #20271f;
   pointer-events: none;
+}
+
+.classroom-pet-nudge::before {
+  display: none;
 }
 
 .classroom-pet-nudge--encouraging {
@@ -1756,25 +1764,53 @@ html.voice-island-mode #root {
   background: rgba(255, 249, 220, 0.98);
 }
 
-.classroom-pet-nudge--encouraging .guidance-callout__avatar {
-  background: #a8dbc5;
-  color: #173d32;
+.classroom-pet-nudge__identity {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
-.classroom-pet-nudge--waiting .guidance-callout__avatar {
-  background: #f2cf83;
-  color: #4c3500;
+.classroom-pet-nudge__mood {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #617067;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
-.classroom-pet-nudge--celebrating .guidance-callout__avatar {
-  background: #f2c94c;
-  color: #2c2300;
+.classroom-pet-nudge__mood::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6eb596;
+  box-shadow: 0 0 0 3px rgba(110, 181, 150, 0.14);
+  content: '';
+}
+
+.classroom-pet-nudge--waiting .classroom-pet-nudge__mood::before {
+  background: #d2a344;
+  box-shadow: 0 0 0 3px rgba(210, 163, 68, 0.14);
+}
+
+.classroom-pet-nudge--celebrating .classroom-pet-nudge__mood::before {
+  background: #e4b51f;
+  box-shadow: 0 0 0 3px rgba(228, 181, 31, 0.16);
 }
 
 .classroom-pet-nudge__message {
   color: #20271f;
+  font-size: 13px !important;
+  line-height: 1.3 !important;
   overflow-wrap: anywhere;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
 .companion-response-card {
@@ -2102,36 +2138,44 @@ html.voice-island-mode #root {
   user-select: none;
 }
 
+.cursor-companion:not(.cursor-companion--overlay).cursor-companion--idle {
+  cursor: grab;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+}
+
+.cursor-companion:not(.cursor-companion--overlay).cursor-companion--idle:active {
+  cursor: grabbing;
+}
+
 .cursor-companion--overlay {
   position: absolute;
   top: 0;
   left: 0;
-  width: 44px;
-  height: 44px;
+  width: 112px;
+  height: 112px;
   will-change: transform;
 }
 
 .cursor-companion__visual {
   position: relative;
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 108px;
+  height: 108px;
   place-items: center;
 }
 
 .cursor-companion__visual::before {
   position: absolute;
-  inset: 3px;
+  right: 18px;
+  bottom: 7px;
+  left: 18px;
+  height: 12px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(231, 241, 255, 0.38) 0%,
-    rgba(112, 158, 255, 0.16) 48%,
-    transparent 74%
-  );
+  background: rgba(30, 33, 43, 0.2);
   content: '';
-  filter: blur(2px);
-  opacity: 0.9;
+  filter: blur(5px);
+  opacity: 0.62;
   transition:
     background 160ms ease,
     opacity 160ms ease;
@@ -2141,24 +2185,32 @@ html.voice-island-mode #root {
   position: relative;
   z-index: 1;
   display: block;
-  width: 29px;
+  width: 94px;
   height: auto;
-  max-width: 29px;
-  max-height: 29px;
+  max-width: 94px;
+  max-height: 100px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.36));
-  transform-origin: 50% 75%;
+  filter: drop-shadow(0 3px 2px rgba(33, 37, 48, 0.2));
+  transform-origin: 50% 88%;
+}
+
+.cursor-companion__image--default {
+  image-rendering: pixelated;
+}
+
+.cursor-companion--idle img {
+  animation: companion-idle-waddle 4.4s ease-in-out infinite;
 }
 
 .cursor-companion--listening img,
 .cursor-companion--guiding img {
-  animation: companion-bob 1.8s ease-in-out infinite;
+  animation: companion-bob 1.65s ease-in-out infinite;
 }
 
 .cursor-companion__ring {
   position: absolute;
   z-index: 2;
-  inset: 1px;
+  inset: 5px;
   border: 2px solid transparent;
   border-radius: 50%;
   opacity: 0;
@@ -2170,11 +2222,11 @@ html.voice-island-mode #root {
 .cursor-companion__completed {
   position: absolute;
   z-index: 3;
-  right: 0;
-  bottom: 0;
+  right: 5px;
+  bottom: 6px;
   display: none;
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(45, 45, 40, 0.24);
@@ -2192,8 +2244,8 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion__processing i {
-  width: 2px;
-  height: 2px;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
   background: #c89217;
   animation: companion-processing-dot 0.8s ease-in-out infinite alternate;
@@ -2208,15 +2260,15 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion__listening i {
-  width: 1.5px;
-  height: 5px;
+  width: 2px;
+  height: 7px;
   border-radius: 99px;
   background: var(--accent);
   animation: companion-audio-bar 0.65s ease-in-out infinite alternate;
 }
 
 .cursor-companion__listening i:nth-child(2) {
-  height: 8px;
+  height: 11px;
   animation-delay: -0.32s;
 }
 
@@ -2228,7 +2280,7 @@ html.voice-island-mode #root {
   border-color: rgba(185, 71, 63, 0.75);
   background: #a23d36;
   color: #fff;
-  font-size: 9px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 900;
   line-height: 1;
@@ -2241,8 +2293,8 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion__completed svg {
-  width: 10px;
-  height: 10px;
+  width: 13px;
+  height: 13px;
   overflow: visible;
   fill: none;
   stroke: currentColor;
@@ -2258,12 +2310,7 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion--listening .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(255, 239, 173, 0.5) 0%,
-    rgba(242, 201, 76, 0.24) 48%,
-    transparent 74%
-  );
+  background: rgba(194, 147, 28, 0.28);
 }
 
 .cursor-companion--listening .cursor-companion__listening {
@@ -2277,12 +2324,7 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion--guiding .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(149, 190, 255, 0.56) 0%,
-    rgba(49, 112, 214, 0.24) 48%,
-    transparent 74%
-  );
+  background: rgba(49, 112, 214, 0.26);
 }
 
 .cursor-companion--sending .cursor-companion__ring {
@@ -2312,12 +2354,7 @@ html.voice-island-mode #root {
 
 .cursor-companion--processing .cursor-companion__visual::before,
 .cursor-companion--working .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(255, 236, 191, 0.42) 0%,
-    rgba(244, 196, 103, 0.18) 48%,
-    transparent 74%
-  );
+  background: rgba(194, 147, 28, 0.26);
 }
 
 .cursor-companion--sending img {
@@ -2325,12 +2362,7 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion--sending .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(255, 236, 191, 0.42) 0%,
-    rgba(244, 196, 103, 0.18) 48%,
-    transparent 74%
-  );
+  background: rgba(194, 147, 28, 0.26);
 }
 
 .cursor-companion--error .cursor-companion__error {
@@ -2342,12 +2374,7 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion--error .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(255, 219, 216, 0.42) 0%,
-    rgba(185, 71, 63, 0.2) 48%,
-    transparent 74%
-  );
+  background: rgba(185, 71, 63, 0.26);
 }
 
 .cursor-companion--completed .cursor-companion__ring {
@@ -2367,22 +2394,32 @@ html.voice-island-mode #root {
 }
 
 .cursor-companion--completed .cursor-companion__visual::before {
-  background: radial-gradient(
-    circle,
-    rgba(202, 244, 214, 0.56) 0%,
-    rgba(47, 138, 80, 0.22) 48%,
-    transparent 74%
-  );
+  background: rgba(47, 138, 80, 0.24);
+}
+
+@keyframes companion-idle-waddle {
+  0%,
+  100% {
+    transform: translateY(1px) rotate(-0.8deg);
+  }
+
+  45% {
+    transform: translateY(-3px) rotate(1deg);
+  }
+
+  52% {
+    transform: translateY(-4px) rotate(-0.4deg);
+  }
 }
 
 @keyframes companion-bob {
   0%,
   100% {
-    transform: translateY(1px) rotate(-1deg);
+    transform: translateY(1px) rotate(-1.2deg);
   }
 
   50% {
-    transform: translateY(-2px) rotate(1deg);
+    transform: translateY(-5px) rotate(1.2deg);
   }
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-import cursorBuddyUrl from '../assets/tro-cursor-buddy.png';
+import desktopPetUrl from '../assets/tro-desktop-pet.png';
 import {
   MAX_COMPANION_IMAGE_BYTES,
   type AppLanguage,
@@ -218,7 +218,7 @@ export function CompanionCustomizationCard({
   const activeImageUrl =
     status?.appearance.kind === 'custom'
       ? status.appearance.assetUrl
-      : cursorBuddyUrl;
+      : desktopPetUrl;
   const generateLabel =
     busy === 'generating'
       ? t('Creating your preview…')
@@ -240,7 +240,7 @@ export function CompanionCustomizationCard({
           <h2 id="companion-customization-heading">{t('Custom companion')}</h2>
           <p className="settings-help companion-customization-card__intro">
             {t(
-              'Start with any picture, choose a style, then preview your tiny cursor companion.',
+              'Start with any picture, choose a style, then preview your tiny desktop companion.',
             )}
           </p>
         </div>
@@ -282,12 +282,12 @@ export function CompanionCustomizationCard({
             <div className="companion-customization-preview companion-customization-preview--current">
               <img alt="" src={activeImageUrl} />
               <span className="companion-customization-active-mark">
-                {t('Active')}
+                {t('Selected')}
               </span>
             </div>
             <div className="companion-customization-current__copy">
               <span className="companion-customization-kicker">
-                {t('Following your cursor now')}
+                {t('Ready for your desktop')}
               </span>
               <strong>{t('Current companion')}</strong>
               <p>
@@ -616,7 +616,7 @@ export function CompanionCustomizationCard({
                   <span className="companion-customization-kicker">
                     {t('Preview ready')}
                   </span>
-                  <strong>{t('Made for your cursor')}</strong>
+                  <strong>{t('Made for your desktop')}</strong>
                   <p>
                     {t('Preview available until {time}.', {
                       time: new Intl.DateTimeFormat(appLocale(appLanguage), {

@@ -296,6 +296,17 @@ export function SettingsPage({
         </p>
       </div>
 
+      {(error || saveMessage) && (
+        <p
+          className={`settings-feedback ${
+            error ? 'settings-feedback--error' : ''
+          }`}
+          role={error ? 'alert' : 'status'}
+        >
+          {error ?? saveMessage}
+        </p>
+      )}
+
       <section
         className="settings-card settings-membership-card"
         aria-labelledby="membership-settings-heading"
@@ -365,6 +376,57 @@ export function SettingsPage({
           </form>
         )}
       </section>
+
+      <form
+        className="settings-card desktop-pet-settings-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave();
+        }}
+      >
+        <div className="settings-card__heading">
+          <div>
+            <p className="eyebrow">{t('Personalization')}</p>
+            <h2>{t('Desktop pet')}</h2>
+          </div>
+          <span className="settings-badge settings-badge--neutral">
+            {classroomPetEnabled ? t('Enabled') : t('Disabled')}
+          </span>
+        </div>
+
+        <label className="settings-toggle" htmlFor="settings-classroom-pet-enabled">
+          <input
+            checked={classroomPetEnabled}
+            id="settings-classroom-pet-enabled"
+            onChange={(event) =>
+              onClassroomPetEnabledChange(event.target.checked)
+            }
+            type="checkbox"
+          />
+          <span>
+            <strong>{t('Show desktop pet')}</strong>
+            <small>
+              {t(
+                'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.',
+              )}
+            </small>
+          </span>
+        </label>
+
+        <div className="settings-actions">
+          <button
+            className="primary-button"
+            disabled={isSaving || !hasChanges}
+            type="submit"
+          >
+            {isSaving
+              ? t('Saving…')
+              : hasChanges
+                ? t('Save preferences')
+                : t('Saved')}
+          </button>
+        </div>
+      </form>
 
       <CompanionCustomizationCard
         appLanguage={appLanguage}
@@ -510,25 +572,6 @@ export function SettingsPage({
           )}
         </p>
 
-        <label className="settings-toggle" htmlFor="settings-classroom-pet-enabled">
-          <input
-            checked={classroomPetEnabled}
-            id="settings-classroom-pet-enabled"
-            onChange={(event) =>
-              onClassroomPetEnabledChange(event.target.checked)
-            }
-            type="checkbox"
-          />
-          <span>
-            <strong>{t('Classroom pet messages')}</strong>
-            <small>
-              {t(
-                'During a live class, Tro can show occasional local encouragement. It does not watch apps, websites, cursor activity, or share pet messages with teachers.',
-              )}
-            </small>
-          </span>
-        </label>
-
         <div className="settings-section-divider" />
 
         <div className="settings-card__heading">
@@ -635,17 +678,6 @@ export function SettingsPage({
             </small>
           </span>
         </label>
-
-        {(error || saveMessage) && (
-          <p
-            className={`settings-feedback ${
-              error ? 'settings-feedback--error' : ''
-            }`}
-            role={error ? 'alert' : 'status'}
-          >
-            {error ?? saveMessage}
-          </p>
-        )}
 
         <div className="settings-actions">
           <button

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import cursorBuddyUrl from '../assets/tro-cursor-buddy.png';
+import desktopPetUrl from '../assets/tro-desktop-pet.png';
 import type {
   CompanionAppearance,
   CompanionPosition,
@@ -13,7 +13,7 @@ const usesOverlayTracking =
 
 export function companionImageUrl(
   appearance: CompanionAppearance,
-  defaultUrl = cursorBuddyUrl,
+  defaultUrl = desktopPetUrl,
 ): string {
   return appearance.kind === 'custom' ? appearance.assetUrl : defaultUrl;
 }
@@ -38,7 +38,7 @@ export function CursorCompanion() {
 
   return (
     <div
-      aria-label={`Tro companion: ${state}`}
+      aria-label={`Tro desktop pet: ${state}`}
       className={`cursor-companion cursor-companion--${state}${
         usesOverlayTracking ? ' cursor-companion--overlay' : ''
       }`}
@@ -48,11 +48,19 @@ export function CursorCompanion() {
           ? { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
           : undefined
       }
+      title={
+        usesOverlayTracking ? undefined : 'Drag to move Tro’s desktop pet'
+      }
     >
       <div className="cursor-companion__visual">
         <span className="cursor-companion__ring" aria-hidden="true" />
         <img
           alt=""
+          className={
+            appearance.kind === 'default'
+              ? 'cursor-companion__image--default'
+              : 'cursor-companion__image--custom'
+          }
           draggable={false}
           key={appearance.kind === 'custom' ? appearance.revision : 'default'}
           src={companionImageUrl(appearance)}

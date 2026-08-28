@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  clampCompanionPosition,
   getVirtualDisplayBounds,
   interpolateCompanionPosition,
+  interpolateCompanionWanderPosition,
+  placeCompanionAtRest,
   placeCompanionForBrowserNavigation,
   placeCompanionInOverlay,
   placeCompanionNearCursor,
+  placeCompanionWanderTarget,
   placeGuidanceCallout,
   placeGuidanceTargetMarker,
   placeVoiceIsland,
@@ -14,9 +18,22 @@ import {
 } from './companion-position';
 
 const DISPLAY = { height: 800, width: 1200, x: 0, y: 0 };
-const COMPANION = { height: 44, width: 44 };
+const COMPANION = { height: 112, width: 112 };
 
-describe('cursor companion placement', () => {
+describe('desktop companion placement', () => {
+  it('keeps a user-dragged position inside its display work area', () => {
+    expect(
+      clampCompanionPosition({ x: 1_180, y: -40 }, DISPLAY, COMPANION),
+    ).toEqual({ x: 1_088, y: 0 });
+    expect(
+      clampCompanionPosition(
+        { x: -1_500, y: 850 },
+        { height: 900, width: 1440, x: -1440, y: -100 },
+        COMPANION,
+      ),
+    ).toEqual({ x: -1_440, y: 688 });
+  });
+
   it('follows below and to the right of the cursor by default', () => {
     expect(
       placeCompanionNearCursor({ x: 400, y: 300 }, DISPLAY, COMPANION),
@@ -26,7 +43,7 @@ describe('cursor companion placement', () => {
   it('flips beside the cursor near the lower-right display edge', () => {
     expect(
       placeCompanionNearCursor({ x: 1190, y: 790 }, DISPLAY, COMPANION),
-    ).toEqual({ x: 1138, y: 738 });
+    ).toEqual({ x: 1070, y: 670 });
   });
 
   it('stays inside displays with negative coordinates', () => {
@@ -39,6 +56,41 @@ describe('cursor companion placement', () => {
         COMPANION,
       ),
     ).toEqual({ x: -1430, y: -90 });
+  });
+
+  it('rests independently near the lower-right work-area edge', () => {
+    expect(placeCompanionAtRest(DISPLAY, COMPANION)).toEqual({
+      x: 1_064,
+      y: 664,
+    });
+    expect(
+      placeCompanionAtRest(
+        { height: 90, width: 90, x: -90, y: -20 },
+        COMPANION,
+      ),
+    ).toEqual({ x: -90, y: -20 });
+  });
+
+  it('chooses a bounded autonomous target in the opposite lower half', () => {
+    const resting = placeCompanionAtRest(DISPLAY, COMPANION);
+    expect(
+      placeCompanionWanderTarget(
+        resting,
+        DISPLAY,
+        COMPANION,
+        0.5,
+        0.5,
+      ),
+    ).toEqual({ x: 284, y: 564 });
+    expect(
+      placeCompanionWanderTarget(
+        { x: 24, y: 600 },
+        DISPLAY,
+        COMPANION,
+        1,
+        1,
+      ),
+    ).toEqual({ x: 1_064, y: 664 });
   });
 
   it('places browser navigation feedback near the active display toolbar', () => {
@@ -64,7 +116,7 @@ describe('cursor companion placement', () => {
         callout,
         COMPANION,
       ),
-    ).toEqual({ x: 456, y: 279 });
+    ).toEqual({ x: 524, y: 279 });
     expect(
       placeGuidanceCallout(
         { x: 1190, y: 790 },
@@ -198,6 +250,23 @@ describe('cursor companion placement', () => {
     ).toEqual({ x: 450, y: 550 });
     expect(
       interpolateCompanionPosition({ x: 100, y: 200 }, { x: 500, y: 600 }, 2),
+    ).toEqual({ x: 500, y: 600 });
+  });
+
+  it('wanders with a smooth start and finish', () => {
+    expect(
+      interpolateCompanionWanderPosition(
+        { x: 100, y: 200 },
+        { x: 500, y: 600 },
+        0.5,
+      ),
+    ).toEqual({ x: 300, y: 400 });
+    expect(
+      interpolateCompanionWanderPosition(
+        { x: 100, y: 200 },
+        { x: 500, y: 600 },
+        2,
+      ),
     ).toEqual({ x: 500, y: 600 });
   });
 });

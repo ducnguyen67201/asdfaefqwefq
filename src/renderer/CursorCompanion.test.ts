@@ -18,10 +18,13 @@ describe('CursorCompanion appearance', () => {
     ).toBe(customUrl);
   });
 
-  it('preserves the existing default companion lifecycle markup', () => {
+  it('renders the independent desktop pet lifecycle markup', () => {
     const markup = renderToStaticMarkup(createElement(CursorCompanion));
     expect(markup).toContain('cursor-companion--idle');
     expect(markup).toContain('cursor-companion__ring');
+    expect(markup).toContain('cursor-companion__image--default');
+    expect(markup).toContain('Tro desktop pet: idle');
+    expect(markup).toContain('Drag to move Tro’s desktop pet');
     expect(markup).toContain('role="img"');
   });
 });
