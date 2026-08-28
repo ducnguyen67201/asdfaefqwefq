@@ -7,7 +7,6 @@ import type {
   KnowledgeSourceList,
   KnowledgeSpaceMember,
   KnowledgeSpaceSummary,
-  SaveKnowledgeActivityRequest,
 } from '../shared/contracts';
 import { randomUUID } from '../shared/renderer-uuid';
 
@@ -18,27 +17,34 @@ import {
   parseClassMemberEmails,
   rolesAvailableToMemberManager,
 } from './class-workspace';
-import { FacilitatorRunPage } from './FacilitatorRunPage';
+import { ClassSessionsPanel } from './ClassSessionsPanel';
 import { SpaceLibrary } from './SpaceLibrary';
 
-export type SpaceDetailTab = 'library' | 'activities' | 'people';
+export type SpaceDetailTab = 'library' | 'activities' | 'sessions' | 'people';
 
 export function SpaceDetailPage({
   appLanguage,
   initialTab = 'library',
+  onJoined,
   onBack,
   space,
 }: {
   appLanguage: AppLanguage;
   initialTab?: SpaceDetailTab;
+  onJoined?: (attemptId: string) => void;
   onBack: () => void;
   space: KnowledgeSpaceSummary;
 }) {
   const canFacilitate = canManageClassPeople(space.role);
   const [tab, setTab] = useState<SpaceDetailTab>(
-    initialTab === 'people' && !canFacilitate ? 'library' : initialTab,
+    !canFacilitate && (initialTab === 'people' || initialTab === 'activities')
+      ? 'sessions'
+      : initialTab,
   );
   const [sources, setSources] = useState<KnowledgeSourceList['items']>([]);
+  const [sourcesLoading, setSourcesLoading] = useState(
+    () => typeof window !== 'undefined',
+  );
   const [groups, setGroups] = useState<KnowledgeGroup[]>([]);
   const [members, setMembers] = useState<KnowledgeSpaceMember[]>([]);
   const [memberEmails, setMemberEmails] = useState('');
@@ -53,18 +59,7 @@ export function SpaceDetailPage({
     'all',
   );
   const [groupName, setGroupName] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState('');
-  const [activityVersionId, setActivityVersionId] = useState<string | null>(
-    null,
-  );
-  const [publishedDefinition, setPublishedDefinition] = useState<
-    SaveKnowledgeActivityRequest['definition'] | null
-  >(null);
-  const [runId, setRunId] = useState<string | null>(null);
-  const [participants, setParticipants] = useState('');
-  const [delivery, setDelivery] = useState<'assigned' | 'room'>('room');
-  const [mode, setMode] = useState<'live' | 'async' | 'hybrid'>('live');
-  const [creatingRun, setCreatingRun] = useState(false);
+  const [sessionRefreshToken, setSessionRefreshToken] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const t = useCallback(
     (
@@ -101,9 +96,10 @@ export function SpaceDetailPage({
           setError(
             cause instanceof Error
               ? cause.message
-              : t('Library is unavailable.'),
+              : t('Materials are unavailable.'),
           ),
-        ),
+        )
+        .finally(() => setSourcesLoading(false)),
     [space.id, t],
   );
   const loadGroups = useCallback(
@@ -143,16 +139,6 @@ export function SpaceDetailPage({
     }
   }, [canFacilitate, loadGroups, loadMembers, loadSources]);
 
-  const participantIds = participants
-    .split(/\r?\n/u)
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const runTarget =
-    delivery === 'room'
-      ? { kind: 'room' as const }
-      : selectedGroupId
-        ? { kind: 'group' as const, groupId: selectedGroupId }
-        : { kind: 'participants' as const, userIds: participantIds };
   const parsedMemberEmails = parseClassMemberEmails(memberEmails);
 
   const addMembers = async () => {
@@ -186,61 +172,41 @@ export function SpaceDetailPage({
     }
   };
 
-  const createRun = async () => {
-    if (!activityVersionId) return;
-    setCreatingRun(true);
-    setError(null);
-    try {
-      const run = await window.tro.createKnowledgeRun({
-        activityVersionId,
-        clientId: randomUUID(),
-        closesAt: null,
-        insightPolicy: 'explicit_and_operational',
-        mode: delivery === 'room' ? 'live' : mode,
-        opensAt: null,
-        spaceId: space.id,
-        target: runTarget,
-      });
-      if (delivery === 'assigned') {
-        await window.tro.setKnowledgeRunState({
-          runId: run.id,
-          spaceId: space.id,
-          state: 'open',
-        });
-      }
-      setRunId(run.id);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : t('Could not create this Run.'),
-      );
-    } finally {
-      setCreatingRun(false);
-    }
-  };
-
   const tabs: SpaceDetailTab[] = canFacilitate
-    ? ['library', 'activities', 'people']
-    : ['library', 'activities'];
+    ? ['library', 'activities', 'sessions', 'people']
+    : ['library', 'sessions'];
 
   return (
     <section className="knowledge-page knowledge-page--class-detail">
       <div className="space-detail-toolbar">
         <button className="back-link" onClick={onBack} type="button">
-          ← {t('All class workspaces')}
+          <span aria-hidden="true">←</span> {t('Classes')}
         </button>
-        {canFacilitate && (
-          <button
-            className="secondary-button space-detail-toolbar__members"
-            onClick={() => setTab('people')}
-            type="button"
-          >
-            + {t('Add members')}
-          </button>
-        )}
       </div>
-      <div className="space-tabs" role="tablist">
+      <header className="class-workspace-identity">
+        <span className="class-workspace-identity__mark" aria-hidden="true">
+          {space.name.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="class-workspace-identity__copy">
+          <p className="eyebrow">{t('Class workspace')}</p>
+          <h1>{space.name}</h1>
+          <p>
+            {canFacilitate
+              ? space.description ||
+                t('Materials, activities, and people for this class.')
+              : t('Materials and activities shared with this class.')}
+          </p>
+        </div>
+        <span className="class-workspace-identity__role">
+          <i aria-hidden="true" />
+          {t(canFacilitate ? 'Teaching' : 'Learning')}
+        </span>
+      </header>
+      <div
+        aria-label={t('Class workspace sections')}
+        className="space-tabs"
+        role="tablist"
+      >
         {tabs.map((value, index) => (
           <button
             aria-controls={`space-panel-${space.id}-${value}`}
@@ -273,10 +239,12 @@ export function SpaceDetailPage({
           >
             {t(
               value === 'library'
-                ? 'Library'
+                ? 'Materials'
                 : value === 'activities'
                   ? 'Activities'
-                  : 'People',
+                  : value === 'sessions'
+                    ? 'Sessions'
+                    : 'People',
             )}
           </button>
         ))}
@@ -296,7 +264,11 @@ export function SpaceDetailPage({
         >
           <SpaceLibrary
             appLanguage={appLanguage}
-            onChanged={() => void loadSources()}
+            loading={sourcesLoading}
+            onChanged={() => {
+              setSourcesLoading(true);
+              void loadSources();
+            }}
             readOnly={!canFacilitate}
             sources={sources}
             spaceId={space.id}
@@ -314,172 +286,32 @@ export function SpaceDetailPage({
           >
             <ActivityEditorPage
               appLanguage={appLanguage}
-              onPublished={(versionId, definition) => {
-                setActivityVersionId(versionId);
-                setPublishedDefinition(definition);
+              onPublished={() => {
+                setSessionRefreshToken((current) => current + 1);
+                setTab('sessions');
               }}
               sources={sources}
               spaceId={space.id}
             />
-            {activityVersionId && !runId && (
-              <section
-                aria-labelledby="run-launch-heading"
-                className="space-panel run-launchpad"
-              >
-                <div className="section-heading-row">
-                  <div>
-                    <p className="eyebrow">{t('Published and ready')}</p>
-                    <h2 id="run-launch-heading">
-                      {t('How will students begin?')}
-                    </h2>
-                    <p className="section-deck">
-                      {t(
-                        'Open a live room for class, or assign this version for independent work.',
-                      )}
-                    </p>
-                  </div>
-                  <span className="published-seal">
-                    ✓ {t('Immutable version')}
-                  </span>
-                </div>
-                <div
-                  aria-label={t('Delivery method')}
-                  className="delivery-choice"
-                  role="radiogroup"
-                >
-                  <label className={delivery === 'room' ? 'is-selected' : ''}>
-                    <input
-                      checked={delivery === 'room'}
-                      name="delivery"
-                      onChange={() => setDelivery('room')}
-                      type="radio"
-                    />
-                    <span className="delivery-choice__icon" aria-hidden="true">
-                      ◎
-                    </span>
-                    <strong>{t('Live room')}</strong>
-                    <small>
-                      {t(
-                        'Students join a lobby with one short code. You decide when class starts.',
-                      )}
-                    </small>
-                    <em>{t('Recommended')}</em>
-                  </label>
-                  <label
-                    className={delivery === 'assigned' ? 'is-selected' : ''}
-                  >
-                    <input
-                      checked={delivery === 'assigned'}
-                      name="delivery"
-                      onChange={() => setDelivery('assigned')}
-                      type="radio"
-                    />
-                    <span className="delivery-choice__icon" aria-hidden="true">
-                      ↗
-                    </span>
-                    <strong>{t('Direct assignment')}</strong>
-                    <small>
-                      {t('Send to an existing group or a list of account IDs.')}
-                    </small>
-                  </label>
-                </div>
-                {delivery === 'assigned' && (
-                  <div className="run-assignment-options">
-                    {groups.length > 0 && (
-                      <label>
-                        {t('Assign a group')}
-                        <select
-                          onChange={(event) =>
-                            setSelectedGroupId(event.target.value)
-                          }
-                          value={selectedGroupId}
-                        >
-                          <option value="">
-                            {t('Use individual account IDs')}
-                          </option>
-                          {groups.map((group) => (
-                            <option key={group.id} value={group.id}>
-                              {group.name} ({group.participantCount})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    {!selectedGroupId && (
-                      <label>
-                        {t('Participant account IDs')}
-                        <textarea
-                          onChange={(event) =>
-                            setParticipants(event.target.value)
-                          }
-                          placeholder={t('One account ID per line')}
-                          rows={4}
-                          value={participants}
-                        />
-                      </label>
-                    )}
-                    <label>
-                      {t('Mode')}
-                      <select
-                        onChange={(event) =>
-                          setMode(event.target.value as typeof mode)
-                        }
-                        value={mode}
-                      >
-                        <option value="live">{t('live')}</option>
-                        <option value="async">{t('async')}</option>
-                        <option value="hybrid">{t('hybrid')}</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-                <button
-                  className="primary-button run-launchpad__action"
-                  disabled={
-                    creatingRun ||
-                    (delivery === 'assigned' &&
-                      !selectedGroupId &&
-                      participantIds.length === 0)
-                  }
-                  onClick={() => void createRun()}
-                  type="button"
-                >
-                  {creatingRun
-                    ? t('Creating…')
-                    : delivery === 'room'
-                      ? t('Create room lobby')
-                      : t('Open assignment')}{' '}
-                  →
-                </button>
-              </section>
-            )}
-            {runId && (
-              <FacilitatorRunPage
-                allowedOrigins={
-                  publishedDefinition?.sessionPolicy.allowedOrigins ?? []
-                }
-                appLanguage={appLanguage}
-                criteria={publishedDefinition?.criteria ?? []}
-                runId={runId}
-                spaceId={space.id}
-              />
-            )}
           </div>
-        ) : (
-          <div
-            aria-labelledby={`space-tab-${space.id}-activities`}
-            id={`space-panel-${space.id}-activities`}
-            role="tabpanel"
-            tabIndex={0}
-          >
-            <div className="knowledge-empty">
-              <strong>{t('Assigned Activities')}</strong>
-              <p>
-                {t('Your Teacher-published work appears in the Assigned view.')}
-              </p>
-            </div>
-          </div>
-        ))}
+        ) : null)}
+
+      {tab === 'sessions' && (
+        <div
+          aria-labelledby={`space-tab-${space.id}-sessions`}
+          id={`space-panel-${space.id}-sessions`}
+          role="tabpanel"
+          tabIndex={0}
+        >
+          <ClassSessionsPanel
+            appLanguage={appLanguage}
+            canFacilitate={canFacilitate}
+            onJoined={onJoined}
+            refreshToken={sessionRefreshToken}
+            spaceId={space.id}
+          />
+        </div>
+      )}
 
       {tab === 'people' && canFacilitate && (
         <section
@@ -755,11 +587,7 @@ export function SpaceDetailPage({
               <div>
                 <p className="eyebrow">{t('Smaller circles')}</p>
                 <h3>{t('Groups')}</h3>
-                <p>
-                  {t(
-                    'Organize rostered students for focused activities.',
-                  )}
-                </p>
+                <p>{t('Organize rostered students for focused activities.')}</p>
               </div>
               <span>{groups.length}</span>
             </div>

@@ -42,14 +42,28 @@ impl ClassroomService {
         self.require_facilitator(user_id, space_id).await?;
         let mut transaction = self.begin().await?;
         let current = query(
-            "SELECT state FROM knowledge_activity_runs WHERE id=$1 AND space_id=$2 FOR UPDATE",
+            r#"SELECT runs.state,items.session_id
+               FROM knowledge_activity_runs runs
+               LEFT JOIN knowledge_class_session_activities items ON items.run_id=runs.id
+               WHERE runs.id=$1 AND runs.space_id=$2 FOR UPDATE OF runs"#,
         )
         .bind(run_id)
         .bind(space_id)
         .fetch_optional(&mut *transaction)
         .await?
         .ok_or(ApiError::not_found("run_not_found", "Run not found."))?;
-        let current_state: String = current.get("state");
+        let session_id: Option<Uuid> = current.get("session_id");
+        let current_state: String = if let Some(session_id) = session_id {
+            query_scalar(
+                "SELECT state FROM knowledge_class_sessions WHERE id=$1 AND space_id=$2 FOR UPDATE",
+            )
+            .bind(session_id)
+            .bind(space_id)
+            .fetch_one(&mut *transaction)
+            .await?
+        } else {
+            current.get("state")
+        };
         if current_state == next_state {
             transaction.commit().await?;
             return Ok(RunStateResponse {
@@ -66,27 +80,59 @@ impl ClassroomService {
                 "Invalid run transition.",
             ));
         }
-        query(
-            "UPDATE knowledge_activity_runs SET state=$3,updated_at=NOW() WHERE id=$1 AND space_id=$2",
-        )
-        .bind(run_id)
-        .bind(space_id)
-        .bind(next_state)
-        .execute(&mut *transaction)
-        .await?;
-        query(
-            r#"INSERT INTO knowledge_activity_run_events (run_id,event_type,payload)
-               VALUES ($1,$2,jsonb_build_object('state',$3::text))"#,
-        )
-        .bind(run_id)
-        .bind(if next_state == "open" {
+        let event_type = if next_state == "open" {
             "class_started"
         } else {
             "class_ended"
-        })
-        .bind(next_state)
-        .execute(&mut *transaction)
-        .await?;
+        };
+        if let Some(session_id) = session_id {
+            query(
+                "UPDATE knowledge_class_sessions SET state=$3,updated_at=NOW() WHERE id=$1 AND space_id=$2",
+            )
+            .bind(session_id)
+            .bind(space_id)
+            .bind(next_state)
+            .execute(&mut *transaction)
+            .await?;
+            query(
+                r#"UPDATE knowledge_activity_runs runs SET state=$3,updated_at=NOW()
+                   FROM knowledge_class_session_activities items
+                   WHERE items.session_id=$1 AND items.run_id=runs.id AND runs.space_id=$2"#,
+            )
+            .bind(session_id)
+            .bind(space_id)
+            .bind(next_state)
+            .execute(&mut *transaction)
+            .await?;
+            query(
+                r#"INSERT INTO knowledge_activity_run_events (run_id,event_type,payload)
+                   SELECT items.run_id,$2,jsonb_build_object('state',$3::text,'sessionId',$1::uuid)
+                   FROM knowledge_class_session_activities items WHERE items.session_id=$1"#,
+            )
+            .bind(session_id)
+            .bind(event_type)
+            .bind(next_state)
+            .execute(&mut *transaction)
+            .await?;
+        } else {
+            query(
+                "UPDATE knowledge_activity_runs SET state=$3,updated_at=NOW() WHERE id=$1 AND space_id=$2",
+            )
+            .bind(run_id)
+            .bind(space_id)
+            .bind(next_state)
+            .execute(&mut *transaction)
+            .await?;
+            query(
+                r#"INSERT INTO knowledge_activity_run_events (run_id,event_type,payload)
+                   VALUES ($1,$2,jsonb_build_object('state',$3::text))"#,
+            )
+            .bind(run_id)
+            .bind(event_type)
+            .bind(next_state)
+            .execute(&mut *transaction)
+            .await?;
+        }
         transaction.commit().await?;
         Ok(RunStateResponse {
             id: run_id,

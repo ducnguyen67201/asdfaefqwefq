@@ -83,6 +83,10 @@ import {
   KnowledgeActivityDraftSchema,
   PublishKnowledgeActivityRequestSchema,
   KnowledgeActivityVersionSchema,
+  PublishedKnowledgeActivityListSchema,
+  CreateKnowledgeClassSessionRequestSchema,
+  KnowledgeClassSessionSchema,
+  KnowledgeClassSessionListSchema,
   CreateKnowledgeRunRequestSchema,
   KnowledgeRunSchema,
   SetKnowledgeRunStateRequestSchema,
@@ -187,77 +191,142 @@ const desktopApi: DesktopApi = {
   },
 
   async getKnowledgeCapabilities() {
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getKnowledgeCapabilities);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getKnowledgeCapabilities,
+    );
     return KnowledgeCapabilitiesSchema.parse(response);
   },
 
   async listKnowledgeSpaces() {
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listKnowledgeSpaces);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listKnowledgeSpaces,
+    );
     return KnowledgeSpaceListSchema.parse(response);
   },
 
   async createKnowledgeSpace(input) {
     const request = CreateKnowledgeSpaceRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createKnowledgeSpace, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.createKnowledgeSpace,
+      request,
+    );
     return CreateKnowledgeSpaceResponseSchema.parse(response);
   },
 
   async getKnowledgeSpace(spaceId) {
     const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getKnowledgeSpace, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getKnowledgeSpace,
+      request,
+    );
     return KnowledgeSpaceSummarySchema.parse(response);
   },
 
   async listKnowledgeSources(spaceId) {
     const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listKnowledgeSources, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listKnowledgeSources,
+      request,
+    );
     return KnowledgeSourceListSchema.parse(response);
   },
 
   async selectKnowledgeFiles(input) {
     const request = SelectKnowledgeFilesRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectKnowledgeFiles, request);
-    return response === null ? null : KnowledgeFileSelectionSchema.parse(response);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.selectKnowledgeFiles,
+      request,
+    );
+    return response === null
+      ? null
+      : KnowledgeFileSelectionSchema.parse(response);
   },
 
   async uploadKnowledgeSelection(input) {
     const request = UploadKnowledgeSelectionRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.uploadKnowledgeSelection, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.uploadKnowledgeSelection,
+      request,
+    );
     return KnowledgeUploadResultSchema.parse(response);
   },
 
   async saveKnowledgeActivity(input) {
     const request = SaveKnowledgeActivityRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.saveKnowledgeActivity, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.saveKnowledgeActivity,
+      request,
+    );
     return KnowledgeActivityDraftSchema.parse(response);
   },
 
   async publishKnowledgeActivity(input) {
     const request = PublishKnowledgeActivityRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.publishKnowledgeActivity, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.publishKnowledgeActivity,
+      request,
+    );
     return KnowledgeActivityVersionSchema.parse(response);
+  },
+
+  async listPublishedKnowledgeActivities(spaceId) {
+    const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listPublishedKnowledgeActivities,
+      request,
+    );
+    return PublishedKnowledgeActivityListSchema.parse(response);
+  },
+
+  async listKnowledgeClassSessions(spaceId) {
+    const request = KnowledgeSpaceIdRequestSchema.parse({ spaceId });
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listKnowledgeClassSessions,
+      request,
+    );
+    return KnowledgeClassSessionListSchema.parse(response);
+  },
+
+  async createKnowledgeClassSession(input) {
+    const request = CreateKnowledgeClassSessionRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.createKnowledgeClassSession,
+      request,
+    );
+    return KnowledgeClassSessionSchema.parse(response);
   },
 
   async createKnowledgeRun(input) {
     const request = CreateKnowledgeRunRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createKnowledgeRun, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.createKnowledgeRun,
+      request,
+    );
     return KnowledgeRunSchema.parse(response);
   },
 
   async setKnowledgeRunState(input) {
     const request = SetKnowledgeRunStateRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.setKnowledgeRunState, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.setKnowledgeRunState,
+      request,
+    );
     return KnowledgeRunSchema.parse(response);
   },
 
   async listAssignedActivities() {
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listAssignedActivities);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listAssignedActivities,
+    );
     return AssignedActivityListSchema.parse(response);
   },
 
   async getHostedAttempt(attemptId) {
     const request = KnowledgeAttemptIdRequestSchema.parse({ attemptId });
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getHostedAttempt, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getHostedAttempt,
+      request,
+    );
     return HostedAttemptContextSchema.parse(response);
   },
 
@@ -268,7 +337,10 @@ const desktopApi: DesktopApi = {
 
   async getKnowledgeDashboard(input) {
     const request = GetKnowledgeDashboardRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getKnowledgeDashboard, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getKnowledgeDashboard,
+      request,
+    );
     return KnowledgeDashboardSchema.parse(response);
   },
 
@@ -351,29 +423,42 @@ const desktopApi: DesktopApi = {
 
   async createKnowledgeRoomCode(input) {
     const request = CreateKnowledgeRoomCodeRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createKnowledgeRoomCode, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.createKnowledgeRoomCode,
+      request,
+    );
     return KnowledgeRoomCodeSchema.parse(response);
   },
 
   async revokeKnowledgeRoomCode(input) {
     const request = RevokeKnowledgeRoomCodeRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.revokeKnowledgeRoomCode, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.revokeKnowledgeRoomCode,
+      request,
+    );
     return KnowledgeRoomRevocationSchema.parse(response);
   },
 
   async joinKnowledgeRoom(input) {
     const request = JoinClassroomSessionRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.joinKnowledgeRoom, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.joinKnowledgeRoom,
+      request,
+    );
     return ClassroomSessionProjectionSchema.parse(response);
   },
 
   async restoreClassroomSession() {
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.restoreClassroomSession);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.restoreClassroomSession,
+    );
     return ClassroomSessionProjectionSchema.nullable().parse(response);
   },
 
   async getClassroomSession() {
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.getClassroomSession);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getClassroomSession,
+    );
     return ClassroomSessionProjectionSchema.nullable().parse(response);
   },
 
@@ -384,13 +469,19 @@ const desktopApi: DesktopApi = {
 
   async setClassroomLinkConsent(input) {
     const request = SetClassroomLinkConsentRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.setClassroomLinkConsent, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.setClassroomLinkConsent,
+      request,
+    );
     return ClassroomSessionProjectionSchema.nullable().parse(response);
   },
 
   async createClassroomDirective(input) {
     const request = CreateClassroomDirectiveRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createClassroomDirective, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.createClassroomDirective,
+      request,
+    );
     return ClassroomDirectiveSchema.parse(response);
   },
 
@@ -400,42 +491,67 @@ const desktopApi: DesktopApi = {
   },
 
   async dismissClassroomDirective(directiveId) {
-    const request = DismissClassroomDirectiveRequestSchema.parse({ directiveId });
+    const request = DismissClassroomDirectiveRequestSchema.parse({
+      directiveId,
+    });
     await ipcRenderer.invoke(IPC_CHANNELS.dismissClassroomDirective, request);
   },
 
   async readyKnowledgeAttempt(input) {
     const request = KnowledgeAttemptMutationRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readyKnowledgeAttempt, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.readyKnowledgeAttempt,
+      request,
+    );
     return KnowledgeAttemptTransitionSchema.parse(response);
   },
 
   async reviewKnowledgeAttempt(input) {
     const request = ReviewKnowledgeAttemptRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.reviewKnowledgeAttempt, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.reviewKnowledgeAttempt,
+      request,
+    );
     return KnowledgeAttemptTransitionSchema.parse(response);
   },
 
   async resolveKnowledgeAttemptHelp(input) {
     const request = ResolveKnowledgeAttemptHelpRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(IPC_CHANNELS.resolveKnowledgeAttemptHelp, request);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.resolveKnowledgeAttemptHelp,
+      request,
+    );
     return KnowledgeAttemptTransitionSchema.parse(response);
   },
 
   onClassroomSessionChanged(listener) {
-    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
       listener(ClassroomSessionProjectionSchema.nullable().parse(value));
     };
     ipcRenderer.on(IPC_CHANNELS.classroomSessionChanged, eventHandler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomSessionChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.classroomSessionChanged,
+        eventHandler,
+      );
   },
 
   onClassroomDirectiveChanged(listener) {
-    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
       listener(ClassroomDirectiveNoticeSchema.nullable().parse(value));
     };
     ipcRenderer.on(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.classroomDirectiveChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.classroomDirectiveChanged,
+        eventHandler,
+      );
   },
 
   onAgentActivity(listener) {
@@ -748,10 +864,7 @@ const desktopApi: DesktopApi = {
 
   async setCompanionVoiceActivity(input) {
     const activity = CompanionVoiceActivitySchema.nullable().parse(input);
-    await ipcRenderer.invoke(
-      IPC_CHANNELS.setCompanionVoiceActivity,
-      activity,
-    );
+    await ipcRenderer.invoke(IPC_CHANNELS.setCompanionVoiceActivity, activity);
   },
 
   async setVoiceAudioDucking(input) {
@@ -760,7 +873,10 @@ const desktopApi: DesktopApi = {
   },
 
   onTaskUpdate(listener) {
-    const eventHandler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
       listener(TaskUpdateSchema.parse(value));
     };
 
@@ -886,10 +1002,7 @@ const companionApi: CompanionApi = {
       listener(CompanionGuidanceVisualSchema.nullable().parse(value));
     };
 
-    ipcRenderer.on(
-      IPC_CHANNELS.companionGuidanceVisualChanged,
-      eventHandler,
-    );
+    ipcRenderer.on(IPC_CHANNELS.companionGuidanceVisualChanged, eventHandler);
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.companionGuidanceVisualChanged,
@@ -1001,10 +1114,7 @@ const companionApi: CompanionApi = {
       listener(CompanionVoiceActivitySchema.nullable().parse(value));
     };
 
-    ipcRenderer.on(
-      IPC_CHANNELS.companionVoiceActivityChanged,
-      eventHandler,
-    );
+    ipcRenderer.on(IPC_CHANNELS.companionVoiceActivityChanged, eventHandler);
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.companionVoiceActivityChanged,

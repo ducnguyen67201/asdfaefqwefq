@@ -76,6 +76,10 @@ import type {
   KnowledgeActivityDraft,
   PublishKnowledgeActivityRequest,
   KnowledgeActivityVersion,
+  PublishedKnowledgeActivityList,
+  CreateKnowledgeClassSessionRequest,
+  KnowledgeClassSession,
+  KnowledgeClassSessionList,
   CreateKnowledgeRunRequest,
   KnowledgeRun,
   AssignedActivityList,
@@ -193,6 +197,9 @@ export const IPC_CHANNELS = {
   uploadKnowledgeSelection: 'knowledge:files:upload',
   saveKnowledgeActivity: 'knowledge:activity:save',
   publishKnowledgeActivity: 'knowledge:activity:publish',
+  listPublishedKnowledgeActivities: 'knowledge:activities:list-published',
+  listKnowledgeClassSessions: 'knowledge:sessions:list',
+  createKnowledgeClassSession: 'knowledge:sessions:create',
   createKnowledgeRun: 'knowledge:run:create',
   setKnowledgeRunState: 'knowledge:run:set-state',
   listAssignedActivities: 'knowledge:assignments:list',
@@ -284,47 +291,106 @@ export interface DesktopApi {
   getWorkspaceRuntimeAvailability(): Promise<WorkspaceRuntimeAvailability>;
   getKnowledgeCapabilities(): Promise<KnowledgeCapabilities>;
   listKnowledgeSpaces(): Promise<KnowledgeSpaceList>;
-  createKnowledgeSpace(request: CreateKnowledgeSpaceRequest): Promise<CreateKnowledgeSpaceResponse>;
+  createKnowledgeSpace(
+    request: CreateKnowledgeSpaceRequest,
+  ): Promise<CreateKnowledgeSpaceResponse>;
   getKnowledgeSpace(spaceId: string): Promise<KnowledgeSpaceSummary>;
   listKnowledgeSources(spaceId: string): Promise<KnowledgeSourceList>;
-  selectKnowledgeFiles(request: SelectKnowledgeFilesRequest): Promise<KnowledgeFileSelection | null>;
-  uploadKnowledgeSelection(request: UploadKnowledgeSelectionRequest): Promise<KnowledgeUploadResult>;
-  saveKnowledgeActivity(request: SaveKnowledgeActivityRequest): Promise<KnowledgeActivityDraft>;
-  publishKnowledgeActivity(request: PublishKnowledgeActivityRequest): Promise<KnowledgeActivityVersion>;
+  selectKnowledgeFiles(
+    request: SelectKnowledgeFilesRequest,
+  ): Promise<KnowledgeFileSelection | null>;
+  uploadKnowledgeSelection(
+    request: UploadKnowledgeSelectionRequest,
+  ): Promise<KnowledgeUploadResult>;
+  saveKnowledgeActivity(
+    request: SaveKnowledgeActivityRequest,
+  ): Promise<KnowledgeActivityDraft>;
+  publishKnowledgeActivity(
+    request: PublishKnowledgeActivityRequest,
+  ): Promise<KnowledgeActivityVersion>;
+  listPublishedKnowledgeActivities(
+    spaceId: string,
+  ): Promise<PublishedKnowledgeActivityList>;
+  listKnowledgeClassSessions(
+    spaceId: string,
+  ): Promise<KnowledgeClassSessionList>;
+  createKnowledgeClassSession(
+    request: CreateKnowledgeClassSessionRequest,
+  ): Promise<KnowledgeClassSession>;
   createKnowledgeRun(request: CreateKnowledgeRunRequest): Promise<KnowledgeRun>;
-  setKnowledgeRunState(request: SetKnowledgeRunStateRequest): Promise<KnowledgeRun>;
+  setKnowledgeRunState(
+    request: SetKnowledgeRunStateRequest,
+  ): Promise<KnowledgeRun>;
   listAssignedActivities(): Promise<AssignedActivityList>;
   getHostedAttempt(attemptId: string): Promise<HostedAttemptContext>;
-  acknowledgeHostedAttempt(request: AcknowledgeKnowledgeAttemptRequest): Promise<void>;
-  getKnowledgeDashboard(request: GetKnowledgeDashboardRequest): Promise<KnowledgeDashboard>;
-  prepareActivityStarter(request: PrepareActivityStarterRequest): Promise<WorkspaceSelection | null>;
-  submitKnowledgeSelection(request: SubmitKnowledgeSelectionRequest): Promise<KnowledgeUploadResult>;
+  acknowledgeHostedAttempt(
+    request: AcknowledgeKnowledgeAttemptRequest,
+  ): Promise<void>;
+  getKnowledgeDashboard(
+    request: GetKnowledgeDashboardRequest,
+  ): Promise<KnowledgeDashboard>;
+  prepareActivityStarter(
+    request: PrepareActivityStarterRequest,
+  ): Promise<WorkspaceSelection | null>;
+  submitKnowledgeSelection(
+    request: SubmitKnowledgeSelectionRequest,
+  ): Promise<KnowledgeUploadResult>;
   listKnowledgeGroups(spaceId: string): Promise<KnowledgeGroupList>;
-  createKnowledgeGroup(request: CreateKnowledgeGroupRequest): Promise<KnowledgeGroup>;
+  createKnowledgeGroup(
+    request: CreateKnowledgeGroupRequest,
+  ): Promise<KnowledgeGroup>;
   listKnowledgeMembers(spaceId: string): Promise<KnowledgeSpaceMemberList>;
-  addKnowledgeSpaceMembers(request: AddKnowledgeSpaceMembersRequest): Promise<AddKnowledgeSpaceMembersResult>;
-  createKnowledgeInvite(request: CreateKnowledgeInviteRequest): Promise<KnowledgeInvite>;
-  redeemKnowledgeInvite(request: RedeemKnowledgeInviteRequest): Promise<RedeemKnowledgeInviteResponse>;
-  requestKnowledgeAttemptHelp(request: RequestKnowledgeAttemptHelp): Promise<void>;
-  createKnowledgeRoomCode(request: CreateKnowledgeRoomCodeRequest): Promise<KnowledgeRoomCode>;
-  revokeKnowledgeRoomCode(request: RevokeKnowledgeRoomCodeRequest): Promise<KnowledgeRoomRevocation>;
-  joinKnowledgeRoom(request: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection>;
+  addKnowledgeSpaceMembers(
+    request: AddKnowledgeSpaceMembersRequest,
+  ): Promise<AddKnowledgeSpaceMembersResult>;
+  createKnowledgeInvite(
+    request: CreateKnowledgeInviteRequest,
+  ): Promise<KnowledgeInvite>;
+  redeemKnowledgeInvite(
+    request: RedeemKnowledgeInviteRequest,
+  ): Promise<RedeemKnowledgeInviteResponse>;
+  requestKnowledgeAttemptHelp(
+    request: RequestKnowledgeAttemptHelp,
+  ): Promise<void>;
+  createKnowledgeRoomCode(
+    request: CreateKnowledgeRoomCodeRequest,
+  ): Promise<KnowledgeRoomCode>;
+  revokeKnowledgeRoomCode(
+    request: RevokeKnowledgeRoomCodeRequest,
+  ): Promise<KnowledgeRoomRevocation>;
+  joinKnowledgeRoom(
+    request: JoinClassroomSessionRequest,
+  ): Promise<ClassroomSessionProjection>;
   restoreClassroomSession(): Promise<ClassroomSessionProjection | null>;
   getClassroomSession(): Promise<ClassroomSessionProjection | null>;
-  leaveClassroomSession(request: KnowledgeAttemptMutationRequest): Promise<void>;
-  setClassroomLinkConsent(request: SetClassroomLinkConsentRequest): Promise<ClassroomSessionProjection | null>;
-  createClassroomDirective(request: CreateClassroomDirectiveRequest): Promise<ClassroomDirective>;
+  leaveClassroomSession(
+    request: KnowledgeAttemptMutationRequest,
+  ): Promise<void>;
+  setClassroomLinkConsent(
+    request: SetClassroomLinkConsentRequest,
+  ): Promise<ClassroomSessionProjection | null>;
+  createClassroomDirective(
+    request: CreateClassroomDirectiveRequest,
+  ): Promise<ClassroomDirective>;
   openClassroomDirective(request: OpenClassroomDirectiveRequest): Promise<void>;
   dismissClassroomDirective(directiveId: string): Promise<void>;
-  readyKnowledgeAttempt(request: KnowledgeAttemptMutationRequest): Promise<KnowledgeAttemptTransition>;
-  reviewKnowledgeAttempt(request: ReviewKnowledgeAttemptRequest): Promise<KnowledgeAttemptTransition>;
-  resolveKnowledgeAttemptHelp(request: ResolveKnowledgeAttemptHelpRequest): Promise<KnowledgeAttemptTransition>;
-  onClassroomSessionChanged(listener: (session: ClassroomSessionProjection | null) => void): () => void;
-  onClassroomDirectiveChanged(listener: (notice: ClassroomDirectiveNotice | null) => void): () => void;
-  onTaskUpdate(listener: (update: TaskUpdate) => void): () => void;
-  onTaskComposerFocusRequested(
-    listener: (taskId: string) => void,
+  readyKnowledgeAttempt(
+    request: KnowledgeAttemptMutationRequest,
+  ): Promise<KnowledgeAttemptTransition>;
+  reviewKnowledgeAttempt(
+    request: ReviewKnowledgeAttemptRequest,
+  ): Promise<KnowledgeAttemptTransition>;
+  resolveKnowledgeAttemptHelp(
+    request: ResolveKnowledgeAttemptHelpRequest,
+  ): Promise<KnowledgeAttemptTransition>;
+  onClassroomSessionChanged(
+    listener: (session: ClassroomSessionProjection | null) => void,
   ): () => void;
+  onClassroomDirectiveChanged(
+    listener: (notice: ClassroomDirectiveNotice | null) => void,
+  ): () => void;
+  onTaskUpdate(listener: (update: TaskUpdate) => void): () => void;
+  onTaskComposerFocusRequested(listener: (taskId: string) => void): () => void;
   onAgentActivity(
     listener: (activity: AgentActivityUpdate) => void,
   ): () => void;
@@ -380,15 +446,15 @@ export interface CompanionApi {
   onResponseChange(
     listener: (response: CompanionResponseCard | null) => void,
   ): () => void;
-  onSpeechChange(listener: (speech: CompanionSpeech | null) => void): () => void;
+  onSpeechChange(
+    listener: (speech: CompanionSpeech | null) => void,
+  ): () => void;
   onStateChange(listener: (state: CompanionState) => void): () => void;
   onVoiceActivityChange(
     listener: (activity: CompanionVoiceActivity | null) => void,
   ): () => void;
   reportSpeechPlayback(report: CompanionSpeechPlaybackReport): Promise<void>;
-  performResponseAction(
-    request: CompanionResponseActionRequest,
-  ): Promise<void>;
+  performResponseAction(request: CompanionResponseActionRequest): Promise<void>;
   respondToInteraction(
     request: RespondToInteractionRequest,
   ): Promise<TaskSnapshot>;

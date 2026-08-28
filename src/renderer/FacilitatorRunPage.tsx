@@ -35,20 +35,24 @@ export function FacilitatorRunPage({
   allowedOrigins,
   appLanguage,
   criteria,
+  initialRoomCode = null,
   runId,
   spaceId,
 }: {
   allowedOrigins: string[];
   appLanguage: AppLanguage;
   criteria: SaveKnowledgeActivityRequest['definition']['criteria'];
+  initialRoomCode?: KnowledgeRoomCode | null;
   runId: string;
   spaceId: string;
 }) {
   const [dashboard, setDashboard] = useState<KnowledgeDashboard | null>(null);
-  const [roomCode, setRoomCode] = useState<KnowledgeRoomCode | null>(null);
-  const [runState, setRunState] = useState<'archived' | 'closed' | 'draft' | 'open'>(
-    'draft',
+  const [roomCode, setRoomCode] = useState<KnowledgeRoomCode | null>(
+    initialRoomCode,
   );
+  const [runState, setRunState] = useState<
+    'archived' | 'closed' | 'draft' | 'open'
+  >('draft');
   const [directiveKind, setDirectiveKind] = useState<'exercise' | 'open_url'>(
     'exercise',
   );
@@ -291,9 +295,10 @@ export function FacilitatorRunPage({
   const participants = dashboard?.participants ?? [];
   const countFor = (status: string) =>
     participants.filter((participant) => participant.status === status).length;
-  const previewOrigin = directiveKind === 'open_url'
-    ? validateClassroomUrl(url.trim())?.origin ?? null
-    : null;
+  const previewOrigin =
+    directiveKind === 'open_url'
+      ? (validateClassroomUrl(url.trim())?.origin ?? null)
+      : null;
   const autoEligible =
     previewOrigin !== null && allowedOrigins.includes(previewOrigin);
   const canPreview =
@@ -763,9 +768,8 @@ export function FacilitatorRunPage({
                   <td>{row.evidenceCount}</td>
                   <td>
                     <div className="participant-review-actions">
-                      {(row.status === 'ready' ||
-                        row.status === 'submitted') && (
-                        pendingReview?.attemptId === row.attemptId ? (
+                      {(row.status === 'ready' || row.status === 'submitted') &&
+                        (pendingReview?.attemptId === row.attemptId ? (
                           <div
                             className="participant-review-confirmation"
                             aria-live="polite"
@@ -835,8 +839,7 @@ export function FacilitatorRunPage({
                               {t('Complete')}
                             </button>
                           </>
-                        )
-                      )}
+                        ))}
                     </div>
                   </td>
                 </tr>
