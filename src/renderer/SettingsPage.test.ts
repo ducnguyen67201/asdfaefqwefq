@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -50,7 +51,7 @@ function renderSettings(
   } = {},
 ): string {
   return renderToStaticMarkup(
-    SettingsPage({
+    createElement(SettingsPage, {
       appLanguage: options.appLanguage ?? 'en',
       autonomyMode: 'balanced',
       appUpdateError: null,
@@ -88,6 +89,7 @@ function renderSettings(
       onGenerateCompanion: vi.fn(),
       onLanguageChange: vi.fn(),
       onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+      onClose: vi.fn(),
       onOpenOrganization: vi.fn(),
       onRefreshOrganization: vi.fn(),
       onRestartAndInstall: vi.fn(),
@@ -114,6 +116,12 @@ describe('SettingsPage application updates', () => {
     expect(markup).toContain('Check for updates');
     expect(markup).toContain('App language');
     expect(markup).toContain('Spoken language');
+    expect(markup).toContain('<dialog');
+    expect(markup).toContain('aria-label="Settings"');
+    expect(markup).toContain('id="settings-nav-general"');
+    expect(markup).toContain('aria-controls="settings-panel-general"');
+    expect(markup).toContain('id="settings-panel-voice"');
+    expect(markup).toContain('hidden=""');
   });
 
   it('offers restart only after an update is ready', () => {
@@ -156,7 +164,7 @@ describe('SettingsPage application updates', () => {
 describe('SettingsPage app language', () => {
   it('renders translated controls when Vietnamese is selected', () => {
     const markup = renderToStaticMarkup(
-      SettingsPage({
+      createElement(SettingsPage, {
         appLanguage: 'vi',
         autonomyMode: 'strict',
         appUpdateError: null,
@@ -198,6 +206,7 @@ describe('SettingsPage app language', () => {
         onGenerateCompanion: vi.fn(),
         onLanguageChange: vi.fn(),
         onMuteSystemAudioWhileSpeakingChange: vi.fn(),
+        onClose: vi.fn(),
         onOpenOrganization: vi.fn(),
         onRefreshOrganization: vi.fn(),
         onRestartAndInstall: vi.fn(),

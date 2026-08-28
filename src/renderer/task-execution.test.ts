@@ -127,5 +127,12 @@ describe('task execution presentation policy', () => {
         { documentHasFocus: true, modalOpen: false },
       ),
     ).toBe(false);
+    expect(
+      shouldStopTaskForEscape(
+        { key: 'Escape', repeat: false, target: null },
+        { phase: 'planning' },
+        { documentHasFocus: true, modalOpen: true },
+      ),
+    ).toBe(false);
   });
 });

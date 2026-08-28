@@ -1,0 +1,251 @@
+// @vitest-environment happy-dom
+
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { TaskUpdate } from '../shared/contracts';
+import type { DesktopApi } from '../shared/desktop-api';
+
+import { App } from './App';
+
+const TASK_ID = '11111111-1111-4111-8111-111111111111';
+const EVENT_ID = '22222222-2222-4222-8222-222222222222';
+const TIMESTAMP = '2026-08-28T16:00:00.000Z';
+
+const ACTIVE_TASK_UPDATE: TaskUpdate = {
+  event: {
+    artifacts: [],
+    eventId: EVENT_ID,
+    nextActions: [],
+    phase: 'acting',
+    status: 'success',
+    summary: 'Tro is working on the task.',
+    taskId: TASK_ID,
+    timestamp: TIMESTAMP,
+  },
+  snapshot: {
+    approvalGrant: null,
+    createdAt: TIMESTAMP,
+    goal: null,
+    lastEvent: {
+      artifacts: [],
+      eventId: EVENT_ID,
+      nextActions: [],
+      phase: 'acting',
+      status: 'success',
+      summary: 'Tro is working on the task.',
+      taskId: TASK_ID,
+      timestamp: TIMESTAMP,
+    },
+    messages: [],
+    outcomes: null,
+    pendingInteraction: null,
+    phase: 'acting',
+    progress: null,
+    queuedSteering: [],
+    request: 'Keep the current workspace mounted',
+    runtimeResume: null,
+    taskId: TASK_ID,
+    updatedAt: TIMESTAMP,
+  },
+};
+
+describe('App settings dialog safety', () => {
+  let cancelTask: ReturnType<typeof vi.fn>;
+  let container: HTMLDivElement;
+  let root: Root;
+  let signOut: ReturnType<typeof vi.fn<() => void>>;
+  let taskUpdateListener: ((update: TaskUpdate) => void) | null;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    taskUpdateListener = null;
+    cancelTask = vi.fn();
+    signOut = vi.fn<() => void>();
+
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: () => true,
+    });
+    Object.defineProperty(navigator, 'permissions', {
+      configurable: true,
+      value: {
+        query: vi.fn().mockResolvedValue({ state: 'granted' }),
+      },
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function showModal(this: HTMLDialogElement) {
+        this.setAttribute('open', '');
+      },
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true,
+      value: function close(this: HTMLDialogElement) {
+        this.removeAttribute('open');
+      },
+    });
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(
+      () => undefined,
+    );
+
+    const unsubscribe = () => undefined;
+    window.tro = {
+      cancelTask,
+      getAppPreferences: vi.fn().mockResolvedValue({
+        appLanguage: 'en',
+        autonomyMode: 'balanced',
+        classroomPetEnabled: true,
+        muteSystemAudioWhileSpeaking: false,
+        primaryLanguage: 'en',
+      }),
+      getAppUpdateStatus: vi.fn().mockResolvedValue({
+        currentVersion: '0.1.8',
+        message: 'Tro is up to date.',
+        phase: 'up_to_date',
+        targetVersion: null,
+      }),
+      getCompanionCustomizationStatus: vi.fn().mockResolvedValue({
+        appearance: { kind: 'default' },
+        candidate: null,
+        quota: {
+          limit: 5,
+          periodEndsAt: '2026-09-01T00:00:00.000Z',
+          periodStartsAt: '2026-08-01T00:00:00.000Z',
+          remaining: 5,
+          used: 0,
+        },
+        savedCompanions: [],
+        state: 'available',
+        summary: 'Companion generation is available.',
+      }),
+      getComputerStatus: vi.fn().mockResolvedValue({
+        available: true,
+        nextActions: [],
+        permissions: { accessibility: true, screenRecording: true },
+        platform: 'darwin',
+        state: 'ready',
+        summary: 'Computer access is ready.',
+      }),
+      getKnowledgeCapabilities: vi.fn().mockResolvedValue({
+        knowledgeSpaces: { enabled: false },
+      }),
+      getMembershipStatus: vi.fn().mockResolvedValue({
+        expiresAt: null,
+        plan: 'free',
+        referenceCode: null,
+        required: true,
+        state: 'active',
+        summary: 'Free plan active.',
+      }),
+      getOrganization: vi.fn().mockResolvedValue({ organization: null }),
+      getTaskHistory: vi.fn().mockResolvedValue({
+        events: [],
+        persistence: { mode: 'session_only', summary: 'Session only.' },
+        snapshots: [],
+      }),
+      getUsageBudget: vi.fn().mockResolvedValue(null),
+      getVoiceStatus: vi.fn().mockResolvedValue({
+        model: 'gpt-transcribe',
+        provider: 'openai',
+        state: 'not_configured',
+        summary: 'Voice is not configured.',
+      }),
+      getWorkspaceRuntimeAvailability: vi.fn().mockResolvedValue({
+        available: false,
+        runtimeVersion: null,
+        summary: 'Workspace runtime is unavailable.',
+      }),
+      listConnectors: vi.fn().mockResolvedValue({
+        catalog: [],
+        connections: [],
+        enabled: false,
+      }),
+      onAgentActivity: vi.fn().mockReturnValue(unsubscribe),
+      onAppUpdateStatusChanged: vi.fn().mockReturnValue(unsubscribe),
+      onTaskComposerFocusRequested: vi.fn().mockReturnValue(unsubscribe),
+      onTaskUpdate: vi.fn((listener: (update: TaskUpdate) => void) => {
+        taskUpdateListener = listener;
+        return unsubscribe;
+      }),
+      onVoiceShortcut: vi.fn().mockReturnValue(unsubscribe),
+      setCompanionVoiceActivity: vi.fn().mockResolvedValue(undefined),
+      setVoiceAudioDucking: vi.fn().mockResolvedValue(undefined),
+    } as unknown as DesktopApi;
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps an active workspace mounted and isolates Escape while Settings closes', async () => {
+    await act(async () => {
+      root.render(
+        <App
+          currentUser={{
+            email: 'student@example.com',
+            id: 'preview-user',
+            name: 'Student',
+          }}
+          isSigningOut={false}
+          onSignOut={signOut}
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.querySelector('#task')).not.toBeNull();
+    const sidebarAccount = container.querySelector('.sidebar-account');
+    expect(sidebarAccount?.textContent).toContain('Student');
+    expect(sidebarAccount?.textContent).toContain('student@example.com');
+    expect(sidebarAccount?.textContent).toContain('Sign out');
+    expect(container.querySelector('.topbar .account-chip')).toBeNull();
+    expect(container.querySelector('.topbar .sign-out-button')).toBeNull();
+    await act(async () =>
+      sidebarAccount
+        ?.querySelector<HTMLButtonElement>('.sidebar-account__sign-out')
+        ?.click(),
+    );
+    expect(signOut).toHaveBeenCalledOnce();
+
+    await act(async () => taskUpdateListener?.(ACTIVE_TASK_UPDATE));
+
+    const settingsTrigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="dialog"]',
+    );
+    await act(async () => settingsTrigger?.click());
+
+    const dialog = container.querySelector('dialog');
+    expect(dialog?.open).toBe(true);
+    expect(container.querySelector('#task')).not.toBeNull();
+
+    await act(async () =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Escape',
+        }),
+      ),
+    );
+    expect(cancelTask).not.toHaveBeenCalled();
+
+    await act(async () =>
+      dialog?.dispatchEvent(new Event('cancel', { cancelable: true })),
+    );
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(settingsTrigger);
+    expect(container.querySelector('#task')).not.toBeNull();
+    expect(cancelTask).not.toHaveBeenCalled();
+  });
+});

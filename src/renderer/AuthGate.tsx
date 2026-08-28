@@ -24,34 +24,53 @@ function LoginScreen({
   status: AuthStatus;
 }) {
   return (
-    <main className="auth-screen">
-      <section className="auth-card" aria-labelledby="auth-heading">
-        <BrandMark className="auth-brand-mark" />
-        <p className="eyebrow">Welcome to Tro</p>
-        <h1 id="auth-heading">Your desktop agent, connected to you.</h1>
-        <p className="auth-description">
-          Sign in once with Google. Tro stores your session securely on
-          this computer, then asks separately before using your microphone or
-          controlling the screen.
-        </p>
-        <button
-          className="google-sign-in-button"
-          disabled={isLoading || !status.configured}
-          onClick={onSignIn}
-          type="button"
-        >
-          <span className="google-g" aria-hidden="true">
-            G
+    <div className="login-shell">
+      <aside aria-label="Tro account" className="login-sidebar">
+        <div className="sidebar-chrome" aria-hidden="true" />
+        <div className="brand login-sidebar__brand">
+          <BrandMark />
+          <div className="brand-copy">
+            <strong>Tro</strong>
+            <span>Desktop agent</span>
+          </div>
+        </div>
+
+        <div className="login-sidebar__account">
+          <span className="login-sidebar__account-label">
+            Sign in to continue
           </span>
-          {isLoading
-            ? 'Finish sign-in in your browser…'
-            : 'Continue with Google'}
-        </button>
-        <p className="auth-status" aria-live="polite">
-          {error ?? status.summary}
-        </p>
-      </section>
-    </main>
+          <button
+            className="google-sign-in-button login-sidebar__sign-in"
+            disabled={isLoading || !status.configured}
+            onClick={onSignIn}
+            type="button"
+          >
+            <span className="google-g" aria-hidden="true">
+              G
+            </span>
+            {isLoading
+              ? 'Finish sign-in in your browser…'
+              : 'Continue with Google'}
+          </button>
+          <p className="auth-status" aria-live="polite">
+            {error ?? status.summary}
+          </p>
+        </div>
+      </aside>
+
+      <main className="login-workspace">
+        <section className="auth-card" aria-labelledby="auth-heading">
+          <BrandMark className="auth-brand-mark" />
+          <p className="eyebrow">Welcome to Tro</p>
+          <h1 id="auth-heading">Your desktop agent, connected to you.</h1>
+          <p className="auth-description">
+            Sign in once with Google. Tro stores your session securely on this
+            computer, then asks separately before using your microphone or
+            controlling the screen.
+          </p>
+        </section>
+      </main>
+    </div>
   );
 }
 

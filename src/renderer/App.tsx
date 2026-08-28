@@ -213,7 +213,12 @@ function NavigationIcon({
   }
 
   if (name === 'assigned') {
-    return <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h12v18H6z" /><path d="m9 12 2 2 4-5M9 7h6" /></svg>;
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M6 3h12v18H6z" />
+        <path d="m9 12 2 2 4-5M9 7h6" />
+      </svg>
+    );
   }
 
   if (name === 'organization') {
@@ -293,11 +298,9 @@ function voiceStatusMessage(
           },
         );
       }
-      return translate(
-        appLanguage,
-        'Voice ready. Hold {shortcut} to talk.',
-        { shortcut: pushToTalkShortcutName(platform) },
-      );
+      return translate(appLanguage, 'Voice ready. Hold {shortcut} to talk.', {
+        shortcut: pushToTalkShortcutName(platform),
+      });
     }
   }
 }
@@ -442,7 +445,7 @@ function LiveTaskRail({
           100,
           Math.round((progress.currentStep / progress.maxSteps) * 100),
         )
-    : 0;
+      : 0;
   const taskTitle = goal
     ? goal.schemaVersion !== 2
       ? goal.originalRequest
@@ -452,7 +455,7 @@ function LiveTaskRail({
   const activityText =
     activity?.kind === 'text_delta'
       ? streamingDraft.slice(-500)
-      : activity?.summary ?? lastEvent?.summary;
+      : (activity?.summary ?? lastEvent?.summary);
   const announceActivity =
     activity?.kind === 'tool_started' || activity?.kind === 'tool_completed';
   const visibleActivities = activities
@@ -503,7 +506,7 @@ function LiveTaskRail({
                   : t('Everyday agent')
                 : goal
                   ? t('Agent')
-                : t('Understanding request')}
+                  : t('Understanding request')}
           </span>
           <span aria-hidden="true">·</span>
           <span>
@@ -551,7 +554,9 @@ function LiveTaskRail({
                             : '…'}
                     </span>
                     <span>{formatLabel(result.status, appLanguage)}</span>
-                    <span>{description ?? result.criterionId.replaceAll('-', ' ')}</span>
+                    <span>
+                      {description ?? result.criterionId.replaceAll('-', ' ')}
+                    </span>
                   </li>
                 );
               })}
@@ -585,12 +590,15 @@ function LiveTaskRail({
           <details className="live-task-details">
             <summary>{t('Task details')}</summary>
             <div className="live-task-details__content">
-              {(goal.schemaVersion === 6 || goal.schemaVersion === 7 || goal.schemaVersion === 8) && goal.activity && (
-                <div className="activity-context-chip">
-                  <span>{goal.activity.space.name}</span>
-                  <strong>{goal.activity.activity.title}</strong>
-                </div>
-              )}
+              {(goal.schemaVersion === 6 ||
+                goal.schemaVersion === 7 ||
+                goal.schemaVersion === 8) &&
+                goal.activity && (
+                  <div className="activity-context-chip">
+                    <span>{goal.activity.space.name}</span>
+                    <strong>{goal.activity.activity.title}</strong>
+                  </div>
+                )}
               <div>
                 <span className="field-label">{t('Execution')}</span>
                 <p>
@@ -615,7 +623,7 @@ function LiveTaskRail({
                       ? t(
                           'A useful assistant answer or an evidence-backed tool result.',
                         )
-                    : goal.successCriteria[0]?.description}
+                      : goal.successCriteria[0]?.description}
                 </p>
               </div>
             </div>
@@ -638,9 +646,7 @@ function LiveTaskRail({
               {!canStart
                 ? t('Waiting for the OpenAI agent provider before starting.')
                 : autoStartFailed
-                  ? t(
-                      'Tro could not start automatically. You can try again.',
-                    )
+                  ? t('Tro could not start automatically. You can try again.')
                   : isStarting
                     ? t(
                         'Starting automatically… Press Escape while Tro is focused to stop.',
@@ -696,9 +702,7 @@ function TerminalOutcome({
             : '!'}
       </span>
       <div>
-        <p className="eyebrow">
-          {formatLabel(snapshot.phase, appLanguage)}
-        </p>
+        <p className="eyebrow">{formatLabel(snapshot.phase, appLanguage)}</p>
         <h2 id="terminal-heading">{heading}</h2>
         <p>
           {snapshot.lastEvent?.summary ??
@@ -737,7 +741,9 @@ function ActivityList({
     <ol className="activity-list">
       {events.map((event) => (
         <li key={event.eventId}>
-          <span className={`activity-marker activity-marker--${event.status}`} />
+          <span
+            className={`activity-marker activity-marker--${event.status}`}
+          />
           <div>
             <strong>{formatLabel(event.phase, appLanguage)}</strong>
             <p>{event.summary}</p>
@@ -757,7 +763,10 @@ function Conversation({
 }) {
   const t = (message: string) => translate(appLanguage, message);
   return (
-    <section className="conversation-card" aria-labelledby="conversation-heading">
+    <section
+      className="conversation-card"
+      aria-labelledby="conversation-heading"
+    >
       <div className="section-heading-row">
         <div>
           <p className="eyebrow">{t('Same task')}</p>
@@ -853,7 +862,11 @@ function PendingInteractionCard({
         {approvalDetails(interaction.action.parameters).map((detail) => (
           <div key={detail.key}>
             <dt>{t(detail.label)}</dt>
-            <dd className={detail.payload ? 'approval-details__payload' : undefined}>
+            <dd
+              className={
+                detail.payload ? 'approval-details__payload' : undefined
+              }
+            >
               {detail.value}
             </dd>
           </div>
@@ -896,6 +909,12 @@ export function App({
   onSignOut: () => void;
 }) {
   const [activeView, setActiveView] = useState<ActiveView>('agent');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeSettings = useCallback((): void => {
+    setSettingsOpen(false);
+    window.requestAnimationFrame(() => settingsTriggerRef.current?.focus());
+  }, []);
   const [knowledgeSpacesEnabled, setKnowledgeSpacesEnabled] = useState(false);
   const [classroomRole, setClassroomRole] =
     useState<ClassroomAccountRole>('unassigned');
@@ -906,7 +925,9 @@ export function App({
     useState<KnowledgeSpaceSummary | null>(null);
   const [selectedClassSpaceTab, setSelectedClassSpaceTab] =
     useState<SpaceDetailTab>('library');
-  const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<string | null>(null);
+  const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<
+    string | null
+  >(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -919,9 +940,9 @@ export function App({
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [agentActivity, setAgentActivity] =
     useState<AgentActivityUpdate | null>(null);
-  const [agentActivities, setAgentActivities] = useState<
-    AgentActivityUpdate[]
-  >([]);
+  const [agentActivities, setAgentActivities] = useState<AgentActivityUpdate[]>(
+    [],
+  );
   const [streamingDraft, setStreamingDraft] = useState('');
   const [sessionEvents, setSessionEvents] = useState<TaskEvent[]>([]);
   const [sessionSnapshots, setSessionSnapshots] = useState<
@@ -938,18 +959,18 @@ export function App({
   );
   const [voiceProviderStatus, setVoiceProviderStatus] =
     useState<VoiceStatus>(EMPTY_VOICE_STATUS);
-  const [appPreferences, setAppPreferences] =
-    useState<AppPreferences | null>(null);
+  const [appPreferences, setAppPreferences] = useState<AppPreferences | null>(
+    null,
+  );
   const [appUpdateStatus, setAppUpdateStatus] =
     useState<AppUpdateStatus | null>(null);
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
-  const [usageBudget, setUsageBudget] =
-    useState<UsageBudgetSnapshot | null>(null);
+  const [usageBudget, setUsageBudget] = useState<UsageBudgetSnapshot | null>(
+    null,
+  );
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
-  const [languageDraft, setLanguageDraft] =
-    useState<PrimaryLanguage>('en');
-  const [appLanguageDraft, setAppLanguageDraft] =
-    useState<AppLanguage>('en');
+  const [languageDraft, setLanguageDraft] = useState<PrimaryLanguage>('en');
+  const [appLanguageDraft, setAppLanguageDraft] = useState<AppLanguage>('en');
   const [autonomyModeDraft, setAutonomyModeDraft] =
     useState<AutonomyMode>('balanced');
   const [classroomPetEnabledDraft, setClassroomPetEnabledDraft] =
@@ -977,8 +998,7 @@ export function App({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStoppingTask, setIsStoppingTask] = useState(false);
   const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
-  const [isRequestingPermissions, setIsRequestingPermissions] =
-    useState(false);
+  const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
   const [computerStatusLoaded, setComputerStatusLoaded] = useState(false);
   const [microphonePermission, setMicrophonePermission] =
     useState<PermissionState>('checking');
@@ -991,8 +1011,9 @@ export function App({
   const [companionError, setCompanionError] = useState<string | null>(null);
   const [companionBusy, setCompanionBusy] =
     useState<CompanionCustomizationBusy>(null);
-  const [organization, setOrganization] =
-    useState<OrganizationSummary | null>(null);
+  const [organization, setOrganization] = useState<OrganizationSummary | null>(
+    null,
+  );
   const [organizationError, setOrganizationError] = useState<string | null>(
     null,
   );
@@ -1037,13 +1058,12 @@ export function App({
     ) => translate(appLanguageDraft, message, replacements),
     [appLanguageDraft],
   );
-  const displayedPlan = accountPlan(
-    usageBudget?.plan,
-    membershipStatus?.plan,
-  );
+  const displayedPlan = accountPlan(usageBudget?.plan, membershipStatus?.plan);
   const usagePercent = remainingUsagePercent(usageBudget);
-  const languageSetupComplete =
-    isPrimaryLanguageSetupComplete(appPreferences, preferencesLoaded);
+  const languageSetupComplete = isPrimaryLanguageSetupComplete(
+    appPreferences,
+    preferencesLoaded,
+  );
   const entryGate = appEntryGate({
     languageSetupComplete,
     membershipStatus,
@@ -1078,7 +1098,7 @@ export function App({
       }
       setSelectedClassSpace((currentSpace) =>
         hasAssignedClassroomRole(result.classroomRole) && currentSpace
-          ? result.items.find((space) => space.id === currentSpace.id) ?? null
+          ? (result.items.find((space) => space.id === currentSpace.id) ?? null)
           : null,
       );
       setClassSpacesError(null);
@@ -1199,7 +1219,8 @@ export function App({
     const activitySequences = new Map<string, number>();
     const unsubscribeAgentActivity = window.tro.onAgentActivity((activity) => {
       const activeTaskId = activeTaskIdRef.current;
-      if (!acceptAgentActivity(activity, activeTaskId, activitySequences)) return;
+      if (!acceptAgentActivity(activity, activeTaskId, activitySequences))
+        return;
       if (activity.kind === 'run_started') setStreamingDraft('');
       if (activity.kind === 'run_started') setAgentActivities([]);
       if (activity.kind === 'text_delta' && activity.textDelta) {
@@ -1278,7 +1299,8 @@ export function App({
       .catch(() => {
         setTaskPersistence({
           mode: 'session_only',
-          summary: 'Saved history could not be loaded; this session is temporary.',
+          summary:
+            'Saved history could not be loaded; this session is temporary.',
         });
       });
 
@@ -1464,11 +1486,9 @@ export function App({
   );
   const agentReady = voiceProviderStatus.state === 'ready';
   const selectedTaskRuntimeReady = agentReady;
-  const voiceReady =
-    agentReady && microphonePermission !== 'unavailable';
+  const voiceReady = agentReady && microphonePermission !== 'unavailable';
   const desktopReady =
-    computerStatus.state === 'ready' &&
-    computerStatus.available;
+    computerStatus.state === 'ready' && computerStatus.available;
 
   const refreshMembership = useCallback(async () => {
     const refreshId = membershipRefreshIdRef.current + 1;
@@ -1586,7 +1606,10 @@ export function App({
   }, [currentUser.id, membershipStatus, refreshOrganization]);
 
   useEffect(() => {
-    if (activeView !== 'organization' || !membershipAllowsAccess(membershipStatus)) {
+    if (
+      activeView !== 'organization' ||
+      !membershipAllowsAccess(membershipStatus)
+    ) {
       return;
     }
     queueMicrotask(() => void refreshOrganization());
@@ -1621,15 +1644,12 @@ export function App({
   }, [membershipStatus, refreshMembership]);
 
   useEffect(() => {
-    if (
-      activeView !== 'settings' ||
-      membershipStatus?.state !== 'active'
-    ) {
+    if (!settingsOpen || membershipStatus?.state !== 'active') {
       return;
     }
 
     queueMicrotask(() => void refreshCompanionCustomization());
-  }, [activeView, membershipStatus?.state, refreshCompanionCustomization]);
+  }, [membershipStatus?.state, refreshCompanionCustomization, settingsOpen]);
 
   const activateMembership = useCallback(
     async (code: string) => {
@@ -1719,9 +1739,7 @@ export function App({
           : 'Tro could not activate this companion.',
       );
       try {
-        setCompanionStatus(
-          await window.tro.getCompanionCustomizationStatus(),
-        );
+        setCompanionStatus(await window.tro.getCompanionCustomizationStatus());
       } catch {
         // Preserve the activation error when refreshing an expired candidate fails.
       }
@@ -1748,9 +1766,7 @@ export function App({
           : 'Tro could not activate this saved companion.',
       );
       try {
-        setCompanionStatus(
-          await window.tro.getCompanionCustomizationStatus(),
-        );
+        setCompanionStatus(await window.tro.getCompanionCustomizationStatus());
       } catch {
         // Preserve the activation error when the saved library cannot refresh.
       }
@@ -1927,7 +1943,7 @@ export function App({
             text: normalizedRequest,
             workspaceSelectionId:
               executionProfile === 'workspace'
-                ? workspaceSelection?.selectionId ?? null
+                ? (workspaceSelection?.selectionId ?? null)
                 : null,
           });
         }
@@ -2049,10 +2065,7 @@ export function App({
     const activeSnapshot = snapshot;
 
     try {
-      if (
-        activeSnapshot &&
-        !isTaskTerminal(activeSnapshot)
-      ) {
+      if (activeSnapshot && !isTaskTerminal(activeSnapshot)) {
         recordSnapshot(await window.tro.cancelTask(activeSnapshot.taskId));
       }
 
@@ -2112,11 +2125,12 @@ export function App({
   );
 
   const keepVoiceRecoveryDraft = useCallback((transcript: string): void => {
-    setInput((current) =>
-      applyDictationTranscript(
-        captureVoiceDraftSnapshot(current, null, null, false),
-        transcript,
-      ).value,
+    setInput(
+      (current) =>
+        applyDictationTranscript(
+          captureVoiceDraftSnapshot(current, null, null, false),
+          transcript,
+        ).value,
     );
   }, []);
 
@@ -2237,7 +2251,8 @@ export function App({
       }
       if (route === 'local_dictation') {
         const snapshot = voiceDraftSnapshotsRef.current.get(context.turnId);
-        if (snapshot) setInput(applyDictationTranscript(snapshot, transcript).value);
+        if (snapshot)
+          setInput(applyDictationTranscript(snapshot, transcript).value);
       }
     },
     [],
@@ -2443,10 +2458,7 @@ export function App({
       !membershipAccessAllowed ||
       isSubmitting ||
       pendingInteraction?.kind === 'approval',
-    enabled:
-      voiceReady &&
-      languageSetupComplete &&
-      membershipAccessAllowed,
+    enabled: voiceReady && languageSetupComplete && membershipAccessAllowed,
     onAttemptStart: handleVoiceAttemptStart,
     onError: reportError,
     onTranscriptChange: handleVoiceTranscriptChange,
@@ -2500,9 +2512,7 @@ export function App({
             transcript: voiceTranscript,
           }
         : null);
-    void window.tro.setCompanionVoiceActivity(
-      activity,
-    );
+    void window.tro.setCompanionVoiceActivity(activity);
   }, [
     appLanguageDraft,
     voiceActivityOverride,
@@ -2545,7 +2555,6 @@ export function App({
         );
         return;
       }
-
     } finally {
       setIsRequestingPermissions(false);
     }
@@ -2574,45 +2583,49 @@ export function App({
     }
   }, []);
 
-  const startTask = useCallback(async (taskId: string) => {
-    const activeSnapshot = latestSnapshotRef.current;
-    if (
-      activeSnapshot?.taskId !== taskId ||
-      activeSnapshot.phase !== 'ready' ||
-      isSendingRef.current
-    ) return;
+  const startTask = useCallback(
+    async (taskId: string) => {
+      const activeSnapshot = latestSnapshotRef.current;
+      if (
+        activeSnapshot?.taskId !== taskId ||
+        activeSnapshot.phase !== 'ready' ||
+        isSendingRef.current
+      )
+        return;
 
-    isSendingRef.current = true;
-    clearError();
-    setAutoStartFailedTaskId(null);
-    setIsSubmitting(true);
-    try {
-      const startedSnapshot = await window.tro.startTask(taskId);
-      const latestSnapshot = latestSnapshotRef.current;
-      if (
-        latestSnapshot?.taskId === taskId &&
-        !isTaskTerminal(latestSnapshot)
-      ) {
-        recordSnapshot(startedSnapshot);
+      isSendingRef.current = true;
+      clearError();
+      setAutoStartFailedTaskId(null);
+      setIsSubmitting(true);
+      try {
+        const startedSnapshot = await window.tro.startTask(taskId);
+        const latestSnapshot = latestSnapshotRef.current;
+        if (
+          latestSnapshot?.taskId === taskId &&
+          !isTaskTerminal(latestSnapshot)
+        ) {
+          recordSnapshot(startedSnapshot);
+        }
+      } catch (startError) {
+        const latestSnapshot = latestSnapshotRef.current;
+        if (
+          latestSnapshot?.taskId === taskId &&
+          latestSnapshot.phase === 'ready'
+        ) {
+          setAutoStartFailedTaskId(taskId);
+          reportError(
+            startError instanceof Error
+              ? startError.message
+              : 'The task could not start.',
+          );
+        }
+      } finally {
+        isSendingRef.current = false;
+        setIsSubmitting(false);
       }
-    } catch (startError) {
-      const latestSnapshot = latestSnapshotRef.current;
-      if (
-        latestSnapshot?.taskId === taskId &&
-        latestSnapshot.phase === 'ready'
-      ) {
-        setAutoStartFailedTaskId(taskId);
-        reportError(
-          startError instanceof Error
-            ? startError.message
-            : 'The task could not start.',
-        );
-      }
-    } finally {
-      isSendingRef.current = false;
-      setIsSubmitting(false);
-    }
-  }, [clearError, recordSnapshot, reportError]);
+    },
+    [clearError, recordSnapshot, reportError],
+  );
 
   const stopTask = useCallback(async () => {
     const activeSnapshot = latestSnapshotRef.current;
@@ -2620,7 +2633,8 @@ export function App({
       !activeSnapshot ||
       !isTaskCancellable(activeSnapshot) ||
       isStoppingTaskRef.current
-    ) return;
+    )
+      return;
 
     isStoppingTaskRef.current = true;
     clearError();
@@ -2666,9 +2680,12 @@ export function App({
       if (
         !shouldStopTaskForEscape(event, latestSnapshotRef.current, {
           documentHasFocus: document.hasFocus(),
-          modalOpen: Boolean(latestSnapshotRef.current?.pendingInteraction),
+          modalOpen:
+            settingsOpen ||
+            Boolean(latestSnapshotRef.current?.pendingInteraction),
         })
-      ) return;
+      )
+        return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -2680,7 +2697,11 @@ export function App({
         .cancelTask(active.taskId, 'focused_escape')
         .then(recordSnapshot)
         .catch((error: unknown) =>
-          reportError(error instanceof Error ? error.message : 'The current task could not be cancelled.'),
+          reportError(
+            error instanceof Error
+              ? error.message
+              : 'The current task could not be cancelled.',
+          ),
         )
         .finally(() => {
           isStoppingTaskRef.current = false;
@@ -2690,7 +2711,7 @@ export function App({
 
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [recordSnapshot, reportError]);
+  }, [recordSnapshot, reportError, settingsOpen]);
 
   if (entryGate === 'membership') {
     return (
@@ -2722,9 +2743,7 @@ export function App({
         isRequesting={isRequestingPermissions}
         onLanguageChange={setLanguageDraft}
         onEnable={() => void enablePermissions()}
-        onOpenScreenRecordingSettings={() =>
-          void openScreenRecordingSettings()
-        }
+        onOpenScreenRecordingSettings={() => void openScreenRecordingSettings()}
         onRefresh={() => void refreshPermissions()}
         primaryLanguage={languageDraft}
       />
@@ -2836,15 +2855,11 @@ export function App({
                   activeView === 'assigned' ? 'nav-item--active' : ''
                 }`}
                 onClick={() => setActiveView('assigned')}
-                title={
-                  isSidebarCollapsed ? t('Classwork') : undefined
-                }
+                title={isSidebarCollapsed ? t('Classwork') : undefined}
                 type="button"
               >
                 <NavigationIcon name="assigned" />
-                <span className="sidebar-item-label">
-                  {t('Classwork')}
-                </span>
+                <span className="sidebar-item-label">{t('Classwork')}</span>
               </button>
             </>
           )}
@@ -2928,11 +2943,11 @@ export function App({
             )}
             <button
               aria-label={t('Settings')}
-              aria-current={activeView === 'settings' ? 'page' : undefined}
-              className={`nav-item ${
-                activeView === 'settings' ? 'nav-item--active' : ''
-              }`}
-              onClick={() => setActiveView('settings')}
+              aria-expanded={settingsOpen}
+              aria-haspopup="dialog"
+              className={`nav-item ${settingsOpen ? 'nav-item--active' : ''}`}
+              onClick={() => setSettingsOpen(true)}
+              ref={settingsTriggerRef}
               title={isSidebarCollapsed ? t('Settings') : undefined}
               type="button"
             >
@@ -2947,6 +2962,30 @@ export function App({
               <strong>{t('Bounded by default')}</strong>
               <span>{t('Approval gates enabled')}</span>
             </div>
+          </div>
+
+          <div className="sidebar-account" title={currentUser.email}>
+            <span className="account-avatar" aria-hidden="true">
+              {currentUser.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="sidebar-account__identity">
+              <strong>{currentUser.name}</strong>
+              <span>{currentUser.email}</span>
+            </span>
+            <button
+              aria-label={isSigningOut ? t('Signing out…') : t('Sign out')}
+              className="sidebar-account__sign-out"
+              disabled={isSigningOut}
+              onClick={onSignOut}
+              title={isSigningOut ? t('Signing out…') : t('Sign out')}
+              type="button"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M10 5H6.5A2.5 2.5 0 0 0 4 7.5v9A2.5 2.5 0 0 0 6.5 19H10" />
+                <path d="M14.5 8.5 18 12l-3.5 3.5M18 12H9" />
+              </svg>
+              <span>{isSigningOut ? t('Signing out…') : t('Sign out')}</span>
+            </button>
           </div>
         </div>
       </aside>
@@ -2982,30 +3021,12 @@ export function App({
                 <kbd>Esc</kbd>
               </button>
             )}
-            <span className="account-chip" title={currentUser.email}>
-              <span className="account-avatar" aria-hidden="true">
-                {currentUser.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="account-name">{currentUser.name}</span>
-            </span>
             <AppUpdateButton
               appLanguage={appLanguageDraft}
               isUpdating={isUpdatingApp}
               onRestartAndInstall={() => void restartAndInstallAppUpdate()}
               status={appUpdateStatus}
             />
-            <button
-              className="sign-out-button"
-              disabled={isSigningOut}
-              onClick={onSignOut}
-              type="button"
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M10 5H6.5A2.5 2.5 0 0 0 4 7.5v9A2.5 2.5 0 0 0 6.5 19H10" />
-                <path d="M14.5 8.5 18 12l-3.5 3.5M18 12H9" />
-              </svg>
-              <span>{isSigningOut ? t('Signing out…') : t('Sign out')}</span>
-            </button>
           </div>
         </header>
 
@@ -3028,7 +3049,9 @@ export function App({
             classroomLoading={classSpacesLoading}
             classroomRole={classroomRole}
             classSpaces={classSpaces}
-            focusAttemptId={activeView === 'assigned' ? classroomAttemptFocus : null}
+            focusAttemptId={
+              activeView === 'assigned' ? classroomAttemptFocus : null
+            }
             mode={activeView}
             onAttemptFocusCleared={() => setClassroomAttemptFocus(null)}
             onLaunch={launchKnowledgeActivity}
@@ -3077,7 +3100,393 @@ export function App({
             onRefresh={refreshOrganization}
             organization={organization}
           />
-        ) : activeView === 'settings' ? (
+        ) : (
+          <div className="content-grid" id="task">
+            <section className="task-column">
+              <section
+                className={`agent-stage agent-stage--${hero.state} ${
+                  organizationHomeBanner
+                    ? 'agent-stage--organization-banner'
+                    : ''
+                }`}
+              >
+                {organizationHomeBanner ? (
+                  <img
+                    alt={t('Announcement from {organization}', {
+                      organization:
+                        organization?.name ?? t('your organization'),
+                    })}
+                    className="agent-stage__organization-banner"
+                    src={organizationHomeBanner.imageDataUrl}
+                  />
+                ) : (
+                  <>
+                    <div className={`hero-copy hero-copy--${hero.state}`}>
+                      <p className="eyebrow">{hero.eyebrow}</p>
+                      <h1>{hero.heading}</h1>
+                      <p>{hero.description}</p>
+                    </div>
+
+                    <div className="agent-stage__map" aria-hidden="true">
+                      <div className="agent-stage__orbit agent-stage__orbit--outer" />
+                      <div className="agent-stage__orbit agent-stage__orbit--inner" />
+                      <span className="agent-stage__node agent-stage__node--scope">
+                        {t('Outcome first')}
+                      </span>
+                      <span className="agent-stage__node agent-stage__node--act">
+                        {t('Act')}
+                      </span>
+                      <span className="agent-stage__node agent-stage__node--verify">
+                        {t('Success looks like')}
+                      </span>
+                      <span className="agent-stage__core">
+                        <BrandMark className="agent-stage__mark" />
+                        <i />
+                      </span>
+                    </div>
+                  </>
+                )}
+              </section>
+
+              <form
+                className={`task-composer ${hasLiveTask || pendingInteraction ? 'task-composer--compact' : ''}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendInput();
+                }}
+              >
+                <label htmlFor="task-request">
+                  {pendingClarification
+                    ? t('Answer Tro to continue this task')
+                    : isSteering
+                      ? t('Steer the active task')
+                      : t('Describe the outcome')}
+                </label>
+                <div
+                  aria-live="polite"
+                  className={`voice-status voice-status--${voiceStatus}${voiceMode ? ` voice-status--${voiceMode}` : ''}`}
+                >
+                  <span className="voice-indicator" aria-hidden="true" />
+                  <span>
+                    {voiceStatusMessage(
+                      voiceStatus,
+                      voicePlatform,
+                      appLanguageDraft,
+                      voiceMode,
+                    )}
+                  </span>
+                  <VoiceShortcuts
+                    appLanguage={appLanguageDraft}
+                    platform={voicePlatform}
+                  />
+                </div>
+                <textarea
+                  id="task-request"
+                  ref={taskRequestRef}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder={
+                    pendingClarification
+                      ? t(
+                          'Type, dictate, or hold Shift with the voice shortcut to answer…',
+                        )
+                      : isSteering
+                        ? t('Type, dictate, or give Tro a voice task…')
+                        : t(
+                            'Type a task, or hold Dictation to add text without sending…',
+                          )
+                  }
+                  rows={hasLiveTask || pendingInteraction ? 2 : 4}
+                  value={input}
+                />
+                {!pendingClarification && !isSteering && (
+                  <div
+                    aria-label={t('Execution mode')}
+                    className="execution-profile-picker"
+                    role="group"
+                  >
+                    <button
+                      aria-pressed={executionProfile === 'everyday'}
+                      onClick={() => setExecutionProfile('everyday')}
+                      type="button"
+                    >
+                      <strong>{t('Everyday')}</strong>
+                      <span>
+                        {t('Apps, research, and routine desktop work')}
+                      </span>
+                    </button>
+                    {workspaceRuntime?.available && (
+                      <button
+                        aria-pressed={executionProfile === 'workspace'}
+                        disabled={isSelectingWorkspace}
+                        onClick={() => {
+                          if (
+                            workspaceSelection &&
+                            executionProfile !== 'workspace'
+                          ) {
+                            setExecutionProfile('workspace');
+                          } else {
+                            void chooseWorkspace();
+                          }
+                        }}
+                        type="button"
+                      >
+                        <strong>
+                          {isSelectingWorkspace
+                            ? t('Choosing…')
+                            : t('Workspace')}
+                        </strong>
+                        <span>
+                          {workspaceSelection
+                            ? workspaceSelection.displayName
+                            : t('Choose a trusted project folder')}
+                        </span>
+                      </button>
+                    )}
+                    {workspaceRuntime && !workspaceRuntime.available && (
+                      <p className="execution-profile-picker__unavailable">
+                        {workspaceRuntime.summary}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="composer-footer">
+                  <span>
+                    {pendingClarification
+                      ? t('This answer stays attached to the current task.')
+                      : isSteering
+                        ? t('Steering is reviewed at the next safe boundary.')
+                        : t(
+                            autonomyModeDraft === 'balanced'
+                              ? 'Your instruction authorizes requested reversible work; Tro still asks for high-impact or expanded-scope actions.'
+                              : 'Strict mode asks before every mutation or side effect.',
+                          )}
+                  </span>
+                  <button
+                    className="primary-button"
+                    disabled={!canSubmit}
+                    type="submit"
+                  >
+                    {isSubmitting
+                      ? t('Sending…')
+                      : pendingClarification
+                        ? t('Send answer')
+                        : isSteering
+                          ? t('Send steering')
+                          : t('Start task')}
+                    <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+              </form>
+
+              {!snapshot && (
+                <div className="examples" aria-label={t('Example tasks')}>
+                  {EXAMPLE_TASKS.map((example) => (
+                    <button
+                      key={example}
+                      onClick={() => setInput(example)}
+                      type="button"
+                    >
+                      {t(example)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {hasLiveTask && snapshot && (
+                <LiveTaskRail
+                  activities={agentActivities.filter(
+                    (item) => item.taskId === snapshot.taskId,
+                  )}
+                  activity={
+                    agentActivity?.taskId === snapshot.taskId
+                      ? agentActivity
+                      : null
+                  }
+                  appLanguage={appLanguageDraft}
+                  autoStartFailed={autoStartFailedTaskId === snapshot.taskId}
+                  canStart={selectedTaskRuntimeReady}
+                  goal={snapshot.goal}
+                  isStarting={isSubmitting}
+                  lastEvent={snapshot.lastEvent}
+                  onRetry={() => void startTask(snapshot.taskId)}
+                  outcomes={snapshot.outcomes}
+                  phase={snapshot.phase}
+                  progress={snapshot.progress}
+                  request={snapshot.request}
+                  streamingDraft={streamingDraft}
+                />
+              )}
+
+              {error && (
+                <div className="error-banner" role="alert">
+                  <strong>{t('Something needs attention')}</strong>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {pendingInteraction && (
+                <PendingInteractionCard
+                  appLanguage={appLanguageDraft}
+                  interaction={pendingInteraction}
+                  isSending={isSubmitting}
+                  onAnswerChoice={(answer) => void sendInput(answer)}
+                  onApproval={(decision) => void decideApproval(decision)}
+                />
+              )}
+
+              {permissionWait && snapshot && (
+                <section className="pending-interaction" aria-live="polite">
+                  <div>
+                    <strong>{t('Computer permission required')}</strong>
+                    <p>
+                      {t(
+                        'Tro is holding the same action until Accessibility and Screen Recording are genuinely ready.',
+                      )}
+                    </p>
+                  </div>
+                  <div className="pending-interaction__actions">
+                    <button
+                      className="primary-button"
+                      onClick={() =>
+                        void window.tro.resolveComputerPermission({
+                          taskId: snapshot.taskId,
+                          action: 'open_system_settings',
+                        })
+                      }
+                      type="button"
+                    >
+                      {t('Open System Settings')}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        void window.tro.resolveComputerPermission({
+                          taskId: snapshot.taskId,
+                          action: 'continue_without_computer',
+                        })
+                      }
+                      type="button"
+                    >
+                      {t('Continue without computer')}
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {hasLiveTask && snapshot && (
+                <Conversation
+                  appLanguage={appLanguageDraft}
+                  snapshot={snapshot}
+                />
+              )}
+              {isTerminalTask && snapshot && (
+                <TerminalOutcome
+                  appLanguage={appLanguageDraft}
+                  onViewHistory={() => setActiveView('history')}
+                  snapshot={snapshot}
+                />
+              )}
+            </section>
+
+            <aside className="context-column">
+              <section
+                className="usage-overview"
+                aria-labelledby="usage-overview-heading"
+              >
+                <div className="usage-overview__heading">
+                  <div>
+                    <p className="eyebrow">{t('Plan & weekly usage')}</p>
+                    <h2 id="usage-overview-heading">
+                      {planTitle(displayedPlan)}
+                    </h2>
+                  </div>
+                  <strong className="usage-overview__percent">
+                    {usagePercent === null
+                      ? '—'
+                      : t('{percent}% left', { percent: usagePercent })}
+                  </strong>
+                </div>
+                {usagePercent === null ? (
+                  <p className="usage-overview__detail">
+                    {t('Usage details unavailable')}
+                  </p>
+                ) : (
+                  <>
+                    <div
+                      aria-label={t('Weekly usage')}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={usagePercent}
+                      aria-valuetext={t('{percent}% left', {
+                        percent: usagePercent,
+                      })}
+                      className="usage-overview__progress"
+                      role="progressbar"
+                    >
+                      <span style={{ width: `${usagePercent}%` }} />
+                    </div>
+                    <p className="usage-overview__detail">
+                      {t('{remaining} of {limit} messages left', {
+                        limit: usageBudget?.messages.limit ?? 0,
+                        remaining: usageBudget?.messages.remaining ?? 0,
+                      })}
+                    </p>
+                  </>
+                )}
+              </section>
+              <section
+                className="context-overview"
+                aria-labelledby="session-overview-heading"
+              >
+                <p className="eyebrow">{t('Current app session')}</p>
+                <div className="context-overview__metric">
+                  <strong>{historyTaskCount}</strong>
+                  <span>
+                    {t(
+                      historyTaskCount === 1
+                        ? '{count} finished task'
+                        : '{count} finished tasks',
+                      { count: historyTaskCount },
+                    ).replace(`${historyTaskCount} `, '')}
+                  </span>
+                </div>
+                <h2 id="session-overview-heading">{taskPhase}</h2>
+                <div className="context-overview__guardrails">
+                  <span>{t('Bounded by default')}</span>
+                  <span>{t('Approval gates enabled')}</span>
+                  <span>{t('Tools selected at runtime')}</span>
+                </div>
+              </section>
+              <ComputerConnection
+                appLanguage={appLanguageDraft}
+                isConnecting={isRequestingPermissions}
+                onConnect={() => void openScreenRecordingSettings()}
+                ready={desktopReady}
+                status={computerStatus}
+              />
+              {hasLiveTask && (
+                <section
+                  className="activity-card"
+                  id="activity"
+                  aria-labelledby="activity-heading"
+                >
+                  <div className="section-heading-row">
+                    <div>
+                      <p className="eyebrow">{t('Live lifecycle')}</p>
+                      <h2 id="activity-heading">{t('Task activity')}</h2>
+                    </div>
+                    <span className="event-count">{events.length}</span>
+                  </div>
+                  <ActivityList
+                    appLanguage={appLanguageDraft}
+                    events={events}
+                  />
+                </section>
+              )}
+            </aside>
+          </div>
+        )}
+        {settingsOpen && (
           <SettingsPage
             appLanguage={appLanguageDraft}
             autonomyMode={autonomyModeDraft}
@@ -3130,12 +3539,16 @@ export function App({
               setSettingsSaveMessage(null);
             }}
             onActivateMembership={(code) => void activateMembership(code)}
+            onClose={closeSettings}
             onMuteSystemAudioWhileSpeakingChange={(enabled) => {
               setMuteSystemAudioWhileSpeakingDraft(enabled);
               setSettingsError(null);
               setSettingsSaveMessage(null);
             }}
-            onOpenOrganization={() => setActiveView('organization')}
+            onOpenOrganization={() => {
+              closeSettings();
+              setActiveView('organization');
+            }}
             onRefreshOrganization={() => void refreshOrganization()}
             onRestartAndInstall={() => void restartAndInstallAppUpdate()}
             onSave={() => void saveSettings()}
@@ -3145,378 +3558,6 @@ export function App({
             muteSystemAudioWhileSpeaking={muteSystemAudioWhileSpeakingDraft}
             systemAudioMuteSupported={voicePlatform === 'macos'}
           />
-        ) : (
-          <div className="content-grid" id="task">
-            <section className="task-column">
-              <section
-                className={`agent-stage agent-stage--${hero.state} ${
-                  organizationHomeBanner
-                    ? 'agent-stage--organization-banner'
-                    : ''
-                }`}
-              >
-                {organizationHomeBanner ? (
-                  <img
-                    alt={t('Announcement from {organization}', {
-                      organization: organization?.name ?? t('your organization'),
-                    })}
-                    className="agent-stage__organization-banner"
-                    src={organizationHomeBanner.imageDataUrl}
-                  />
-                ) : (
-                  <>
-                    <div className={`hero-copy hero-copy--${hero.state}`}>
-                      <p className="eyebrow">{hero.eyebrow}</p>
-                      <h1>{hero.heading}</h1>
-                      <p>{hero.description}</p>
-                    </div>
-
-                    <div className="agent-stage__map" aria-hidden="true">
-                      <div className="agent-stage__orbit agent-stage__orbit--outer" />
-                      <div className="agent-stage__orbit agent-stage__orbit--inner" />
-                      <span className="agent-stage__node agent-stage__node--scope">
-                        {t('Outcome first')}
-                      </span>
-                      <span className="agent-stage__node agent-stage__node--act">
-                        {t('Act')}
-                      </span>
-                      <span className="agent-stage__node agent-stage__node--verify">
-                        {t('Success looks like')}
-                      </span>
-                      <span className="agent-stage__core">
-                        <BrandMark className="agent-stage__mark" />
-                        <i />
-                      </span>
-                    </div>
-                  </>
-                )}
-              </section>
-
-            <form
-              className={`task-composer ${hasLiveTask || pendingInteraction ? 'task-composer--compact' : ''}`}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void sendInput();
-              }}
-            >
-              <label htmlFor="task-request">
-                {pendingClarification
-                  ? t('Answer Tro to continue this task')
-                  : isSteering
-                    ? t('Steer the active task')
-                    : t('Describe the outcome')}
-              </label>
-              <div
-                aria-live="polite"
-                className={`voice-status voice-status--${voiceStatus}${voiceMode ? ` voice-status--${voiceMode}` : ''}`}
-              >
-                <span className="voice-indicator" aria-hidden="true" />
-                <span>
-                  {voiceStatusMessage(
-                    voiceStatus,
-                    voicePlatform,
-                    appLanguageDraft,
-                    voiceMode,
-                  )}
-                </span>
-                <VoiceShortcuts
-                  appLanguage={appLanguageDraft}
-                  platform={voicePlatform}
-                />
-              </div>
-              <textarea
-                id="task-request"
-                ref={taskRequestRef}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={
-                  pendingClarification
-                    ? t('Type, dictate, or hold Shift with the voice shortcut to answer…')
-                    : isSteering
-                      ? t('Type, dictate, or give Tro a voice task…')
-                      : t(
-                          'Type a task, or hold Dictation to add text without sending…',
-                        )
-                }
-                rows={hasLiveTask || pendingInteraction ? 2 : 4}
-                value={input}
-              />
-              {!pendingClarification && !isSteering && (
-                <div
-                  aria-label={t('Execution mode')}
-                  className="execution-profile-picker"
-                  role="group"
-                >
-                  <button
-                    aria-pressed={executionProfile === 'everyday'}
-                    onClick={() => setExecutionProfile('everyday')}
-                    type="button"
-                  >
-                    <strong>{t('Everyday')}</strong>
-                    <span>{t('Apps, research, and routine desktop work')}</span>
-                  </button>
-                  {workspaceRuntime?.available && (
-                    <button
-                      aria-pressed={executionProfile === 'workspace'}
-                      disabled={isSelectingWorkspace}
-                      onClick={() => {
-                        if (
-                          workspaceSelection &&
-                          executionProfile !== 'workspace'
-                        ) {
-                          setExecutionProfile('workspace');
-                        } else {
-                          void chooseWorkspace();
-                        }
-                      }}
-                      type="button"
-                    >
-                      <strong>
-                        {isSelectingWorkspace
-                          ? t('Choosing…')
-                          : t('Workspace')}
-                      </strong>
-                      <span>
-                        {workspaceSelection
-                          ? workspaceSelection.displayName
-                          : t('Choose a trusted project folder')}
-                      </span>
-                    </button>
-                  )}
-                  {workspaceRuntime && !workspaceRuntime.available && (
-                    <p className="execution-profile-picker__unavailable">
-                      {workspaceRuntime.summary}
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="composer-footer">
-                <span>
-                  {pendingClarification
-                    ? t('This answer stays attached to the current task.')
-                    : isSteering
-                      ? t('Steering is reviewed at the next safe boundary.')
-                      : t(
-                          autonomyModeDraft === 'balanced'
-                            ? 'Your instruction authorizes requested reversible work; Tro still asks for high-impact or expanded-scope actions.'
-                            : 'Strict mode asks before every mutation or side effect.',
-                        )}
-                </span>
-                <button className="primary-button" disabled={!canSubmit} type="submit">
-                  {isSubmitting
-                    ? t('Sending…')
-                    : pendingClarification
-                      ? t('Send answer')
-                      : isSteering
-                        ? t('Send steering')
-                        : t('Start task')}
-                  <span aria-hidden="true">→</span>
-                </button>
-              </div>
-            </form>
-
-            {!snapshot && (
-              <div className="examples" aria-label={t('Example tasks')}>
-                {EXAMPLE_TASKS.map((example) => (
-                  <button
-                    key={example}
-                    onClick={() => setInput(example)}
-                    type="button"
-                  >
-                    {t(example)}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {hasLiveTask && snapshot && (
-              <LiveTaskRail
-                activities={agentActivities.filter(
-                  (item) => item.taskId === snapshot.taskId,
-                )}
-                activity={
-                  agentActivity?.taskId === snapshot.taskId
-                    ? agentActivity
-                    : null
-                }
-                appLanguage={appLanguageDraft}
-                autoStartFailed={autoStartFailedTaskId === snapshot.taskId}
-                canStart={selectedTaskRuntimeReady}
-                goal={snapshot.goal}
-                isStarting={isSubmitting}
-                lastEvent={snapshot.lastEvent}
-                onRetry={() => void startTask(snapshot.taskId)}
-                outcomes={snapshot.outcomes}
-                phase={snapshot.phase}
-                progress={snapshot.progress}
-                request={snapshot.request}
-                streamingDraft={streamingDraft}
-              />
-            )}
-
-            {error && (
-              <div className="error-banner" role="alert">
-                <strong>{t('Something needs attention')}</strong>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {pendingInteraction && (
-              <PendingInteractionCard
-                appLanguage={appLanguageDraft}
-                interaction={pendingInteraction}
-                isSending={isSubmitting}
-                onAnswerChoice={(answer) => void sendInput(answer)}
-                onApproval={(decision) => void decideApproval(decision)}
-              />
-            )}
-
-            {permissionWait && snapshot && (
-              <section className="pending-interaction" aria-live="polite">
-                <div>
-                  <strong>{t('Computer permission required')}</strong>
-                  <p>
-                    {t(
-                      'Tro is holding the same action until Accessibility and Screen Recording are genuinely ready.',
-                    )}
-                  </p>
-                </div>
-                <div className="pending-interaction__actions">
-                  <button
-                    className="primary-button"
-                    onClick={() =>
-                      void window.tro.resolveComputerPermission({
-                        taskId: snapshot.taskId,
-                        action: 'open_system_settings',
-                      })
-                    }
-                    type="button"
-                  >
-                    {t('Open System Settings')}
-                  </button>
-                  <button
-                    className="secondary-button"
-                    onClick={() =>
-                      void window.tro.resolveComputerPermission({
-                        taskId: snapshot.taskId,
-                        action: 'continue_without_computer',
-                      })
-                    }
-                    type="button"
-                  >
-                    {t('Continue without computer')}
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {hasLiveTask && snapshot && (
-              <Conversation
-                appLanguage={appLanguageDraft}
-                snapshot={snapshot}
-              />
-            )}
-            {isTerminalTask && snapshot && (
-              <TerminalOutcome
-                appLanguage={appLanguageDraft}
-                onViewHistory={() => setActiveView('history')}
-                snapshot={snapshot}
-              />
-            )}
-          </section>
-
-          <aside className="context-column">
-            <section
-              className="usage-overview"
-              aria-labelledby="usage-overview-heading"
-            >
-              <div className="usage-overview__heading">
-                <div>
-                  <p className="eyebrow">{t('Plan & weekly usage')}</p>
-                  <h2 id="usage-overview-heading">
-                    {planTitle(displayedPlan)}
-                  </h2>
-                </div>
-                <strong className="usage-overview__percent">
-                  {usagePercent === null
-                    ? '—'
-                    : t('{percent}% left', { percent: usagePercent })}
-                </strong>
-              </div>
-              {usagePercent === null ? (
-                <p className="usage-overview__detail">
-                  {t('Usage details unavailable')}
-                </p>
-              ) : (
-                <>
-                  <div
-                    aria-label={t('Weekly usage')}
-                    aria-valuemax={100}
-                    aria-valuemin={0}
-                    aria-valuenow={usagePercent}
-                    aria-valuetext={t('{percent}% left', {
-                      percent: usagePercent,
-                    })}
-                    className="usage-overview__progress"
-                    role="progressbar"
-                  >
-                    <span style={{ width: `${usagePercent}%` }} />
-                  </div>
-                  <p className="usage-overview__detail">
-                    {t('{remaining} of {limit} messages left', {
-                      limit: usageBudget?.messages.limit ?? 0,
-                      remaining: usageBudget?.messages.remaining ?? 0,
-                    })}
-                  </p>
-                </>
-              )}
-            </section>
-            <section
-              className="context-overview"
-              aria-labelledby="session-overview-heading"
-            >
-              <p className="eyebrow">{t('Current app session')}</p>
-              <div className="context-overview__metric">
-                <strong>{historyTaskCount}</strong>
-                <span>
-                  {t(
-                    historyTaskCount === 1
-                      ? '{count} finished task'
-                      : '{count} finished tasks',
-                    { count: historyTaskCount },
-                  ).replace(`${historyTaskCount} `, '')}
-                </span>
-              </div>
-              <h2 id="session-overview-heading">{taskPhase}</h2>
-              <div className="context-overview__guardrails">
-                <span>{t('Bounded by default')}</span>
-                <span>{t('Approval gates enabled')}</span>
-                <span>{t('Tools selected at runtime')}</span>
-              </div>
-            </section>
-            <ComputerConnection
-              appLanguage={appLanguageDraft}
-              isConnecting={isRequestingPermissions}
-              onConnect={() => void openScreenRecordingSettings()}
-              ready={desktopReady}
-              status={computerStatus}
-            />
-            {hasLiveTask && (
-              <section className="activity-card" id="activity" aria-labelledby="activity-heading">
-                <div className="section-heading-row">
-                  <div>
-                    <p className="eyebrow">{t('Live lifecycle')}</p>
-                    <h2 id="activity-heading">{t('Task activity')}</h2>
-                  </div>
-                  <span className="event-count">{events.length}</span>
-                </div>
-                <ActivityList
-                  appLanguage={appLanguageDraft}
-                  events={events}
-                />
-              </section>
-            )}
-          </aside>
-        </div>
         )}
       </main>
     </div>
