@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use axum::{
     http::{HeaderMap, HeaderValue, Method, StatusCode, Uri},
@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
+use sqlx::{Row, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{
@@ -264,6 +264,9 @@ async fn route(
         if parts.len() == 4 && parts[3] == "activities" && method == Method::POST {
             return save_activity(state, user, space, headers, body).await;
         }
+        if parts.len() == 4 && parts[3] == "activities" && method == Method::GET {
+            return list_published_activities(state, user, space).await;
+        }
         if parts.len() == 6
             && parts[3] == "activities"
             && parts[5] == "publish"
@@ -274,6 +277,12 @@ async fn route(
         }
         if parts.len() == 4 && parts[3] == "runs" && method == Method::POST {
             return create_run(state, user, space, plan, headers, body).await;
+        }
+        if parts.len() == 4 && parts[3] == "sessions" && method == Method::GET {
+            return list_class_sessions(state, user, space).await;
+        }
+        if parts.len() == 4 && parts[3] == "sessions" && method == Method::POST {
+            return create_class_session(state, user, space, plan, headers, body).await;
         }
     }
     if method == Method::POST && path == "/v1/uploads/complete" {
@@ -902,6 +911,250 @@ async fn publish_activity(
         json!({"id":version,"versionNumber":row.get::<i32,_>("version_number"),"publishedAt":format_time(row.get("published_at")),"newlyCreated":true}),
     )
 }
+async fn list_published_activities(
+    state: &AppState,
+    user: &str,
+    space: Uuid,
+) -> ApiResult<Response> {
+    state
+        .knowledge
+        .role(user, space, &["owner", "facilitator"])
+        .await?;
+    let rows = sqlx::query(
+        r#"SELECT DISTINCT ON (activities.id)
+                  activities.id AS activity_id,versions.id AS version_id,
+                  versions.version_number,versions.definition,versions.published_at
+           FROM knowledge_activities activities
+           JOIN knowledge_activity_versions versions ON versions.activity_id=activities.id
+           WHERE activities.space_id=$1 AND activities.archived_at IS NULL
+           ORDER BY activities.id,versions.version_number DESC"#,
+    )
+    .bind(space)
+    .fetch_all(&state.pool)
+    .await?;
+    json_response(
+        StatusCode::OK,
+        json!({"items":rows.into_iter().map(|row|{
+            let definition=row.get::<Value,_>("definition");
+            json!({
+                "activityId":row.get::<Uuid,_>("activity_id"),
+                "versionId":row.get::<Uuid,_>("version_id"),
+                "versionNumber":row.get::<i32,_>("version_number"),
+                "title":definition.get("title"),
+                "objective":definition.get("objective"),
+                "criteria":definition.get("criteria").cloned().unwrap_or_else(||json!([])),
+                "allowRoomJoin":definition.pointer("/sessionPolicy/allowRoomJoin").and_then(Value::as_bool).unwrap_or(false),
+                "allowedOrigins":definition.pointer("/sessionPolicy/allowedOrigins").cloned().unwrap_or_else(||json!([])),
+                "publishedAt":format_time(row.get("published_at")),
+            })
+        }).collect::<Vec<_>>() }),
+    )
+}
+
+async fn class_session_value(
+    state: &AppState,
+    space: Uuid,
+    session: Uuid,
+) -> ApiResult<Option<Value>> {
+    let row = sqlx::query(
+        r#"SELECT sessions.id,sessions.title,sessions.state,sessions.created_at,sessions.updated_at,
+                  jsonb_agg(jsonb_build_object(
+                    'position',items.position,
+                    'runId',items.run_id,
+                    'activityVersionId',items.activity_version_id,
+                    'title',versions.definition->'title',
+                    'objective',versions.definition->'objective',
+                    'criteria',COALESCE(versions.definition->'criteria','[]'::jsonb),
+                    'allowRoomJoin',COALESCE((versions.definition#>>'{sessionPolicy,allowRoomJoin}')::boolean,false),
+                    'allowedOrigins',COALESCE(versions.definition#>'{sessionPolicy,allowedOrigins}','[]'::jsonb)
+                  ) ORDER BY items.position) AS activities
+           FROM knowledge_class_sessions sessions
+           JOIN knowledge_class_session_activities items ON items.session_id=sessions.id
+           JOIN knowledge_activity_versions versions ON versions.id=items.activity_version_id
+           WHERE sessions.id=$1 AND sessions.space_id=$2
+           GROUP BY sessions.id"#,
+    )
+    .bind(session)
+    .bind(space)
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(row.as_ref().map(class_session_row_value))
+}
+
+fn class_session_row_value(row: &PgRow) -> Value {
+    json!({
+        "id":row.get::<Uuid,_>("id"),
+        "title":row.get::<String,_>("title"),
+        "state":row.get::<String,_>("state"),
+        "activities":row.get::<Value,_>("activities"),
+        "createdAt":format_time(row.get("created_at")),
+        "updatedAt":format_time(row.get("updated_at")),
+    })
+}
+
+async fn list_class_sessions(state: &AppState, user: &str, space: Uuid) -> ApiResult<Response> {
+    state
+        .knowledge
+        .role(user, space, &["owner", "facilitator"])
+        .await?;
+    let rows = sqlx::query(
+        r#"SELECT sessions.id,sessions.title,sessions.state,sessions.created_at,sessions.updated_at,
+                  jsonb_agg(jsonb_build_object(
+                    'position',items.position,
+                    'runId',items.run_id,
+                    'activityVersionId',items.activity_version_id,
+                    'title',versions.definition->'title',
+                    'objective',versions.definition->'objective',
+                    'criteria',COALESCE(versions.definition->'criteria','[]'::jsonb),
+                    'allowRoomJoin',COALESCE((versions.definition#>>'{sessionPolicy,allowRoomJoin}')::boolean,false),
+                    'allowedOrigins',COALESCE(versions.definition#>'{sessionPolicy,allowedOrigins}','[]'::jsonb)
+                  ) ORDER BY items.position) AS activities
+           FROM knowledge_class_sessions sessions
+           JOIN knowledge_class_session_activities items ON items.session_id=sessions.id
+           JOIN knowledge_activity_versions versions ON versions.id=items.activity_version_id
+           WHERE sessions.space_id=$1 AND sessions.state<>'archived'
+           GROUP BY sessions.id
+           ORDER BY sessions.created_at DESC,sessions.id DESC
+           LIMIT 500"#,
+    )
+    .bind(space)
+    .fetch_all(&state.pool)
+    .await?;
+    let items = rows.iter().map(class_session_row_value).collect::<Vec<_>>();
+    json_response(StatusCode::OK, json!({"items":items}))
+}
+
+async fn create_class_session(
+    state: &AppState,
+    user: &str,
+    space: Uuid,
+    plan: Plan,
+    headers: &HeaderMap,
+    body: &Bytes,
+) -> ApiResult<Response> {
+    state
+        .knowledge
+        .role(user, space, &["owner", "facilitator"])
+        .await?;
+    let input = read_json(headers, body, 64_000)?;
+    strict_object(&input, &["clientId", "title", "activityVersionIds"])?;
+    let client = required_uuid(&input, "clientId")?;
+    let title = trimmed_string(&input, "title", 1, 240)?;
+    let raw_versions = input
+        .get("activityVersionIds")
+        .and_then(Value::as_array)
+        .filter(|values| (1..=50).contains(&values.len()))
+        .ok_or_else(invalid)?;
+    let versions = raw_versions
+        .iter()
+        .map(|value| value.as_str().and_then(zod_uuid).ok_or_else(invalid))
+        .collect::<ApiResult<Vec<_>>>()?;
+    if versions.iter().copied().collect::<HashSet<_>>().len() != versions.len() {
+        return Err(invalid());
+    }
+
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("class-session:{space}:{client}"))
+        .execute(&mut *tx)
+        .await?;
+    if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM knowledge_class_sessions WHERE space_id=$1 AND client_id=$2",
+    )
+    .bind(space)
+    .bind(client)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        tx.commit().await?;
+        let mut session = class_session_value(state, space, existing)
+            .await?
+            .ok_or_else(|| {
+                ApiError::internal(anyhow::anyhow!("Class Session disappeared after creation."))
+            })?;
+        session["newlyCreated"] = json!(false);
+        return json_response(StatusCode::OK, session);
+    }
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM knowledge_class_sessions WHERE space_id=$1 AND state IN('draft','open')",
+    )
+    .bind(space)
+    .fetch_one(&mut *tx)
+    .await?;
+    if active >= plan.active_runs {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "active_session_quota",
+            "This class reached its active Session limit.",
+        ));
+    }
+    let available = sqlx::query(
+        r#"SELECT versions.id,versions.definition
+           FROM knowledge_activity_versions versions
+           JOIN knowledge_activities activities ON activities.id=versions.activity_id
+           WHERE activities.space_id=$1 AND versions.id=ANY($2::uuid[])"#,
+    )
+    .bind(space)
+    .bind(&versions)
+    .fetch_all(&mut *tx)
+    .await?;
+    if available.len() != versions.len() {
+        return Err(ApiError::coded(
+            StatusCode::NOT_FOUND,
+            "activity_version_not_found",
+            "Every Session Activity must be published in this class.",
+        ));
+    }
+    if available.iter().any(|row| {
+        !row.get::<Value, _>("definition")
+            .pointer("/sessionPolicy/allowRoomJoin")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) {
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            "activity_room_join_disabled",
+            "Every Session Activity must allow live room joining.",
+        ));
+    }
+    let session: Uuid = sqlx::query_scalar(
+        "INSERT INTO knowledge_class_sessions(client_id,space_id,title,created_by)VALUES($1,$2,$3,$4)RETURNING id",
+    )
+    .bind(client)
+    .bind(space)
+    .bind(title)
+    .bind(user)
+    .fetch_one(&mut *tx)
+    .await?;
+    for (position, version) in versions.iter().enumerate() {
+        let run: Uuid = sqlx::query_scalar(
+            "INSERT INTO knowledge_activity_runs(client_id,space_id,activity_version_id,mode,target_kind,insight_policy,created_by)VALUES($1,$2,$3,'live','room','explicit_and_operational',$4)RETURNING id",
+        )
+        .bind(Uuid::new_v4())
+        .bind(space)
+        .bind(version)
+        .bind(user)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO knowledge_class_session_activities(session_id,position,activity_version_id,run_id)VALUES($1,$2,$3,$4)",
+        )
+        .bind(session)
+        .bind(i32::try_from(position).map_err(ApiError::internal)?)
+        .bind(version)
+        .bind(run)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    let mut result = class_session_value(state, space, session)
+        .await?
+        .ok_or_else(|| {
+            ApiError::internal(anyhow::anyhow!("Class Session disappeared after creation."))
+        })?;
+    result["newlyCreated"] = json!(true);
+    json_response(StatusCode::CREATED, result)
+}
 async fn create_run(
     state: &AppState,
     user: &str,
@@ -1015,7 +1268,7 @@ async fn create_run(
         );
         return Ok(response);
     }
-    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_activity_runs WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&mut*tx).await?;
+    let active:i64=sqlx::query_scalar("SELECT COUNT(*)::bigint FROM knowledge_class_sessions WHERE space_id=$1 AND state IN('draft','open')").bind(space).fetch_one(&mut*tx).await?;
     if active >= plan.active_runs {
         return Err(ApiError::coded(
             StatusCode::CONFLICT,
@@ -1067,6 +1320,26 @@ async fn create_run(
     }
     let row=sqlx::query("INSERT INTO knowledge_activity_runs(client_id,space_id,activity_version_id,mode,target_kind,target_group_id,opens_at,closes_at,insight_policy,created_by)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)RETURNING id,state").bind(client).bind(space).bind(version).bind(mode).bind(target_kind).bind(group).bind(opens_at).bind(closes_at).bind(insight_policy).bind(user).fetch_one(&mut*tx).await?;
     let run: Uuid = row.get("id");
+    sqlx::query(
+        r#"INSERT INTO knowledge_class_sessions(id,client_id,space_id,title,state,created_by)
+           SELECT $1,$2,$3,LEFT(COALESCE(NULLIF(BTRIM(definition->>'title'),''),'Session'),240),$4,$5
+           FROM knowledge_activity_versions WHERE id=$6"#,
+    )
+    .bind(run)
+    .bind(client)
+    .bind(space)
+    .bind(row.get::<String, _>("state"))
+    .bind(user)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO knowledge_class_session_activities(session_id,position,activity_version_id,run_id)VALUES($1,0,$2,$1)",
+    )
+    .bind(run)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
     let participants: Vec<String> = if let Some(group) = group {
         sqlx::query_scalar("SELECT members.user_id FROM knowledge_space_group_members members JOIN knowledge_space_members space_members ON space_members.space_id=$2 AND space_members.user_id=members.user_id WHERE members.group_id=$1 AND space_members.removed_at IS NULL")
             .bind(group)

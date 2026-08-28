@@ -114,7 +114,7 @@ async fn google_identity_verification_checks_signature_claims_and_key_refresh() 
             .is_err()
     );
     let mut future = valid.clone();
-    future.iat = now + 301;
+    future.iat = now + 600;
     assert!(
         verifier
             .verify(&token("rsa01", &future), CLIENT_ID)

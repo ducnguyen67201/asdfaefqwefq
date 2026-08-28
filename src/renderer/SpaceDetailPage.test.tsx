@@ -21,13 +21,14 @@ const space: KnowledgeSpaceSummary = {
 function render(
   role: KnowledgeSpaceSummary['role'],
   initialTab: SpaceDetailTab = 'library',
+  overrides: Partial<KnowledgeSpaceSummary> = {},
 ): string {
   return renderToStaticMarkup(
     <SpaceDetailPage
       appLanguage="en"
       initialTab={initialTab}
       onBack={vi.fn()}
-      space={{ ...space, role }}
+      space={{ ...space, ...overrides, role }}
     />,
   );
 }
@@ -36,11 +37,18 @@ describe('SpaceDetailPage role presentation', () => {
   it('keeps teacher material and room controls out of the student surface', () => {
     const markup = render('participant');
 
-    expect(markup).toContain(
-      'Your Teacher has not shared class resources yet.',
+    expect(markup).toContain('Your Teacher has not shared class materials yet.');
+    expect(markup).toContain('Saturday Scratch');
+    expect(markup).toContain('Class workspace');
+    expect(markup).toContain('Materials and activities shared with this class.');
+    expect(markup).not.toContain(
+      'Materials, activities, and people for this class.',
     );
-    expect(markup).not.toContain('Upload files');
+    expect(markup).not.toContain('Add files');
+    expect(markup).not.toContain('Upload options');
     expect(markup).not.toContain('People');
+    expect(markup).not.toContain('Activities</button>');
+    expect(markup).toContain('Sessions');
   });
 
   it.each(['owner', 'facilitator'] as const)(
@@ -48,18 +56,54 @@ describe('SpaceDetailPage role presentation', () => {
     (role) => {
       const markup = render(role);
 
-      expect(markup).toContain('Upload files');
+      expect(markup).toContain('Add files');
+      expect(markup).toContain('Add a folder');
+      expect(markup).toContain('Upload options');
+      expect(markup).toContain('Materials');
       expect(markup).toContain('Activities');
+      expect(markup).toContain('Sessions');
       expect(markup).toContain('People');
-      expect(markup).toContain('Add members');
+      expect(markup).toContain('Start with what you teach');
+      expect(markup).not.toContain('Add members');
+      expect(markup).not.toContain('Content role');
     },
   );
 
-  it('opens the Teacher roster composer from a direct member action', () => {
+  it('keeps roster language in the Teacher class identity', () => {
+    const markup = render('owner', 'library', { description: '' });
+
+    expect(markup).toContain(
+      'Materials, activities, and people for this class.',
+    );
+    expect(markup).not.toContain(
+      'Materials and activities shared with this class.',
+    );
+  });
+
+  it('keeps member management inside the People section', () => {
     const markup = render('owner', 'people');
 
     expect(markup).toContain('Build the roster');
     expect(markup).toContain('Registered account emails');
+    expect(markup).toContain('Add to class');
     expect(markup).not.toContain('Student join code');
+  });
+
+  it('places the student join code inside the class Session surface', () => {
+    const markup = render('participant', 'sessions');
+
+    expect(markup).toContain('Join your Teacher');
+    expect(markup).toContain('Session code');
+    expect(markup).toContain('Join Session');
+    expect(markup).not.toContain('Open approved class links automatically');
+  });
+
+  it('makes Sessions the teacher launch surface', () => {
+    const markup = render('owner', 'sessions');
+
+    expect(markup).toContain('Put Activities in order');
+    expect(markup).toContain('New Session');
+    expect(markup).not.toContain('Create room lobby');
+    expect(markup).not.toContain('Direct assignment');
   });
 });

@@ -132,7 +132,7 @@ export function ActivityEditorPage({
           <p className="eyebrow">{t('Activity blueprint')}</p>
           <h2 id="activity-editor-heading">{t('Prepare the learning path')}</h2>
           <p className="section-deck">
-            {t('Publish one immutable version before you open a live room.')}
+            {t('Publish this reusable Activity, then add it to a Session.')}
           </p>
         </div>
         <div
@@ -366,7 +366,7 @@ export function ActivityEditorPage({
                     activityId: id,
                     clientId: randomUUID(),
                   });
-                  setMessage(t('Activity published. Ready to open a room.'));
+                  setMessage(t('Activity published. Ready for a Session.'));
                   onPublished(version.id, definition);
                 } catch (cause) {
                   setError(

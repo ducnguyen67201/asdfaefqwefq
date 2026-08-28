@@ -9,10 +9,7 @@ import type {
 
 import { AssignedActivitiesPage } from './AssignedActivitiesPage';
 import { AttemptLaunchPage } from './AttemptLaunchPage';
-import {
-  SpaceDetailPage,
-  type SpaceDetailTab,
-} from './SpaceDetailPage';
+import { SpaceDetailPage, type SpaceDetailTab } from './SpaceDetailPage';
 import { SpacesPage } from './SpacesPage';
 
 export function KnowledgeHubPage({
@@ -77,6 +74,7 @@ export function KnowledgeHubPage({
         initialTab={spaceInitialTab}
         key={`${space.id}:${spaceInitialTab}`}
         onBack={() => onSelectSpace(null)}
+        onJoined={setSelectedAttemptId}
         space={space}
       />
     );
@@ -87,7 +85,6 @@ export function KnowledgeHubPage({
       classroomRole={classroomRole}
       error={classroomError}
       loading={classroomLoading}
-      onJoined={setSelectedAttemptId}
       onOpen={onSelectSpace}
       onRefresh={onRefreshClassSpaces}
       spaces={classSpaces}

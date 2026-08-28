@@ -40,6 +40,7 @@ describe('SpacesPage access', () => {
     expect(markup).toContain('A Teacher can add your registered account');
     expect(markup).not.toContain('Join a class');
     expect(markup).not.toContain('Join code');
+    expect(markup).not.toContain('Session code');
   });
 
   it('lets a Teacher create a workspace without offering self-enrollment', () => {

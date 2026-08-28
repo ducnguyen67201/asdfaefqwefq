@@ -27,6 +27,7 @@ import {
   CompanionSpeechPlaybackReportSchema,
   CompanionSpeechSchema,
   ClassroomDirectiveSchema,
+  CreateKnowledgeClassSessionRequestSchema,
   CreateKnowledgeRunRequestSchema,
   MembershipStatusSchema,
   AddOrganizationMemberRequestSchema,
@@ -507,6 +508,23 @@ describe('shared task contracts', () => {
       closesAt: null,
       target: { kind: 'room' },
       insightPolicy: 'explicit_and_operational',
+    }).success).toBe(false);
+
+    const activityVersionIds = [randomUUID(), randomUUID()];
+    expect(CreateKnowledgeClassSessionRequestSchema.parse({
+      activityVersionIds,
+      clientId: randomUUID(),
+      spaceId: randomUUID(),
+      title: '  Week 1: Debugging  ',
+    })).toMatchObject({
+      activityVersionIds,
+      title: 'Week 1: Debugging',
+    });
+    expect(CreateKnowledgeClassSessionRequestSchema.safeParse({
+      activityVersionIds: [activityVersionIds[0], activityVersionIds[0]],
+      clientId: randomUUID(),
+      spaceId: randomUUID(),
+      title: 'Duplicate activity',
     }).success).toBe(false);
   });
 

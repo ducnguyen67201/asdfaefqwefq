@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 25,
+  "migrationCount": 28,
   "tables": [
     "users",
     "device_sessions",
@@ -49,7 +49,13 @@
     "knowledge_attempt_review_actions",
     "organizations",
     "organization_memberships",
-    "organization_audit_events"
+    "organization_audit_events",
+    "connector_oauth_attempts",
+    "connector_connections",
+    "connector_tool_snapshots",
+    "connector_audit_events",
+    "knowledge_class_sessions",
+    "knowledge_class_session_activities"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],

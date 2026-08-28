@@ -280,6 +280,39 @@ impl ClassroomService {
         .await?;
         let attempt_id: Uuid = attempt.get("id");
         let attempt_state: String = attempt.get("state");
+        let session_runs = query_scalar::<_, Uuid>(
+            r#"SELECT sibling.run_id
+               FROM knowledge_class_session_activities current
+               JOIN knowledge_class_session_activities sibling
+                 ON sibling.session_id=current.session_id
+               WHERE current.run_id=$1 AND sibling.run_id<>$1
+               ORDER BY sibling.position"#,
+        )
+        .bind(run_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        for session_run in session_runs {
+            let session_assignment: Uuid = query_scalar(
+                r#"INSERT INTO knowledge_activity_assignments (run_id,user_id)
+                   VALUES ($1,$2)
+                   ON CONFLICT (run_id,user_id) DO UPDATE SET user_id=EXCLUDED.user_id
+                   RETURNING id"#,
+            )
+            .bind(session_run)
+            .bind(user_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            query(
+                r#"INSERT INTO knowledge_activity_attempts (run_id,assignment_id,user_id)
+                   VALUES ($1,$2,$3)
+                   ON CONFLICT (run_id,user_id) DO NOTHING"#,
+            )
+            .bind(session_run)
+            .bind(session_assignment)
+            .bind(user_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
         let participation = query(
             r#"INSERT INTO knowledge_run_participations (run_id,user_id,attempt_id)
                VALUES ($1,$2,$3)

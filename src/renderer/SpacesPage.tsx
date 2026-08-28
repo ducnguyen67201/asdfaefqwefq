@@ -28,7 +28,6 @@ export function SpacesPage({
   classroomRole,
   error,
   loading,
-  onJoined,
   onOpen,
   onRefresh,
   spaces,
@@ -37,16 +36,13 @@ export function SpacesPage({
   classroomRole: ClassroomAccountRole;
   error: string | null;
   loading: boolean;
-  onJoined: (attemptId: string) => void;
+  onJoined?: (attemptId: string) => void;
   onOpen: (space: KnowledgeSpaceSummary) => void;
   onRefresh: () => Promise<void>;
   spaces: KnowledgeSpaceSummary[];
 }) {
   const [name, setName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
-  const [autoOpenConsent, setAutoOpenConsent] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [joiningRoom, setJoiningRoom] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const t = (message: string) => translate(appLanguage, message);
 
@@ -58,30 +54,6 @@ export function SpacesPage({
     { items: groupedSpaces.teaching, label: 'Teaching', tone: 'teaching' },
     { items: groupedSpaces.learning, label: 'Learning', tone: 'learning' },
   ].filter((group) => group.items.length > 0);
-
-  const joinRoom = async () => {
-    const code = roomCode.trim().toUpperCase();
-    if (!code) return;
-    setJoiningRoom(true);
-    setActionError(null);
-    try {
-      const session = await window.tro.joinKnowledgeRoom({
-        autoOpenConsent,
-        clientId: randomUUID(),
-        code,
-      });
-      setRoomCode('');
-      onJoined(session.attemptId);
-    } catch (cause) {
-      setActionError(
-        cause instanceof Error
-          ? cause.message
-          : t('Could not join this class room.'),
-      );
-    } finally {
-      setJoiningRoom(false);
-    }
-  };
 
   return (
     <section
@@ -105,73 +77,6 @@ export function SpacesPage({
           </span>
         </div>
       </header>
-
-      {classroomRole === 'student' && (
-        <form
-          className="classroom-join-card class-room-entry"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void joinRoom();
-          }}
-        >
-          <div className="classroom-entry-label">
-            <span>{t('Live class')}</span>
-            <small>{t('Takes less than a minute')}</small>
-          </div>
-          <h2>{t('Join your class room')}</h2>
-          <p>
-            {t(
-              'After your Teacher adds you to the class, enter the room code. Tro will wait with you until class starts.',
-            )}
-          </p>
-          <label htmlFor="classroom-room-code">{t('Room code')}</label>
-          <div className="classroom-code-entry">
-            <input
-              autoCapitalize="characters"
-              autoComplete="off"
-              id="classroom-room-code"
-              maxLength={32}
-              onChange={(event) =>
-                setRoomCode(event.target.value.toUpperCase())
-              }
-              placeholder="TRO-84MK"
-              spellCheck={false}
-              value={roomCode}
-            />
-            <button
-              className="primary-button"
-              disabled={joiningRoom || roomCode.trim().length < 8}
-              type="submit"
-            >
-              {t(joiningRoom ? 'Joining…' : 'Join room')}
-            </button>
-          </div>
-          <label className="classroom-join-consent">
-            <input
-              checked={autoOpenConsent}
-              onChange={(event) => setAutoOpenConsent(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              <strong>{t('Open approved class links automatically')}</strong>
-              <small>
-                {t(
-                  'Optional. Only published HTTPS sites for this Activity; change it anytime.',
-                )}
-              </small>
-            </span>
-          </label>
-          <div className="classroom-privacy-note">
-            <span aria-hidden="true">◌</span>
-            <p>
-              <strong>{t('What this session shares')}</strong>
-              {t(
-                ' Join, Help, Check, submission, and review events only. No continuous cursor, typing, or screen monitoring.',
-              )}
-            </p>
-          </div>
-        </form>
-      )}
 
       {classroomRole === 'student' && (
         <div className="class-roster-access-note">

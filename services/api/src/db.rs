@@ -145,6 +145,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "verified MCP connectors",
             include_str!("../migrations/027_mcp_connectors.sql"),
         ),
+        migration(
+            28,
+            "class sessions",
+            include_str!("../migrations/028_class_sessions.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });
