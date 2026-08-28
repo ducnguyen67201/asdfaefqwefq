@@ -3070,7 +3070,7 @@ textarea:focus-visible {
 
 .topbar {
   position: sticky;
-  z-index: 2;
+  z-index: 4;
   top: 0;
   display: flex;
   align-items: center;
@@ -10921,7 +10921,7 @@ h1 {
 
 .classroom-bar {
   position: sticky;
-  z-index: 1;
+  z-index: 3;
   top: 68px;
   display: grid;
   align-items: center;
@@ -10930,15 +10930,14 @@ h1 {
   padding: 13px 15px 13px 11px;
   border: 1px solid rgba(214, 170, 33, 0.34);
   border-radius: 13px;
-  background: rgba(255, 252, 238, 0.97);
+  background: #fffcee;
   box-shadow: 0 12px 30px rgba(94, 73, 5, 0.09);
-  backdrop-filter: blur(14px);
   grid-template-columns: 8px minmax(145px, 0.32fr) minmax(210px, 1fr) auto;
 }
 
 .classroom-bar--ended {
   border-color: var(--border);
-  background: rgba(247, 246, 241, 0.97);
+  background: #f7f6f1;
 }
 
 .classroom-bar__signal {
