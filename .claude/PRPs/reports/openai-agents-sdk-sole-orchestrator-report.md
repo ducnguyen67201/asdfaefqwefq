@@ -106,8 +106,9 @@ The implementation review found and fixed the following issues before delivery:
   fixed summary at the SDK boundary. Observation IDs, semantic state, coordinate
   space, and text now travel in the encrypted tool result, while screenshots are
   emitted as the Agents SDK's structured image output. The authenticated result
-  endpoint and router body limits now cover the full bounded visual contract, so
-  valid detailed screenshots are not rejected after execution begins.
+  endpoint and router share a total serialized-result ceiling; Electron compacts
+  oversized extensible data while preserving grounding identifiers and semantic
+  controls, so valid detailed screenshots are not rejected after execution begins.
 - Identical session mutations at later revisions could collide with an earlier
   idempotency key and regress the SDK session cursor. Mutation identities now
   include their starting revision while remaining stable for transport retries.
@@ -136,7 +137,7 @@ driver tools discovered from the live CUA catalog flow through generically.
 
 | Check | Result |
 |---|---|
-| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 787 tests, Rust fmt/clippy/tests |
+| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 788 tests, Rust fmt/clippy/tests |
 | Agents SDK service | Pass — lint, typecheck, 4 test files / 12 tests |
 | Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |

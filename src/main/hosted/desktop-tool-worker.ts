@@ -1,6 +1,7 @@
 import {
   DesktopInvocationV5Schema,
   DesktopResultV5Schema,
+  MAX_DESKTOP_RESULT_V5_BYTES,
   type DesktopInvocationV5,
   type DesktopResultV5,
 } from '../../shared/agent-runtime-protocol';
@@ -215,13 +216,13 @@ export class DesktopToolWorker {
       }
       const data = resultData(outcome);
       const visual = resultVisual(outcome);
-      return DesktopResultV5Schema.parse({
+      return fitDesktopResultForTransport(DesktopResultV5Schema.parse({
         invocationId: envelope.invocationId,
         status: outcome.status,
         summary: outcome.summary,
         ...(data ? { data } : {}),
         ...(visual ? { visual } : {}),
-      });
+      }));
     } catch {
       return this.result(
         envelope,
@@ -251,6 +252,112 @@ export class DesktopToolWorker {
       this.recent.delete(oldest);
     }
   }
+}
+
+export function fitDesktopResultForTransport(
+  result: DesktopResultV5,
+  maxBytes = MAX_DESKTOP_RESULT_V5_BYTES,
+): DesktopResultV5 {
+  if (serializedBytes(result) <= maxBytes) return result;
+  const compacted = DesktopResultV5Schema.parse({
+    ...result,
+    data: compactResultData(result.data),
+  });
+  if (serializedBytes(compacted) <= maxBytes) return compacted;
+  const withoutVisual = DesktopResultV5Schema.parse({
+    ...compacted,
+    data: { ...compacted.data, visualOmittedForTransport: true },
+    visual: undefined,
+  });
+  if (serializedBytes(withoutVisual) <= maxBytes) return withoutVisual;
+  const minimal = DesktopResultV5Schema.parse({
+    ...result,
+    data: {
+      resultDataTruncated: true,
+      visualOmittedForTransport: result.visual !== undefined,
+    },
+    visual: undefined,
+  });
+  if (serializedBytes(minimal) <= maxBytes) return minimal;
+  throw new Error('desktop_result_envelope_exceeds_transport_limit');
+}
+
+function compactResultData(
+  data: DesktopResultV5['data'],
+): Record<string, unknown> {
+  const compacted: Record<string, unknown> = { resultDataTruncated: true };
+  if (!data) return compacted;
+  const observation = data.observation;
+  if (isRecord(observation)) {
+    compacted.observation = compactObservation(observation);
+  }
+  let retainedBytes = serializedBytes(compacted);
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'observation') continue;
+    const itemBytes = serializedBytes(value);
+    if (itemBytes > 256_000 || retainedBytes + itemBytes > 1_000_000) continue;
+    compacted[key] = value;
+    retainedBytes += itemBytes;
+  }
+  return compacted;
+}
+
+function compactObservation(observation: Record<string, unknown>): Record<string, unknown> {
+  const compacted = copyKnown(observation, [
+    'capturedAt',
+    'coordinateSpace',
+    'degraded',
+    'fingerprint',
+    'observationId',
+    'route',
+    'taskId',
+  ]);
+  if (typeof observation.text === 'string') {
+    compacted.text = observation.text.slice(0, 20_000);
+  }
+  if (isRecord(observation.surface)) {
+    compacted.surface = compactSurface(observation.surface);
+  }
+  if (Array.isArray(observation.elements)) {
+    compacted.elements = observation.elements
+      .filter(isRecord)
+      .slice(0, 400)
+      .map(compactElement);
+  }
+  return compacted;
+}
+
+function compactSurface(surface: Record<string, unknown>): Record<string, unknown> {
+  const compacted = copyKnown(surface, ['application', 'bounds', 'deepAccess', 'kind']);
+  if (typeof surface.title === 'string') compacted.title = surface.title.slice(0, 500);
+  if (typeof surface.url === 'string') compacted.url = surface.url.slice(0, 2_000);
+  return compacted;
+}
+
+function compactElement(element: Record<string, unknown>): Record<string, unknown> {
+  const compacted = copyKnown(element, ['bounds', 'disabled', 'ref', 'selected']);
+  if (typeof element.role === 'string') compacted.role = element.role.slice(0, 120);
+  if (typeof element.name === 'string') compacted.name = element.name.slice(0, 500);
+  if (typeof element.value === 'string') compacted.value = element.value.slice(0, 1_000);
+  if (typeof element.href === 'string') compacted.href = element.href.slice(0, 1_000);
+  return compacted;
+}
+
+function copyKnown(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    keys.flatMap((key) => source[key] === undefined ? [] : [[key, source[key]]]),
+  );
+}
+
+function serializedBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function resultData(outcome: ToolExecutionResult): Record<string, unknown> | undefined {

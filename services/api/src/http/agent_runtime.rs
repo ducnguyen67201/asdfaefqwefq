@@ -21,8 +21,8 @@ use crate::{
     },
 };
 
-// Desktop observations may contain a 40 MB base64 visual plus bounded semantic
-// metadata. The router and this endpoint must accept the same contract envelope.
+// Must match MAX_DESKTOP_RESULT_V5_BYTES in the shared desktop protocol. Electron
+// compacts extensible result data before sending so this is a total envelope bound.
 pub(crate) const MAX_DESKTOP_RESULT_BODY_BYTES: usize = 48_000_000;
 
 pub async fn handle(

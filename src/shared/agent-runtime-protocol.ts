@@ -798,6 +798,8 @@ export const DesktopInvocationV5Schema = z
   .strict()
   .meta({ id: 'DesktopInvocationV5' });
 
+export const MAX_DESKTOP_RESULT_V5_BYTES = 48_000_000;
+
 export const DesktopResultV5Schema = z
   .object({
     invocationId: UuidSchema,

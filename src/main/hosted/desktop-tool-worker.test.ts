@@ -10,7 +10,10 @@ import {
 } from '../agent/runtime-tool-registry';
 import { createCuaDriverCatalog } from '../cua/cua-semantic-contracts';
 
-import { DesktopToolWorker } from './desktop-tool-worker';
+import {
+  DesktopToolWorker,
+  fitDesktopResultForTransport,
+} from './desktop-tool-worker';
 import {
   HOSTED_AGENT_PROTOCOL_DIGEST,
   HOSTED_AGENT_TOOL_CATALOG_DIGEST,
@@ -49,6 +52,71 @@ function hostedGoal(
 }
 
 describe('DesktopToolWorker', () => {
+  it('compacts an oversized result while preserving grounded observation context', () => {
+    const observationId = randomUUID();
+    const fitted = fitDesktopResultForTransport({
+      invocationId: randomUUID(),
+      status: 'confirmed',
+      summary: 'Captured a detailed desktop observation.',
+      data: {
+        observation: {
+          capturedAt: new Date().toISOString(),
+          coordinateSpace: {
+            screenHeight: 900,
+            screenWidth: 1_440,
+            screenshotHeight: 900,
+            screenshotWidth: 1_440,
+          },
+          degraded: false,
+          elements: [{
+            ref: 'e1',
+            role: 'button',
+            name: 'Open'.repeat(5_000),
+            value: 'value'.repeat(10_000),
+          }],
+          fingerprint: 'a'.repeat(64),
+          observationId,
+          route: 'desktop_vision',
+          structuredState: 'state'.repeat(20_000),
+          taskId: randomUUID(),
+          text: 'Chrome is visible. '.repeat(5_000),
+        },
+      },
+      visual: {
+        dataBase64: 'aW1hZ2U=',
+        detail: 'original',
+        mimeType: 'image/png',
+        observationId,
+      },
+    }, 30_000);
+
+    expect(new TextEncoder().encode(JSON.stringify(fitted)).byteLength).toBeLessThanOrEqual(30_000);
+    expect(fitted.data?.resultDataTruncated).toBe(true);
+    expect(fitted.data?.observation).toMatchObject({
+      coordinateSpace: { screenshotHeight: 900, screenshotWidth: 1_440 },
+      elements: [{ ref: 'e1', role: 'button' }],
+      observationId,
+    });
+    expect(
+      (fitted.data?.observation as { structuredState?: unknown }).structuredState,
+    ).toBeUndefined();
+    expect(fitted.visual?.observationId).toBe(observationId);
+
+    const oversizedVisual = fitDesktopResultForTransport({
+      ...fitted,
+      visual: {
+        dataBase64: '💥'.repeat(10_000),
+        detail: 'original',
+        mimeType: 'image/png',
+        observationId,
+      },
+    }, 30_000);
+    expect(new TextEncoder().encode(JSON.stringify(oversizedVisual)).byteLength)
+      .toBeLessThanOrEqual(30_000);
+    expect(oversizedVisual.visual).toBeUndefined();
+    expect(oversizedVisual.data?.visualOmittedForTransport).toBe(true);
+  });
+
   it('rejects an expired envelope before asking to execute', async () => {
     const commitResult = vi.fn(async () => undefined);
     const requestExecuting = vi.fn(async () => true);
