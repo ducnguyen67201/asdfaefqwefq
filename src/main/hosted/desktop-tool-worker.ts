@@ -5,6 +5,7 @@ import {
   type DesktopResultV4,
 } from '../../shared/agent-runtime-protocol';
 import { type ActionEffect, type GoalSpec } from '../../shared/contracts';
+import { resolveActionEffect } from '../agent/action-effect';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
@@ -138,10 +139,16 @@ export class DesktopToolWorker {
     if (invocation.operation !== envelope.operation || invocation.toolId !== envelope.toolId) {
       return this.result(envelope, 'not_executed', 'The normalized tool identity did not match the signed envelope.');
     }
+    const controlsDesktop =
+      invocation.toolId === 'computer.control' ||
+      invocation.toolId === 'desktop.control';
+    const normalizedEffect =
+      controlsDesktop && invocation.action
+        ? resolveActionEffect(invocation.action)
+        : invocation.action?.effect;
     if (
       invocation.action &&
-      (!invocation.action.effect ||
-        !effectsMatch(invocation.action.effect, envelope.effect))
+      (!normalizedEffect || !effectsMatch(normalizedEffect, envelope.effect))
     ) {
       return this.result(
         envelope,

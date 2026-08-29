@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GoalSpec, WorkspaceIdentity } from '../../shared/contracts';
+import { createCuaSemanticToolDefinitions } from '../agent/cua-semantic-agent-tools';
 import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
 
 import { DesktopToolWorker } from './desktop-tool-worker';
@@ -252,6 +253,113 @@ describe('DesktopToolWorker', () => {
       expect.any(String),
       1,
     );
+  });
+
+  it('rejects a desktop action whose declared consequence is harder than its envelope effect', async () => {
+    const dispatch = vi.fn();
+    const requestExecuting = vi.fn(async () => true);
+    const goal = hostedGoal('Purchase the visible item.');
+    const observationId = randomUUID();
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      latestObservationProvider: () => ({
+        capturedAt: new Date().toISOString(),
+        coordinateSpace: {
+          screenHeight: 1_000,
+          screenWidth: 1_000,
+          screenshotHeight: 1_000,
+          screenshotWidth: 1_000,
+        },
+        degraded: false,
+        fingerprint: 'a'.repeat(64),
+        observationId,
+        route: 'desktop_vision',
+        taskId: goal.id,
+        text: 'A purchase button is visible.',
+      }),
+      registry: new RuntimeToolRegistry(),
+      requestExecuting,
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'desktop.control',
+      operation: 'click',
+      input: {
+        observationId,
+        consequence: 'purchase',
+        description: 'Purchase the visible item.',
+        target: 'Purchase button',
+        effect: envelope().effect,
+        attendees: null,
+        command: { kind: 'click', x: 500, y: 500, button: 'left', count: 1 },
+      },
+    }));
+
+    expect(result).toMatchObject({
+      status: 'not_executed',
+      summary: 'The normalized tool effect did not match the server-owned invocation.',
+    });
+    expect(requestExecuting).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a semantic action whose declared consequence is harder than its envelope effect', async () => {
+    const dispatch = vi.fn();
+    const requestExecuting = vi.fn(async () => true);
+    const goal = hostedGoal('Delete the visible item.');
+    const observationId = randomUUID();
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      latestObservationProvider: () => ({
+        capturedAt: new Date().toISOString(),
+        degraded: false,
+        elements: [{ ref: 'e1', role: 'button', name: 'Delete' }],
+        fingerprint: 'a'.repeat(64),
+        observationId,
+        route: 'window_accessibility',
+        surface: { application: 'Example', kind: 'native_app' },
+        taskId: goal.id,
+        text: 'A delete button is visible.',
+      }),
+      registry: new RuntimeToolRegistry(createCuaSemanticToolDefinitions({
+        browserPrepareAvailable: () => true,
+        semanticAvailable: () => true,
+      })),
+      requestExecuting,
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'computer.control',
+      operation: 'click_element',
+      input: {
+        observationId,
+        description: 'Delete the visible item.',
+        target: 'Delete',
+        effect: envelope().effect,
+        attendees: null,
+        command: {
+          kind: 'click_element',
+          ref: 'e1',
+          button: 'left',
+          count: 1,
+          consequence: 'delete',
+          sendPayload: null,
+        },
+      },
+    }));
+
+    expect(result).toMatchObject({
+      status: 'not_executed',
+      summary: 'The normalized tool effect did not match the server-owned invocation.',
+    });
+    expect(requestExecuting).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('claims execution with the run version returned after permission resumes', async () => {

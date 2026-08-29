@@ -62,6 +62,16 @@ all of them, the cancellation-responsiveness gate treated the missing candidate
 summary as passing. The gate now fails when a measured baseline is compared with
 an unmeasured candidate, with a regression test covering the omitted-metric case.
 
+### P1 — Desktop effects were compared only with model-derived metadata — resolved
+
+For `desktop.control` and `computer.control`, the normalized action effect and
+the server envelope could both originate from the model's `effect` field. The
+desktop boundary now independently resolves the strictest effect from the
+declared command consequence and trusted observation cues, then compares that
+host-derived effect with the envelope before the one-time execution claim.
+Adversarial desktop and semantic-control tests cover purchase/delete actions
+misdeclared with a neutral effect and verify that neither is dispatched.
+
 ### P2 — Generated v4 JSON had platform-dependent line endings — resolved
 
 The repository normalized v3 fixtures but not the new v4 fixture directory.
