@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt as _;
 use trocode_api::{
-    agent::protocol,
+    agent::{orchestrator_protocol, protocol},
     app::AppState,
     auth::User,
     config::{
@@ -105,7 +105,7 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
             orchestrator_sdk_version: "0.17.0".to_owned(),
             orchestrator_service_token: Some("o".repeat(32)),
             payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
-            protocol_version: 4,
+            protocol_version: 5,
             rollout_percent: 0,
         },
         connectors: ConnectorConfig {
@@ -386,6 +386,20 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
+    state
+        .orchestrator
+        .as_ref()
+        .expect("Agents SDK orchestrator")
+        .register_worker(
+            Uuid::new_v4(),
+            1,
+            orchestrator_protocol::protocol_digest(),
+            "http-compat",
+            "0.17.0",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .await
+        .expect("register Agents SDK worker");
     state.responses = ResponsesService::new_with_endpoint(
         state.budget.clone(),
         reqwest::Client::new(),
@@ -1725,7 +1739,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let status = send(
         &router,
         Method::GET,
-        "/v1/agent-runtime/v4/status",
+        "/v1/agent-runtime/v5/status",
         Some(&owner_token),
         None,
     )
@@ -1735,12 +1749,12 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let durable_task = send(
         &router,
         Method::POST,
-        "/v1/agent-runtime/v4/tasks",
+        "/v1/agent-runtime/v5/tasks",
         Some(&owner_token),
         Some(&json!({
-            "protocolVersion":4,
-            "protocolDigest":protocol::protocol_digest(),
-            "toolCatalogDigest":protocol::tool_catalog_digest(),
+            "protocolVersion":5,
+            "protocolDigest":protocol::v5::protocol_digest(),
+            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
             "clientTaskId":Uuid::new_v4(),
             "executionProfile":"everyday",
             "request":"Open the browser for the compatibility test.",
@@ -1756,11 +1770,14 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("durable task id")
         .to_owned();
+    let durable_run_version = durable_task.json()["projection"]["runVersion"]
+        .as_i64()
+        .expect("durable task run version");
     assert_status(
         &send(
             &router,
             Method::GET,
-            "/v1/agent-runtime/v4/tasks",
+            "/v1/agent-runtime/v5/tasks",
             Some(&owner_token),
             None,
         )
@@ -1771,7 +1788,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::GET,
-            &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}"),
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}"),
             Some(&owner_token),
             None,
         )
@@ -1782,7 +1799,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::GET,
-            &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}/events?after=-1"),
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=-1"),
             Some(&owner_token),
             None,
         )
@@ -1791,7 +1808,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     );
     let (event_status, event_headers) = send_without_collecting(
         &router,
-        &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}/events?after=0"),
+        &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=0"),
         &owner_token,
     )
     .await;
@@ -1822,9 +1839,9 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         "/v1/desktop-worker/connect",
         Some(&owner_token),
         Some(&json!({
-            "protocolVersion":4,
-            "protocolDigest":protocol::protocol_digest(),
-            "toolCatalogDigest":protocol::tool_catalog_digest(),
+            "protocolVersion":5,
+            "protocolDigest":protocol::v5::protocol_digest(),
+            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
             "cua":null,
             "tools":[{"operations":["launch"],"toolId":"application.launch"}]
         })),
@@ -1890,9 +1907,16 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::POST,
-            &format!("/v1/tasks/{durable_task_id}/cancel"),
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/cancel"),
             Some(&owner_token),
-            None,
+            Some(&json!({
+                "protocolVersion":5,
+                "protocolDigest":protocol::v5::protocol_digest(),
+                "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
+                "clientCommandId":Uuid::new_v4(),
+                "expectedRunVersion":durable_run_version,
+                "source":"stop_button"
+            })),
         )
         .await,
         StatusCode::OK,

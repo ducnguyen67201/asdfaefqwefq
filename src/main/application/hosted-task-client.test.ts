@@ -172,3 +172,66 @@ describe('HostedTaskClient.list', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
+
+describe('HostedTaskClient.cancel', () => {
+  it('retries a stale v5 cancellation with one idempotency identity', async () => {
+    const advanced = {
+      ...record,
+      projection: { ...record.projection, runVersion: 2 },
+      updatedAt: '2026-08-25T00:00:01.000Z',
+    };
+    const cancelled = {
+      ...advanced,
+      publicSummary: 'Task cancelled.',
+      projection: {
+        ...advanced.projection,
+        state: 'cancelled',
+        runVersion: 3,
+        phase: 'cancelled',
+        terminal: true,
+        availableActions: [],
+        cancellationSource: 'stop_button',
+      },
+      updatedAt: '2026-08-25T00:00:02.000Z',
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(record))
+      .mockResolvedValueOnce(Response.json(record))
+      .mockResolvedValueOnce(Response.json({
+        code: 'stale_run_version',
+        message: 'The agent task changed before cancellation.',
+        retryable: false,
+        currentProjection: advanced.projection,
+      }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json(advanced))
+      .mockResolvedValueOnce(Response.json(cancelled));
+    const client = new HostedTaskClient({
+      accessTokenProvider: async () => 'token',
+      apiBaseUrl: 'https://api.example.com',
+      fetchImpl,
+    });
+
+    await client.submit(input);
+    await expect(client.cancel(record.id)).resolves.toMatchObject({
+      id: record.id,
+      state: 'cancelled',
+      runVersion: 3,
+    });
+
+    const firstBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body)) as {
+      clientCommandId: string;
+      expectedRunVersion: number;
+    };
+    const secondBody = JSON.parse(String(fetchImpl.mock.calls[4]?.[1]?.body)) as {
+      clientCommandId: string;
+      expectedRunVersion: number;
+    };
+    expect(firstBody.expectedRunVersion).toBe(1);
+    expect(secondBody.expectedRunVersion).toBe(2);
+    expect(secondBody.clientCommandId).toBe(firstBody.clientCommandId);
+    expect(fetchImpl.mock.calls[4]?.[0]).toBe(
+      `https://api.example.com/v1/agent-runtime/v5/tasks/${record.id}/cancel`,
+    );
+  });
+});

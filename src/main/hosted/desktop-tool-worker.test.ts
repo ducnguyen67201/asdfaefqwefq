@@ -139,6 +139,30 @@ describe('DesktopToolWorker', () => {
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
+  it('reports an invalid post-dispatch result as unknown so it cannot be replayed', async () => {
+    const dispatch = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'x'.repeat(1_001),
+    }));
+    const goal = hostedGoal('Open Chrome.');
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      executionContextProvider: () => goal,
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => true),
+    });
+
+    const result = await worker.handle(envelope());
+
+    expect(result).toMatchObject({
+      status: 'unknown',
+      summary:
+        'Tool execution stopped after dispatch; the outcome is unknown and will not be retried.',
+    });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
   it('opens Mở YouTube through direct navigation without computer permission', async () => {
     const dispatch = vi.fn(async () => ({
       status: 'confirmed' as const,

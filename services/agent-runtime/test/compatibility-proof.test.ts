@@ -6,7 +6,7 @@ import {
   constructDeferredToolSurface,
   proveInputCompaction,
   proveSerializedResume,
-} from '../src/compatibility-proof.js';
+} from './compatibility-proof-fixture.js';
 
 describe('Agents SDK compatibility proof', () => {
   it('serializes an interruption and resumes the original call exactly once', async () => {

@@ -263,6 +263,14 @@ function classifyFailure(
         retryable: false,
       };
     }
+    if (error.code === 'tool_limit_exceeded') {
+      return {
+        stage: 'runtime',
+        code: 'internal_runtime_error',
+        message: 'The task reached its server-owned tool-call limit.',
+        retryable: false,
+      };
+    }
     return {
       stage: 'provider_request',
       code: error.retryable ? 'provider_unavailable' : 'provider_request_rejected',

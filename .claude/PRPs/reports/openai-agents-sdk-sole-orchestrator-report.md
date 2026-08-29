@@ -77,6 +77,19 @@ The implementation review found and fixed the following issues before delivery:
 - A partial handwritten JSON-schema validator could miss constraints. Tool
   arguments now use the full `jsonschema` validator generated from the canonical
   contracts, including bounds and nested rules.
+- A validated result-processing error after desktop dispatch could have been
+  reported as a recoverable failure. The entire post-CAS execution/result boundary
+  now becomes `unknown` on exception, preserving no-replay semantics.
+- The v10 tool-call limit was present in durable authority but not independently
+  enforced at the queue. `ToolBroker` now counts committed call IDs under the run
+  lock, preserves idempotent replays, and rejects calls beyond the server-owned
+  limit.
+- A stale cancellation response could leave an active v5 run uncancelled. The
+  desktop now refreshes and retries with one command identity, while the legacy
+  unversioned cancellation path cannot mutate v5 runs.
+- The SDK compatibility proof was test scaffolding accidentally compiled into the
+  service. It now lives under the test tree, production build output is ignored,
+  and CI installs, audits, tests, and builds the independently pinned SDK package.
 - Active CUA semantic types, version reporting, model allowlist checks, compaction
   defaults, and obsolete environment/config fields were aligned with the v5 path.
 
@@ -96,9 +109,9 @@ driver tools discovered from the live CUA catalog flow through generically.
 
 | Check | Result |
 |---|---|
-| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 784 tests, Rust fmt/clippy/tests |
+| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 786 tests, Rust fmt/clippy/tests |
 | Agents SDK service | Pass — lint, typecheck, 4 test files / 9 tests |
-| Disposable PostgreSQL orchestrator integration | Pass — v5 claim/checkpoint/tool/result/complete flow, contextual-tool rejection, steering retry/conflict behavior |
+| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility plus claim/checkpoint/tool/result/complete flow, limits, contextual-tool rejection, and steering retry/conflict behavior |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |
 | `npm run package` | Pass — Electron Forge macOS arm64 package |
 | `git diff --check` | Pass |

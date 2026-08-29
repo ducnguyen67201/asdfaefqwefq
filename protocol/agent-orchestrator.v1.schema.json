@@ -525,18 +525,7 @@
       "additionalProperties": false,
       "properties": {
         "code": {
-          "enum": [
-            "invalid_request",
-            "unauthorized",
-            "lease_conflict",
-            "run_not_found",
-            "session_conflict",
-            "checkpoint_conflict",
-            "catalog_mismatch",
-            "graph_version_mismatch",
-            "provider_outcome_unknown",
-            "internal_error"
-          ],
+          "pattern": "^[a-z][a-z0-9_]{0,99}$",
           "type": "string"
         },
         "message": {

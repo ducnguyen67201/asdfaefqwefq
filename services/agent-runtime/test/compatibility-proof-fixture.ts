@@ -48,11 +48,7 @@ function sameItems(left: readonly AgentInputItem[], right: readonly AgentInputIt
   return canonicalJson(left) === canonicalJson(right);
 }
 
-/**
- * A reference implementation of the persistence semantics the Rust Session port
- * must provide. The SDK owns history decisions; this class only applies them
- * atomically and idempotently.
- */
+/** Test-only reference for the persistence semantics implemented by RustSession. */
 export class TransactionalMemorySession
   implements
     RunContextAwareSession<ProofContext>,

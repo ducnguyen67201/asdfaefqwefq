@@ -358,6 +358,33 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
         .expect("replay same call ID");
     assert!(replay.replayed);
     assert_eq!(replay.invocation_id, queued.invocation_id);
+    for index in 1..30 {
+        query(
+            "INSERT INTO agent_tool_invocations(
+               run_id,call_id,tool_id,operation,state,idempotency_key,
+               public_summary,expires_at,terminal_at
+             ) VALUES($1,$2,'application.launch','launch','confirmed',$3,
+               'Prior tool call completed.',NOW()+INTERVAL'5 minutes',NOW())",
+        )
+        .bind(run_id)
+        .bind(format!("prior-tool-{index}"))
+        .bind(format!("prior-tool-digest-{index}"))
+        .execute(&pool)
+        .await
+        .expect("seed prior completed tool call");
+    }
+    assert!(
+        orchestrator
+            .queue_tool_call(
+                run_id,
+                sdk_worker,
+                queued.run_version,
+                &launch_call("tool-over-limit"),
+            )
+            .await
+            .is_err(),
+        "the durable authority tool-call limit must be enforced"
+    );
 
     let pending = service
         .pending(USER, desktop_worker)

@@ -93,6 +93,9 @@ typings/
 # Electron-Forge
 out/
 
+# Agent runtime TypeScript build output
+services/agent-runtime/dist/
+
 # Bazel and Cargo outputs
 /bazel-*
 /target/

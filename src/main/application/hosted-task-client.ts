@@ -302,33 +302,54 @@ export class HostedTaskClient {
     expectedRunVersion?: number,
     source: 'stop_button' | 'focused_escape' | 'replacement' | 'sign_out' | 'shutdown' = 'stop_button',
   ): Promise<HostedTaskRecord> {
-    if (this.v5RunIds.has(runId) && expectedRunVersion) {
-      try {
-        return hostedRecordFromV5(
-          AgentTaskRecordV5Schema.parse(
-            await this.json(`/v1/agent-runtime/v5/tasks/${runId}/cancel`, {
-              method: 'POST',
-              body: JSON.stringify({
-                protocolVersion: 5,
-                protocolDigest: manifest.protocolDigest,
-                toolCatalogDigest: manifest.toolCatalogDigest,
-                clientCommandId: randomUUID(),
-                expectedRunVersion,
-                source,
-              }),
-            }),
-          ),
+    let currentVersion = expectedRunVersion;
+    if (!this.v5RunIds.has(runId)) {
+      const current = await this.get(runId);
+      if (current.protocolVersion !== 5) {
+        return HostedTaskRecordSchema.parse(
+          await this.json(`/v1/tasks/${runId}`, { method: 'DELETE' }),
         );
-      } catch (error) {
-        if (
-          error instanceof HostedRequestError &&
-          error.status === 409 &&
-          ['stale_run_version', 'run_not_cancellable'].includes(error.code ?? '')
-        ) {
-          return await this.get(runId);
-        }
-        throw error;
       }
+      currentVersion ??= current.runVersion;
+    }
+    if (this.v5RunIds.has(runId)) {
+      currentVersion ??= (await this.get(runId)).runVersion;
+      const clientCommandId = randomUUID();
+      let staleError: HostedRequestError | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          return hostedRecordFromV5(
+            AgentTaskRecordV5Schema.parse(
+              await this.json(`/v1/agent-runtime/v5/tasks/${runId}/cancel`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  protocolVersion: 5,
+                  protocolDigest: manifest.protocolDigest,
+                  toolCatalogDigest: manifest.toolCatalogDigest,
+                  clientCommandId,
+                  expectedRunVersion: currentVersion,
+                  source,
+                }),
+              }),
+            ),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof HostedRequestError) ||
+            error.status !== 409 ||
+            !['stale_run_version', 'run_not_cancellable'].includes(error.code ?? '')
+          ) {
+            throw error;
+          }
+          const current = await this.get(runId);
+          if (error.code === 'run_not_cancellable' || current.lifecycle?.terminal) {
+            return current;
+          }
+          staleError = error;
+          currentVersion = current.runVersion;
+        }
+      }
+      if (staleError) throw staleError;
     }
     return HostedTaskRecordSchema.parse(
       await this.json(`/v1/tasks/${runId}`, { method: 'DELETE' }),

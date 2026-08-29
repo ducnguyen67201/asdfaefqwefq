@@ -189,6 +189,13 @@ async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
     assert_eq!(worker["protocolVersion"], 5);
 
     let run_id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    assert!(
+        agent
+            .cancel(USER, run_id)
+            .await
+            .expect("legacy cancellation path must not mutate v5 runs")
+            .is_none()
+    );
     let cancelled = agent
         .cancel_versioned(
             USER,

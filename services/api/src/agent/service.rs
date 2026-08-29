@@ -528,7 +528,7 @@ impl AgentService {
     }
     pub async fn cancel(&self, user: &str, run: Uuid) -> ApiResult<Option<Value>> {
         let mut tx = self.pool.begin().await?;
-        let row=sqlx::query("UPDATE agent_runs SET state='cancelled',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Task cancelled.' WHERE id=$1 AND user_id=$2 AND state NOT IN('completed','blocked','failed','cancelled','expired')RETURNING *").bind(run).bind(user).fetch_optional(&mut*tx).await?;
+        let row=sqlx::query("UPDATE agent_runs SET state='cancelled',lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary='Task cancelled.' WHERE id=$1 AND user_id=$2 AND protocol_version<>5 AND state NOT IN('completed','blocked','failed','cancelled','expired')RETURNING *").bind(run).bind(user).fetch_optional(&mut*tx).await?;
         if row.is_some() {
             sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='executing'THEN'unknown'ELSE'cancelled'END,terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','executing')")
                 .bind(run)

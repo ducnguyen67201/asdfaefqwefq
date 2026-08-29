@@ -267,18 +267,7 @@ export const RunMutationResponseSchema = z
 
 export const OrchestratorErrorSchema = z
   .object({
-    code: z.enum([
-      'invalid_request',
-      'unauthorized',
-      'lease_conflict',
-      'run_not_found',
-      'session_conflict',
-      'checkpoint_conflict',
-      'catalog_mismatch',
-      'graph_version_mismatch',
-      'provider_outcome_unknown',
-      'internal_error',
-    ]),
+    code: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
     message: z.string().min(1).max(1_000),
     retryable: z.boolean(),
   })

@@ -124,6 +124,11 @@ impl ToolBroker {
             &contract_envelope,
             &json!({"kind":"agent_run_contract","runId":run_id,"schemaVersion":10}),
         )?;
+        let max_tool_calls = contract
+            .pointer("/limits/maxToolCalls")
+            .and_then(Value::as_i64)
+            .filter(|value| (1..=200).contains(value))
+            .ok_or_else(|| ApiError::internal(anyhow::anyhow!("v10 tool limit is invalid")))?;
         let capabilities = sqlx::query_scalar::<_, Value>(
             "SELECT capabilities FROM agent_worker_sessions
              WHERE user_id=$1 AND protocol_version=5 AND protocol_digest=$2
@@ -163,6 +168,18 @@ impl ToolBroker {
                 replayed: true,
                 run_version: expected_run_version,
             });
+        }
+        let tool_call_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_tool_invocations WHERE run_id=$1")
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if tool_call_count >= max_tool_calls {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "tool_limit_exceeded",
+                "The task reached its server-owned tool-call limit.",
+            ));
         }
 
         let connector_job = match &route {

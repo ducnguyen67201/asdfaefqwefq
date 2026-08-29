@@ -184,9 +184,8 @@ export class DesktopToolWorker {
     if (!await this.options.requestExecuting(envelope.invocationId, expectedRunVersion)) {
       return this.result(envelope, 'not_executed', 'The one-time executing transition was stale or unavailable.');
     }
-    let outcome: ToolExecutionResult;
     try {
-      outcome = invocation.toolId === 'task.interaction'
+      const outcome: ToolExecutionResult = invocation.toolId === 'task.interaction'
         ? {
             status: 'confirmed',
             summary: 'The user answered the clarification request.',
@@ -211,6 +210,28 @@ export class DesktopToolWorker {
               signal,
               taskId,
             });
+      if (outcome.observation) {
+        this.latestObservations.set(envelope.runId, outcome.observation);
+      }
+      return DesktopResultV5Schema.parse({
+        invocationId: envelope.invocationId,
+        status: outcome.status,
+        summary: outcome.summary,
+        ...(outcome.data ? { data: outcome.data } : {}),
+        ...(outcome.imageDataUrl
+          ? {
+              visual: {
+                dataBase64: outcome.imageDataUrl.split(',', 2)[1],
+                detail: 'original',
+                mimeType: outcome.imageDataUrl.startsWith('data:image/png')
+                  ? 'image/png'
+                  : 'image/jpeg',
+                observationId:
+                  String((outcome.data?.crop as { observationId?: string } | undefined)?.observationId),
+              },
+            }
+          : {}),
+      });
     } catch {
       return this.result(
         envelope,
@@ -218,28 +239,6 @@ export class DesktopToolWorker {
         'Tool execution stopped after dispatch; the outcome is unknown and will not be retried.',
       );
     }
-    if (outcome.observation) {
-      this.latestObservations.set(envelope.runId, outcome.observation);
-    }
-    return DesktopResultV5Schema.parse({
-      invocationId: envelope.invocationId,
-      status: outcome.status,
-      summary: outcome.summary,
-      ...(outcome.data ? { data: outcome.data } : {}),
-      ...(outcome.imageDataUrl
-        ? {
-            visual: {
-              dataBase64: outcome.imageDataUrl.split(',', 2)[1],
-              detail: 'original',
-              mimeType: outcome.imageDataUrl.startsWith('data:image/png')
-                ? 'image/png'
-                : 'image/jpeg',
-              observationId:
-                String((outcome.data?.crop as { observationId?: string } | undefined)?.observationId),
-            },
-          }
-        : {}),
-    });
   }
 
   private result(
