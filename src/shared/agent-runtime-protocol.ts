@@ -86,7 +86,7 @@ export const AgentRunFailureCodeV4Schema = z
     'provider_request_rejected',
     'provider_unavailable',
     'provider_outcome_unknown',
-    'effect_outcome_unknown',
+    'tool_outcome_unknown',
     'required_outcome_unverified',
     'internal_runtime_error',
     'permission_unavailable',
@@ -108,78 +108,6 @@ export const AgentRuntimeErrorCodeV4Schema = z
     'agent_runtime_unavailable',
   ])
   .meta({ id: 'AgentRuntimeErrorCodeV4' });
-
-export const ActionEffectKindV4Schema = z
-  .enum([
-    'none',
-    'create_resource',
-    'update_resource',
-    'rename_resource',
-    'move_resource',
-    'add_comment',
-    'workspace_write',
-    'workspace_command',
-    'send_communication',
-    'delete_or_archive',
-    'unexpected_overwrite',
-    'publish',
-    'deploy',
-    'merge',
-    'financial_or_trade',
-    'authentication_or_credential',
-    'system_permission',
-    'install',
-    'sensitive_transfer',
-    'unknown',
-  ])
-  .meta({ id: 'ActionEffectKindV4' });
-
-export const ResourceKindV4Schema = z
-  .enum([
-    'calendar_event',
-    'document',
-    'spreadsheet',
-    'spreadsheet_row',
-    'workspace_file',
-    'workspace_repository',
-    'comment',
-    'issue',
-    'pull_request',
-    'email',
-    'message',
-    'form_submission',
-    'download',
-    'application',
-    'generic_private_resource',
-    'generic_public_resource',
-  ])
-  .meta({ id: 'ResourceKindV4' });
-
-export const ActionEffectV4Schema = z
-  .object({
-    kind: ActionEffectKindV4Schema,
-    resourceKind: ResourceKindV4Schema.nullable(),
-    reversibility: z.enum(['none', 'reversible', 'destructive', 'unknown']),
-    externality: z.enum([
-      'local',
-      'cloud_private',
-      'external',
-      'public',
-      'unknown',
-    ]),
-    communication: z.enum([
-      'none',
-      'draft',
-      'send',
-      'invite',
-      'notify',
-      'unknown',
-    ]),
-    overwrite: z.enum(['none', 'requested', 'unexpected', 'unknown']),
-    sensitiveDataTransfer: z.union([z.boolean(), z.literal('unknown')]),
-  })
-  .strict()
-  .meta({ id: 'ActionEffectV4' });
 
 export const WaitingOnV4Schema = z
   .discriminatedUnion('kind', [
@@ -280,8 +208,8 @@ export const OutcomeProjectionV4Schema = z
       'assistant_output',
       'application_surface',
       'browser_semantic',
-      'filesystem_effect',
-      'tool_effect',
+      'filesystem_result',
+      'tool_result',
       'semantic_judge',
     ]),
   })
@@ -379,8 +307,6 @@ export const DesktopInvocationV4Schema = z
     callId: z.string().trim().min(1).max(255),
     toolId: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u),
     operation: z.string().trim().min(1).max(100),
-    effect: ActionEffectV4Schema,
-    consequential: z.boolean(),
     permissionInteractionId: UuidSchema.nullable(),
     permissionRequirements: z.array(ComputerPermissionV4Schema).max(2),
     input: z.record(z.string().min(1).max(100), z.unknown()),
@@ -392,8 +318,8 @@ export const DesktopInvocationV4Schema = z
             verifierKind: z.enum([
               'application_surface',
               'browser_semantic',
-              'filesystem_effect',
-              'tool_effect',
+              'filesystem_result',
+              'tool_result',
             ]),
           })
           .strict(),
@@ -402,15 +328,6 @@ export const DesktopInvocationV4Schema = z
     expiresAt: TimestampSchema,
   })
   .strict()
-  .superRefine((invocation, context) => {
-    if (invocation.consequential !== (invocation.effect.kind !== 'none')) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Invocation consequence must match its typed effect.',
-        path: ['consequential'],
-      });
-    }
-  })
   .meta({ id: 'DesktopInvocationV4' });
 
 export const DesktopResultV4Schema = z

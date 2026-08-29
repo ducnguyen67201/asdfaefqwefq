@@ -1398,7 +1398,7 @@ export function App({
             eyebrow: t('Outcome first'),
             heading: t('What should we accomplish?'),
             description: t(
-              'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.',
+              'Describe the finish line. Tro will choose the appropriate tools and verify the result.',
             ),
           };
   const organizationHomeBanner =

@@ -41,9 +41,9 @@ approval-policy cleanup and renames the connector catalog-contract digest.
 - A requested invocation may be reclaimed before execution ownership.
 - An invocation left executing after worker/provider loss is unknown. Never
   mark it confirmed or replay it manually.
-- `blocked` is terminal for unknown effects or unmet required outcomes.
+- `blocked` is terminal for unknown tool results or unmet required outcomes.
 - Disable new runtime work for provider, schema, encryption, privacy, duplicate
-  effect, or false-completion incidents; retain read/cancel access as deployed.
+  execution, or false-completion incidents; retain read/cancel access as deployed.
 
 ## Release gates
 
@@ -52,7 +52,7 @@ approval-policy cleanup and renames the connector catalog-contract digest.
 - `npm run check`
 - `npm run bazel:check`
 - `npm run package`
-- zero active v2/v3 rows before migration 030;
-- zero duplicate consequential actions and unknown-effect retries;
+- zero nonterminal agent runs before migration 030;
+- zero duplicate tool executions and unknown-result retries;
 - packaged v4 handshake and direct navigation/workspace smoke tests;
 - privacy and security documentation matching the deployed catalog.

@@ -36,7 +36,7 @@ describe('canonical agent runtime protocol v4', () => {
       waitingOn: null,
       failure: {
         stage: 'tool_execution',
-        code: 'effect_outcome_unknown',
+        code: 'tool_outcome_unknown',
         message: 'The action outcome could not be confirmed.',
         retryable: false,
       },

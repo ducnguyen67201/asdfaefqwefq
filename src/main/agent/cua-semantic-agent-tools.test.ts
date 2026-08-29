@@ -5,26 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { createCuaSemanticToolDefinitions } from './cua-semantic-agent-tools';
 import { RuntimeToolRegistry } from './runtime-tool-registry';
 
-const effectFree = {
-  kind: 'none' as const,
-  resourceKind: null,
-  reversibility: 'none' as const,
-  externality: 'local' as const,
-  communication: 'none' as const,
-  overwrite: 'none' as const,
-  sensitiveDataTransfer: false as const,
-};
-
-const calendarCreate = {
-  kind: 'create_resource' as const,
-  resourceKind: 'calendar_event' as const,
-  reversibility: 'reversible' as const,
-  externality: 'cloud_private' as const,
-  communication: 'none' as const,
-  overwrite: 'none' as const,
-  sensitiveDataTransfer: false as const,
-};
-
 function registry() {
   return new RuntimeToolRegistry(
     createCuaSemanticToolDefinitions({
@@ -58,7 +38,7 @@ describe('CUA semantic agent tools', () => {
     expect(JSON.stringify(specs)).not.toContain('callTool');
   });
 
-  it('normalizes a public element ref into bounded trusted risk cues', () => {
+  it('normalizes a public element ref into trusted execution evidence', () => {
     const invocation = registry().resolve(
       {
         callId: 'call-1',
@@ -67,15 +47,11 @@ describe('CUA semantic agent tools', () => {
           observationId: observation.observationId,
           description: 'Run the visible code.',
           target: 'Run',
-          effect: effectFree,
-          attendees: null,
           command: {
             kind: 'click_element',
             ref: 'e1',
             button: 'left',
             count: 1,
-            consequence: 'click_element',
-            sendPayload: null,
           },
         }),
       },
@@ -90,13 +66,12 @@ describe('CUA semantic agent tools', () => {
           publicRef: 'e1',
           role: 'button',
           visibleText: 'Run',
-          declaredConsequence: 'click_element',
         },
       },
     });
   });
 
-  it('rejects stale observations and benign labels for sensitive commands', () => {
+  it('rejects stale observations', () => {
     expect(() =>
       registry().resolve(
         {
@@ -106,15 +81,11 @@ describe('CUA semantic agent tools', () => {
             observationId: randomUUID(),
             description: 'Run.',
             target: null,
-            effect: effectFree,
-            attendees: null,
             command: {
               kind: 'click_element',
               ref: 'e1',
               button: 'left',
               count: 1,
-              consequence: 'scroll',
-              sendPayload: null,
             },
           }),
         },
@@ -149,65 +120,43 @@ describe('CUA semantic agent tools', () => {
     });
   });
 
-  it('preserves exact calendar and invitation effects for Rust policy evaluation', () => {
+  it('executes physical actions without policy metadata', () => {
     const tools = registry();
-    const base = {
-      observationId: observation.observationId,
-      description: 'Save the private calendar event.',
-      target: 'Save',
-      command: {
-        kind: 'click_element' as const,
-        ref: 'e1',
-        button: 'left' as const,
-        count: 1,
-        consequence: 'click_element' as const,
-        sendPayload: null,
-      },
-    };
-    const createInvocation = tools.resolve(
-      {
-        callId: 'calendar-create',
-        name: 'control_surface',
-        arguments: JSON.stringify({
-          ...base,
-          effect: calendarCreate,
-          attendees: null,
-        }),
-      },
-      { taskId: observation.taskId, latestObservation: observation },
-    );
-    expect(createInvocation.action).toMatchObject({
-      effect: {
-        kind: 'create_resource',
-        resourceKind: 'calendar_event',
-      },
-    });
+    const controlSpec = tools
+      .modelVisibleSpecs()
+      .find((tool) => tool.name === 'control_surface');
+    expect(controlSpec?.parameters.required).toEqual([
+      'observationId',
+      'description',
+      'target',
+      'command',
+    ]);
+    expect(controlSpec?.parameters.properties).not.toHaveProperty('effect');
+    expect(controlSpec?.parameters.properties).not.toHaveProperty('attendees');
 
-    const inviteInvocation = tools.resolve(
+    const invocation = tools.resolve(
       {
-        callId: 'calendar-invite',
+        callId: 'delete-visible-item',
         name: 'control_surface',
         arguments: JSON.stringify({
-          ...base,
-          effect: {
-            ...calendarCreate,
-            kind: 'send_communication',
-            communication: 'invite',
-            externality: 'external',
+          observationId: observation.observationId,
+          description: 'Click the visible delete button.',
+          target: 'Delete',
+          command: {
+            kind: 'click_element',
+            ref: 'e1',
+            button: 'left',
+            count: 1,
           },
-          attendees: ['teammate@example.test'],
         }),
       },
       { taskId: observation.taskId, latestObservation: observation },
     );
-    expect(inviteInvocation.action).toMatchObject({
-      effect: {
-        kind: 'send_communication',
-        communication: 'invite',
-      },
-      parameters: {
-        attendees: ['teammate@example.test'],
-      },
+    expect(invocation.action).toMatchObject({
+      action: 'click_element',
+      operation: 'click_element',
+      toolId: 'computer.control',
     });
+    expect(invocation.action).not.toHaveProperty('effect');
   });
 });

@@ -4,8 +4,8 @@ import {
   type DesktopInvocationV4,
   type DesktopResultV4,
 } from '../../shared/agent-runtime-protocol';
-import { type ActionEffect, type GoalSpec } from '../../shared/contracts';
-import { resolveActionEffect } from '../agent/action-effect';
+import { type GoalSpec } from '../../shared/contracts';
+import type { ToolExecutionResult } from '../agent/agent-contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
@@ -39,21 +39,6 @@ export interface DesktopToolWorkerOptions {
 }
 
 const MAX_RECENT_RESULTS = 500;
-
-function effectsMatch(
-  left: ActionEffect,
-  right: DesktopInvocationV4['effect'],
-): boolean {
-  return (
-    left.kind === right.kind &&
-    left.resourceKind === right.resourceKind &&
-    left.reversibility === right.reversibility &&
-    left.externality === right.externality &&
-    left.communication === right.communication &&
-    left.overwrite === right.overwrite &&
-    left.sensitiveDataTransfer === right.sensitiveDataTransfer
-  );
-}
 
 export class DesktopToolWorker {
   private readonly recent = new Map<string, DesktopResultV4>();
@@ -118,15 +103,7 @@ export class DesktopToolWorker {
     if (!definition || !definition.operations.includes(envelope.operation)) {
       return this.result(envelope, 'not_executed', 'The desktop does not support this tool operation.');
     }
-    const normalizedInput =
-      envelope.toolId === 'computer.control' || envelope.toolId === 'desktop.control'
-        ? {
-            ...envelope.input,
-            effect: envelope.input.effect ?? envelope.effect,
-            attendees: envelope.input.attendees ?? null,
-          }
-        : envelope.input;
-    const parsedInput = definition.parse(JSON.stringify(normalizedInput));
+    const parsedInput = definition.parse(JSON.stringify(envelope.input));
     const invocation = definition.normalize(
       parsedInput,
       { arguments: JSON.stringify(envelope.input), callId: envelope.callId, name: definition.modelName },
@@ -138,23 +115,6 @@ export class DesktopToolWorker {
     );
     if (invocation.operation !== envelope.operation || invocation.toolId !== envelope.toolId) {
       return this.result(envelope, 'not_executed', 'The normalized tool identity did not match the signed envelope.');
-    }
-    const controlsDesktop =
-      invocation.toolId === 'computer.control' ||
-      invocation.toolId === 'desktop.control';
-    const normalizedEffect =
-      controlsDesktop && invocation.action
-        ? resolveActionEffect(invocation.action)
-        : invocation.action?.effect;
-    if (
-      invocation.action &&
-      (!normalizedEffect || !effectsMatch(normalizedEffect, envelope.effect))
-    ) {
-      return this.result(
-        envelope,
-        'not_executed',
-        'The normalized tool effect did not match the server-owned invocation.',
-      );
     }
     let expectedRunVersion = envelope.runVersion;
     if (metadata.prerequisites.length > 0) {
@@ -182,23 +142,32 @@ export class DesktopToolWorker {
     if (!await this.options.requestExecuting(envelope.invocationId, expectedRunVersion)) {
       return this.result(envelope, 'not_executed', 'The one-time executing transition was stale or unavailable.');
     }
-    const outcome = invocation.toolId === 'task.interaction'
-      ? {
-          status: 'confirmed' as const,
-          summary: 'The user answered the clarification request.',
-          data: {
-            answer: await this.options.interactionProvider?.(
-              envelope.runId,
-              invocation.input as InteractionToolInput,
-            ) ?? (() => {
-              throw new Error('Hosted clarification is unavailable.');
-            })(),
-          },
-        }
-      : await this.options.dispatcher.dispatch(invocation, {
-          signal,
-          taskId,
-        });
+    let outcome: ToolExecutionResult;
+    try {
+      outcome = invocation.toolId === 'task.interaction'
+        ? {
+            status: 'confirmed',
+            summary: 'The user answered the clarification request.',
+            data: {
+              answer: await this.options.interactionProvider?.(
+                envelope.runId,
+                invocation.input as InteractionToolInput,
+              ) ?? (() => {
+                throw new Error('Hosted clarification is unavailable.');
+              })(),
+            },
+          }
+        : await this.options.dispatcher.dispatch(invocation, {
+            signal,
+            taskId,
+          });
+    } catch {
+      return this.result(
+        envelope,
+        'unknown',
+        'Tool execution stopped after dispatch; the outcome is unknown and will not be retried.',
+      );
+    }
     if (outcome.observation) {
       this.latestObservations.set(envelope.runId, outcome.observation);
     }
@@ -226,7 +195,7 @@ export class DesktopToolWorker {
         criterionId: obligation.criterionId,
         source: obligation.verifierKind === 'browser_semantic'
           ? 'browser_dom' as const
-          : obligation.verifierKind === 'filesystem_effect'
+          : obligation.verifierKind === 'filesystem_result'
             ? 'filesystem' as const
             : 'tool_result' as const,
         status,

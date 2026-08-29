@@ -12,8 +12,8 @@ reported Google Sheets failure and the approved selective-observation design.
   asking where to create the sheet.
 - As a user asking a self-contained text question, I want TroCode to avoid an
   unnecessary screenshot and image charge.
-- As a user approving a consequential desktop action, I want the existing
-  fresh-screen fingerprint check to remain enforced.
+- As a user running a desktop action, I want the existing fresh-screen
+  fingerprint check to remain enforced.
 
 ## Task report
 

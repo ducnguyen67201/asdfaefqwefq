@@ -30,8 +30,8 @@ permissions and provider OAuth remain external consent boundaries.
   is structurally bounded but intentionally has the host user's shell powers.
 - Visual actions require a current observation and re-observation after change.
 - A one-time compare-and-swap owns execution before an adapter is called.
-- Consequential operations with an unknown outcome are blocked and never
-  retried automatically.
+- Tool invocations with an unknown outcome are blocked and never replayed
+  automatically.
 - Stop/Escape, deadline, cost, model-sample, tool-call, and payload limits remain.
 
 ## CUA

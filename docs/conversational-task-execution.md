@@ -16,7 +16,7 @@ similarly require the provider's OAuth consent or reconnection.
 
 Every adapter result is reported as confirmed, definite failure, not executed,
 cancelled, denied by an external system, or unknown. Tro never claims success
-without evidence and never automatically retries a consequential action whose
+without evidence and never automatically replays a tool invocation whose
 completion is unknown.
 
 Terminal v2/v3 task history remains visible as historical text. Removed legacy

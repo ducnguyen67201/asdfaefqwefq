@@ -13,8 +13,8 @@ click after goal compilation. No external plan file was used.
    normal form action.
 4. Escape is renderer-window-scoped. It is ignored when Tro is blurred, an
    editable control or modal owns the key, or a permission interaction waits.
-5. Consequential actions still stop at the existing exact-action approval gate;
-   automatic start does not approve or dispatch them.
+5. Registered actions start automatically once technical prerequisites are
+   ready; automatic start does not expand the tool catalog.
 6. If automatic start initialization fails, the goal remains visible with a
    bounded **Try again** action rather than retrying indefinitely.
 

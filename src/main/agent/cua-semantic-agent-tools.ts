@@ -5,11 +5,7 @@ import {
   objectSchema,
 } from '../../shared/agent-tool-contracts';
 import {
-  ActionEffectKindSchema,
-  ActionEffectSchema,
   ProposedActionSchema,
-  ResourceKindSchema,
-  type ActionEffect,
   type ProposedAction,
 } from '../../shared/contracts';
 
@@ -29,152 +25,39 @@ import type {
   ToolResolutionContext,
 } from './runtime-tool-registry';
 
-const CONSEQUENCES = [
-  'click_element',
-  'type_text',
-  'press_key',
-  'scroll',
-  'login',
-  'send',
-  'submit',
-  'upload',
-  'download',
-  'delete',
-  'purchase',
-  'install',
-  'run_command',
-  'write_file',
-] as const;
-
-const SENSITIVE_CLICK_CONSEQUENCES = [
-  'login',
-  'send',
-  'submit',
-  'upload',
-  'download',
-  'delete',
-  'purchase',
-  'install',
-  'run_command',
-  'write_file',
-] as const;
-
-const SendPayloadSchema = z.object({
-  account: z.string().min(1).max(500),
-  recipients: z.array(z.string().min(1).max(500)).min(1).max(50),
-  subject: z.string().max(2_000),
-  body: z.string().min(1).max(100_000),
-  threadId: z.string().min(1).max(2_000).nullable(),
-  attachments: z.array(z.string().min(1).max(2_000)).max(50).nullable(),
-});
-
 const ModelSurfaceCommandSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('click_element'),
     ref: z.string().regex(/^e[1-9][0-9]{0,3}$/u),
     button: z.enum(['left', 'right']),
     count: z.number().int().min(1).max(2),
-    consequence: z.enum(CONSEQUENCES),
-    sendPayload: SendPayloadSchema.nullable(),
   }),
   z.object({
     kind: z.literal('type_text'),
     ref: z.string().regex(/^e[1-9][0-9]{0,3}$/u),
     text: z.string().max(100_000),
     replace: z.boolean(),
-    consequence: z.enum(CONSEQUENCES),
-    sendPayload: SendPayloadSchema.nullable(),
   }),
   z.object({
     kind: z.literal('press_key'),
     ref: z.string().regex(/^e[1-9][0-9]{0,3}$/u).nullable(),
     key: z.string().trim().min(1).max(40),
     modifiers: z.array(z.string().trim().min(1).max(40)).max(8),
-    consequence: z.enum(CONSEQUENCES),
-    sendPayload: SendPayloadSchema.nullable(),
   }),
   z.object({
     kind: z.literal('scroll'),
     ref: z.string().regex(/^e[1-9][0-9]{0,3}$/u).nullable(),
     direction: z.enum(['up', 'down', 'left', 'right']),
     amount: z.number().int().min(1).max(20),
-    consequence: z.enum(CONSEQUENCES),
-    sendPayload: SendPayloadSchema.nullable(),
   }),
-]).superRefine((command, context) => {
-  const allowed =
-    command.kind === 'click_element'
-      ? command.consequence === 'click_element' ||
-        SENSITIVE_CLICK_CONSEQUENCES.includes(
-          command.consequence as (typeof SENSITIVE_CLICK_CONSEQUENCES)[number],
-        )
-      : command.kind === 'type_text'
-        ? ['type_text', 'login', 'send', 'submit', 'upload'].includes(
-            command.consequence,
-          )
-        : command.kind === 'press_key'
-          ? ['press_key', 'login', 'send', 'submit', 'delete'].includes(
-              command.consequence,
-            )
-          : command.consequence === 'scroll';
-  if (!allowed) {
-    context.addIssue({
-      code: 'custom',
-      message: 'The semantic command and declared consequence do not agree.',
-      path: ['consequence'],
-    });
-  }
-  if (command.consequence === 'send' && !command.sendPayload) {
-    context.addIssue({
-      code: 'custom',
-      message: 'A send action requires its exact account, recipients, subject, and body.',
-      path: ['sendPayload'],
-    });
-  }
-  if (command.consequence !== 'send' && command.sendPayload) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Only a send action may include an exact send payload.',
-      path: ['sendPayload'],
-    });
-  }
-});
+]);
 
-const SurfaceControlInputSchema = z
-  .object({
-    observationId: z.string().uuid(),
-    description: z.string().trim().min(1).max(2_000),
-    target: z.string().trim().min(1).max(8_000).nullable(),
-    effect: ActionEffectSchema,
-    attendees: z.array(z.string().trim().min(1).max(500)).max(50).nullable(),
-    command: ModelSurfaceCommandSchema,
-  })
-  .superRefine((input, context) => {
-    const attendees = input.attendees ?? [];
-    const invitation =
-      input.effect.kind === 'send_communication' &&
-      input.effect.communication === 'invite';
-    if (invitation !== (attendees.length > 0)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'A calendar invitation effect requires exact attendees.',
-        path: ['attendees'],
-      });
-    }
-    if (
-      input.command.consequence === 'send' &&
-      !(
-        input.effect.kind === 'send_communication' &&
-        input.effect.communication === 'send'
-      )
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'An exact send payload requires a send communication effect.',
-        path: ['effect'],
-      });
-    }
-  });
+const SurfaceControlInputSchema = z.object({
+  observationId: z.string().uuid(),
+  description: z.string().trim().min(1).max(2_000),
+  target: z.string().trim().min(1).max(8_000).nullable(),
+  command: ModelSurfaceCommandSchema,
+});
 
 const ObserveSurfaceInputSchema = z.object({
   reason: z.string().trim().min(1).max(500).optional(),
@@ -210,9 +93,7 @@ export interface ObserveSurfaceToolInput {
 
 export interface SurfaceControlToolInput {
   command: SurfaceCommand;
-  consequence: ProposedAction['action'];
   description: string;
-  effect: ActionEffect;
   observationFingerprint: string;
   observationId: string;
   publicRef?: string;
@@ -236,100 +117,6 @@ const nullableRef = {
     { type: 'null' },
   ],
 };
-
-const sendPayloadModelSchema = objectSchema(
-  {
-    account: { type: 'string', maxLength: 500 },
-    recipients: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 50,
-      items: { type: 'string', maxLength: 500 },
-    },
-    subject: { type: 'string', maxLength: 2_000 },
-    body: { type: 'string', minLength: 1, maxLength: 100_000 },
-    threadId: {
-      anyOf: [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
-    },
-    attachments: {
-      anyOf: [
-        {
-          type: 'array',
-          maxItems: 50,
-          items: { type: 'string', maxLength: 2_000 },
-        },
-        { type: 'null' },
-      ],
-    },
-  },
-  ['account', 'recipients', 'subject', 'body', 'threadId', 'attachments'],
-);
-
-const actionEffectModelSchema = objectSchema(
-  {
-    kind: {
-      type: 'string',
-      enum: [...ActionEffectKindSchema.options],
-    },
-    resourceKind: {
-      anyOf: [
-        { type: 'string', enum: [...ResourceKindSchema.options] },
-        { type: 'null' },
-      ],
-    },
-    reversibility: {
-      type: 'string',
-      enum: ['none', 'reversible', 'destructive', 'unknown'],
-    },
-    externality: {
-      type: 'string',
-      enum: ['local', 'cloud_private', 'external', 'public', 'unknown'],
-    },
-    communication: {
-      type: 'string',
-      enum: ['none', 'draft', 'send', 'invite', 'notify', 'unknown'],
-    },
-    overwrite: {
-      type: 'string',
-      enum: ['none', 'requested', 'unexpected', 'unknown'],
-    },
-    sensitiveDataTransfer: {
-      anyOf: [
-        { type: 'boolean' },
-        { type: 'string', const: 'unknown' },
-      ],
-    },
-  },
-  [
-    'kind',
-    'resourceKind',
-    'reversibility',
-    'externality',
-    'communication',
-    'overwrite',
-    'sensitiveDataTransfer',
-  ],
-);
-
-function commandVariant(
-  base: StrictJsonObjectSchema,
-  consequences: readonly string[],
-  send = false,
-): StrictJsonObjectSchema {
-  return objectSchema(
-    {
-      ...base.properties,
-      consequence:
-        consequences.length === 1
-          ? { type: 'string', const: consequences[0] }
-          : { type: 'string', enum: [...consequences] },
-      sendPayload: send
-        ? (sendPayloadModelSchema as unknown as Record<string, unknown>)
-        : { type: 'null' },
-    },
-    [...base.required, 'consequence', 'sendPayload'],
-  );
-}
 
 const clickModelSchema = objectSchema(
   {
@@ -380,33 +167,16 @@ function controlParameters(): StrictJsonObjectSchema {
       target: {
         anyOf: [{ type: 'string', maxLength: 8_000 }, { type: 'null' }],
       },
-      effect: actionEffectModelSchema as unknown as Record<string, unknown>,
-      attendees: {
-        anyOf: [
-          {
-            type: 'array',
-            maxItems: 50,
-            items: { type: 'string', maxLength: 500 },
-          },
-          { type: 'null' },
-        ],
-      },
       command: {
         anyOf: [
-          commandVariant(clickModelSchema, [
-            'click_element',
-            ...SENSITIVE_CLICK_CONSEQUENCES.filter((value) => value !== 'send'),
-          ]),
-          commandVariant(clickModelSchema, ['send'], true),
-          commandVariant(typeModelSchema, ['type_text', 'login', 'submit', 'upload']),
-          commandVariant(typeModelSchema, ['send'], true),
-          commandVariant(keyModelSchema, ['press_key', 'login', 'submit', 'delete']),
-          commandVariant(keyModelSchema, ['send'], true),
-          commandVariant(scrollModelSchema, ['scroll']),
+          clickModelSchema,
+          typeModelSchema,
+          keyModelSchema,
+          scrollModelSchema,
         ],
       },
     },
-    ['observationId', 'description', 'target', 'effect', 'attendees', 'command'],
+    ['observationId', 'description', 'target', 'command'],
   );
 }
 
@@ -449,7 +219,7 @@ function trustedActionForCommand(command: SurfaceCommand): ProposedAction['actio
   return command.kind;
 }
 
-function commandWithoutPolicy(
+function normalizeCommand(
   command: z.infer<typeof ModelSurfaceCommandSchema>,
 ): SurfaceCommand {
   switch (command.kind) {
@@ -488,13 +258,9 @@ function actionParameters(
   observation: DesktopObservation,
   element: SurfaceElement | undefined,
   command: SurfaceCommand,
-  consequence: string,
-  sendPayload: z.infer<typeof SendPayloadSchema> | null,
-  attendees: string[] | null,
 ): Record<string, string | string[]> {
   const parameters: Record<string, string | string[]> = {
     command: command.kind,
-    declaredConsequence: consequence,
     application: observation.surface?.application ?? 'Unknown application',
     observationFingerprint: observation.fingerprint,
     observationId: observation.observationId,
@@ -525,15 +291,6 @@ function actionParameters(
     parameters.direction = command.direction;
     parameters.amount = String(command.amount);
   }
-  if (sendPayload) {
-    parameters.account = sendPayload.account;
-    parameters.recipients = sendPayload.recipients;
-    parameters.subject = sendPayload.subject;
-    parameters.body = sendPayload.body;
-    if (sendPayload.threadId) parameters.threadId = sendPayload.threadId;
-    if (sendPayload.attachments) parameters.attachments = sendPayload.attachments;
-  }
-  if (attendees && attendees.length > 0) parameters.attendees = attendees;
   return parameters;
 }
 
@@ -609,34 +366,23 @@ export function createCuaSemanticToolDefinitions(
         context: ToolResolutionContext,
       ): ResolvedToolInvocation => {
         const observation = requireSemanticObservation(context, input.observationId);
-        const command = commandWithoutPolicy(input.command);
+        const command = normalizeCommand(input.command);
         const publicRef = 'ref' in command && command.ref ? command.ref : undefined;
         const element = elementFor(observation, publicRef);
-        const consequence = input.command.consequence;
         const action = ProposedActionSchema.parse({
           action: trustedActionForCommand(command),
           toolId: 'computer.control',
           operation: command.kind,
-          effect: input.effect,
           description: input.description,
           ...(input.target ? { target: input.target } : {}),
-          parameters: actionParameters(
-            observation,
-            element,
-            command,
-            consequence,
-            input.command.sendPayload,
-            input.attendees,
-          ),
+          parameters: actionParameters(observation, element, command),
         });
         return {
           action,
           callId: call.callId,
           input: {
             command,
-            consequence,
             description: input.description,
-            effect: input.effect,
             observationFingerprint: observation.fingerprint,
             observationId: observation.observationId,
             ...(publicRef ? { publicRef } : {}),
@@ -684,22 +430,12 @@ export function createCuaSemanticToolDefinitions(
             action: 'system_permission',
             toolId: 'browser.prepare',
             operation: 'attach_existing_profile',
-            effect: {
-              kind: 'system_permission',
-              resourceKind: 'application',
-              reversibility: 'reversible',
-              externality: 'local',
-              communication: 'none',
-              overwrite: 'none',
-              sensitiveDataTransfer: false,
-            },
             description: input.reason,
             target: observation.surface.application,
             parameters: {
               observationId: observation.observationId,
               observationFingerprint: observation.fingerprint,
               surfaceKind: observation.surface.kind,
-              declaredConsequence: 'system_permission',
             },
           }),
           callId: call.callId,

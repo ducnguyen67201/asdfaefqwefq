@@ -9,7 +9,7 @@
 - Unknown tools, invalid inputs/targets, stale observations, missing workspace
   bindings, unavailable OS permissions, exhausted limits, and digest mismatch
   still stop before dispatch.
-- An unknown consequential result blocks and is never retried.
+- An unknown tool result blocks and is never replayed.
 - Terminal v2/v3 task history remains readable without active controls.
 
 ## Evidence map

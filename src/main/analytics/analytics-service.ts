@@ -231,10 +231,7 @@ export class AnalyticsService {
     }
     if (snapshot.phase === 'verifying' && update.event.tool) {
       this.capture('tool call completed', {
-        consequential: update.event.tool.consequential ?? false,
-        effect_kind: update.event.tool.effectKind ?? 'unknown',
         operation: update.event.tool.operation,
-        resource_kind: update.event.tool.resourceKind ?? 'unknown',
         tool_id: update.event.tool.toolId,
       });
       return;

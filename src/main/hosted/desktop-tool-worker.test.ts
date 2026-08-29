@@ -23,16 +23,6 @@ function envelope(overrides: Record<string, unknown> = {}) {
     callId: 'call-1',
     toolId: 'application.launch',
     operation: 'launch',
-    effect: {
-      kind: 'none',
-      resourceKind: null,
-      reversibility: 'none',
-      externality: 'local',
-      communication: 'none',
-      overwrite: 'none',
-      sensitiveDataTransfer: false,
-    },
-    consequential: false,
     permissionInteractionId: null,
     permissionRequirements: [],
     input: { application: 'chrome', reason: 'Open Chrome.' },
@@ -146,6 +136,30 @@ describe('DesktopToolWorker', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('reports a post-dispatch exception as unknown so it cannot be replayed', async () => {
+    const dispatch = vi.fn(async () => {
+      throw new Error('Connection dropped after dispatch.');
+    });
+    const goal = hostedGoal('Open Chrome.');
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => true),
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope());
+
+    expect(result).toMatchObject({
+      status: 'unknown',
+      summary:
+        'Tool execution stopped after dispatch; the outcome is unknown and will not be retried.',
+    });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
   it('opens Mở YouTube through direct navigation without computer permission', async () => {
     const dispatch = vi.fn(async () => ({
       status: 'confirmed' as const,
@@ -183,7 +197,7 @@ describe('DesktopToolWorker', () => {
     expect(requireReady).not.toHaveBeenCalled();
   });
 
-  it('dispatches a registered sensitive desktop action after the one-time transition', async () => {
+  it('dispatches a registered desktop action after the one-time transition', async () => {
     const requestExecuting = vi.fn(async () => true);
     const goal = hostedGoal('Send the visible message.');
     const observationId = randomUUID();
@@ -221,30 +235,11 @@ describe('DesktopToolWorker', () => {
     const result = await worker.handle(envelope({
       toolId: 'desktop.control',
       operation: 'click',
-      effect: {
-        kind: 'send_communication',
-        resourceKind: 'email',
-        reversibility: 'reversible',
-        externality: 'external',
-        communication: 'send',
-        overwrite: 'none',
-        sensitiveDataTransfer: false,
-      },
-      consequential: true,
       input: {
         observationId,
         observationFingerprint: 'a'.repeat(64),
-        consequence: 'send',
         description: 'Send the visible message.',
         target: 'Send button',
-        sendPayload: {
-          account: 'sender@example.com',
-          attachments: null,
-          body: 'Hello.',
-          recipients: ['recipient@example.com'],
-          subject: 'Update',
-          threadId: null,
-        },
         command: { kind: 'click', x: 500, y: 500, button: 'left', count: 1 },
       },
     }));
@@ -255,8 +250,11 @@ describe('DesktopToolWorker', () => {
     );
   });
 
-  it('rejects a desktop action whose declared consequence is harder than its envelope effect', async () => {
-    const dispatch = vi.fn();
+  it('dispatches a purchase-labelled desktop action without policy classification', async () => {
+    const dispatch = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'Clicked the purchase button.',
+    }));
     const requestExecuting = vi.fn(async () => true);
     const goal = hostedGoal('Purchase the visible item.');
     const observationId = randomUUID();
@@ -279,6 +277,12 @@ describe('DesktopToolWorker', () => {
         taskId: goal.id,
         text: 'A purchase button is visible.',
       }),
+      permissionCoordinator: {
+        requireReady: vi.fn(async () => ({
+          outcome: 'granted' as const,
+          runVersion: 1,
+        })),
+      },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
       taskIdProvider: () => goal.id,
@@ -289,25 +293,22 @@ describe('DesktopToolWorker', () => {
       operation: 'click',
       input: {
         observationId,
-        consequence: 'purchase',
         description: 'Purchase the visible item.',
         target: 'Purchase button',
-        effect: envelope().effect,
-        attendees: null,
         command: { kind: 'click', x: 500, y: 500, button: 'left', count: 1 },
       },
     }));
 
-    expect(result).toMatchObject({
-      status: 'not_executed',
-      summary: 'The normalized tool effect did not match the server-owned invocation.',
-    });
-    expect(requestExecuting).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'confirmed' });
+    expect(requestExecuting).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledOnce();
   });
 
-  it('rejects a semantic action whose declared consequence is harder than its envelope effect', async () => {
-    const dispatch = vi.fn();
+  it('dispatches a delete-labelled semantic action without policy classification', async () => {
+    const dispatch = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'Clicked the delete button.',
+    }));
     const requestExecuting = vi.fn(async () => true);
     const goal = hostedGoal('Delete the visible item.');
     const observationId = randomUUID();
@@ -326,6 +327,12 @@ describe('DesktopToolWorker', () => {
         taskId: goal.id,
         text: 'A delete button is visible.',
       }),
+      permissionCoordinator: {
+        requireReady: vi.fn(async () => ({
+          outcome: 'granted' as const,
+          runVersion: 1,
+        })),
+      },
       registry: new RuntimeToolRegistry(createCuaSemanticToolDefinitions({
         browserPrepareAvailable: () => true,
         semanticAvailable: () => true,
@@ -341,25 +348,18 @@ describe('DesktopToolWorker', () => {
         observationId,
         description: 'Delete the visible item.',
         target: 'Delete',
-        effect: envelope().effect,
-        attendees: null,
         command: {
           kind: 'click_element',
           ref: 'e1',
           button: 'left',
           count: 1,
-          consequence: 'delete',
-          sendPayload: null,
         },
       },
     }));
 
-    expect(result).toMatchObject({
-      status: 'not_executed',
-      summary: 'The normalized tool effect did not match the server-owned invocation.',
-    });
-    expect(requestExecuting).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'confirmed' });
+    expect(requestExecuting).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledOnce();
   });
 
   it('claims execution with the run version returned after permission resumes', async () => {
@@ -397,7 +397,7 @@ describe('DesktopToolWorker', () => {
     expect(requestExecuting).toHaveBeenCalledWith(expect.any(String), 3);
   });
 
-  it('commits a registered Workspace effect without a user-decision callback', async () => {
+  it('commits a registered Workspace write without a user-decision callback', async () => {
     const goal = hostedGoal('Update the workspace file.', {
         selectionId: '11111111-1111-4111-8111-111111111111',
         canonicalPath: '/tmp/project',
@@ -418,16 +418,6 @@ describe('DesktopToolWorker', () => {
     const result = await worker.handle(envelope({
       toolId: 'workspace.filesystem',
       operation: 'write_file',
-      effect: {
-        kind: 'workspace_write',
-        resourceKind: 'workspace_file',
-        reversibility: 'reversible',
-        externality: 'local',
-        communication: 'none',
-        overwrite: 'requested',
-        sensitiveDataTransfer: false,
-      },
-      consequential: true,
       input: { path: 'src/example.ts', content: 'export {};' },
     }));
 
@@ -438,7 +428,7 @@ describe('DesktopToolWorker', () => {
     );
   });
 
-  it('dispatches an arbitrary bounded Workspace command without semantic classification', async () => {
+  it('dispatches an arbitrary Workspace command without semantic classification', async () => {
     const goal = hostedGoal('Run the requested release command.', {
       selectionId: '11111111-1111-4111-8111-111111111111',
       canonicalPath: '/tmp/project',
@@ -462,16 +452,6 @@ describe('DesktopToolWorker', () => {
     const result = await worker.handle(envelope({
       toolId: 'workspace.terminal',
       operation: 'run_command',
-      effect: {
-        kind: 'workspace_command',
-        resourceKind: 'workspace_repository',
-        reversibility: 'unknown',
-        externality: 'unknown',
-        communication: 'unknown',
-        overwrite: 'unknown',
-        sensitiveDataTransfer: 'unknown',
-      },
-      consequential: true,
       input: {
         command: 'git push origin main && curl https://example.com/hook',
         timeoutMs: 120_000,

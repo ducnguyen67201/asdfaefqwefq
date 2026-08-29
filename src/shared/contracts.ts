@@ -72,6 +72,7 @@ export const HOST_ALWAYS_CONFIRM_ACTIONS = [
   ...SensitiveActionSchema.options,
 ] as const;
 
+/** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export const ActionEffectKindSchema = z.enum([
   'none',
   'create_resource',
@@ -106,6 +107,7 @@ export const AutoAuthorizableEffectKindSchema = z.enum([
   'workspace_command',
 ]);
 
+/** @deprecated Legacy V8 history compatibility only. */
 export const HighConsequenceEffectKindSchema = z.enum([
   'send_communication',
   'delete_or_archive',
@@ -121,6 +123,7 @@ export const HighConsequenceEffectKindSchema = z.enum([
   'unknown',
 ]);
 
+/** @deprecated Legacy V8 history compatibility only. */
 export const HIGH_CONSEQUENCE_EFFECTS = [
   ...HighConsequenceEffectKindSchema.options,
 ] as const;
@@ -130,6 +133,7 @@ export const HardConfirmEffectKindSchema = HighConsequenceEffectKindSchema;
 /** @deprecated Legacy V8 contract compatibility only. */
 export const HOST_ALWAYS_CONFIRM_EFFECTS = HIGH_CONSEQUENCE_EFFECTS;
 
+/** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export const ResourceKindSchema = z.enum([
   'calendar_event',
   'document',
@@ -149,6 +153,7 @@ export const ResourceKindSchema = z.enum([
   'generic_public_resource',
 ]);
 
+/** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export const ActionEffectSchema = z
   .object({
     kind: ActionEffectKindSchema,
@@ -283,7 +288,6 @@ export const ProposedActionSchema = z.object({
   ),
   toolId: RuntimeToolIdSchema.optional(),
   operation: z.string().trim().min(1).max(100).optional(),
-  effect: ActionEffectSchema.optional(),
   /** @deprecated Read only for persisted v1 tasks. Policy does not use it. */
   capability: CapabilitySchema.optional(),
   description: z.string().min(1),
@@ -555,13 +559,13 @@ export const OutcomeVerifierSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
-      kind: z.literal('filesystem_effect'),
+      kind: z.literal('filesystem_result'),
       assertion: z.string().trim().min(1).max(2_000),
     })
     .strict(),
   z
     .object({
-      kind: z.literal('tool_effect'),
+      kind: z.literal('tool_result'),
       toolId: RuntimeToolIdSchema,
       operation: z.string().trim().min(1).max(100),
     })
@@ -950,46 +954,10 @@ export const TaskEventSchema = z
       .object({
         toolId: RuntimeToolIdSchema,
         operation: z.string().trim().min(1).max(100),
-        effectKind: ActionEffectKindSchema.optional(),
-        resourceKind: ResourceKindSchema.nullable().optional(),
-        consequential: z.boolean().optional(),
       })
       .optional(),
   })
-  .superRefine((event, context) => {
-    const metadata = event.tool
-      ? [
-          event.tool.effectKind,
-          event.tool.resourceKind,
-          event.tool.consequential,
-        ]
-      : [];
-    const hasMetadata = metadata.some((value) => value !== undefined);
-    if (!event.tool || !hasMetadata) return;
-    if (metadata.some((value) => value === undefined)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Execution consequence metadata must be recorded as one complete set.',
-        path: ['tool'],
-      });
-      return;
-    }
-    const effectFree = event.tool.effectKind === 'none';
-    if (effectFree !== (event.tool.resourceKind === null)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Tool resource metadata must match the effect kind.',
-        path: ['tool', 'resourceKind'],
-      });
-    }
-    if (event.tool.consequential !== !effectFree) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Tool consequence metadata must match the effect kind.',
-        path: ['tool', 'consequential'],
-      });
-    }
-  });
+  .strict();
 
 export const AgentActivityKindSchema = z.enum([
   'run_started',
@@ -2131,8 +2099,8 @@ export const HostedTaskEventSchema = z
               'assistant_output',
               'application_surface',
               'browser_semantic',
-              'filesystem_effect',
-              'tool_effect',
+              'filesystem_result',
+              'tool_result',
               'semantic_judge',
             ]),
           })
@@ -3101,7 +3069,9 @@ export const CancelOrganizationMemberResponseSchema = z
   .strict();
 
 export type Capability = z.infer<typeof CapabilitySchema>;
+/** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export type ActionEffect = z.infer<typeof ActionEffectSchema>;
+/** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export type ActionEffectKind = z.infer<typeof ActionEffectKindSchema>;
 /** @deprecated Legacy V8 and protocol-v2 history compatibility only. */
 export type AuthorizationSource = z.infer<typeof AuthorizationSourceSchema>;
@@ -3109,6 +3079,7 @@ export type AuthorizationSource = z.infer<typeof AuthorizationSourceSchema>;
 export type AutoAuthorizableEffectKind = z.infer<
   typeof AutoAuthorizableEffectKindSchema
 >;
+/** @deprecated Legacy V8 history compatibility only. */
 export type HighConsequenceEffectKind = z.infer<
   typeof HighConsequenceEffectKindSchema
 >;

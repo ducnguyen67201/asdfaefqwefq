@@ -1,10 +1,10 @@
 # Computer-use lifecycle
 
 1. Rust selects a tool from the exact catalog advertised by the desktop.
-2. Rust validates the model arguments and derives effect metadata used for
-   verification and unknown-outcome handling.
+2. Rust validates the model arguments and records the exact registered tool and
+   operation.
 3. Electron checks the protocol/catalog digests, expiry, run/task/workspace
-   mapping, registered tool and operation, normalized effect, target, and
+   mapping, registered tool and operation, target, and
    observation binding.
 4. If Accessibility or Screen Recording is unavailable, the run enters the
    durable `awaiting_permission` technical state. The user may open system
@@ -14,7 +14,7 @@
 6. The selected adapter is called once. Results and bounded evidence are sent
    back to Rust.
 7. Rust verifies required outcomes and either replans, completes, recovers from
-   a definite failure, or blocks an unknown consequential result.
+   a definite failure, or blocks an unknown result.
 
 Tro does not display an action approval card. OS permissions and account OAuth
 are technical/provider prerequisites, not per-action product policy.

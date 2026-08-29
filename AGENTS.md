@@ -8,7 +8,7 @@
 - Keep goal compilation, lifecycle transitions, and policy decisions pure and testable.
 - Treat CUA as an execution capability. It does not define goals or grant approvals.
 - Prefer direct APIs, filesystem, and terminal tools over visual clicking when they are safer and more verifiable.
-- Never retry a consequential action when completion is unknown.
+- Never replay a tool invocation when completion is unknown.
 
 ## Required verification
 

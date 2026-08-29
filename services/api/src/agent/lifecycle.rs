@@ -13,7 +13,7 @@ pub enum TransitionCommand {
     Complete,
     Block,
     Fail,
-    Cancel { consequential_execution: bool },
+    Cancel,
     Expire,
 }
 
@@ -40,17 +40,12 @@ pub fn transition(
     if matches!(from, Completed | Blocked | Failed | Cancelled | Expired) {
         return Err("terminal agent runs cannot transition");
     }
-    if let Cancel {
-        consequential_execution,
-    } = command
-    {
-        return Ok(
-            if matches!(from, ExecutingTool) && consequential_execution {
-                Blocked
-            } else {
-                Cancelled
-            },
-        );
+    if matches!(command, Cancel) {
+        return Ok(if matches!(from, ExecutingTool) {
+            Blocked
+        } else {
+            Cancelled
+        });
     }
     if matches!(command, Fail) {
         return Ok(Failed);
@@ -128,12 +123,7 @@ mod tests {
         assert!(projection.terminal);
         assert!(projection.actions.is_empty());
         assert_eq!(
-            transition(
-                &AgentRunStateV4::Blocked,
-                TransitionCommand::Cancel {
-                    consequential_execution: false,
-                },
-            ),
+            transition(&AgentRunStateV4::Blocked, TransitionCommand::Cancel,),
             Err("terminal agent runs cannot transition")
         );
     }
@@ -151,14 +141,9 @@ mod tests {
     }
 
     #[test]
-    fn consequential_cancel_preserves_unknown_outcome() {
+    fn cancelling_after_tool_dispatch_preserves_unknown_outcome() {
         assert_eq!(
-            transition(
-                &AgentRunStateV4::ExecutingTool,
-                TransitionCommand::Cancel {
-                    consequential_execution: true,
-                },
-            ),
+            transition(&AgentRunStateV4::ExecutingTool, TransitionCommand::Cancel,),
             Ok(AgentRunStateV4::Blocked)
         );
     }

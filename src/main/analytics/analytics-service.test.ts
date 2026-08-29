@@ -352,7 +352,7 @@ describe('AnalyticsService', () => {
     });
   });
 
-  it('records closed effect metadata for completed tools without private intent', async () => {
+  it('records tool identity for completed tools without private intent', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -378,12 +378,9 @@ describe('AnalyticsService', () => {
         nextActions: [],
         artifacts: [],
         tool: {
-        toolId: 'workspace.apply_patch',
-        operation: 'apply_patch',
-        effectKind: 'workspace_write',
-        resourceKind: 'workspace_file',
-        consequential: true,
-      },
+          toolId: 'workspace.apply_patch',
+          operation: 'apply_patch',
+        },
       },
     };
 
@@ -395,10 +392,7 @@ describe('AnalyticsService', () => {
     expect(client.events.at(-1)).toMatchObject({
       event: 'tool call completed',
       properties: {
-        consequential: true,
-        effect_kind: 'workspace_write',
         operation: 'apply_patch',
-        resource_kind: 'workspace_file',
         tool_id: 'workspace.apply_patch',
       },
     });

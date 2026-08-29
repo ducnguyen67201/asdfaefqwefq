@@ -44,7 +44,7 @@ impl Respond for AgentResponder {
                 "role":"assistant",
                 "type":"message"
             }])
-        } else if input_text.contains("consequential") {
+        } else if input_text.contains("workspace change") {
             json!([{
                 "arguments":serde_json::to_string(&json!({
                     "content":"changed",
@@ -228,7 +228,7 @@ async fn seed_device(pool: &trocode_api::PgPool) -> Uuid {
 
 #[tokio::test]
 #[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
-async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
+async fn durable_agent_completes_verified_work_and_blocks_unknown_results() {
     let server = MockServer::start().await;
     Mock::given(path("/v1/responses"))
         .respond_with(AgentResponder::default())
@@ -313,11 +313,12 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
         .expect("pending desktop work");
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0]["toolId"], "application.launch");
-    assert_eq!(pending[0]["consequential"], false);
+    assert!(pending[0].get("consequential").is_none());
+    assert!(pending[0].get("effect").is_none());
     let executing = agent
         .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
         .await
-        .expect("begin non-consequential execution");
+        .expect("begin execution");
     assert_eq!(executing["kind"], "executing");
     let committed = agent
         .record_result(
@@ -334,7 +335,7 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
                     "criterionId":pending[0]["obligations"][0]["criterionId"],
                     "source":"tool_result",
                     "status":"supports",
-                    "summary":"The trusted launch result satisfied the requested tool effect."
+                    "summary":"The trusted launch result satisfied the requested tool outcome."
                 }],
                 "invocationId":pending[0]["invocationId"],
                 "status":"confirmed",
@@ -354,16 +355,13 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     }));
     assert!(!agent.list(USER).await.unwrap().is_empty());
 
-    let (unknown_run, _, _) = submit(
-        &agent,
-        "Perform a consequential workspace change and verify it.",
-    )
-    .await;
-    assert!(agent.run_once().await.expect("request consequential tool"));
+    let (unknown_run, _, _) = submit(&agent, "Perform a workspace change and verify it.").await;
+    assert!(agent.run_once().await.expect("request workspace tool"));
     let pending = agent.pending(USER, worker).await.unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0]["toolId"], "workspace.filesystem");
-    assert_eq!(pending[0]["consequential"], true);
+    assert!(pending[0].get("consequential").is_none());
+    assert!(pending[0].get("effect").is_none());
     assert_eq!(
         agent
             .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
@@ -392,11 +390,8 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     );
     assert!(!agent.run_once().await.unwrap());
 
-    let (disconnect_run, _, _) = submit(
-        &agent,
-        "Perform a consequential workspace disconnect scenario.",
-    )
-    .await;
+    let (disconnect_run, _, _) =
+        submit(&agent, "Perform a workspace change disconnect scenario.").await;
     assert!(agent.run_once().await.unwrap());
     let pending = agent.pending(USER, worker).await.unwrap();
     agent
@@ -483,7 +478,7 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
 
     let (stale_worker_run, _, _) = submit(
         &agent,
-        "Perform a consequential workspace change before the worker expires.",
+        "Perform a workspace change before the worker expires.",
     )
     .await;
     assert!(agent.run_once().await.unwrap());

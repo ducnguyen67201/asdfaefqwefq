@@ -45,7 +45,7 @@ struct ReliabilityScenario {
     completed: bool,
     cost_micro_usd: u64,
     #[serde(default)]
-    duplicate_consequential_actions: u64,
+    duplicate_tool_executions: u64,
     duration_ms: f64,
     #[serde(default)]
     fault_injected: bool,
@@ -56,7 +56,7 @@ struct ReliabilityScenario {
     #[serde(default)]
     stale_observation_rejections: u64,
     #[serde(default)]
-    unknown_effect_retries: u64,
+    unknown_tool_retries: u64,
     #[serde(default)]
     unplanned_user_intervention: bool,
     #[serde(default)]
@@ -70,7 +70,7 @@ struct ReliabilitySummary {
     #[serde(serialize_with = "serialize_optional_javascript_number")]
     cancellation_p95_ms: Option<f64>,
     cost_per_verified_success_micro_usd: Option<u64>,
-    duplicate_consequential_action_count: u64,
+    duplicate_tool_execution_count: u64,
     #[serde(serialize_with = "serialize_javascript_number")]
     false_completion_rate: f64,
     #[serde(serialize_with = "serialize_javascript_number")]
@@ -82,7 +82,7 @@ struct ReliabilitySummary {
     #[serde(serialize_with = "serialize_javascript_number")]
     planned_user_intervention_rate: f64,
     stale_observation_rejection_count: u64,
-    unknown_effect_retry_count: u64,
+    unknown_tool_retry_count: u64,
     #[serde(serialize_with = "serialize_javascript_number")]
     unplanned_user_intervention_rate: f64,
     #[serde(serialize_with = "serialize_javascript_number")]
@@ -95,11 +95,11 @@ struct ReliabilitySummary {
 #[serde(rename_all = "camelCase")]
 struct ReliabilityGates {
     cancellation_responsiveness: bool,
-    duplicate_consequential_actions: bool,
+    duplicate_tool_executions: bool,
     false_completions: bool,
     recovery: bool,
     stale_observation_rejection: bool,
-    unknown_effect_retries: bool,
+    unknown_tool_retries: bool,
     user_intervention: bool,
     verified_completion: bool,
 }
@@ -107,11 +107,11 @@ struct ReliabilityGates {
 impl ReliabilityGates {
     const fn passed(&self) -> bool {
         self.cancellation_responsiveness
-            && self.duplicate_consequential_actions
+            && self.duplicate_tool_executions
             && self.false_completions
             && self.recovery
             && self.stale_observation_rejection
-            && self.unknown_effect_retries
+            && self.unknown_tool_retries
             && self.user_intervention
             && self.verified_completion
     }
@@ -193,9 +193,9 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
         },
         cost_per_verified_success_micro_usd: (verified > 0)
             .then(|| total_cost.div_ceil(verified_u64)),
-        duplicate_consequential_action_count: results
+        duplicate_tool_execution_count: results
             .iter()
-            .map(|result| result.duplicate_consequential_actions)
+            .map(|result| result.duplicate_tool_executions)
             .sum(),
         false_completion_rate: false_completions as f64 / count_float,
         p50_duration_ms: percentile(results.iter().map(|result| result.duration_ms), 0.5),
@@ -210,9 +210,9 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
             .iter()
             .map(|result| result.stale_observation_rejections)
             .sum(),
-        unknown_effect_retry_count: results
+        unknown_tool_retry_count: results
             .iter()
-            .map(|result| result.unknown_effect_retries)
+            .map(|result| result.unknown_tool_retries)
             .sum(),
         unplanned_user_intervention_rate: unplanned_interventions as f64 / count_float,
         user_intervention_rate: (planned_interventions + unplanned_interventions) as f64
@@ -237,12 +237,12 @@ fn build_reliability_report(
             (Some(baseline), Some(candidate)) => candidate <= baseline.max(1_000.0),
             (None, Some(candidate)) => candidate <= 1_000.0,
         },
-        duplicate_consequential_actions: candidate.duplicate_consequential_action_count == 0,
+        duplicate_tool_executions: candidate.duplicate_tool_execution_count == 0,
         false_completions: candidate.false_completion_rate <= f64::EPSILON,
         recovery: candidate.recovery_rate >= baseline.recovery_rate.max(0.95),
         stale_observation_rejection: candidate.stale_observation_rejection_count
             >= baseline.stale_observation_rejection_count,
-        unknown_effect_retries: candidate.unknown_effect_retry_count == 0,
+        unknown_tool_retries: candidate.unknown_tool_retry_count == 0,
         user_intervention: candidate.user_intervention_rate
             <= baseline.user_intervention_rate + 0.02,
         verified_completion: candidate.verified_completion_rate
@@ -266,8 +266,8 @@ fn reliability_markdown(report: &ReliabilityReport) -> String {
             "| Verified completion rate | {:.3} | {:.3} |\n",
             "| False completion rate | {:.3} | {:.3} |\n",
             "| Recovery rate | {:.3} | {:.3} |\n",
-            "| Duplicate consequential actions | {} | {} |\n",
-            "| Unknown-effect retries | {} | {} |\n",
+            "| Duplicate tool executions | {} | {} |\n",
+            "| Unknown-result retries | {} | {} |\n",
             "| Stale-observation rejections | {} | {} |\n",
             "| Cancellation p95 (ms) | {} | {} |\n",
             "| Planned intervention rate | {:.3} | {:.3} |\n",
@@ -282,10 +282,10 @@ fn reliability_markdown(report: &ReliabilityReport) -> String {
         report.candidate.false_completion_rate,
         report.baseline.recovery_rate,
         report.candidate.recovery_rate,
-        report.baseline.duplicate_consequential_action_count,
-        report.candidate.duplicate_consequential_action_count,
-        report.baseline.unknown_effect_retry_count,
-        report.candidate.unknown_effect_retry_count,
+        report.baseline.duplicate_tool_execution_count,
+        report.candidate.duplicate_tool_execution_count,
+        report.baseline.unknown_tool_retry_count,
+        report.candidate.unknown_tool_retry_count,
         report.baseline.stale_observation_rejection_count,
         report.candidate.stale_observation_rejection_count,
         report
@@ -651,13 +651,13 @@ mod tests {
             cancellation_latency_ms: Some(250.0),
             completed: true,
             cost_micro_usd: 100,
-            duplicate_consequential_actions: 0,
+            duplicate_tool_executions: 0,
             duration_ms: 1_000.0,
             fault_injected: true,
             planned_user_intervention: false,
             recovered: true,
             stale_observation_rejections: 1,
-            unknown_effect_retries: 0,
+            unknown_tool_retries: 0,
             unplanned_user_intervention: false,
             verified: true,
         }
@@ -678,11 +678,11 @@ mod tests {
     }
 
     #[test]
-    fn reliability_rejects_false_completion_and_duplicate_effects() {
+    fn reliability_rejects_false_completion_and_duplicate_tool_execution() {
         let mut unverified = reliability_scenario();
         unverified.verified = false;
         let mut duplicate = unverified.clone();
-        duplicate.duplicate_consequential_actions = 1;
+        duplicate.duplicate_tool_executions = 1;
         let report = build_reliability_report(
             &[unverified, reliability_scenario()],
             &[reliability_scenario(), duplicate],
@@ -690,26 +690,26 @@ mod tests {
         .expect("report");
         assert!(!report.passed);
         assert!(!report.gates.false_completions);
-        assert!(!report.gates.duplicate_consequential_actions);
+        assert!(!report.gates.duplicate_tool_executions);
     }
 
     #[test]
-    fn reliability_passes_verified_recovery_without_duplicate_effects() {
+    fn reliability_passes_verified_recovery_without_duplicate_tool_execution() {
         let report = build_reliability_report(&[reliability_scenario()], &[reliability_scenario()])
             .expect("report");
         assert!(report.passed);
     }
 
     #[test]
-    fn reliability_rejects_unknown_effect_retries_and_slow_cancellation() {
+    fn reliability_rejects_unknown_result_retries_and_slow_cancellation() {
         let mut baseline = reliability_scenario();
         baseline.cancellation_latency_ms = Some(250.0);
         let mut candidate = reliability_scenario();
         candidate.cancellation_latency_ms = Some(1_500.0);
-        candidate.unknown_effect_retries = 1;
+        candidate.unknown_tool_retries = 1;
         let report = build_reliability_report(&[baseline], &[candidate]).expect("report");
         assert!(!report.gates.cancellation_responsiveness);
-        assert!(!report.gates.unknown_effect_retries);
+        assert!(!report.gates.unknown_tool_retries);
         assert!(!report.passed);
     }
 

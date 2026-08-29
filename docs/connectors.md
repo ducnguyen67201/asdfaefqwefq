@@ -13,7 +13,7 @@ For each call Rust:
 
 1. resolves an active connection and immutable snapshot;
 2. checks the catalog-contract digest and exact registered schema;
-3. validates arguments and derives catalog-owned effect metadata;
+3. validates arguments against the catalog-owned schema;
 4. persists a requested invocation and checkpoint;
 5. acquires the one-time executing lease;
 6. calls the connector once and bounds/guards the returned content;
@@ -21,8 +21,8 @@ For each call Rust:
 
 If connection state, OAuth scopes, endpoint, schema, or catalog digest changes,
 the tool becomes unavailable or requires reconnection. If the provider may
-have completed a consequential call but the result is unknown, the run blocks
-and Tro does not replay it.
+have completed a call but the result is unknown, the run blocks and Tro does
+not replay it.
 
 OAuth tokens remain encrypted in the Rust service and never enter Electron or
 the renderer. Analytics includes only fixed catalog/tool IDs and result status,

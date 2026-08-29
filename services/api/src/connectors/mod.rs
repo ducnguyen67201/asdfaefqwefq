@@ -17,7 +17,6 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    agent::ActionEffect,
     auth::{AgentEnvelope, ConnectorTokenCrypto},
     config::ConnectorConfig,
     error::{ApiError, ApiResult},
@@ -72,16 +71,10 @@ pub struct ConnectorRoute {
     pub catalog_key: String,
     pub connection_id: Uuid,
     pub description: String,
-    pub effect: ActionEffect,
     pub input_schema: Value,
     pub namespace: String,
     pub snapshot_id: Uuid,
     pub tool_name: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct NormalizedConnectorAction {
-    pub effect: ActionEffect,
 }
 
 #[derive(Clone, Debug)]
@@ -483,7 +476,6 @@ impl ConnectorService {
                     tool_name: contract.name.to_owned(),
                     description: contract.description.to_owned(),
                     input_schema: contract.input_schema.clone(),
-                    effect: catalog::effect_for(contract),
                 });
             }
         }
@@ -676,20 +668,15 @@ impl ConnectorService {
     }
 }
 
-pub fn normalize_action(
-    route: &ConnectorRoute,
-    arguments: &Value,
-) -> ApiResult<NormalizedConnectorAction> {
+pub fn validate_action(route: &ConnectorRoute, arguments: &Value) -> ApiResult<()> {
     schema::validate_arguments(&route.input_schema, arguments).map_err(|_| {
         ApiError::bad_request(
             "invalid_connector_arguments",
             "Connector arguments do not match the reviewed contract.",
         )
     })?;
-    let policy =
-        catalog::tool(&route.catalog_key, &route.tool_name).ok_or_else(connector_not_found)?;
-    let effect = catalog::effect_for(policy);
-    Ok(NormalizedConnectorAction { effect })
+    catalog::tool(&route.catalog_key, &route.tool_name).ok_or_else(connector_not_found)?;
+    Ok(())
 }
 
 fn attempt_metadata(id: Uuid, user: &str, catalog_key: &str) -> Value {
@@ -750,7 +737,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalized_action_uses_the_reviewed_catalog_effect_without_retaining_arguments() {
+    fn action_validation_uses_the_reviewed_catalog_schema() {
         let route = ConnectorRoute {
             catalog_key: "gmail".to_owned(),
             connection_id: Uuid::nil(),
@@ -762,14 +749,12 @@ mod tests {
                 .expect("tool")
                 .input_schema
                 .clone(),
-            effect: catalog::effect_for(catalog::tool("gmail", "create_draft").expect("tool")),
         };
-        let action = normalize_action(
+        validate_action(
             &route,
             &json!({"to":["a@example.com"],"body":"private body"}),
         )
         .expect("action");
-        assert_eq!(action.effect.kind, "create_resource");
-        assert_eq!(action.effect.resource_kind.as_deref(), Some("email"));
+        assert!(validate_action(&route, &json!({"unknown":true})).is_err());
     }
 }

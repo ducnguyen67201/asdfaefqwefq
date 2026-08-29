@@ -1,8 +1,7 @@
 # Security model
 
 Tro is an autonomous desktop agent. A model-selected registered tool can run
-without a Tro confirmation card, including consequential computer actions and
-bounded workspace shell commands. Users and operators should treat the enabled
+without a Tro confirmation card. Users and operators should treat the enabled
 tool catalog and the host account's capabilities as the action boundary.
 
 ## Trust boundaries
@@ -30,7 +29,7 @@ tool catalog and the host account's capabilities as the action boundary.
 - Provider OAuth consent, scope, endpoint, and schema-snapshot validation.
 - One-time requested-to-executing ownership and result replay handling.
 - Task time, tool-call, model-sample, image, and spend limits.
-- No automatic retry after an unknown consequential result.
+- No automatic replay after an unknown tool result.
 - Privacy-safe lifecycle/audit metadata and encrypted sensitive persistence.
 
 ## Explicitly accepted risk
@@ -41,9 +40,9 @@ after the retained checks. Workspace terminal commands run with the host user's
 network, credentials, and executable access. Root confinement applies to the
 filesystem adapter, not arbitrary shell syntax.
 
-Stop/Escape and backend cancellation reduce exposure but cannot undo an effect
+Stop/Escape and backend cancellation reduce exposure but cannot undo an action
 already accepted by an external application. Cancellation during an unknown
-consequential execution produces a blocked run rather than a retry.
+tool execution produces a blocked run rather than a retry.
 
 ## Native CUA capability
 
@@ -56,6 +55,6 @@ denied automatically.
 ## Deployment
 
 New task execution is runtime v4 only. Cleanup migration 030 first asserts that
-no nonterminal protocol-v2/v3 run or legacy approval wait exists. It never
-converts historical pending work into execution. Operators must drain or cancel
-legacy work under the old release before applying the cleanup.
+no nonterminal run or legacy approval wait exists. It never converts historical
+pending work into execution. Operators must drain or cancel active work under
+the old release before applying the cleanup.

@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "guessedState": true,
-  "protocolDigest": "a551c4c0b398406b4e102d29b9aa42cf8e00ff1932e0c2644ab9c0afc7f1e730",
+  "protocolDigest": "a6ab540a9889cf49785c8e6bdb189cbb4ea09c8b767c854dcd630ddf7080935f",
   "protocolVersion": 4,
   "rolloutMode": "enforce",
   "supportedReadVersions": [
@@ -12,6 +12,6 @@
   "supportedStartVersions": [
     4
   ],
-  "toolCatalogDigest": "b7ff8f1a93f5c8e34d5fc9f4701712f4480300ea00f37c6747c65f59a55675f7",
+  "toolCatalogDigest": "03bd1a4b2d57dbb60c7cbd9f67111831f0c09043b12a06b7bd53b4ca4f445f3c",
   "workerRequired": true
 }

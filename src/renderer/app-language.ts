@@ -121,8 +121,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Dictation needs attention': 'Chính tả cần chú ý',
   'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.':
     'Chính tả thêm văn bản mà không gửi. Tác vụ chuyển yêu cầu bằng giọng nói cho Tro sau khoảng một giây để nhấn Escape hủy.',
-  'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.':
-    'Mô tả đích đến. Tro sẽ xác định phạm vi giới hạn, chọn công cụ và xác minh kết quả.',
+  'Describe the finish line. Tro will choose the appropriate tools and verify the result.':
+    'Mô tả đích đến. Tro sẽ chọn công cụ phù hợp và xác minh kết quả.',
   'Desktop agent': 'Trợ lý máy tính',
   'Weekly usage · {percent}% left': 'Mức dùng tuần · còn {percent}%',
   'Plan & weekly usage': 'Gói và mức dùng tuần',

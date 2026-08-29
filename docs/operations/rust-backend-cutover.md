@@ -66,7 +66,7 @@ Every count must be zero. Do not edit rows to make the gate pass. A nonzero coun
 4. Run non-mutating checks, followed by synthetic auth/session/access/budget/provider/admin flows.
 5. Change the existing ingestion worker command to `./bin/trocode-api ingestion-worker` from the same commit. Do not overlap old and new agent workers.
 6. Smoke upload, HEAD verification, ingestion, search, Activity/Run/Attempt/submission/evidence/dashboard before enabling Knowledge Spaces.
-7. Enable backend-agent only for explicit canaries. Verify task SSE replay, worker connect/request/executing/result/completion, and disconnect-during-consequential-action becoming unknown/blocked without replay.
+7. Enable backend-agent only for explicit canaries. Verify task SSE replay, worker connect/request/executing/result/completion, and disconnect-during-tool-execution becoming unknown/blocked without replay.
 8. Expand the existing percentage gradually under separate operator approval.
 
 Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservations, PostgreSQL pool saturation, stale leases, unknown outcomes, ingestion retries, and RSS for the approved window.
@@ -77,7 +77,7 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 - Any auth, session, cookie, digest, or encrypted-row incompatibility.
 - Double charge, missing settlement, or a material increase in uncertain reservations.
 - SSE buffering, truncation, or replay breakage affecting installed clients.
-- Stale-lease commit, duplicate consequential dispatch, or weaker effect/outcome enforcement.
+- Stale-lease commit, duplicate tool dispatch, or weaker result/outcome enforcement.
 - Object checksum/key/parser corruption or an unapproved latency/RSS regression.
 
 ## Rollback
@@ -92,7 +92,7 @@ against the migrated database and never reconstruct dropped columns manually.
    Disable Knowledge Spaces if implicated.
 2. Stop the Rust ingestion worker after its current lease. Preserve current
    workers until every executing or unknown-outcome action is reconciled; never
-   replay a consequential action.
+   replay a tool invocation with an unknown outcome.
 3. Prefer a roll-forward from the current v4 backend. Deploy the corrected
    commit against the migrated database, then check health/readiness and
    synthetic auth/session/access/budget/admin/provider paths.
@@ -103,7 +103,7 @@ against the migrated database and never reconstruct dropped columns manually.
 5. Confirm the restore point does not discard accepted work. If newer work
    exists, keep the service disabled and reconcile it through the approved
    incident/data-recovery process before reopening.
-6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or consequential action because local completion is missing.
+6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or tool invocation because local completion is missing.
 7. Preserve logs, diagnostic rows, and backups. Do not perform an
    application-only rollback or manually roll back domain data.
 

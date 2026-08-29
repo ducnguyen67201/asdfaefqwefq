@@ -13,9 +13,7 @@ const CATALOG_JSON: &str = include_str!(concat!(
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostedToolContract {
-    pub default_effect_kind: String,
     pub description: String,
-    pub effect_selector: Value,
     pub model_name: String,
     pub operation_selector: Value,
     pub operations: Vec<String>,
@@ -125,71 +123,6 @@ pub fn resolve_operation(tool: &HostedToolContract, input: &Value) -> Result<Str
         .contains(&operation)
         .then_some(operation)
         .ok_or("resolved operation is not declared")
-}
-
-fn effect_free() -> Value {
-    serde_json::json!({
-        "kind": "none",
-        "resourceKind": null,
-        "reversibility": "none",
-        "externality": "local",
-        "communication": "none",
-        "overwrite": "none",
-        "sensitiveDataTransfer": false
-    })
-}
-
-pub fn resolve_effect(tool: &HostedToolContract, input: &Value) -> Result<Value, &'static str> {
-    let kind = tool
-        .effect_selector
-        .get("kind")
-        .and_then(Value::as_str)
-        .ok_or("effect selector kind is missing")?;
-    match kind {
-        "none" => Ok(effect_free()),
-        "json_pointer" => {
-            let pointer = tool
-                .effect_selector
-                .get("pointer")
-                .and_then(Value::as_str)
-                .ok_or("effect selector pointer is missing")?;
-            pointer_value(input, pointer)
-                .cloned()
-                .ok_or("effect selector did not resolve")
-        }
-        "workspace_filesystem" => Ok(if input.get("content").is_none_or(Value::is_null) {
-            effect_free()
-        } else {
-            serde_json::json!({
-                "kind": "workspace_write",
-                "resourceKind": "workspace_file",
-                "reversibility": "reversible",
-                "externality": "local",
-                "communication": "none",
-                "overwrite": "requested",
-                "sensitiveDataTransfer": false
-            })
-        }),
-        "workspace_terminal" => Ok(serde_json::json!({
-            "kind": "workspace_command",
-            "resourceKind": "workspace_repository",
-            "reversibility": "unknown",
-            "externality": "unknown",
-            "communication": "unknown",
-            "overwrite": "unknown",
-            "sensitiveDataTransfer": "unknown"
-        })),
-        "system_permission" => Ok(serde_json::json!({
-            "kind": "system_permission",
-            "resourceKind": tool.effect_selector["resourceKind"],
-            "reversibility": "reversible",
-            "externality": "local",
-            "communication": "none",
-            "overwrite": "none",
-            "sensitiveDataTransfer": false
-        })),
-        _ => Err("effect selector kind is unknown"),
-    }
 }
 
 pub fn validate_model_arguments(schema: &Value, input: &Value) -> Result<(), &'static str> {

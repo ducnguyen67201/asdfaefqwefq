@@ -192,7 +192,6 @@ fn reviewed_tools(
         schema::ensure_compatible(&policy.input_schema, &remote_schema)?;
         result.push(json!({
             "description":policy.description,
-            "effect":policy.effect,
             "inputSchema":policy.input_schema,
             "mcpName":policy.name,
             "namespace":policy.namespace

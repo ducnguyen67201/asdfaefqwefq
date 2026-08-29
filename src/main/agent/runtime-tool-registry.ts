@@ -11,19 +11,14 @@ import {
 } from '../../shared/agent-tool-contracts';
 import { validatePublicHttpsUrl } from '../../shared/classroom-url-policy';
 import {
-  ActionEffectKindSchema,
-  ActionEffectSchema,
   ProposedActionSchema,
-  ResourceKindSchema,
   RuntimeToolIdSchema,
-  type ActionEffect,
   type ProposedAction,
   type RuntimeToolId,
   type GoalSpec,
 } from '../../shared/contracts';
 import type { LaunchableApplication } from '../application/desktop-application-launcher';
 
-import { effectForDeclaredConsequence, effectFreeAction } from './action-effect';
 import {
   type AgentToolCall,
   type ModelToolSpec,
@@ -66,11 +61,8 @@ export interface ObserveDesktopToolInput {
 }
 
 export interface DesktopControlToolInput {
-  attendees?: string[];
   command: DesktopCommand;
-  consequence: ProposedAction['action'];
   description: string;
-  effect: ActionEffect;
   observationFingerprint: string;
   observationId: string;
   target?: string;
@@ -126,29 +118,6 @@ export interface WorkspaceTerminalToolInput {
   root: string;
   timeoutMs: number;
 }
-
-const consequenceValues = [
-  'answer',
-  'guide',
-  'observe_screen',
-  'open_url',
-  'click_element',
-  'type_text',
-  'press_key',
-  'scroll',
-  'drag',
-  'read_file',
-  'login',
-  'send',
-  'submit',
-  'upload',
-  'download',
-  'delete',
-  'purchase',
-  'install',
-  'run_command',
-  'write_file',
-] as const;
 
 const knowledgeSearchSchema = z.object({
   query: z.string().trim().min(2).max(1_000),
@@ -224,120 +193,18 @@ const normalizedCommand = z.discriminatedUnion('kind', [
 
 type NormalizedDesktopCommand = z.infer<typeof normalizedCommand>;
 
-const sendPayload = z.object({
-  account: z.string().min(1).max(500),
-  recipients: z.array(z.string().min(1).max(500)).min(1).max(50),
-  subject: z.string().max(2_000),
-  body: z.string().min(1).max(100_000),
-  threadId: z
+const controlInputSchema = z.object({
+  observationId: z.string().uuid(),
+  description: z.string().trim().min(1).max(2_000),
+  target: z
     .string()
+    .trim()
     .min(1)
-    .max(2_000)
+    .max(8_000)
     .nullish()
     .transform((value) => value ?? undefined),
-  attachments: z
-    .array(z.string().min(1).max(2_000))
-    .max(50)
-    .nullish()
-    .transform((value) => value ?? undefined),
+  command: normalizedCommand,
 });
-
-const controlInputSchema = z
-  .object({
-    observationId: z.string().uuid(),
-    consequence: z.enum(consequenceValues),
-    description: z.string().trim().min(1).max(2_000),
-    effect: ActionEffectSchema,
-    attendees: z
-      .array(z.string().trim().min(1).max(500))
-      .max(50)
-      .nullish()
-      .transform((value) => value ?? undefined),
-    target: z
-      .string()
-      .trim()
-      .min(1)
-      .max(8_000)
-      .nullish()
-      .transform((value) => value ?? undefined),
-    sendPayload: sendPayload
-      .nullish()
-      .transform((value) => value ?? undefined),
-    command: normalizedCommand,
-  })
-  .superRefine((input, context) => {
-    const attendees = input.attendees ?? [];
-    const invitation =
-      input.effect.kind === 'send_communication' &&
-      input.effect.communication === 'invite';
-    if (invitation !== (attendees.length > 0)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'A calendar invitation effect requires exact attendees.',
-        path: ['attendees'],
-      });
-    }
-    if (input.consequence === 'send' && !input.sendPayload) {
-      context.addIssue({
-        code: 'custom',
-        message: 'A send action requires exact account, recipients, subject, and body.',
-        path: ['sendPayload'],
-      });
-    }
-    if (input.consequence !== 'send' && input.sendPayload) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Only a send action may include an exact send payload.',
-        path: ['sendPayload'],
-      });
-    }
-    if (
-      input.consequence === 'send' &&
-      !(
-        input.effect.kind === 'send_communication' &&
-        input.effect.communication === 'send'
-      )
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'An exact send payload requires a send communication effect.',
-        path: ['effect'],
-      });
-    }
-    const allowed =
-      input.command.kind === 'click'
-        ? input.consequence === 'click_element' ||
-          [
-            'login',
-            'send',
-            'submit',
-            'upload',
-            'download',
-            'delete',
-            'purchase',
-            'install',
-            'run_command',
-            'write_file',
-          ].includes(input.consequence)
-        : input.command.kind === 'type_text'
-          ? input.consequence === 'type_text' ||
-            ['login', 'send', 'submit', 'upload'].includes(input.consequence)
-          : input.command.kind === 'paste_table'
-            ? input.consequence === 'type_text'
-          : input.command.kind === 'keypress'
-            ? input.consequence === 'press_key' ||
-              ['login', 'send', 'submit', 'delete'].includes(input.consequence)
-            : input.command.kind === 'scroll'
-              ? input.consequence === 'scroll'
-              : input.consequence === 'drag';
-    if (!allowed) {
-      context.addIssue({
-        code: 'custom',
-        message: 'The desktop command and declared consequence do not agree.',
-        path: ['consequence'],
-      });
-    }
-  });
 
 function parseWith<T>(schema: z.ZodType<T>, argumentsJson: string): T {
   return schema.parse(JSON.parse(argumentsJson));
@@ -346,34 +213,7 @@ function parseWith<T>(schema: z.ZodType<T>, argumentsJson: string): T {
 function parseControlInput(
   argumentsJson: string,
 ): z.infer<typeof controlInputSchema> {
-  const raw = JSON.parse(argumentsJson) as unknown;
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return controlInputSchema.parse(raw);
-  }
-  const record = raw as Record<string, unknown>;
-  if (record.consequence !== undefined) {
-    return controlInputSchema.parse({
-      ...record,
-      effect:
-        record.effect ??
-        effectForDeclaredConsequence(String(record.consequence)),
-      attendees: record.attendees ?? null,
-    });
-  }
-  const command = record.command;
-  if (!command || typeof command !== 'object' || Array.isArray(command)) {
-    return controlInputSchema.parse(record);
-  }
-  const commandRecord = command as Record<string, unknown>;
-  return controlInputSchema.parse({
-    ...record,
-    consequence: commandRecord.consequence,
-    sendPayload: commandRecord.sendPayload,
-    effect:
-      record.effect ??
-      effectForDeclaredConsequence(String(commandRecord.consequence ?? 'unknown')),
-    attendees: record.attendees ?? null,
-  });
+  return controlInputSchema.parse(JSON.parse(argumentsJson));
 }
 
 function requireObservation(
@@ -502,85 +342,12 @@ const controlRequiredProperties = [
   'observationId',
   'description',
   'target',
-  'effect',
-  'attendees',
   'command',
 ];
-
-const sendPayloadModelSchema = objectSchema(
-  {
-    account: { type: 'string', maxLength: 500 },
-    recipients: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 50,
-      items: { type: 'string', maxLength: 500 },
-    },
-    subject: { type: 'string', maxLength: 2_000 },
-    body: { type: 'string', minLength: 1, maxLength: 100_000 },
-    threadId: {
-      anyOf: [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
-    },
-    attachments: {
-      anyOf: [
-        {
-          type: 'array',
-          maxItems: 50,
-          items: { type: 'string', maxLength: 2_000 },
-        },
-        { type: 'null' },
-      ],
-    },
-  },
-  ['account', 'recipients', 'subject', 'body', 'threadId', 'attachments'],
-);
 
 const nullableTargetModelSchema = {
   anyOf: [{ type: 'string', maxLength: 8_000 }, { type: 'null' }],
 };
-
-const actionEffectModelSchema = objectSchema(
-  {
-    kind: { type: 'string', enum: [...ActionEffectKindSchema.options] },
-    resourceKind: {
-      anyOf: [
-        { type: 'string', enum: [...ResourceKindSchema.options] },
-        { type: 'null' },
-      ],
-    },
-    reversibility: {
-      type: 'string',
-      enum: ['none', 'reversible', 'destructive', 'unknown'],
-    },
-    externality: {
-      type: 'string',
-      enum: ['local', 'cloud_private', 'external', 'public', 'unknown'],
-    },
-    communication: {
-      type: 'string',
-      enum: ['none', 'draft', 'send', 'invite', 'notify', 'unknown'],
-    },
-    overwrite: {
-      type: 'string',
-      enum: ['none', 'requested', 'unexpected', 'unknown'],
-    },
-    sensitiveDataTransfer: {
-      anyOf: [
-        { type: 'boolean' },
-        { type: 'string', const: 'unknown' },
-      ],
-    },
-  },
-  [
-    'kind',
-    'resourceKind',
-    'reversibility',
-    'externality',
-    'communication',
-    'overwrite',
-    'sensitiveDataTransfer',
-  ],
-);
 
 const normalizedCoordinateDescription =
   'Normalized image coordinate from 0 to 1000; do not use screenshot pixels.';
@@ -666,60 +433,15 @@ const scrollCommandModelSchema = objectSchema(
   ['kind', 'x', 'y', 'direction', 'amount'],
 );
 
-function controlCommandVariant(
-  command: StrictJsonObjectSchema,
-  consequences: readonly string[],
-  requiresSendPayload = false,
-): StrictJsonObjectSchema {
-  const consequence =
-    consequences.length === 1
-      ? { type: 'string', const: consequences[0] }
-      : { type: 'string', enum: [...consequences] };
-  return objectSchema(
-    {
-      ...command.properties,
-      consequence,
-      sendPayload: (requiresSendPayload
-        ? sendPayloadModelSchema
-        : { type: 'null' }) as unknown as Record<string, unknown>,
-    },
-    [...command.required, 'consequence', 'sendPayload'],
-  );
-}
-
 function controlParametersSchema(): StrictJsonObjectSchema {
   const command = {
     anyOf: [
-      controlCommandVariant(clickCommandModelSchema, [
-        'click_element',
-        'login',
-        'submit',
-        'upload',
-        'download',
-        'delete',
-        'purchase',
-        'install',
-        'run_command',
-        'write_file',
-      ]),
-      controlCommandVariant(clickCommandModelSchema, ['send'], true),
-      controlCommandVariant(dragCommandModelSchema, ['drag']),
-      controlCommandVariant(typeTextCommandModelSchema, [
-        'type_text',
-        'login',
-        'submit',
-        'upload',
-      ]),
-      controlCommandVariant(typeTextCommandModelSchema, ['send'], true),
-      controlCommandVariant(pasteTableCommandModelSchema, ['type_text']),
-      controlCommandVariant(keypressCommandModelSchema, [
-        'press_key',
-        'login',
-        'submit',
-        'delete',
-      ]),
-      controlCommandVariant(keypressCommandModelSchema, ['send'], true),
-      controlCommandVariant(scrollCommandModelSchema, ['scroll']),
+      clickCommandModelSchema,
+      dragCommandModelSchema,
+      typeTextCommandModelSchema,
+      pasteTableCommandModelSchema,
+      keypressCommandModelSchema,
+      scrollCommandModelSchema,
     ],
   };
   return objectSchema(
@@ -727,17 +449,6 @@ function controlParametersSchema(): StrictJsonObjectSchema {
       observationId: { type: 'string' },
       description: { type: 'string', maxLength: 2_000 },
       target: nullableTargetModelSchema,
-      effect: actionEffectModelSchema as unknown as Record<string, unknown>,
-      attendees: {
-        anyOf: [
-          {
-            type: 'array',
-            maxItems: 50,
-            items: { type: 'string', minLength: 1, maxLength: 500 },
-          },
-          { type: 'null' },
-        ],
-      },
       command,
     },
     controlRequiredProperties,
@@ -871,7 +582,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       id: 'desktop.control',
       modelName: 'control_desktop',
       description:
-        'Execute one atomic action grounded in the latest desktop observation. Declare the exact semantic effect separately from the physical click, type, key, drag, or scroll. All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use paste_table for rectangular spreadsheet data so rows and columns fill separate cells.',
+        'Execute one atomic action grounded in the latest desktop observation. All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use paste_table for rectangular spreadsheet data so rows and columns fill separate cells.',
       operations: [
         'click',
         'drag',
@@ -885,33 +596,13 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       normalize: (input, call, context) => {
         const observation = requireObservation(context, input.observationId);
         const command = mapCommand(input.command, observation);
-        const sendParameters = input.sendPayload
-          ? {
-              account: input.sendPayload.account,
-              recipients: input.sendPayload.recipients,
-              subject: input.sendPayload.subject,
-              body: input.sendPayload.body,
-              ...(input.sendPayload.threadId
-                ? { threadId: input.sendPayload.threadId }
-                : {}),
-              ...(input.sendPayload.attachments
-                ? { attachments: input.sendPayload.attachments }
-                : {}),
-            }
-          : {};
         const action = ProposedActionSchema.parse({
           action: desktopActionForCommand(input.command),
           toolId: 'desktop.control',
           operation: command.kind,
-          effect: input.effect,
           description: input.description,
           ...(input.target ? { target: input.target } : {}),
-          parameters: {
-            ...commandParameters(command, observation),
-            declaredConsequence: input.consequence,
-            ...(input.attendees ? { attendees: input.attendees } : {}),
-            ...sendParameters,
-          },
+          parameters: commandParameters(command, observation),
         });
         return {
           action,
@@ -953,7 +644,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: 'open_url',
           toolId: 'browser.navigate',
           operation: 'open_url',
-          effect: effectFreeAction(),
           description: input.reason,
           target: normalizedInput.url,
           parameters: { command: 'open_url', url: normalizedInput.url },
@@ -986,7 +676,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: 'open_application',
           toolId: 'application.launch',
           operation: 'launch',
-          effect: effectFreeAction(),
           description: input.reason,
           target: input.application,
           parameters: {
@@ -1006,7 +695,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       id: 'task.guidance',
       modelName: 'show_guidance',
       description:
-        'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the bounded narration result before continuing.',
+        'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the narration result before continuing.',
       operations: ['show'],
       parameters: objectSchema(
         {
@@ -1055,7 +744,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: 'guide',
           toolId: 'task.guidance',
           operation: 'show',
-          effect: effectFreeAction(),
           description: input.description,
           ...(input.target ? { target: input.target } : {}),
           parameters: {
@@ -1127,7 +815,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       id: 'activity.signal',
       modelName: 'record_activity_signal',
       description:
-        'Record one bounded hypothesis for an allowlisted Activity criterion and tag. This is evidence for review, never a grade, diagnosis, or Attempt-state change.',
+        'Record one review hypothesis for an allowlisted Activity criterion and tag. This is evidence for review, never a grade, diagnosis, or Attempt-state change.',
       available: (context) =>
         (context?.goal?.schemaVersion === 6 || context?.goal?.schemaVersion === 7 || context?.goal?.schemaVersion === 8 || context?.goal?.schemaVersion === 9) &&
         context.goal.activity?.insightPolicy === 'evidence_candidates' &&
@@ -1160,8 +848,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: 'record_activity_signal',
           toolId: 'activity.signal',
           operation: 'record',
-          effect: effectFreeAction(),
-          description: 'Record a bounded facilitator-review hypothesis.',
+          description: 'Record a facilitator-review hypothesis.',
           target: activity.attemptId,
           parameters: {
             criterionId: input.criterionId,
@@ -1241,34 +928,12 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: operation,
           toolId: 'workspace.filesystem',
           operation,
-          effect:
-            operation === 'write_file'
-              ? {
-                  kind: 'workspace_write',
-                  resourceKind: 'workspace_file',
-                  reversibility: 'reversible',
-                  externality: 'local',
-                  communication: 'none',
-                  overwrite: 'requested',
-                  sensitiveDataTransfer: false,
-                }
-              : {
-                  kind: 'none',
-                  resourceKind: null,
-                  reversibility: 'none',
-                  externality: 'local',
-                  communication: 'none',
-                  overwrite: 'none',
-                  sensitiveDataTransfer: false,
-                },
           description:
             operation === 'write_file'
               ? `Replace workspace file ${relativePath}.`
               : `Read workspace file ${relativePath}.`,
           target: relativePath,
-          parameters: {
-            declaredConsequence: operation,
-          },
+          parameters: { command: operation },
         });
         return {
           action,
@@ -1289,7 +954,7 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
       id: 'workspace.terminal',
       modelName: 'workspace_terminal',
       description:
-        'Run one bounded command in the trusted Workspace selection using a scrubbed environment.',
+        'Run one command in the trusted Workspace selection using a scrubbed environment.',
       available: (context) =>
         Boolean((context?.goal?.schemaVersion === 7 || context?.goal?.schemaVersion === 8 || context?.goal?.schemaVersion === 9) &&
           context.goal.executionProfile === 'workspace' &&
@@ -1308,20 +973,10 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
           action: 'run_command',
           toolId: 'workspace.terminal',
           operation: 'run_command',
-          effect: {
-            kind: 'workspace_command',
-            resourceKind: 'workspace_repository',
-            reversibility: 'unknown',
-            externality: 'unknown',
-            communication: 'unknown',
-            overwrite: 'unknown',
-            sensitiveDataTransfer: 'unknown',
-          },
           description: `Run workspace command: ${input.command}`,
           target: 'Workspace',
           parameters: {
             command: input.command,
-            declaredConsequence: 'run_command',
             timeoutMs: String(input.timeoutMs),
           },
         });
