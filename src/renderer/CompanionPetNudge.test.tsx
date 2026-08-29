@@ -11,9 +11,9 @@ import type {
 } from '../shared/contracts';
 
 import {
-  ClassroomPetNudge,
-  classroomPetMoodLabel,
-} from './ClassroomPetNudge';
+  CompanionPetNudge,
+  companionPetMoodLabel,
+} from './CompanionPetNudge';
 
 function nudge(
   overrides: Partial<CompanionPetNudgeProjection> = {},
@@ -28,20 +28,26 @@ function nudge(
   };
 }
 
-describe('ClassroomPetNudge', () => {
+describe('CompanionPetNudge', () => {
   it.each([
     ['en', 'encouraging', 'Keep going'],
     ['en', 'waiting', 'While you wait'],
     ['en', 'celebrating', 'Nice work'],
+    ['en', 'thinking', 'Thinking'],
+    ['en', 'working', 'On it'],
+    ['en', 'verifying', 'Checking'],
     ['vi', 'encouraging', 'Tiếp tục nhé'],
     ['vi', 'waiting', 'Trong lúc chờ'],
     ['vi', 'celebrating', 'Làm tốt lắm'],
+    ['vi', 'thinking', 'Đang suy nghĩ'],
+    ['vi', 'working', 'Đang làm'],
+    ['vi', 'verifying', 'Đang kiểm tra'],
   ] as const)(
     'labels %s %s copy as %s',
     (language: AppLanguage, mood: CompanionPetMood, label: string) => {
-      expect(classroomPetMoodLabel(language, mood)).toBe(label);
+      expect(companionPetMoodLabel(language, mood)).toBe(label);
       const markup = renderToStaticMarkup(
-        createElement(ClassroomPetNudge, {
+        createElement(CompanionPetNudge, {
           nudge: nudge({ language, mood }),
         }),
       );
@@ -49,28 +55,28 @@ describe('ClassroomPetNudge', () => {
     },
   );
 
-  it('renders a labelled polite status with no controls', () => {
+  it('renders a labelled polite status with no controls or images', () => {
     const markup = renderToStaticMarkup(
-      createElement(ClassroomPetNudge, { nudge: nudge() }),
+      createElement(CompanionPetNudge, { nudge: nudge() }),
     );
 
     expect(markup).toContain('role="status"');
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain(
-      'aria-labelledby="classroom-pet-nudge-title classroom-pet-nudge-mood"',
+      'aria-labelledby="companion-pet-nudge-title companion-pet-nudge-mood"',
     );
     expect(markup).toContain('Tro pet');
     expect(markup).not.toContain('<button');
     expect(markup).not.toContain('<input');
     expect(markup).not.toContain('<a ');
+    expect(markup).not.toContain('<img');
   });
 
   it('renders hostile-looking content only as escaped plain text', () => {
     const markup = renderToStaticMarkup(
-      createElement(ClassroomPetNudge, {
+      createElement(CompanionPetNudge, {
         nudge: nudge({
-          message:
-            '<img src=x onerror=alert(1)> https://malicious.example',
+          message: '<img src=x onerror=alert(1)> https://malicious.example',
         }),
       }),
     );

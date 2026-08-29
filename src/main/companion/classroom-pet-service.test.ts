@@ -109,6 +109,17 @@ describe('classroomPetMood', () => {
   ] as const)('maps explicit classroom state to %s', (session, mood) => {
     expect(classroomPetMood(session)).toBe(mood);
   });
+
+  it('never emits task-only companion moods', () => {
+    const moods = [
+      classroomPetMood(SESSION),
+      classroomPetMood({ ...SESSION, attemptState: 'blocked' }),
+      classroomPetMood({ ...SESSION, attemptState: 'completed' }),
+    ];
+    expect(moods).not.toContain('thinking');
+    expect(moods).not.toContain('working');
+    expect(moods).not.toContain('verifying');
+  });
 });
 
 describe('ClassroomPetService', () => {

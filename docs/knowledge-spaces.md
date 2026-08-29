@@ -88,7 +88,10 @@ The Classroom pet uses only the current local Run and Attempt projection while
 an open Run is live. Its curated, local messages may celebrate only explicit
 Ready, Submit, or Complete states, and are not persisted as class evidence.
 Tro does not inspect YouTube, other applications or websites, screen contents,
-cursor motion, typing, attention, or idle time for this feature. Pet messages,
+typing, attention, or idle time for this feature. The general desktop pet may
+locally check only whether the current pointer is over its own rectangle to
+play a hover reaction. That ephemeral boolean is never classroom evidence and
+no cursor coordinate is retained or sent. Pet messages,
 display state, and the local preference are not sent to the teacher dashboard
 or application analytics.
 

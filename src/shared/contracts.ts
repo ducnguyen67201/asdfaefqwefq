@@ -2366,6 +2366,8 @@ export const CompanionStateSchema = z.enum([
   'error',
 ]);
 
+export const CompanionHoverSchema = z.boolean();
+
 export const TROCODE_COMPANION_SCHEME = 'trocode-companion' as const;
 export const MAX_COMPANION_IMAGE_BYTES = 5 * 1_024 * 1_024;
 
@@ -2693,6 +2695,9 @@ export const CompanionPetMoodSchema = z.enum([
   'encouraging',
   'waiting',
   'celebrating',
+  'thinking',
+  'working',
+  'verifying',
 ]);
 
 export const CompanionPetNudgeDraftSchema = z
@@ -3158,6 +3163,7 @@ export type CompanionGuidanceVisual = z.infer<
   typeof CompanionGuidanceVisualSchema
 >;
 export type CompanionState = z.infer<typeof CompanionStateSchema>;
+export type CompanionHover = z.infer<typeof CompanionHoverSchema>;
 export type PresentationState = z.infer<typeof PresentationStateSchema>;
 export type CompanionVoiceActivity = z.infer<
   typeof CompanionVoiceActivitySchema

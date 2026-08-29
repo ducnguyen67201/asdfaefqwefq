@@ -31,7 +31,7 @@ pet activity to teachers or analytics.
 | Post-write preference events and failed-write inertness | `src/main/preferences/app-preferences-service.test.ts` | Green |
 | Explicit classroom eligibility, timing, localization, interruption, and stale callbacks | `src/main/companion/classroom-pet-service.test.ts` | Green |
 | `interaction > guidance > response > pet > activity` | `src/main/companion/companion-response-controller.test.ts`, `src/renderer/companion-response-card-view.test.ts` | Green |
-| Labelled polite status, bilingual mood labels, and plain-text rendering | `src/renderer/ClassroomPetNudge.test.tsx` | Green |
+| Labelled polite status, bilingual mood labels, and plain-text rendering | `src/renderer/CompanionPetNudge.test.tsx` | Green |
 | Controlled setting and English/Vietnamese privacy copy | `src/renderer/SettingsPage.test.ts` | Green |
 | Outbound-only, schema-parsed companion event | Typecheck, IPC boundary audit, manual diff review | Green |
 | No application/site/screen/input observation or pet telemetry | Production service grep, architecture diff review | Green |

@@ -1813,7 +1813,7 @@ html.voice-island-mode #root {
   -webkit-line-clamp: 6;
 }
 
-.classroom-pet-nudge {
+.companion-pet-nudge {
   width: calc(100% - 12px);
   height: calc(100% - 12px);
   display: grid;
@@ -1828,26 +1828,29 @@ html.voice-island-mode #root {
   pointer-events: none;
 }
 
-.classroom-pet-nudge::before {
+.companion-pet-nudge::before {
   display: none;
 }
 
-.classroom-pet-nudge--encouraging {
+.companion-pet-nudge--encouraging,
+.companion-pet-nudge--working {
   border-color: rgba(70, 112, 101, 0.34);
   background: rgba(244, 253, 248, 0.98);
 }
 
-.classroom-pet-nudge--waiting {
+.companion-pet-nudge--waiting,
+.companion-pet-nudge--thinking {
   border-color: rgba(151, 115, 38, 0.34);
   background: rgba(255, 250, 235, 0.98);
 }
 
-.classroom-pet-nudge--celebrating {
+.companion-pet-nudge--celebrating,
+.companion-pet-nudge--verifying {
   border-color: rgba(139, 106, 0, 0.36);
   background: rgba(255, 249, 220, 0.98);
 }
 
-.classroom-pet-nudge__identity {
+.companion-pet-nudge__identity {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1857,7 +1860,7 @@ html.voice-island-mode #root {
   white-space: nowrap;
 }
 
-.classroom-pet-nudge__mood {
+.companion-pet-nudge__mood {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1869,7 +1872,7 @@ html.voice-island-mode #root {
   text-transform: uppercase;
 }
 
-.classroom-pet-nudge__mood::before {
+.companion-pet-nudge__mood::before {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -1878,17 +1881,19 @@ html.voice-island-mode #root {
   content: '';
 }
 
-.classroom-pet-nudge--waiting .classroom-pet-nudge__mood::before {
+.companion-pet-nudge--waiting .companion-pet-nudge__mood::before,
+.companion-pet-nudge--thinking .companion-pet-nudge__mood::before {
   background: #d2a344;
   box-shadow: 0 0 0 3px rgba(210, 163, 68, 0.14);
 }
 
-.classroom-pet-nudge--celebrating .classroom-pet-nudge__mood::before {
+.companion-pet-nudge--celebrating .companion-pet-nudge__mood::before,
+.companion-pet-nudge--verifying .companion-pet-nudge__mood::before {
   background: #e4b51f;
   box-shadow: 0 0 0 3px rgba(228, 181, 31, 0.16);
 }
 
-.classroom-pet-nudge__message {
+.companion-pet-nudge__message {
   color: #20271f;
   font-size: 13px !important;
   line-height: 1.3 !important;
@@ -2264,7 +2269,7 @@ html.voice-island-mode #root {
     opacity 160ms ease;
 }
 
-.cursor-companion img {
+.cursor-companion__image--custom {
   position: relative;
   z-index: 1;
   display: block;
@@ -2277,16 +2282,38 @@ html.voice-island-mode #root {
   transform-origin: 50% 88%;
 }
 
-.cursor-companion__image--default {
+.cursor-companion__sprite {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 96px;
+  height: 96px;
+  background-position-x: 0;
+  background-position-y: calc(var(--companion-row) * -96px);
+  background-repeat: no-repeat;
+  background-size: 576px 864px;
+  filter: drop-shadow(0 3px 2px rgba(33, 37, 48, 0.2));
   image-rendering: pixelated;
+  animation: companion-sprite-frames var(--companion-duration) steps(5, end)
+    infinite;
 }
 
-.cursor-companion--idle img {
+.cursor-companion--animation-completed .cursor-companion__sprite,
+.cursor-companion--animation-error .cursor-companion__sprite {
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+}
+
+.cursor-companion--idle .cursor-companion__image--custom {
   animation: companion-idle-waddle 4.4s ease-in-out infinite;
 }
 
-.cursor-companion--listening img,
-.cursor-companion--guiding img {
+.cursor-companion--hovered .cursor-companion__image--custom {
+  animation: companion-hover-bob 0.9s ease-in-out infinite;
+}
+
+.cursor-companion--listening .cursor-companion__image--custom,
+.cursor-companion--guiding .cursor-companion__image--custom {
   animation: companion-bob 1.65s ease-in-out infinite;
 }
 
@@ -2430,8 +2457,8 @@ html.voice-island-mode #root {
   display: flex;
 }
 
-.cursor-companion--processing img,
-.cursor-companion--working img {
+.cursor-companion--processing .cursor-companion__image--custom,
+.cursor-companion--working .cursor-companion__image--custom {
   animation: companion-sending-breathe 0.9s ease-in-out infinite;
 }
 
@@ -2440,7 +2467,7 @@ html.voice-island-mode #root {
   background: rgba(194, 147, 28, 0.26);
 }
 
-.cursor-companion--sending img {
+.cursor-companion--sending .cursor-companion__image--custom {
   animation: companion-sending-breathe 0.9s ease-in-out infinite;
 }
 
@@ -2452,7 +2479,7 @@ html.voice-island-mode #root {
   display: flex;
 }
 
-.cursor-companion--error img {
+.cursor-companion--error .cursor-companion__image--custom {
   animation: companion-error-wobble 0.38s ease-in-out 2;
 }
 
@@ -2472,7 +2499,7 @@ html.voice-island-mode #root {
     both;
 }
 
-.cursor-companion--completed img {
+.cursor-companion--completed .cursor-companion__image--custom {
   animation: companion-completed-lift 0.42s ease-out both;
 }
 
@@ -2492,6 +2519,23 @@ html.voice-island-mode #root {
 
   52% {
     transform: translateY(-4px) rotate(-0.4deg);
+  }
+}
+
+@keyframes companion-sprite-frames {
+  to {
+    background-position-x: -480px;
+  }
+}
+
+@keyframes companion-hover-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+
+  50% {
+    transform: translateY(-5px) rotate(2deg) scale(1.03);
   }
 }
 
@@ -2632,8 +2676,13 @@ html.voice-island-mode #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cursor-companion img {
+  .cursor-companion__sprite,
+  .cursor-companion__image--custom {
     animation: none;
+  }
+
+  .cursor-companion__sprite {
+    background-position-x: 0;
   }
 
   .cursor-companion__ring,
@@ -5509,6 +5558,34 @@ h1 {
   border-top: 1px solid var(--border);
 }
 
+.companion-customization-generator__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.companion-customization-generator__heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.companion-customization-generator__heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.companion-customization-generator__heading > span {
+  max-width: 220px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+  text-align: right;
+}
+
 .companion-customization-steps {
   display: grid;
   gap: 28px;
@@ -8155,6 +8232,15 @@ h1 {
   .companion-customization-library__heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .companion-customization-generator__heading {
+    flex-direction: column;
+  }
+
+  .companion-customization-generator__heading > span {
+    max-width: none;
+    text-align: left;
   }
 
   .companion-customization-library__heading > span {

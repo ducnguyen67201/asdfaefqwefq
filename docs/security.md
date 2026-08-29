@@ -170,6 +170,24 @@ Anonymous activity uses a random local installation ID without a person
 profile. Email and display name are sent only after successful Google
 authentication.
 
+The desktop pet's hover reaction uses a bounded local main-process hit test
+only while the pet is visible and idle. Electron compares the current DIP
+cursor point with the pet rectangle and sends the sandboxed renderer only a
+boolean. Cursor coordinates are never placed in IPC, PostHog, logs, task
+history, classroom evidence, local persistence, or network requests. Pet-nudge
+text crosses only the bounded parsed outbound renderer projection and is never
+placed in analytics, logs, task history, classroom evidence, persistence, or
+network requests. The tracker stops while the pet is busy, hidden, disabled,
+destroyed, or shutting down. Wayland receives no global-input fallback or hook;
+hover is simply unavailable there.
+
+Task encouragement messages are selected from checked-in English and
+Vietnamese catalogues using only the validated task ID and phase. They cannot
+include request text, model output, event summaries, tool names, paths, URLs,
+screen content, or inferred attention. They remain passive bounded plain text
+and are suppressed by higher-priority interaction, guidance, and response
+surfaces.
+
 Do not ship a shared model-provider API key inside the renderer, Electron main,
 or application bundle. Production OpenAI and optional ElevenLabs keys are
 injected into the Railway API only. Electron sends its opaque device session to

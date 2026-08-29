@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 
+import desktopPetAtlasUrl from '../assets/tro-desktop-pet-atlas.png';
 import desktopPetUrl from '../assets/tro-desktop-pet.png';
 import type {
   CompanionAppearance,
+  CompanionPetNudge,
   CompanionPosition,
   CompanionState,
 } from '../shared/contracts';
+
+import {
+  COMPANION_ANIMATIONS,
+  companionAnimationLabel,
+  customCompanionHovered,
+  selectCompanionAnimation,
+} from './companion-animation';
 
 const usesOverlayTracking =
   typeof window !== 'undefined' &&
@@ -18,53 +27,76 @@ export function companionImageUrl(
   return appearance.kind === 'custom' ? appearance.assetUrl : defaultUrl;
 }
 
-export function CursorCompanion() {
-  const [position, setPosition] = useState<CompanionPosition>({ x: 0, y: 0 });
-  const [state, setState] = useState<CompanionState>('idle');
-  const [appearance, setAppearance] = useState<CompanionAppearance>({
-    kind: 'default',
+interface CursorCompanionViewProps {
+  appearance: CompanionAppearance;
+  hovered: boolean;
+  nudge: CompanionPetNudge | null;
+  overlayTracking: boolean;
+  position: CompanionPosition;
+  state: CompanionState;
+}
+
+export function CursorCompanionView({
+  appearance,
+  hovered,
+  nudge,
+  overlayTracking,
+  position,
+  state,
+}: CursorCompanionViewProps) {
+  const animation = selectCompanionAnimation({
+    appearance,
+    hovered,
+    nudge,
+    state,
   });
-
-  useEffect(() => {
-    if (!usesOverlayTracking) return undefined;
-
-    return window.troCompanion.onPositionChange(setPosition);
-  }, []);
-  useEffect(() => window.troCompanion.onStateChange(setState), []);
-  useEffect(
-    () => window.troCompanion.onAppearanceChange(setAppearance),
-    [],
-  );
+  const definition = COMPANION_ANIMATIONS[animation];
+  const isCustomHovered = customCompanionHovered(appearance, state, hovered);
+  const label = companionAnimationLabel(animation);
+  const spriteStyle = {
+    '--companion-duration': `${definition.durationMs}ms`,
+    '--companion-row': definition.row,
+    backgroundImage: `url("${desktopPetAtlasUrl}")`,
+  } as CSSProperties;
 
   return (
     <div
-      aria-label={`Tro desktop pet: ${state}`}
+      aria-label={label}
       className={`cursor-companion cursor-companion--${state}${
-        usesOverlayTracking ? ' cursor-companion--overlay' : ''
+        overlayTracking ? ' cursor-companion--overlay' : ''
+      } cursor-companion--animation-${animation}${
+        isCustomHovered ? ' cursor-companion--hovered' : ''
       }`}
       role="img"
       style={
-        usesOverlayTracking
+        overlayTracking
           ? { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
           : undefined
       }
       title={
-        usesOverlayTracking ? undefined : 'Drag to move Tro’s desktop pet'
+        overlayTracking
+          ? label
+          : `${label}. Drag to move Tro’s desktop pet`
       }
     >
       <div className="cursor-companion__visual">
         <span className="cursor-companion__ring" aria-hidden="true" />
-        <img
-          alt=""
-          className={
-            appearance.kind === 'default'
-              ? 'cursor-companion__image--default'
-              : 'cursor-companion__image--custom'
-          }
-          draggable={false}
-          key={appearance.kind === 'custom' ? appearance.revision : 'default'}
-          src={companionImageUrl(appearance)}
-        />
+        {appearance.kind === 'default' ? (
+          <span
+            aria-hidden="true"
+            className="cursor-companion__sprite"
+            key={`${animation}:${nudge?.mood === 'celebrating' ? nudge.id : ''}`}
+            style={spriteStyle}
+          />
+        ) : (
+          <img
+            alt=""
+            className="cursor-companion__image--custom"
+            draggable={false}
+            key={appearance.revision}
+            src={companionImageUrl(appearance)}
+          />
+        )}
         <span className="cursor-companion__listening" aria-hidden="true">
           <i />
           <i />
@@ -85,5 +117,39 @@ export function CursorCompanion() {
         </span>
       </div>
     </div>
+  );
+}
+
+export function CursorCompanion() {
+  const [position, setPosition] = useState<CompanionPosition>({ x: 0, y: 0 });
+  const [state, setState] = useState<CompanionState>('idle');
+  const [appearance, setAppearance] = useState<CompanionAppearance>({
+    kind: 'default',
+  });
+  const [hovered, setHovered] = useState(false);
+  const [nudge, setNudge] = useState<CompanionPetNudge | null>(null);
+
+  useEffect(() => {
+    if (!usesOverlayTracking) return undefined;
+
+    return window.troCompanion.onPositionChange(setPosition);
+  }, []);
+  useEffect(() => window.troCompanion.onStateChange(setState), []);
+  useEffect(
+    () => window.troCompanion.onAppearanceChange(setAppearance),
+    [],
+  );
+  useEffect(() => window.troCompanion.onHoverChange(setHovered), []);
+  useEffect(() => window.troCompanion.onPetNudgeChange(setNudge), []);
+
+  return (
+    <CursorCompanionView
+      appearance={appearance}
+      hovered={hovered}
+      nudge={nudge}
+      overlayTracking={usesOverlayTracking}
+      position={position}
+      state={state}
+    />
   );
 }
