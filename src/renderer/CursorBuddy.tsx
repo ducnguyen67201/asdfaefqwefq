@@ -12,6 +12,10 @@ interface CursorBuddyViewProps {
   position: CompanionPosition;
 }
 
+interface CursorBuddyProps {
+  overlayTracking?: boolean;
+}
+
 export function CursorBuddyView({
   overlayTracking,
   position,
@@ -39,17 +43,19 @@ export function CursorBuddyView({
   );
 }
 
-export function CursorBuddy() {
+export function CursorBuddy({
+  overlayTracking = usesOverlayTracking,
+}: CursorBuddyProps) {
   const [position, setPosition] = useState<CompanionPosition>({ x: 0, y: 0 });
 
   useEffect(() => {
-    if (!usesOverlayTracking) return undefined;
+    if (!overlayTracking) return undefined;
     return window.troCompanion.onCursorBuddyPositionChange(setPosition);
-  }, []);
+  }, [overlayTracking]);
 
   return (
     <CursorBuddyView
-      overlayTracking={usesOverlayTracking}
+      overlayTracking={overlayTracking}
       position={position}
     />
   );
