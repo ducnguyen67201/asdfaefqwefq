@@ -70,8 +70,9 @@ v4 integration fixtures, Windows fixture line endings, inert rollout-mode
 configuration, Typify constant-field preservation at the HTTP boundary,
 fail-closed cancellation reporting when candidate measurements are missing,
 host-derived desktop effects that cannot be lowered by model metadata, and
-unrelated generated admin bundle drift. Review records are
-in `.claude/PRPs/reviews/pr-48-review.md` and
+protocol-correct legacy-history reads plus migration-compatible recovery
+instructions. Unrelated generated admin bundle drift was also removed. Review
+records are in `.claude/PRPs/reviews/pr-48-review.md` and
 `.claude/PRPs/reviews/pr-48-holistic-review.md`.
 
 Cargo audit exited successfully with the repository's three configured warnings:

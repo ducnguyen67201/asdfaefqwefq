@@ -1895,6 +1895,33 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .await,
         StatusCode::OK,
     );
+    query("UPDATE agent_runs SET protocol_version=3 WHERE id=$1")
+        .bind(Uuid::parse_str(&durable_task_id).expect("durable task uuid"))
+        .execute(&state.pool)
+        .await
+        .expect("mark terminal task as retained legacy history");
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/tasks/{durable_task_id}"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    );
 
     let refreshed = send(
         &router,

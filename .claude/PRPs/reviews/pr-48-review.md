@@ -72,6 +72,22 @@ host-derived effect with the envelope before the one-time execution claim.
 Adversarial desktop and semantic-control tests cover purchase/delete actions
 misdeclared with a neutral effect and verify that neither is dispatched.
 
+### P2 — The v4 read endpoint projected retained legacy history as v4 — resolved
+
+`get_v4` projected any row returned by the legacy-compatible reader, including
+terminal v2/v3 rows intentionally retained by migration 030. It now filters for
+protocol v4 before projection, matching `list_v4`; the DB-backed HTTP test verifies
+that retained legacy history returns 404 from the v4 route and remains readable
+through `/v1/tasks/{id}`.
+
+### P1 — The rollback runbook was incompatible with migration 030 — resolved
+
+The runbook referred to an unavailable observe mode and suggested redeploying the
+old backend against a database after migration 030 had removed/renamed fields it
+requires. It now uses `TROCODE_BACKEND_AGENT_ENABLED=false` to stop starts,
+requires roll-forward by default, and permits a previous deployment only with a
+coordinated PostgreSQL/object-store restore to the matching pre-030 snapshot.
+
 ### P2 — Generated v4 JSON had platform-dependent line endings — resolved
 
 The repository normalized v3 fixtures but not the new v4 fixture directory.

@@ -387,6 +387,7 @@ impl AgentService {
     pub async fn get_v4(&self, user: &str, run: Uuid) -> ApiResult<Option<Value>> {
         self.get(user, run)
             .await?
+            .filter(|value| value["protocolVersion"].as_i64() == Some(4))
             .map(|value| self.project_v4_run(&value))
             .transpose()
     }
