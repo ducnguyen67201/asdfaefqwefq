@@ -101,6 +101,18 @@ export class RunWorker {
         if (currentStep?.type !== 'next_step_final_output') {
           throw new Error('terminal_checkpoint_missing_final_output');
         }
+        checkpointRevision = await this.client.putCheckpoint(
+          lease,
+          {
+            expectedCheckpointRevision: checkpointRevision,
+            appliedControlSequence: deliveredControlSequence,
+            sdkVersion: this.config.sdkVersion,
+            graphVersion: this.config.graphVersion,
+            pendingCallId: null,
+            state: state.toString(),
+          },
+          signal,
+        );
         const finalOutput = boundedFinalOutput(currentStep.output);
         const steeringRequest = await this.completeOrLoadSteering(
           lease,

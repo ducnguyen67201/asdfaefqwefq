@@ -99,7 +99,9 @@ The implementation review found and fixed the following issues before delivery:
   applied steering cursor, and refuses to commit while newer steering exists. The
   worker then starts a fresh SDK turn from the same durable session; terminal
   checkpoints are also recoverable after a worker restart without attempting an
-  SDK-forbidden terminal-state resume.
+  SDK-forbidden terminal-state resume. A reclaimed worker first rebinds that
+  terminal checkpoint to its new lease version, so the Rust completion CAS can
+  verify the recovered result without accepting an older worker's authority.
 - The SDK compatibility proof was test scaffolding accidentally compiled into the
   service. It now lives under the test tree, production build output is ignored,
   and CI installs, audits, tests, and builds the independently pinned SDK package.
@@ -124,7 +126,7 @@ driver tools discovered from the live CUA catalog flow through generically.
 |---|---|
 | `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 786 tests, Rust fmt/clippy/tests |
 | Agents SDK service | Pass — lint, typecheck, 4 test files / 10 tests |
-| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility plus claim/checkpoint/tool/result/complete flow, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, and late-steering/completion serialization |
+| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility plus claim/checkpoint/tool/result/complete flow, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |
 | `npm run package` | Pass — Electron Forge macOS arm64 package |
 | `git diff --check` | Pass |

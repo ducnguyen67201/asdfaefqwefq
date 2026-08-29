@@ -690,6 +690,58 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
         .expect("checkpoint terminal SDK state");
     assert_eq!(terminal_revision, 2);
 
+    let released_version = orchestrator
+        .release_lease(run_id, sdk_worker, queued.run_version)
+        .await
+        .expect("release terminal checkpoint lease");
+    assert!(released_version > queued.run_version);
+    let reclaimed = orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("reclaim terminal checkpoint")
+        .expect("recovering run is claimable");
+    assert_eq!(reclaimed.run_id, run_id);
+    assert!(reclaimed.run_version > released_version);
+    let restored_checkpoint = reclaimed
+        .checkpoint
+        .as_ref()
+        .expect("reclaimed run restores terminal checkpoint");
+    assert_eq!(restored_checkpoint.revision, terminal_revision);
+    assert_eq!(restored_checkpoint.pending_call_id, None);
+    assert_eq!(
+        restored_checkpoint.state,
+        "serialized-terminal-sdk-run-state"
+    );
+    let stale_checkpoint_version = orchestrator
+        .complete(
+            run_id,
+            sdk_worker,
+            reclaimed.run_version,
+            steering[0].sequence,
+            "Chrome was opened.",
+        )
+        .await
+        .expect_err("reclaimed completion must rebind its terminal checkpoint");
+    assert_eq!(stale_checkpoint_version.code, Some("checkpoint_conflict"));
+    let rebound_terminal_checkpoint = PutCheckpoint {
+        applied_control_sequence: steering[0].sequence,
+        expected_checkpoint_revision: terminal_revision,
+        graph_version: GRAPH_VERSION.to_owned(),
+        pending_call_id: None,
+        sdk_version: "0.17.0".to_owned(),
+        state: restored_checkpoint.state.clone(),
+    };
+    let (rebound_revision, _) = orchestrator
+        .put_checkpoint(
+            run_id,
+            sdk_worker,
+            reclaimed.run_version,
+            &rebound_terminal_checkpoint,
+        )
+        .await
+        .expect("rebind terminal checkpoint to reclaimed run version");
+    assert_eq!(rebound_revision, 3);
+
     let late_steering_event = service
         .control(
             USER,
@@ -704,7 +756,7 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
         .complete(
             run_id,
             sdk_worker,
-            queued.run_version,
+            reclaimed.run_version,
             steering[0].sequence,
             "Chrome was opened.",
         )
@@ -713,7 +765,12 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
     assert_eq!(completion_error.code, Some("steering_pending"));
 
     let late_steering = orchestrator
-        .steering_updates(run_id, sdk_worker, queued.run_version, steering[0].sequence)
+        .steering_updates(
+            run_id,
+            sdk_worker,
+            reclaimed.run_version,
+            steering[0].sequence,
+        )
         .await
         .expect("load late steering");
     assert_eq!(late_steering.len(), 1);
@@ -721,22 +778,22 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
     assert_eq!(late_steering[0].sequence, late_steering_event["sequence"]);
     let final_checkpoint = PutCheckpoint {
         applied_control_sequence: late_steering[0].sequence,
-        expected_checkpoint_revision: terminal_revision,
+        expected_checkpoint_revision: rebound_revision,
         graph_version: GRAPH_VERSION.to_owned(),
         pending_call_id: None,
         sdk_version: "0.17.0".to_owned(),
         state: "serialized-final-sdk-run-state".to_owned(),
     };
     let (final_revision, _) = orchestrator
-        .put_checkpoint(run_id, sdk_worker, queued.run_version, &final_checkpoint)
+        .put_checkpoint(run_id, sdk_worker, reclaimed.run_version, &final_checkpoint)
         .await
         .expect("checkpoint late steering cursor");
-    assert_eq!(final_revision, 3);
+    assert_eq!(final_revision, 4);
     orchestrator
         .complete(
             run_id,
             sdk_worker,
-            queued.run_version,
+            reclaimed.run_version,
             late_steering[0].sequence,
             "Chrome and the new tab were opened.",
         )
