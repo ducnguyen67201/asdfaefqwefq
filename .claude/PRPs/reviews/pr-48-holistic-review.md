@@ -45,7 +45,7 @@ they do not reintroduce an allow/deny or ask-for-approval policy decision.
 | Layer | Assessment |
 | --- | --- |
 | Goal and planning | Authority v9 preserves goal, success criteria, workspace/activity context, budgets, clarification, and completion semantics without compiling request-derived action grants. |
-| Tool selection | Runtime v4 exposes an exact generated catalog. Unknown tools, operations, inputs, protocol versions, and digests fail closed. |
+| Tool selection | Runtime v4 exposes an exact generated catalog. Unknown tools, operations, inputs, protocol versions, and digests fail closed; typed HTTP validation preserves the original validated negotiation fields at the service boundary. |
 | Desktop execution | The worker validates normalized effects and identity, waits for technical permissions, refreshes the run version after a wait, claims execution once, dispatches once, and commits bounded evidence. |
 | CUA | CUA remains an execution capability. The native browser capability is exact-task/window, expiring, and one-use; it is armed automatically only for the registered operation and is not user authorization. |
 | Workspace | Filesystem adapters retain trusted-root bindings and bounds. Shell execution is intentionally not semantically allowlisted and can exercise host-user capabilities; this is explicit product risk, not an accidental omission. |

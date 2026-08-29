@@ -76,11 +76,9 @@ pub async fn handle(
             ));
         }
         let input = read_json(headers, body, 64_000)?;
-        let typed: protocol::SubmitAgentTaskRequestV4 =
-            serde_json::from_value(input).map_err(|_| {
-                ApiError::bad_request("invalid_agent_runtime_request", "Request data is invalid.")
-            })?;
-        let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
+        serde_json::from_value::<protocol::SubmitAgentTaskRequestV4>(input.clone()).map_err(
+            |_| ApiError::bad_request("invalid_agent_runtime_request", "Request data is invalid."),
+        )?;
         let run = agent
             .submit(
                 &current.user.id,
@@ -126,14 +124,14 @@ pub async fn handle(
         }
         if method == Method::POST && operation == Some("cancel") {
             let input = read_json(headers, body, 16_000)?;
-            let typed: protocol::CancelAgentTaskRequestV4 =
-                serde_json::from_value(input).map_err(|_| {
+            serde_json::from_value::<protocol::CancelAgentTaskRequestV4>(input.clone()).map_err(
+                |_| {
                     ApiError::bad_request(
                         "invalid_agent_runtime_request",
                         "Request data is invalid.",
                     )
-                })?;
-            let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
+                },
+            )?;
             let run = agent
                 .cancel_v4(&current.user.id, run_id, &input)
                 .await?
@@ -225,14 +223,13 @@ pub async fn handle(
             "disconnect" => agent.disconnect(&current.user.id, worker).await?,
             "executing" => {
                 let input = read_json(headers, body, 1_000_000)?;
-                let typed: protocol::BeginDesktopExecutionRequestV4 = serde_json::from_value(input)
+                serde_json::from_value::<protocol::BeginDesktopExecutionRequestV4>(input.clone())
                     .map_err(|_| {
-                        ApiError::bad_request(
-                            "invalid_agent_runtime_request",
-                            "Request data is invalid.",
-                        )
-                    })?;
-                let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
+                    ApiError::bad_request(
+                        "invalid_agent_runtime_request",
+                        "Request data is invalid.",
+                    )
+                })?;
                 agent
                     .begin_execution(&current.user.id, worker, &input)
                     .await?
@@ -245,28 +242,26 @@ pub async fn handle(
             }
             "permission-wait" => {
                 let input = read_json(headers, body, 16_000)?;
-                let typed: protocol::PermissionWaitRequestV4 = serde_json::from_value(input)
+                serde_json::from_value::<protocol::PermissionWaitRequestV4>(input.clone())
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
                             "Request data is invalid.",
                         )
                     })?;
-                let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
                 agent
                     .wait_for_permission(&current.user.id, worker, &input)
                     .await?
             }
             "permission-decision" => {
                 let input = read_json(headers, body, 16_000)?;
-                let typed: protocol::PermissionDecisionRequestV4 = serde_json::from_value(input)
+                serde_json::from_value::<protocol::PermissionDecisionRequestV4>(input.clone())
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
                             "Request data is invalid.",
                         )
                     })?;
-                let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
                 agent
                     .decide_permission(&current.user.id, worker, &input)
                     .await?

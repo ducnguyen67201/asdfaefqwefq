@@ -42,6 +42,19 @@ contract intentionally rejects such old-shaped submissions.
 The migration/table expectations now include migrations 029 and 030, and the
 service fixtures carry the exact v4 protocol version and generated digests.
 
+### P1 — Typed HTTP validation stripped a constant negotiation field — resolved
+
+The v4 HTTP handler deserialized strict request JSON into Typify-generated Rust
+types and then serialized those types before calling the service. JSON Schema
+`const` fields are validation-only in the generated representation, so
+`protocolVersion` disappeared and a valid v4 HTTP submission was rejected as an
+old desktop.
+
+The handler now validates a cloned value with the generated type and passes the
+original strict JSON object to the service. The same preservation rule is used
+for v4 cancellation, execution claims, and permission transitions. The exact
+CI HTTP compatibility test passes against a disposable PostgreSQL 17 database.
+
 ### P2 — Generated v4 JSON had platform-dependent line endings — resolved
 
 The repository normalized v3 fixtures but not the new v4 fixture directory.
@@ -72,5 +85,7 @@ must be drained before migration 030 is applied.
   non-environment-gated Cargo suites.
 - `npm run package`: passed for macOS arm64 using the production Doppler config.
 - `npm run bazel:check`: passed all 15 Bazel test targets and Clippy.
+- CI's exact PostgreSQL-backed Rust HTTP compatibility command: passed locally
+  against a disposable PostgreSQL 17 container.
 - Protocol generation check, Rust formatting, staged diff whitespace check, and
   staged secret-pattern scan: passed.

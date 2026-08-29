@@ -67,7 +67,8 @@ migration was executed by this task.
 
 The PR code and holistic reviews also resolved the stale permission-resume CAS,
 v4 integration fixtures, Windows fixture line endings, inert rollout-mode
-configuration, and unrelated generated admin bundle drift. Review records are
+configuration, Typify constant-field preservation at the HTTP boundary, and
+unrelated generated admin bundle drift. Review records are
 in `.claude/PRPs/reviews/pr-48-review.md` and
 `.claude/PRPs/reviews/pr-48-holistic-review.md`.
 
