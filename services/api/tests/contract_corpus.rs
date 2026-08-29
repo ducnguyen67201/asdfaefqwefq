@@ -164,6 +164,7 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/029_class_session_materials.sql"),
         include_str!("../migrations/030_remove_agent_approval_policy.sql"),
         include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
+        include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

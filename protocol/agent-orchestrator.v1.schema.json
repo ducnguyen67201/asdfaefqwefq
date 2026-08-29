@@ -1053,6 +1053,10 @@
           "const": 1,
           "type": "number"
         },
+        "publicProtocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
         "releaseVersion": {
           "maxLength": 100,
           "minLength": 1,
@@ -1068,6 +1072,7 @@
         "instanceId",
         "protocolVersion",
         "protocolDigest",
+        "publicProtocolDigest",
         "releaseVersion",
         "sdkVersion",
         "graphVersion"

@@ -11,6 +11,9 @@ import {
 } from '../services/agent-runtime/src/protocol.ts';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const publicManifest = JSON.parse(
+  await readFile(path.join(repositoryRoot, 'protocol/agent-runtime.v5.manifest.json'), 'utf8'),
+) as { protocolDigest: string };
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -52,6 +55,7 @@ const validRegistration = jsonBytes({
   instanceId: '11111111-1111-4111-8111-111111111111',
   protocolVersion: 1,
   protocolDigest,
+  publicProtocolDigest: publicManifest.protocolDigest,
   releaseVersion: '0.1.0',
   sdkVersion: '0.17.0',
   graphVersion: 'a'.repeat(64),

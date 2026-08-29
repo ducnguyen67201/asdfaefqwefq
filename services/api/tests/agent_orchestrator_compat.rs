@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use trocode_api::{
     agent::{
-        AgentOrchestrator, AgentService, PutCheckpoint, QueueToolCall, SessionTransaction,
-        orchestrator_protocol, protocol,
+        AgentOrchestrator, AgentService, OrchestratorWorkerRegistration, PutCheckpoint,
+        QueueToolCall, SessionTransaction, orchestrator_protocol, protocol,
     },
     auth::{AgentStateCrypto, ConnectorTokenCrypto, stable_json},
     config::{AgentRuntimeConfig, ConnectorConfig, CostGuardMode},
@@ -90,14 +90,15 @@ async fn setup() -> (
     );
     let orchestrator = AgentOrchestrator::new(pool.clone(), crypto, config, None);
     let (orchestrator_worker, _) = orchestrator
-        .register_worker(
-            Uuid::new_v4(),
-            1,
-            orchestrator_protocol::protocol_digest(),
-            "integration-test",
-            "0.17.0",
-            GRAPH_VERSION,
-        )
+        .register_worker(&OrchestratorWorkerRegistration {
+            graph_version: GRAPH_VERSION,
+            instance_id: Uuid::new_v4(),
+            protocol_digest: orchestrator_protocol::protocol_digest(),
+            protocol_version: 1,
+            public_protocol_digest: protocol::v5::protocol_digest(),
+            release_version: "integration-test",
+            sdk_version: "0.17.0",
+        })
         .await
         .expect("register SDK worker");
     let device = Uuid::new_v4();

@@ -88,6 +88,7 @@ export class ControlPlaneClient {
         instanceId,
         protocolVersion: 1,
         protocolDigest: this.config.orchestratorProtocolDigest,
+        publicProtocolDigest: this.config.publicProtocolDigest,
         releaseVersion: this.config.releaseVersion,
         sdkVersion: this.config.sdkVersion,
         graphVersion: this.config.graphVersion,

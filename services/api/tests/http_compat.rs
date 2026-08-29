@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt as _;
 use trocode_api::{
-    agent::{orchestrator_protocol, protocol},
+    agent::{OrchestratorWorkerRegistration, orchestrator_protocol, protocol},
     app::AppState,
     auth::User,
     config::{
@@ -390,14 +390,15 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .orchestrator
         .as_ref()
         .expect("Agents SDK orchestrator")
-        .register_worker(
-            Uuid::new_v4(),
-            1,
-            orchestrator_protocol::protocol_digest(),
-            "http-compat",
-            "0.17.0",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        )
+        .register_worker(&OrchestratorWorkerRegistration {
+            graph_version: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            instance_id: Uuid::new_v4(),
+            protocol_digest: orchestrator_protocol::protocol_digest(),
+            protocol_version: 1,
+            public_protocol_digest: protocol::v5::protocol_digest(),
+            release_version: "http-compat",
+            sdk_version: "0.17.0",
+        })
         .await
         .expect("register Agents SDK worker");
     state.responses = ResponsesService::new_with_endpoint(

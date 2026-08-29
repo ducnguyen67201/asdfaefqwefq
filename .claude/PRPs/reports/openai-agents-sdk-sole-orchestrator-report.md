@@ -112,6 +112,10 @@ The implementation review found and fixed the following issues before delivery:
   The 48 MB ceiling is also a required, literal worker capability in the generated
   v5 contract, which changes the negotiated protocol digest; the backend refuses
   heartbeats and execution from older sessions and maintenance disconnects them.
+- SDK-worker registration now carries that same public protocol digest separately
+  from the private orchestrator digest. Task admission, worker heartbeat, and run
+  claim all require both digests, so a rolling deployment cannot pin a new run to
+  an SDK graph compiled against the previous public protocol.
 - Identical session mutations at later revisions could collide with an earlier
   idempotency key and regress the SDK session cursor. Mutation identities now
   include their starting revision while remaining stable for transport retries.
@@ -128,9 +132,11 @@ The implementation review found and fixed the following issues before delivery:
 
 `031_agents_sdk_orchestrator.sql` adds SDK worker registration, session mutation
 idempotency, versioned checkpoints, model-dispatch no-replay state, orchestration
-metadata, and steering-turn uniqueness. It is additive and does not edit migration
-29 or 30. Existing terminal history and its legacy schemas remain read-only for UI
-projection; no new v5 run writes legacy outcome/effect/approval data.
+metadata, and steering-turn uniqueness. Migration 032 additively records the public
+protocol digest on SDK-worker sessions for rolling-deploy compatibility. Neither
+edits migration 29 or 30. Existing terminal history and its legacy schemas remain
+read-only for UI projection; no new v5 run writes legacy outcome/effect/approval
+data.
 
 CUA task-session lifecycle operations remain host-owned and injected because the
 host must bind a tool call to the exact durable task session. All other compatible
@@ -142,7 +148,7 @@ driver tools discovered from the live CUA catalog flow through generically.
 |---|---|
 | `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 788 tests, Rust fmt/clippy/tests |
 | Agents SDK service | Pass — lint, typecheck, 4 test files / 12 tests |
-| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, worker result-bound upgrade rejection and session retirement, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
+| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, desktop result-bound and SDK graph upgrade rejection/session retirement, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |
 | `npm run package` | Pass — Electron Forge macOS arm64 package |
 | `git diff --check` | Pass |
@@ -178,6 +184,7 @@ or blanket-ignored by this change.
 | `services/api/src/agent/{run_store,session_store,tool_broker,model_dispatch_store}.rs` | Focused persistence and execution-boundary classes. |
 | `services/api/src/http/agent_orchestrator.rs` | Authenticated private orchestrator and OpenAI-compatible broker routes. |
 | `services/api/migrations/031_agents_sdk_orchestrator.sql` | Additive SDK orchestration, no-replay, checkpoint, and idempotency state. |
+| `services/api/migrations/032_orchestrator_public_protocol_digest.sql` | SDK-worker/public-runtime compatibility binding for rolling deploys. |
 | `src/main/hosted/desktop-tool-worker.ts` | v5 desktop worker with live catalogs, CAS execution, and unknown-result handling. |
 | `src/main/cua/cua-service.ts` | Live CUA discovery and generic dispatch. |
 | `src/shared/agent-runtime-protocol.ts` | Public v5, authority v10, and legacy history parsing. |

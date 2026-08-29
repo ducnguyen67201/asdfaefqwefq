@@ -165,6 +165,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "OpenAI Agents SDK orchestrator",
             include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
         ),
+        migration(
+            32,
+            "orchestrator public protocol digest",
+            include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

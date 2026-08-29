@@ -12,7 +12,10 @@ use crate::{
 
 use super::{
     model_dispatch_store::{ModelDispatchContext, ModelDispatchStore},
-    run_store::{ClaimedRunRecord, RunStore, WorkerRegistration, append_event, row_envelope},
+    run_store::{
+        ClaimedRunRecord, RunStore, WorkerRegistration as StoredWorkerRegistration, append_event,
+        row_envelope,
+    },
     session_store::{SessionMutationResult, SessionSnapshot, SessionStore, SessionTransaction},
     tool_broker::{QueueToolCall, QueuedToolCall, ToolBroker, ToolCallResult},
     tool_catalog,
@@ -73,6 +76,16 @@ pub struct SteeringUpdate {
     pub sequence: i64,
 }
 
+pub struct OrchestratorWorkerRegistration<'a> {
+    pub graph_version: &'a str,
+    pub instance_id: Uuid,
+    pub protocol_digest: &'a str,
+    pub protocol_version: i32,
+    pub public_protocol_digest: &'a str,
+    pub release_version: &'a str,
+    pub sdk_version: &'a str,
+}
+
 impl AgentOrchestrator {
     #[must_use]
     pub fn new(
@@ -101,16 +114,12 @@ impl AgentOrchestrator {
 
     pub async fn register_worker(
         &self,
-        instance_id: Uuid,
-        protocol_version: i32,
-        protocol_digest: &str,
-        release_version: &str,
-        sdk_version: &str,
-        graph_version: &str,
+        registration: &OrchestratorWorkerRegistration<'_>,
     ) -> ApiResult<(Uuid, OffsetDateTime)> {
-        if protocol_version != 1
-            || protocol_digest != super::orchestrator_protocol::protocol_digest()
-            || sdk_version != self.config.orchestrator_sdk_version
+        if registration.protocol_version != 1
+            || registration.protocol_digest != super::orchestrator_protocol::protocol_digest()
+            || registration.public_protocol_digest != super::protocol::v5::protocol_digest()
+            || registration.sdk_version != self.config.orchestrator_sdk_version
         {
             return Err(ApiError::conflict(
                 "graph_version_mismatch",
@@ -119,13 +128,14 @@ impl AgentOrchestrator {
         }
         self.runs
             .register_worker(
-                &WorkerRegistration {
-                    graph_version,
-                    instance_id,
-                    protocol_digest,
-                    protocol_version,
-                    release_version,
-                    sdk_version,
+                &StoredWorkerRegistration {
+                    graph_version: registration.graph_version,
+                    instance_id: registration.instance_id,
+                    protocol_digest: registration.protocol_digest,
+                    protocol_version: registration.protocol_version,
+                    public_protocol_digest: registration.public_protocol_digest,
+                    release_version: registration.release_version,
+                    sdk_version: registration.sdk_version,
                 },
                 self.config.heartbeat_ttl_ms,
             )
@@ -142,7 +152,13 @@ impl AgentOrchestrator {
         release_version: &str,
     ) -> ApiResult<OffsetDateTime> {
         self.runs
-            .heartbeat_worker(worker_id, release_version, self.config.heartbeat_ttl_ms)
+            .heartbeat_worker(
+                worker_id,
+                release_version,
+                super::orchestrator_protocol::protocol_digest(),
+                super::protocol::v5::protocol_digest(),
+                self.config.heartbeat_ttl_ms,
+            )
             .await
     }
 
@@ -154,7 +170,14 @@ impl AgentOrchestrator {
     ) -> ApiResult<Option<ClaimedRun>> {
         let Some(run) = self
             .runs
-            .claim(worker_id, sdk_version, graph_version, self.config.lease_ms)
+            .claim(
+                worker_id,
+                sdk_version,
+                graph_version,
+                super::orchestrator_protocol::protocol_digest(),
+                super::protocol::v5::protocol_digest(),
+                self.config.lease_ms,
+            )
             .await?
         else {
             return Ok(None);

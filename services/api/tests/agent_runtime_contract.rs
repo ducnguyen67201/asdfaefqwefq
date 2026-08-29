@@ -63,6 +63,10 @@ fn rust_deserializes_the_private_orchestrator_contract() {
         request["protocolDigest"],
         orchestrator_protocol::protocol_digest()
     );
+    assert_eq!(
+        request["publicProtocolDigest"],
+        protocol::v5::protocol_digest()
+    );
 
     let invalid = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

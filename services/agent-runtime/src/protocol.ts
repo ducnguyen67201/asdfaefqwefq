@@ -13,6 +13,7 @@ export const WorkerRegistrationRequestSchema = z
     instanceId: UuidSchema,
     protocolVersion: z.literal(AGENT_ORCHESTRATOR_PROTOCOL_VERSION),
     protocolDigest: DigestSchema,
+    publicProtocolDigest: DigestSchema,
     releaseVersion: z.string().trim().min(1).max(100),
     sdkVersion: z.string().trim().min(1).max(100),
     graphVersion: DigestSchema,

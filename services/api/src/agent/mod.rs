@@ -12,7 +12,7 @@ pub mod tool_catalog;
 
 pub use model_dispatch_store::ModelDispatchContext;
 pub use orchestrator::AgentOrchestrator;
-pub use orchestrator::{ClaimedRun, PutCheckpoint};
+pub use orchestrator::{ClaimedRun, OrchestratorWorkerRegistration, PutCheckpoint};
 pub use service::AgentService;
 pub use session_store::SessionTransaction;
 pub use tool_broker::QueueToolCall;

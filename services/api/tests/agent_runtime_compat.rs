@@ -2,7 +2,10 @@ use std::{collections::BTreeSet, time::Duration};
 
 use serde_json::{Value, json};
 use trocode_api::{
-    agent::{AgentOrchestrator, AgentService, orchestrator_protocol, protocol},
+    agent::{
+        AgentOrchestrator, AgentService, OrchestratorWorkerRegistration, orchestrator_protocol,
+        protocol,
+    },
     auth::AgentStateCrypto,
     config::{AgentRuntimeConfig, CostGuardMode},
     db,
@@ -14,6 +17,8 @@ use uuid::Uuid;
 
 const USER: &str = "durable-agent-user";
 const GRAPH_VERSION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const INCOMPATIBLE_PROTOCOL_DIGEST: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
 fn disposable_database_url() -> String {
     let value = std::env::var("TEST_DATABASE_URL")
@@ -78,15 +83,29 @@ async fn setup() -> (trocode_api::PgPool, AgentService, AgentOrchestrator, Uuid)
         CostGuardMode::Enforce,
     );
     let orchestrator = AgentOrchestrator::new(pool.clone(), crypto, config, None);
+    let incompatible = orchestrator
+        .register_worker(&OrchestratorWorkerRegistration {
+            graph_version: GRAPH_VERSION,
+            instance_id: Uuid::new_v4(),
+            protocol_digest: orchestrator_protocol::protocol_digest(),
+            protocol_version: 1,
+            public_protocol_digest: INCOMPATIBLE_PROTOCOL_DIGEST,
+            release_version: "integration-test",
+            sdk_version: "0.17.0",
+        })
+        .await
+        .expect_err("SDK worker built for an older public protocol must upgrade");
+    assert_eq!(incompatible.code, Some("graph_version_mismatch"));
     let (sdk_worker, _) = orchestrator
-        .register_worker(
-            Uuid::new_v4(),
-            1,
-            orchestrator_protocol::protocol_digest(),
-            "integration-test",
-            "0.17.0",
-            GRAPH_VERSION,
-        )
+        .register_worker(&OrchestratorWorkerRegistration {
+            graph_version: GRAPH_VERSION,
+            instance_id: Uuid::new_v4(),
+            protocol_digest: orchestrator_protocol::protocol_digest(),
+            protocol_version: 1,
+            public_protocol_digest: protocol::v5::protocol_digest(),
+            release_version: "integration-test",
+            sdk_version: "0.17.0",
+        })
         .await
         .expect("register compatible SDK worker");
     (pool, agent, orchestrator, sdk_worker)
@@ -142,6 +161,32 @@ async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
     let (pool, agent, orchestrator, sdk_worker) = setup().await;
     assert!(agent.enabled_for(USER));
     assert!(!agent.enabled_for("not-in-canary"));
+
+    query("UPDATE agent_orchestrator_workers SET public_protocol_digest=$2 WHERE id=$1")
+        .bind(sdk_worker)
+        .bind("0".repeat(64))
+        .execute(&pool)
+        .await
+        .expect("simulate an SDK worker from the previous public protocol");
+    let unavailable = agent
+        .submit_v5(
+            USER,
+            "basic",
+            &task_input(
+                "This task must not bind to an old SDK graph.",
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+            ),
+        )
+        .await
+        .expect_err("new tasks must ignore SDK workers on an old public digest");
+    assert_eq!(unavailable.code, Some("orchestrator_unavailable"));
+    query("UPDATE agent_orchestrator_workers SET public_protocol_digest=$2 WHERE id=$1")
+        .bind(sdk_worker)
+        .bind(protocol::v5::protocol_digest())
+        .execute(&pool)
+        .await
+        .expect("restore compatible SDK worker");
 
     let client = Uuid::new_v4();
     let task = Uuid::new_v4();

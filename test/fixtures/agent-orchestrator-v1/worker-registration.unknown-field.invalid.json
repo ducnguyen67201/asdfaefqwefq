@@ -2,8 +2,9 @@
   "graphVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "guessedAuthority": true,
   "instanceId": "11111111-1111-4111-8111-111111111111",
-  "protocolDigest": "b6b4e2dcca15a0e0314249124723091b393485963b3c8143aca34003f71c9677",
+  "protocolDigest": "5ebf8f1fec1c03cdaf5b01a5eef41d18ed12bad023b975075ce2603bdf4a0f7b",
   "protocolVersion": 1,
+  "publicProtocolDigest": "081c1d07cf45b6f2248a7dead502d07e14cdbae434017ed184e37d659d815ec7",
   "releaseVersion": "0.1.0",
   "sdkVersion": "0.17.0"
 }

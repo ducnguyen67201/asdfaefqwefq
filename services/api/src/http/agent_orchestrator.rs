@@ -11,7 +11,10 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::{
-    agent::{ClaimedRun, PutCheckpoint, QueueToolCall, SessionTransaction},
+    agent::{
+        ClaimedRun, OrchestratorWorkerRegistration, PutCheckpoint, QueueToolCall,
+        SessionTransaction,
+    },
     app::AppState,
     error::{ApiError, ApiResult},
     http::{bearer, bytes_response, json_response, read_json},
@@ -47,14 +50,15 @@ pub async fn handle(
     if method == Method::POST && path == format!("{PREFIX}/workers/register") {
         let input = validated(headers, body, 16_000, "workerRegistrationRequest")?;
         let (worker_id, expires_at) = orchestrator
-            .register_worker(
-                uuid(&input, "instanceId")?,
-                integer(&input, "protocolVersion")?,
-                string(&input, "protocolDigest")?,
-                string(&input, "releaseVersion")?,
-                string(&input, "sdkVersion")?,
-                string(&input, "graphVersion")?,
-            )
+            .register_worker(&OrchestratorWorkerRegistration {
+                graph_version: string(&input, "graphVersion")?,
+                instance_id: uuid(&input, "instanceId")?,
+                protocol_digest: string(&input, "protocolDigest")?,
+                protocol_version: integer(&input, "protocolVersion")?,
+                public_protocol_digest: string(&input, "publicProtocolDigest")?,
+                release_version: string(&input, "releaseVersion")?,
+                sdk_version: string(&input, "sdkVersion")?,
+            })
             .await?;
         return Ok(Some(json_response(
             StatusCode::CREATED,

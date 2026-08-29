@@ -163,9 +163,10 @@ impl AgentService {
             ));
         }
         let worker = sqlx::query(
-            "SELECT sdk_version,graph_version FROM agent_orchestrator_workers WHERE protocol_version=1 AND protocol_digest=$1 AND disconnected_at IS NULL AND expires_at>NOW() ORDER BY heartbeat_at DESC LIMIT 1",
+            "SELECT sdk_version,graph_version FROM agent_orchestrator_workers WHERE protocol_version=1 AND protocol_digest=$1 AND public_protocol_digest=$2 AND disconnected_at IS NULL AND expires_at>NOW() ORDER BY heartbeat_at DESC LIMIT 1",
         )
         .bind(super::orchestrator_protocol::protocol_digest())
+        .bind(protocol::v5::protocol_digest())
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| {

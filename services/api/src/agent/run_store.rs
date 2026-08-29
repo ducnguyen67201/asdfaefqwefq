@@ -37,6 +37,7 @@ pub struct WorkerRegistration<'a> {
     pub instance_id: Uuid,
     pub protocol_digest: &'a str,
     pub protocol_version: i32,
+    pub public_protocol_digest: &'a str,
     pub release_version: &'a str,
     pub sdk_version: &'a str,
 }
@@ -56,12 +57,13 @@ impl RunStore {
         let expires_at = OffsetDateTime::now_utc()
             + time::Duration::milliseconds(i64::try_from(lease_ms).unwrap_or(i64::MAX));
         let row = sqlx::query(
-            "INSERT INTO agent_orchestrator_workers(id,instance_id,protocol_version,protocol_digest,release_version,sdk_version,graph_version,expires_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8)ON CONFLICT(instance_id)DO UPDATE SET protocol_version=EXCLUDED.protocol_version,protocol_digest=EXCLUDED.protocol_digest,release_version=EXCLUDED.release_version,sdk_version=EXCLUDED.sdk_version,graph_version=EXCLUDED.graph_version,heartbeat_at=NOW(),expires_at=EXCLUDED.expires_at,disconnected_at=NULL RETURNING id,expires_at",
+            "INSERT INTO agent_orchestrator_workers(id,instance_id,protocol_version,protocol_digest,public_protocol_digest,release_version,sdk_version,graph_version,expires_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)ON CONFLICT(instance_id)DO UPDATE SET protocol_version=EXCLUDED.protocol_version,protocol_digest=EXCLUDED.protocol_digest,public_protocol_digest=EXCLUDED.public_protocol_digest,release_version=EXCLUDED.release_version,sdk_version=EXCLUDED.sdk_version,graph_version=EXCLUDED.graph_version,heartbeat_at=NOW(),expires_at=EXCLUDED.expires_at,disconnected_at=NULL RETURNING id,expires_at",
         )
         .bind(worker_id)
         .bind(registration.instance_id)
         .bind(registration.protocol_version)
         .bind(registration.protocol_digest)
+        .bind(registration.public_protocol_digest)
         .bind(registration.release_version)
         .bind(registration.sdk_version)
         .bind(registration.graph_version)
@@ -75,16 +77,20 @@ impl RunStore {
         &self,
         worker_id: Uuid,
         release_version: &str,
+        protocol_digest: &str,
+        public_protocol_digest: &str,
         lease_ms: u64,
     ) -> ApiResult<OffsetDateTime> {
         let expires_at = OffsetDateTime::now_utc()
             + time::Duration::milliseconds(i64::try_from(lease_ms).unwrap_or(i64::MAX));
         sqlx::query_scalar(
-            "UPDATE agent_orchestrator_workers SET heartbeat_at=NOW(),expires_at=$3 WHERE id=$1 AND release_version=$2 AND disconnected_at IS NULL RETURNING expires_at",
+            "UPDATE agent_orchestrator_workers SET heartbeat_at=NOW(),expires_at=$3 WHERE id=$1 AND release_version=$2 AND protocol_version=1 AND protocol_digest=$4 AND public_protocol_digest=$5 AND disconnected_at IS NULL RETURNING expires_at",
         )
         .bind(worker_id)
         .bind(release_version)
         .bind(expires_at)
+        .bind(protocol_digest)
+        .bind(public_protocol_digest)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(lease_conflict)
@@ -95,15 +101,19 @@ impl RunStore {
         worker_id: Uuid,
         sdk_version: &str,
         graph_version: &str,
+        protocol_digest: &str,
+        public_protocol_digest: &str,
         lease_ms: u64,
     ) -> ApiResult<Option<ClaimedRunRecord>> {
         let mut tx = self.pool.begin().await?;
         let worker_active: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM agent_orchestrator_workers WHERE id=$1 AND sdk_version=$2 AND graph_version=$3 AND disconnected_at IS NULL AND expires_at>NOW())",
+            "SELECT EXISTS(SELECT 1 FROM agent_orchestrator_workers WHERE id=$1 AND sdk_version=$2 AND graph_version=$3 AND protocol_version=1 AND protocol_digest=$4 AND public_protocol_digest=$5 AND disconnected_at IS NULL AND expires_at>NOW())",
         )
         .bind(worker_id)
         .bind(sdk_version)
         .bind(graph_version)
+        .bind(protocol_digest)
+        .bind(public_protocol_digest)
         .fetch_one(&mut *tx)
         .await?;
         if !worker_active {
@@ -116,6 +126,7 @@ impl RunStore {
                SELECT id FROM agent_runs
                WHERE orchestrator_kind='openai_agents_sdk'
                  AND sdk_version=$2 AND orchestrator_graph_version=$3
+                 AND protocol_digest=$5
                  AND state IN(
                    'queued','awaiting_orchestrator','recovering','running',
                    'awaiting_worker','awaiting_permission','executing_tool'
@@ -135,6 +146,7 @@ impl RunStore {
         .bind(sdk_version)
         .bind(graph_version)
         .bind(i64::try_from(lease_ms).unwrap_or(i64::MAX))
+        .bind(public_protocol_digest)
         .fetch_optional(&mut *tx)
         .await?;
         let Some(row) = row else {
