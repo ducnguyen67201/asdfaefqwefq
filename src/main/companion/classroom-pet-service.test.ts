@@ -68,6 +68,7 @@ function preferences(initial: AppPreferences = {
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: 'en',
+  voiceMode: 'dictation',
 }) {
   let current = initial;
   const listeners = new Set<(value: AppPreferences) => void>();
@@ -266,6 +267,7 @@ describe('ClassroomPetService', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'en',
+      voiceMode: 'dictation',
     });
     expect(dismiss).toHaveBeenCalledWith(NUDGE_IDS[0]);
 
@@ -282,6 +284,7 @@ describe('ClassroomPetService', () => {
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'vi',
+        voiceMode: 'task',
       },
     });
     await flushPreferences();

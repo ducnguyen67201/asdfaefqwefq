@@ -57,6 +57,7 @@ describe('App settings dialog safety', () => {
   let root: Root;
   let signOut: ReturnType<typeof vi.fn<() => void>>;
   let taskUpdateListener: ((update: TaskUpdate) => void) | null;
+  let updateAppPreferences: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     container = document.createElement('div');
@@ -65,6 +66,7 @@ describe('App settings dialog safety', () => {
     taskUpdateListener = null;
     cancelTask = vi.fn();
     signOut = vi.fn<() => void>();
+    updateAppPreferences = vi.fn(async (preferences) => preferences);
 
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
@@ -75,6 +77,10 @@ describe('App settings dialog safety', () => {
       value: {
         query: vi.fn().mockResolvedValue({ state: 'granted' }),
       },
+    });
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
     });
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
       configurable: true,
@@ -105,6 +111,7 @@ describe('App settings dialog safety', () => {
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
+        voiceMode: 'dictation',
       }),
       getAppUpdateStatus: vi.fn().mockResolvedValue({
         currentVersion: '0.1.8',
@@ -178,6 +185,7 @@ describe('App settings dialog safety', () => {
       onVoiceShortcut: vi.fn().mockReturnValue(unsubscribe),
       setCompanionVoiceActivity: vi.fn().mockResolvedValue(undefined),
       setVoiceAudioDucking: vi.fn().mockResolvedValue(undefined),
+      updateAppPreferences,
     } as unknown as DesktopApi;
   });
 
@@ -247,5 +255,59 @@ describe('App settings dialog safety', () => {
     expect(document.activeElement).toBe(settingsTrigger);
     expect(container.querySelector('#task')).not.toBeNull();
     expect(cancelTask).not.toHaveBeenCalled();
+  });
+
+  it('shows, switches, and persists the top-bar voice mode', async () => {
+    await act(async () => {
+      root.render(
+        <App
+          currentUser={{
+            email: 'student@example.com',
+            id: 'preview-user',
+            name: 'Student',
+          }}
+          isSigningOut={false}
+          onSignOut={signOut}
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const writeMode = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Write my words"]',
+    );
+    const askMode = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Ask Tro"]',
+    );
+    expect(writeMode?.getAttribute('aria-pressed')).toBe('true');
+    expect(askMode?.getAttribute('aria-pressed')).toBe('false');
+    expect(container.textContent).toContain('Hold');
+    expect(container.textContent).toContain('Switch');
+
+    await act(async () => {
+      askMode?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(askMode?.getAttribute('aria-pressed')).toBe('true');
+    expect(updateAppPreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voiceMode: 'task' }),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: '\\',
+          metaKey: true,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(writeMode?.getAttribute('aria-pressed')).toBe('true');
+    expect(updateAppPreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voiceMode: 'dictation' }),
+    );
   });
 });

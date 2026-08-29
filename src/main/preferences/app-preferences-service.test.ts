@@ -39,6 +39,7 @@ describe('AppPreferencesService', () => {
       classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: null,
+      voiceMode: 'dictation',
     });
     await expect(service.getPrimaryLanguage()).resolves.toBe('en');
   });
@@ -62,6 +63,7 @@ describe('AppPreferencesService', () => {
         classroomPetEnabled: false,
         muteSystemAudioWhileSpeaking: true,
         primaryLanguage: 'vi',
+        voiceMode: 'task',
       }),
     ).resolves.toEqual({
       appLanguage: 'vi',
@@ -69,6 +71,7 @@ describe('AppPreferencesService', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
+      voiceMode: 'task',
     });
     await expect(service.getPrimaryLanguage()).resolves.toBe('vi');
     expect(store.write).toHaveBeenCalledWith({
@@ -77,6 +80,7 @@ describe('AppPreferencesService', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
+      voiceMode: 'task',
     });
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledWith({
@@ -85,6 +89,7 @@ describe('AppPreferencesService', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
+      voiceMode: 'task',
     });
   });
 
@@ -143,6 +148,7 @@ describe('FileAppPreferencesStore', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
+      voiceMode: 'task',
     });
 
     await expect(store.read()).resolves.toEqual({
@@ -151,6 +157,7 @@ describe('FileAppPreferencesStore', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
+      voiceMode: 'task',
     });
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"appLanguage": "vi"',
@@ -166,6 +173,9 @@ describe('FileAppPreferencesStore', () => {
     );
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"primaryLanguage": "en"',
+    );
+    await expect(readFile(filePath, 'utf8')).resolves.toContain(
+      '"voiceMode": "task"',
     );
     if (process.platform !== 'win32') {
       expect((await stat(filePath)).mode & 0o777).toBe(0o600);
@@ -184,6 +194,7 @@ describe('FileAppPreferencesStore', () => {
       classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
+      voiceMode: 'dictation',
     });
   });
 });

@@ -171,7 +171,7 @@ export function registerGlobalVoiceShortcut({
   }
 
   logger.warn(
-    '[voice] Native Windows shortcut watcher is unavailable; global Task shortcut is disabled and the Dictation-only fallback will be used.',
+    '[voice] Native Windows shortcut watcher is unavailable; modifier-only voice input is disabled and Control+Alt+Space will be used as the fallback.',
   );
 
   let releaseController: AbortController | null = null;
@@ -182,7 +182,6 @@ export function registerGlobalVoiceShortcut({
     const sent = sendVoiceShortcutEvent(
       {
         action: 'pressed',
-        mode: 'dictation',
         source: 'global',
       },
       { allowFocused: false },
@@ -214,7 +213,6 @@ export function registerGlobalVoiceShortcut({
         sendVoiceShortcutEvent(
           {
             action: 'released',
-            mode: 'dictation',
             source: 'global',
           },
           { allowFocused: true },
