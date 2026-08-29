@@ -281,6 +281,9 @@ The API requires these production variables:
 - `OPENAI_API_KEY`
 - `TROCODE_SESSION_TOKEN_HMAC_KEY`
 - `TROCODE_AGENT_MODEL`
+- `TROCODE_AGENT_SDK_MODEL` (the pinned Agents SDK model)
+- `TROCODE_AGENT_SDK_VERSION`
+- `TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN` (shared only with the private SDK worker)
 - `TROCODE_COST_GUARD_MODE` (`enforce` by default; `observe` is available for
   reconciliation)
 - optional server-owned budget overrides documented in `.env.example`
@@ -296,9 +299,10 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-Rust selects only registered tools. Electron owns schema validation, trusted
-workspace binding, technical prerequisite checks, and exactly-once native
-dispatch.
+The Agents SDK selects only the tools Rust advertises for the leased run. Rust
+binds catalogs, identities, spend, and durable dispatch; Electron revalidates
+local schemas, workspace scope, technical prerequisites, and exactly-once native
+execution.
 
 #### Custom companion availability
 
@@ -619,8 +623,9 @@ React renderer
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
       -> bundled trocode-api desktop engine (model + voice transport)
-      -> Rust durable agent runtime through the Tro backend
-        -> trusted local CUA/Workspace adapters when explicitly selected
+      -> Rust task/provider/tool control plane through the Tro backend
+        <-> private OpenAI Agents SDK worker (sole reasoning loop)
+        -> trusted local CUA/Workspace adapters when selected by the SDK
       -> PostHog analytics service (allowlisted metadata only)
       -> local PCM/VAD voice capture
         -> bundled Rust engine -> bounded GPT Transcribe API

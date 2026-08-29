@@ -164,37 +164,3 @@ pub fn validate(value: &Value) -> ApiResult<Value> {
         "tools":digest_payload["tools"]
     }))
 }
-
-pub fn tool_by_model_name<'a>(capabilities: &'a Value, model_name: &str) -> Option<&'a Value> {
-    capabilities
-        .get("cua")?
-        .get("tools")?
-        .as_array()?
-        .iter()
-        .find(|tool| tool.get("modelName").and_then(Value::as_str) == Some(model_name))
-}
-
-pub fn model_tools(capabilities: &Value) -> Vec<Value> {
-    let tools = capabilities
-        .get("cua")
-        .and_then(|cua| cua.get("tools"))
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
-    if tools.is_empty() {
-        return Vec::new();
-    }
-    vec![json!({
-        "type":"namespace",
-        "name":"cua",
-        "description":"Computer-use tools supplied by the installed CUA driver.",
-        "tools":tools.iter().map(|tool| json!({
-            "type":"function",
-            "name":tool["modelName"],
-            "description":tool["description"],
-            "strict":false,
-            "parameters":tool["inputSchema"],
-            "defer_loading":true
-        })).collect::<Vec<_>>()
-    })]
-}

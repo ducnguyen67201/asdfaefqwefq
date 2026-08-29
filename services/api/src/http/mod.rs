@@ -1,4 +1,5 @@
 mod admin;
+mod agent_orchestrator;
 mod agent_runtime;
 mod classroom;
 mod connectors;
@@ -47,6 +48,11 @@ async fn dispatch(
             http::StatusCode::FORBIDDEN,
             "Browser-origin requests are not allowed.",
         ));
+    }
+    if let Some(response) =
+        agent_orchestrator::handle(&state, &method, &uri, &headers, &body).await?
+    {
+        return Ok(response);
     }
     if let Some(response) =
         connectors::handle_authenticated(&state, &method, &uri, &headers, &body).await?

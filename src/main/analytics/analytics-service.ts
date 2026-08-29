@@ -205,7 +205,8 @@ export class AnalyticsService {
           snapshot.goal.schemaVersion === 6 ||
           snapshot.goal.schemaVersion === 7 ||
           snapshot.goal.schemaVersion === 8 ||
-          snapshot.goal.schemaVersion === 9
+          snapshot.goal.schemaVersion === 9 ||
+          snapshot.goal.schemaVersion === 10
             ? {
                 execution_profile: snapshot.goal.executionProfile,
                 runtime_kind: snapshot.goal.runtimeKind,

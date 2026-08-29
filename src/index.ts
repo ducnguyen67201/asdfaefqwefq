@@ -399,7 +399,6 @@ const executionCoordinator = new TaskExecutionCoordinator({
       cuaService.queryVisibleApplicationSurfaces(application, signal),
   }),
   cua: cuaService,
-  runtime: taskRuntime,
   openApplication: (application) =>
     desktopApplicationLauncher.launch(application),
   onDesktopControlChange: updateDesktopControlIndicator,
@@ -454,13 +453,13 @@ const desktopToolWorker = new DesktopToolWorker({
     dispatch: (invocation, context) =>
       executionCoordinator.dispatchHostedTool(invocation, context),
   },
-  goalProvider: (runId) => taskApplicationService.hostedGoal(runId),
+  executionContextProvider: (runId) =>
+    taskApplicationService.hostedExecutionContext(runId),
   interactionProvider: requestHostedInteraction,
   permissionCoordinator: computerPermissionCoordinator,
   registry: runtimeToolRegistry,
   requestExecuting: (invocationId, expectedRunVersion) =>
     desktopWorkerClient.requestExecuting(invocationId, expectedRunVersion),
-  taskIdProvider: (runId) => taskApplicationService.taskIdForHostedRun(runId),
 });
 desktopWorkerClient.on('invocation', (invocation) => {
   void desktopToolWorker.handle(invocation).catch((error: unknown) => {
@@ -1507,7 +1506,7 @@ async function requestHostedInteraction(
   runId: string,
   input: { choices?: string[]; prompt: string },
 ): Promise<string> {
-  const taskId = taskApplicationService.taskIdForHostedRun(runId);
+  const taskId = taskApplicationService.hostedExecutionContext(runId)?.taskId;
   if (!taskId) throw new Error('Hosted run is not mapped to a local task.');
   const waiting = taskRuntime.requestInput({
     choices: input.choices?.map((label, index) => ({

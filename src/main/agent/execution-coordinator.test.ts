@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ResolvedToolInvocation } from './agent-contracts';
 import { TaskExecutionCoordinator } from './execution-coordinator';
-import { TaskRuntime } from './task-runtime';
 
 function cuaStub() {
   return {
@@ -64,7 +63,6 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
       onDesktopControlChange: async (_taskId, active) => {
         changes.push(active);
       },
-      runtime: new TaskRuntime(),
       toolDispatcher: { dispatch },
     });
 
@@ -84,7 +82,6 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
     const coordinator = new TaskExecutionCoordinator({
       cua,
       presentGuidance,
-      runtime: new TaskRuntime(),
     });
     const invocation: ResolvedToolInvocation = {
       callId: 'guidance-call',
@@ -118,7 +115,6 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
     const cua = cuaStub();
     const coordinator = new TaskExecutionCoordinator({
       cua,
-      runtime: new TaskRuntime(),
       toolDispatcher: {
         dispatch: vi.fn(async () => ({
           status: 'confirmed' as const,

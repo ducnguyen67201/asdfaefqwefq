@@ -25,7 +25,6 @@ import type {
   OpenApplicationToolInput,
   OpenUrlToolInput,
 } from './runtime-tool-registry';
-import type { TaskRuntime } from './task-runtime';
 
 interface ExecutionCoordinatorOptions {
   additionalToolAdapters?: readonly RuntimeToolExecutionAdapter[];
@@ -53,7 +52,6 @@ interface ExecutionCoordinatorOptions {
     input: GuidanceToolInput,
     context: { signal: AbortSignal; taskId: string },
   ) => Promise<void>;
-  runtime: TaskRuntime;
   toolDispatcher?: Pick<RuntimeToolDispatcher, 'dispatch'>;
 }
 
@@ -90,7 +88,6 @@ export class TaskExecutionCoordinator {
     },
     onDesktopControlChange = async () => undefined,
     presentGuidance = async () => undefined,
-    runtime,
     toolDispatcher,
   }: ExecutionCoordinatorOptions) {
     this.cua = cua;
@@ -153,36 +150,18 @@ export class TaskExecutionCoordinator {
           execute: async (invocation, context) => {
             const input = invocation.input as OpenApplicationToolInput;
             const receipt = await openApplication(input.application);
-            const snapshot = runtime.getSnapshot(context.taskId);
-            const criterion =
-              snapshot.goal?.schemaVersion === 9
-                ? snapshot.goal.outcomeContract.criteria.find(
-                    (candidate) =>
-                      candidate.verifier.kind === 'application_surface' &&
-                      candidate.verifier.application === input.application,
-                  )
-                : undefined;
-            if (!criterion) {
-              return {
-                status: 'unknown' as const,
-                summary:
-                  'The launch was accepted, but the current contract has no trusted application-surface verifier.',
-              };
-            }
             const verification = await applicationSurfaceVerifier.verify(
-              context.taskId,
-              criterion.id,
               receipt,
               context.signal,
             );
             return {
-              ...(verification.evidence
+              ...(verification.observation
                 ? {
                     data: {
                       applicationSurfaceEvidence: {
-                        observationFingerprint:
-                          verification.evidence.observationFingerprint,
-                        observationId: verification.evidence.observationId,
+                          observationFingerprint:
+                          verification.observation.observationFingerprint,
+                        observationId: verification.observation.observationId,
                       },
                     },
                   }

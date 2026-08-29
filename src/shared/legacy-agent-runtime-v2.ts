@@ -37,6 +37,10 @@ export function legacyTaskPhaseForHostedState(
     case 'queued':
     case 'compiling_outcomes':
       return 'ready';
+    case 'awaiting_orchestrator':
+      return 'paused';
+    case 'running':
+      return 'planning';
     case 'planning':
     case 'recovering':
       return 'planning';

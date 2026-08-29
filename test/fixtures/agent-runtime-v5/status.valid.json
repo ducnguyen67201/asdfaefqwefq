@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "protocolDigest": "dec4a2c1d3ec0e69e76d0fdcc78e1bdf1344e892bf96f28b8d989fb82997aa48",
+  "protocolVersion": 5,
+  "rolloutMode": "enforce",
+  "supportedReadVersions": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "supportedStartVersions": [
+    5
+  ],
+  "toolCatalogDigest": "2eb97dbaa3b4e55a3dfd8909a680444edc41aa2a95eb224970a7b18e8fb28fee",
+  "workerRequired": true
+}

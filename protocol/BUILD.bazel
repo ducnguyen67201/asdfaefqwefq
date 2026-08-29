@@ -10,6 +10,23 @@ filegroup(
 )
 
 filegroup(
+    name = "agent_runtime_v5_contract",
+    srcs = [
+        "agent-runtime.v5.manifest.json",
+        "agent-runtime.v5.schema.json",
+        "agent-tools.v5.json",
+    ],
+)
+
+filegroup(
+    name = "agent_orchestrator_v1_contract",
+    srcs = [
+        "agent-orchestrator.v1.manifest.json",
+        "agent-orchestrator.v1.schema.json",
+    ],
+)
+
+filegroup(
     name = "agent_runtime_v3_contract",
     srcs = [
         "agent-runtime.v3.manifest.json",

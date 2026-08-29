@@ -7,7 +7,7 @@ import type { EventMessage, IdentifyMessage } from 'posthog-node';
 import { describe, expect, it } from 'vitest';
 
 import {
-  type HostedTaskAuthorityContract,
+  type HostedTaskAuthorityContractV10,
   type WorkspaceIdentity,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
@@ -87,26 +87,15 @@ function createService(
 function authority(
   request: string,
   workspaceSelectionId: string | null = null,
-): HostedTaskAuthorityContract {
+): HostedTaskAuthorityContractV10 {
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     id: randomUUID(),
     originalRequest: request,
-    runtimeKind: 'rust_hosted',
+    runtimeKind: 'openai_agents_sdk',
     executionProfile: workspaceSelectionId ? 'workspace' : 'everyday',
     workspaceSelectionId,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -267,9 +256,9 @@ describe('AnalyticsService', () => {
     expect(serializedEvents).not.toContain('private acquisition');
     expect(serializedEvents).not.toContain('/Users/example');
     expect(client.events.at(-1)?.properties).toMatchObject({
-      contract_version: 9,
+      contract_version: 10,
       execution_profile: 'workspace',
-      runtime_kind: 'rust_hosted',
+      runtime_kind: 'openai_agents_sdk',
     });
     expect(client.events.at(-1)?.properties).not.toHaveProperty('behavior');
   });

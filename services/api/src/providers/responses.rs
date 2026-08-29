@@ -86,6 +86,7 @@ pub struct ResponsesService {
     catalog: ModelCatalog,
     client: reqwest::Client,
     key: String,
+    compact_url: String,
     url: String,
 }
 impl ResponsesService {
@@ -107,10 +108,23 @@ impl ResponsesService {
             catalog: ModelCatalog,
             client,
             key: key.to_owned(),
+            compact_url: format!("{url}/compact"),
             url: url.to_owned(),
         }
     }
     pub async fn execute(&self, input: ResponsesInput<'_>) -> ApiResult<ProviderResponse> {
+        self.execute_at(input, &self.url).await
+    }
+
+    pub async fn execute_compact(&self, input: ResponsesInput<'_>) -> ApiResult<ProviderResponse> {
+        self.execute_at(input, &self.compact_url).await
+    }
+
+    async fn execute_at(
+        &self,
+        input: ResponsesInput<'_>,
+        url: &str,
+    ) -> ApiResult<ProviderResponse> {
         let started = Instant::now();
         let model = input
             .body
@@ -138,7 +152,7 @@ impl ResponsesService {
         let stream = input.body.get("stream").and_then(Value::as_bool) == Some(true);
         let request = self
             .client
-            .post(&self.url)
+            .post(url)
             .bearer_auth(&self.key)
             .header("content-type", "application/json")
             .header("openai-safety-identifier", input.safety_identifier)

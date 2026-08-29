@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 import {
-  CuaDriverCatalogV4Schema,
-  type CuaDriverCatalogV4,
+  CuaDriverCatalogV5Schema,
+  type CuaDriverCatalogV5,
 } from '../../shared/agent-runtime-protocol';
 
 const NullableIntegerSchema = z.number().int().nullable();
@@ -84,7 +84,7 @@ function projectedInputSchema(
 export function createCuaDriverCatalog(
   metadataValue: unknown,
   inventoryValue: unknown,
-): CuaDriverCatalogV4 {
+): CuaDriverCatalogV5 {
   const metadata = CuaDriverMetadataSchema.parse(metadataValue);
   const inventory = CuaToolInventorySchema.parse(inventoryValue);
   if (
@@ -126,7 +126,7 @@ export function createCuaDriverCatalog(
     capabilityVersion: metadata.capabilityVersion,
     tools,
   };
-  return CuaDriverCatalogV4Schema.parse({
+  return CuaDriverCatalogV5Schema.parse({
     ...digestPayload,
     driverCatalogDigest: createHash('sha256')
       .update(stableJson(digestPayload))

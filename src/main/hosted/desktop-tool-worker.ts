@@ -1,10 +1,9 @@
 import {
-  DesktopInvocationV4Schema,
-  DesktopResultV4Schema,
-  type DesktopInvocationV4,
-  type DesktopResultV4,
+  DesktopInvocationV5Schema,
+  DesktopResultV5Schema,
+  type DesktopInvocationV5,
+  type DesktopResultV5,
 } from '../../shared/agent-runtime-protocol';
-import { type GoalSpec } from '../../shared/contracts';
 import type {
   ResolvedToolInvocation,
   ToolExecutionResult,
@@ -14,6 +13,7 @@ import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
   InteractionToolInput,
   RuntimeToolRegistry,
+  TrustedToolExecutionContext,
 } from '../agent/runtime-tool-registry';
 import type { CuaService } from '../cua/cua-service';
 
@@ -25,11 +25,11 @@ import {
 } from './desktop-worker-protocol';
 
 export interface DesktopToolWorkerOptions {
-  commitResult(result: DesktopResultV4): Promise<void>;
+  commitResult(result: DesktopResultV5): Promise<void>;
   cua?: Pick<CuaService, 'cuaToolCatalog' | 'executeCuaTool'>;
   permissionCoordinator?: Pick<ComputerPermissionCoordinator, 'requireReady'>;
   dispatcher: Pick<RuntimeToolDispatcher, 'dispatch'>;
-  goalProvider(runId: string): GoalSpec | undefined;
+  executionContextProvider(runId: string): TrustedToolExecutionContext | undefined;
   interactionProvider?: (
     runId: string,
     input: InteractionToolInput,
@@ -40,19 +40,18 @@ export interface DesktopToolWorkerOptions {
     invocationId: string,
     expectedRunVersion: number,
   ): Promise<boolean>;
-  taskIdProvider(runId: string): string | undefined;
 }
 
 const MAX_RECENT_RESULTS = 500;
 
 export class DesktopToolWorker {
-  private readonly recent = new Map<string, DesktopResultV4>();
+  private readonly recent = new Map<string, DesktopResultV5>();
   private readonly latestObservations = new Map<string, DesktopObservation>();
 
   constructor(private readonly options: DesktopToolWorkerOptions) {}
 
-  async handle(input: unknown, signal = new AbortController().signal): Promise<DesktopResultV4> {
-    const envelope = DesktopInvocationV4Schema.parse(input);
+  async handle(input: unknown, signal = new AbortController().signal): Promise<DesktopResultV5> {
+    const envelope = DesktopInvocationV5Schema.parse(input);
     const cached = this.recent.get(envelope.invocationId);
     if (cached) {
       await this.options.commitResult(cached);
@@ -62,18 +61,17 @@ export class DesktopToolWorker {
       invocationId: envelope.invocationId,
       status: signal.aborted ? 'cancelled' as const : 'failed' as const,
       summary: error instanceof Error ? error.message.slice(0, 1_000) : 'Desktop execution failed.',
-      evidence: [],
     }));
-    const parsed = DesktopResultV4Schema.parse(result);
+    const parsed = DesktopResultV5Schema.parse(result);
     this.remember(parsed);
     await this.options.commitResult(parsed);
     return parsed;
   }
 
   private async execute(
-    envelope: DesktopInvocationV4,
+    envelope: DesktopInvocationV5,
     signal: AbortSignal,
-  ): Promise<DesktopResultV4> {
+  ): Promise<DesktopResultV5> {
     if (
       envelope.protocolDigest !== HOSTED_AGENT_PROTOCOL_DIGEST ||
       envelope.toolCatalogDigest !== HOSTED_AGENT_TOOL_CATALOG_DIGEST
@@ -100,10 +98,11 @@ export class DesktopToolWorker {
         'The desktop invocation tool metadata did not match.',
       );
     }
-    const goal = this.options.goalProvider(envelope.runId);
-    if (!goal) return this.result(envelope, 'not_executed', 'The local task authority is unavailable.');
-    const taskId = this.options.taskIdProvider(envelope.runId);
-    if (!taskId) return this.result(envelope, 'not_executed', 'The hosted run is not mapped to a local task.');
+    const executionContext = this.options.executionContextProvider(envelope.runId);
+    if (!executionContext) {
+      return this.result(envelope, 'not_executed', 'The trusted execution context is unavailable.');
+    }
+    const { taskId } = executionContext;
     const latestObservation =
       this.options.latestObservationProvider?.(envelope.runId) ??
       this.latestObservations.get(envelope.runId);
@@ -141,7 +140,7 @@ export class DesktopToolWorker {
         );
       }
       const definition = this.options.registry
-        .list({ goal, latestObservation, taskId })
+        .list({ ...executionContext, latestObservation })
         .find((candidate) => candidate.id === envelope.toolId);
       if (!definition || !definition.operations.includes(envelope.operation)) {
         return this.result(envelope, 'not_executed', 'The desktop does not support this tool operation.');
@@ -151,9 +150,8 @@ export class DesktopToolWorker {
         parsedInput,
         { arguments: JSON.stringify(envelope.input), callId: envelope.callId, name: definition.modelName },
         {
-          goal,
+          ...executionContext,
           latestObservation,
-          taskId,
         },
       );
     }
@@ -223,38 +221,7 @@ export class DesktopToolWorker {
     if (outcome.observation) {
       this.latestObservations.set(envelope.runId, outcome.observation);
     }
-    const evidence = envelope.obligations.map((obligation) => {
-      const status = outcome.status === 'confirmed'
-        ? 'supports' as const
-        : outcome.status === 'unknown'
-          ? 'unknown' as const
-          : 'contradicts' as const;
-      if (obligation.verifierKind === 'application_surface') {
-        const surface = outcome.data?.applicationSurfaceEvidence as {
-          observationId?: string;
-          observationFingerprint?: string;
-        } | undefined;
-        return {
-          criterionId: obligation.criterionId,
-          source: 'fresh_observation' as const,
-          status: surface?.observationId && surface.observationFingerprint ? status : 'unknown' as const,
-          ...(surface?.observationId ? { observationId: surface.observationId } : {}),
-          ...(surface?.observationFingerprint ? { observationFingerprint: surface.observationFingerprint } : {}),
-          summary: outcome.summary,
-        };
-      }
-      return {
-        criterionId: obligation.criterionId,
-        source: obligation.verifierKind === 'browser_semantic'
-          ? 'browser_dom' as const
-          : obligation.verifierKind === 'filesystem_result'
-            ? 'filesystem' as const
-            : 'tool_result' as const,
-        status,
-        summary: outcome.summary,
-      };
-    });
-    return DesktopResultV4Schema.parse({
+    return DesktopResultV5Schema.parse({
       invocationId: envelope.invocationId,
       status: outcome.status,
       summary: outcome.summary,
@@ -272,29 +239,22 @@ export class DesktopToolWorker {
             },
           }
         : {}),
-      evidence,
     });
   }
 
   private result(
-    envelope: DesktopInvocationV4,
-    status: DesktopResultV4['status'],
+    envelope: DesktopInvocationV5,
+    status: DesktopResultV5['status'],
     summary: string,
-  ): DesktopResultV4 {
-    return DesktopResultV4Schema.parse({
+  ): DesktopResultV5 {
+    return DesktopResultV5Schema.parse({
       invocationId: envelope.invocationId,
       status,
       summary,
-      evidence: envelope.obligations.map((obligation) => ({
-        criterionId: obligation.criterionId,
-        source: obligation.verifierKind === 'application_surface' ? 'fresh_observation' : 'tool_result',
-        status: status === 'unknown' ? 'unknown' : 'contradicts',
-        summary,
-      })),
     });
   }
 
-  private remember(result: DesktopResultV4): void {
+  private remember(result: DesktopResultV5): void {
     this.recent.set(result.invocationId, result);
     while (this.recent.size > MAX_RECENT_RESULTS) {
       const oldest = this.recent.keys().next().value;

@@ -40,13 +40,100 @@ pub async fn handle(
     };
     let enabled = agent.enabled_for(&current.user.id);
 
+    if method == Method::GET && path == "/v1/agent-runtime/v5/status" {
+        let value = json!({
+            "protocolVersion": protocol::v5::PROTOCOL_VERSION,
+            "protocolDigest": protocol::v5::protocol_digest(),
+            "toolCatalogDigest": protocol::v5::tool_catalog_digest(),
+            "supportedReadVersions": [2, 3, 4, 5],
+            "supportedStartVersions": [5],
+            "rolloutMode": "enforce",
+            "workerRequired": enabled || agent.has_active(&current.user.id).await?,
+            "enabled": enabled
+        });
+        let status: protocol::v5::AgentRuntimeStatusV5 =
+            serde_json::from_value(value).map_err(ApiError::internal)?;
+        return Ok(Some(json_response(StatusCode::OK, status)?));
+    }
+
+    if method == Method::POST && path == "/v1/agent-runtime/v5/tasks" {
+        if !enabled {
+            return Err(ApiError::conflict(
+                "agent_runtime_unavailable",
+                "The durable agent runtime is not enabled for this user.",
+            ));
+        }
+        let input = read_json(headers, body, 64_000)?;
+        serde_json::from_value::<protocol::v5::SubmitAgentTaskRequestV5>(input.clone()).map_err(
+            |_| ApiError::bad_request("invalid_agent_runtime_request", "Request data is invalid."),
+        )?;
+        let run = agent
+            .submit_v5(
+                &current.user.id,
+                membership.plan.as_deref().unwrap_or("free"),
+                &input,
+            )
+            .await?;
+        let status = if run["newlyCreated"].as_bool() == Some(true) {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        };
+        return Ok(Some(json_response(status, run)?));
+    }
+
+    if method == Method::GET && path == "/v1/agent-runtime/v5/tasks" {
+        return Ok(Some(json_response(
+            StatusCode::OK,
+            json!({"items":agent.list_v5(&current.user.id).await?}),
+        )?));
+    }
+
+    if let Some((run_id, operation)) = v5_task_route(path)? {
+        if method == Method::GET && operation.is_none() {
+            let run = agent
+                .get_v5(&current.user.id, run_id)
+                .await?
+                .ok_or_else(not_found)?;
+            return Ok(Some(json_response(StatusCode::OK, run)?));
+        }
+        if method == Method::GET && operation == Some("events") {
+            if agent.get_v5(&current.user.id, run_id).await?.is_none() {
+                return Err(not_found());
+            }
+            return Ok(Some(run_event_stream(
+                agent.clone(),
+                current.user.id,
+                run_id,
+                after_sequence(headers, uri)?,
+                state.shutdown.clone(),
+                5,
+            )?));
+        }
+        if method == Method::POST && operation == Some("cancel") {
+            let input = read_json(headers, body, 16_000)?;
+            serde_json::from_value::<protocol::v5::CancelAgentTaskRequestV5>(input.clone())
+                .map_err(|_| {
+                    ApiError::bad_request(
+                        "invalid_agent_runtime_request",
+                        "Request data is invalid.",
+                    )
+                })?;
+            let run = agent
+                .cancel_versioned(&current.user.id, run_id, &input)
+                .await?
+                .ok_or_else(not_found)?;
+            return Ok(Some(json_response(StatusCode::OK, run)?));
+        }
+    }
+
     if method == Method::GET && path == "/v1/agent-runtime/v4/status" {
         let value = json!({
             "protocolVersion": protocol::PROTOCOL_VERSION,
             "protocolDigest": protocol::protocol_digest(),
             "toolCatalogDigest": protocol::tool_catalog_digest(),
             "supportedReadVersions": [2, 3, 4],
-            "supportedStartVersions": [4],
+            "supportedStartVersions": [],
             "rolloutMode": "enforce",
             "workerRequired": enabled || agent.has_active(&current.user.id).await?,
             "enabled": enabled
@@ -68,30 +155,10 @@ pub async fn handle(
     }
 
     if method == Method::POST && path == "/v1/agent-runtime/v4/tasks" {
-        if !enabled {
-            return Err(ApiError::coded(
-                StatusCode::CONFLICT,
-                "agent_runtime_unavailable",
-                "The durable agent runtime is not enabled for this user.",
-            ));
-        }
-        let input = read_json(headers, body, 64_000)?;
-        serde_json::from_value::<protocol::SubmitAgentTaskRequestV4>(input.clone()).map_err(
-            |_| ApiError::bad_request("invalid_agent_runtime_request", "Request data is invalid."),
-        )?;
-        let run = agent
-            .submit(
-                &current.user.id,
-                membership.plan.as_deref().unwrap_or("free"),
-                &input,
-            )
-            .await?;
-        let status = if run["newlyCreated"].as_bool() == Some(true) {
-            StatusCode::CREATED
-        } else {
-            StatusCode::OK
-        };
-        return Ok(Some(json_response(status, agent.project_v4_run(&run)?)?));
+        return Err(ApiError::conflict(
+            "protocol_upgrade_required",
+            "Runtime v4 is read-only history. Upgrade Tro to start a v5 task.",
+        ));
     }
 
     if method == Method::GET && path == "/v1/agent-runtime/v4/tasks" {
@@ -119,7 +186,7 @@ pub async fn handle(
                 run_id,
                 after_sequence(headers, uri)?,
                 state.shutdown.clone(),
-                true,
+                4,
             )?));
         }
         if method == Method::POST && operation == Some("cancel") {
@@ -133,7 +200,7 @@ pub async fn handle(
                 },
             )?;
             let run = agent
-                .cancel_v4(&current.user.id, run_id, &input)
+                .cancel_versioned(&current.user.id, run_id, &input)
                 .await?
                 .ok_or_else(not_found)?;
             return Ok(Some(json_response(StatusCode::OK, run)?));
@@ -165,7 +232,7 @@ pub async fn handle(
                 run_id,
                 after_sequence(headers, uri)?,
                 state.shutdown.clone(),
-                false,
+                0,
             )?));
         }
         if (method == Method::DELETE && operation.is_none())
@@ -223,8 +290,10 @@ pub async fn handle(
             "disconnect" => agent.disconnect(&current.user.id, worker).await?,
             "executing" => {
                 let input = read_json(headers, body, 1_000_000)?;
-                serde_json::from_value::<protocol::BeginDesktopExecutionRequestV4>(input.clone())
-                    .map_err(|_| {
+                serde_json::from_value::<protocol::v5::BeginDesktopExecutionRequestV5>(
+                    input.clone(),
+                )
+                .map_err(|_| {
                     ApiError::bad_request(
                         "invalid_agent_runtime_request",
                         "Request data is invalid.",
@@ -236,13 +305,21 @@ pub async fn handle(
             }
             "result" => {
                 let input = read_json(headers, body, 1_000_000)?;
+                serde_json::from_value::<protocol::v5::DesktopResultV5>(input.clone()).map_err(
+                    |_| {
+                        ApiError::bad_request(
+                            "invalid_agent_runtime_request",
+                            "Request data is invalid.",
+                        )
+                    },
+                )?;
                 agent
                     .record_result(&current.user.id, worker, &input)
                     .await?
             }
             "permission-wait" => {
                 let input = read_json(headers, body, 16_000)?;
-                serde_json::from_value::<protocol::PermissionWaitRequestV4>(input.clone())
+                serde_json::from_value::<protocol::v5::PermissionWaitRequestV5>(input.clone())
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
@@ -255,7 +332,7 @@ pub async fn handle(
             }
             "permission-decision" => {
                 let input = read_json(headers, body, 16_000)?;
-                serde_json::from_value::<protocol::PermissionDecisionRequestV4>(input.clone())
+                serde_json::from_value::<protocol::v5::PermissionDecisionRequestV5>(input.clone())
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
@@ -276,14 +353,26 @@ pub async fn handle(
 
 fn matches_agent_runtime(path: &str) -> bool {
     path == "/v1/agent-runtime/status"
+        || path.starts_with("/v1/agent-runtime/v5/")
         || path.starts_with("/v1/agent-runtime/v4/")
         || path == "/v1/tasks"
         || path.starts_with("/v1/tasks/")
         || path.starts_with("/v1/desktop-worker/")
 }
 
+fn v5_task_route(path: &str) -> ApiResult<Option<(Uuid, Option<&str>)>> {
+    versioned_task_route(path, "/v1/agent-runtime/v5/tasks/")
+}
+
 fn v4_task_route(path: &str) -> ApiResult<Option<(Uuid, Option<&str>)>> {
-    let Some(rest) = path.strip_prefix("/v1/agent-runtime/v4/tasks/") else {
+    versioned_task_route(path, "/v1/agent-runtime/v4/tasks/")
+}
+
+fn versioned_task_route<'a>(
+    path: &'a str,
+    prefix: &str,
+) -> ApiResult<Option<(Uuid, Option<&'a str>)>> {
+    let Some(rest) = path.strip_prefix(prefix) else {
         return Ok(None);
     };
     let mut parts = rest.split('/');
@@ -378,7 +467,7 @@ fn run_event_stream(
     run_id: Uuid,
     mut after: i64,
     shutdown: tokio_util::sync::CancellationToken,
-    v4: bool,
+    version: u8,
 ) -> ApiResult<Response> {
     let stream = stream! {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -388,10 +477,10 @@ fn run_event_stream(
                 () = shutdown.cancelled() => break,
                 _ = interval.tick() => {}
             }
-            let fetched = if v4 {
-                agent.events_v4(&user_id, run_id, after).await
-            } else {
-                agent.events(&user_id, run_id, after).await
+            let fetched = match version {
+                5 => agent.events_v5(&user_id, run_id, after).await,
+                4 => agent.events_v4(&user_id, run_id, after).await,
+                _ => agent.events(&user_id, run_id, after).await,
             };
             match fetched {
                 Ok(events) => {
@@ -400,7 +489,7 @@ fn run_event_stream(
                             after = sequence;
                         }
                         let id = event["sequence"].as_i64().unwrap_or(after);
-                        let kind = event.get(if v4 { "eventType" } else { "type" }).and_then(serde_json::Value::as_str).unwrap_or("run.event");
+                        let kind = event.get(if version > 0 { "eventType" } else { "type" }).and_then(serde_json::Value::as_str).unwrap_or("run.event");
                         match serde_json::to_string(&event) {
                             Ok(data) => yield Ok::<_, Infallible>(format!("id: {id}\nevent: {kind}\ndata: {data}\n\n")),
                             Err(_) => continue,

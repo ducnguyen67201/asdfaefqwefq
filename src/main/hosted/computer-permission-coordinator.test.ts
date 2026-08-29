@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 
 import { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 
 function invocation() {
   return {
-    protocolVersion: 4 as const,
+    protocolVersion: 5 as const,
     protocolDigest: manifest.protocolDigest,
     toolCatalogDigest: manifest.toolCatalogDigest,
     driverCatalogDigest: null,
@@ -21,7 +21,6 @@ function invocation() {
     permissionInteractionId: null,
     permissionRequirements: [],
     input: { reason: 'Observe the current app.' },
-    obligations: [],
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
 }

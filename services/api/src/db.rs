@@ -160,6 +160,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "remove agent approval policy",
             include_str!("../migrations/030_remove_agent_approval_policy.sql"),
         ),
+        migration(
+            31,
+            "OpenAI Agents SDK orchestrator",
+            include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

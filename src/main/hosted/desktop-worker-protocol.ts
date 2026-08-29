@@ -1,9 +1,9 @@
-import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 import {
-  AGENT_RUNTIME_PROTOCOL_VERSION,
-  DesktopWorkerCapabilitiesV4Schema,
-  type CuaDriverCatalogV4,
-  type DesktopWorkerCapabilitiesV4,
+  AGENT_RUNTIME_PROTOCOL_VERSION_V5,
+  DesktopWorkerCapabilitiesV5Schema,
+  type CuaDriverCatalogV5,
+  type DesktopWorkerCapabilitiesV5,
 } from '../../shared/agent-runtime-protocol';
 import {
   HOSTED_TOOL_CONTRACTS,
@@ -25,17 +25,17 @@ export function hostedToolMetadata(
 }
 
 export function desktopWorkerCapabilities(
-  registry: Pick<RuntimeToolRegistry, 'list'>,
-  cua: CuaDriverCatalogV4 | null = null,
-): DesktopWorkerCapabilitiesV4 {
+  registry: Pick<RuntimeToolRegistry, 'listRegistered'>,
+  cua: CuaDriverCatalogV5 | null = null,
+): DesktopWorkerCapabilitiesV5 {
   const local = new Map(
-    registry.list().map((definition) => [
+    registry.listRegistered().map((definition) => [
       definition.id,
       new Set(definition.operations),
     ]),
   );
-  return DesktopWorkerCapabilitiesV4Schema.parse({
-    protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION,
+  return DesktopWorkerCapabilitiesV5Schema.parse({
+    protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION_V5,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
     cua,

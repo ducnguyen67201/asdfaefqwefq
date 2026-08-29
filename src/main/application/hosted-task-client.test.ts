@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 
 import { HostedTaskClient, HostedTaskOutcomeUnknownError } from './hosted-task-client';
 
@@ -21,30 +21,18 @@ const record = {
   request: input.request,
   executionProfile: input.executionProfile,
   workspaceSelectionId: null,
-  protocolVersion: 4,
+  protocolVersion: 5,
   protocolDigest: manifest.protocolDigest,
   toolCatalogDigest: manifest.toolCatalogDigest,
-  outcomeRevision: 1,
-  publicSummary: 'Queued.',
+  publicSummary: 'Waiting for the OpenAI Agents SDK worker.',
   authorityContract: {
-    schemaVersion: 9,
+    schemaVersion: 10,
     id: '00000000-0000-4000-8000-000000000005',
     originalRequest: input.request,
-    runtimeKind: 'rust_hosted',
+    runtimeKind: 'openai_agents_sdk',
     executionProfile: input.executionProfile,
     workspaceSelectionId: null,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -54,11 +42,11 @@ const record = {
     },
   },
   projection: {
-    state: 'queued',
+    state: 'awaiting_orchestrator',
     runVersion: 1,
-    phase: 'ready',
+    phase: 'paused',
     terminal: false,
-    availableActions: ['cancel'],
+    availableActions: ['steer', 'cancel'],
     waitingOn: null,
     failure: null,
     cancellationSource: null,
@@ -154,7 +142,7 @@ describe('HostedTaskClient.list', () => {
     expect(runs[0]?.toolCatalogDigest).toBeUndefined();
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
-      'https://api.example.com/v1/agent-runtime/v4/tasks',
+      'https://api.example.com/v1/agent-runtime/v5/tasks',
       expect.any(Object),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
@@ -164,7 +152,7 @@ describe('HostedTaskClient.list', () => {
     );
   });
 
-  it('keeps canonical protocol-v4 digest validation strict', async () => {
+  it('keeps canonical protocol-v5 digest validation strict', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({

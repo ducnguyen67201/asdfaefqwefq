@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { GoalSpec, WorkspaceIdentity } from '../../shared/contracts';
+import type { WorkspaceIdentity } from '../../shared/contracts';
 import { createCuaSemanticToolDefinitions } from '../agent/cua-semantic-agent-tools';
-import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
+import {
+  RuntimeToolRegistry,
+  type TrustedToolExecutionContext,
+} from '../agent/runtime-tool-registry';
 import { createCuaDriverCatalog } from '../cua/cua-semantic-contracts';
 
 import { DesktopToolWorker } from './desktop-tool-worker';
@@ -15,7 +18,7 @@ import {
 
 function envelope(overrides: Record<string, unknown> = {}) {
   return {
-    protocolVersion: 4,
+    protocolVersion: 5,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
     driverCatalogDigest: null,
@@ -28,42 +31,20 @@ function envelope(overrides: Record<string, unknown> = {}) {
     permissionInteractionId: null,
     permissionRequirements: [],
     input: { application: 'chrome', reason: 'Open Chrome.' },
-    obligations: [],
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     ...overrides,
   };
 }
 
 function hostedGoal(
-  request: string,
+  _request: string,
   workspace: WorkspaceIdentity | null = null,
-): GoalSpec {
+): TrustedToolExecutionContext {
   return {
-    schemaVersion: 9,
-    id: randomUUID(),
-    originalRequest: request,
-    runtimeKind: 'rust_hosted',
-    executionProfile: workspace ? 'workspace' : 'everyday',
-    workspace,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
-    limits: {
-      maxImages: 20,
-      maxMicroUsd: 5_000_000,
-      maxMinutes: 30,
-      maxModelSamples: 40,
-      maxToolCalls: 30,
-    },
+    executionProfile: workspace ? 'workspace' : 'everyday',
+    taskId: randomUUID(),
+    workspace,
   };
 }
 
@@ -76,10 +57,9 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult,
       dispatcher: { dispatch: vi.fn() },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(input);
@@ -106,10 +86,9 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult,
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => true),
-      taskIdProvider: () => goal.id,
     });
 
     const first = await worker.handle(input);
@@ -126,10 +105,9 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => false),
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope());
@@ -146,10 +124,9 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => true),
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope());
@@ -175,11 +152,10 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       permissionCoordinator: { requireReady },
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => true),
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -208,7 +184,7 @@ describe('DesktopToolWorker', () => {
       dispatcher: {
         dispatch: vi.fn(async () => ({ status: 'confirmed' as const, summary: 'Sent.' })),
       },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       latestObservationProvider: () => ({
         capturedAt: new Date().toISOString(),
         coordinateSpace: {
@@ -221,7 +197,7 @@ describe('DesktopToolWorker', () => {
         fingerprint: 'a'.repeat(64),
         observationId,
         route: 'desktop_vision',
-        taskId: goal.id,
+        taskId: goal.taskId,
         text: 'A send button is visible.',
       }),
       permissionCoordinator: {
@@ -232,7 +208,6 @@ describe('DesktopToolWorker', () => {
       },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
     const result = await worker.handle(envelope({
       toolId: 'desktop.control',
@@ -263,7 +238,7 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       latestObservationProvider: () => ({
         capturedAt: new Date().toISOString(),
         coordinateSpace: {
@@ -276,7 +251,7 @@ describe('DesktopToolWorker', () => {
         fingerprint: 'a'.repeat(64),
         observationId,
         route: 'desktop_vision',
-        taskId: goal.id,
+        taskId: goal.taskId,
         text: 'A purchase button is visible.',
       }),
       permissionCoordinator: {
@@ -287,7 +262,6 @@ describe('DesktopToolWorker', () => {
       },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -317,7 +291,7 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       latestObservationProvider: () => ({
         capturedAt: new Date().toISOString(),
         degraded: false,
@@ -326,7 +300,7 @@ describe('DesktopToolWorker', () => {
         observationId,
         route: 'window_accessibility',
         surface: { application: 'Example', kind: 'native_app' },
-        taskId: goal.id,
+        taskId: goal.taskId,
         text: 'A delete button is visible.',
       }),
       permissionCoordinator: {
@@ -340,7 +314,6 @@ describe('DesktopToolWorker', () => {
         semanticAvailable: () => true,
       })),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -375,7 +348,7 @@ describe('DesktopToolWorker', () => {
           summary: 'Screen inspected.',
         })),
       },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       permissionCoordinator: {
         requireReady: vi.fn(async () => ({
           outcome: 'granted' as const,
@@ -384,7 +357,6 @@ describe('DesktopToolWorker', () => {
       },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -412,10 +384,9 @@ describe('DesktopToolWorker', () => {
       dispatcher: {
         dispatch: vi.fn(async () => ({ status: 'confirmed' as const, summary: 'Updated.' })),
       },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
     const result = await worker.handle(envelope({
       toolId: 'workspace.filesystem',
@@ -445,10 +416,9 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting,
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -502,7 +472,7 @@ describe('DesktopToolWorker', () => {
         executeCuaTool,
       },
       dispatcher: { dispatch },
-      goalProvider: () => goal,
+      executionContextProvider: () => goal,
       permissionCoordinator: {
         requireReady: vi.fn(async ({ invocation }) => ({
           outcome: 'granted' as const,
@@ -511,7 +481,6 @@ describe('DesktopToolWorker', () => {
       },
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => true),
-      taskIdProvider: () => goal.id,
     });
 
     const result = await worker.handle(envelope({
@@ -524,7 +493,7 @@ describe('DesktopToolWorker', () => {
     expect(result.status).toBe('confirmed');
     expect(dispatch).not.toHaveBeenCalled();
     expect(executeCuaTool).toHaveBeenCalledWith(
-      goal.id,
+      goal.taskId,
       'future_cua_action',
       { value: 'hello' },
       catalog.driverCatalogDigest,

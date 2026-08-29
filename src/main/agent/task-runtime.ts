@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
 import {
-  AgentTaskContractV9Schema,
+  AgentTaskContractV10Schema,
   RequestTaskInputSchema,
   RespondToInteractionRequestSchema,
   StartTaskRequestSchema,
   SubmitTaskRequestSchema,
   TaskSnapshotSchema,
   TaskUpdateSchema,
-  type HostedTaskAuthorityContract,
+  type HostedTaskAuthorityContractV10,
   type PendingInteraction,
   type TaskEvent,
   type TaskMessage,
@@ -20,7 +20,7 @@ import {
 const MAX_TASK_MESSAGES = 200;
 
 export interface HostedTaskProjectionOptions {
-  authority: HostedTaskAuthorityContract;
+  authority: HostedTaskAuthorityContractV10;
   taskId: string;
   workspace: WorkspaceIdentity | null;
 }
@@ -36,12 +36,12 @@ interface LocalEvent {
 }
 
 function projectAuthority(
-  authority: HostedTaskAuthorityContract,
+  authority: HostedTaskAuthorityContractV10,
   workspace: WorkspaceIdentity | null,
 ) {
   const projected: Record<string, unknown> = { ...authority };
   delete projected.workspaceSelectionId;
-  return AgentTaskContractV9Schema.parse({ ...projected, workspace });
+  return AgentTaskContractV10Schema.parse({ ...projected, workspace });
 }
 
 /**
@@ -95,15 +95,7 @@ export class TaskRuntime extends EventEmitter {
         completed: 0,
         limit: goal.limits.maxToolCalls,
       },
-      outcomes: {
-        contractRevision: goal.outcomeContract.revision,
-        criterionResults: goal.outcomeContract.criteria.map((criterion) => ({
-          criterionId: criterion.id,
-          status: 'pending',
-          evidenceIds: [],
-        })),
-        evidence: [],
-      },
+      outcomes: null,
       queuedSteering: [],
       runtimeResume: null,
       createdAt: timestamp,
@@ -146,42 +138,19 @@ export class TaskRuntime extends EventEmitter {
 
   synchronizeHostedAuthority(
     taskId: string,
-    authority: HostedTaskAuthorityContract,
+    authority: HostedTaskAuthorityContractV10,
   ): TaskSnapshot {
     const snapshot = this.getTask(taskId);
     const workspace =
-      snapshot.goal?.schemaVersion === 9 ? snapshot.goal.workspace : null;
+      snapshot.goal?.schemaVersion === 10 ? snapshot.goal.workspace : null;
     if (authority.workspaceSelectionId !== (workspace?.selectionId ?? null)) {
       throw new Error('The revised Rust authority changed the trusted workspace.');
     }
     const goal = projectAuthority(authority, workspace);
-    const previousResults = new Map(
-      snapshot.outcomes?.criterionResults.map((result) => [
-        result.criterionId,
-        result,
-      ]) ?? [],
-    );
-    const criterionIds = new Set(
-      goal.outcomeContract.criteria.map((criterion) => criterion.id),
-    );
     const next = TaskSnapshotSchema.parse({
       ...snapshot,
       goal,
-      outcomes: {
-        contractRevision: goal.outcomeContract.revision,
-        criterionResults: goal.outcomeContract.criteria.map(
-          (criterion) =>
-            previousResults.get(criterion.id) ?? {
-              criterionId: criterion.id,
-              status: 'pending',
-              evidenceIds: [],
-            },
-        ),
-        evidence:
-          snapshot.outcomes?.evidence.filter((evidence) =>
-            criterionIds.has(evidence.criterionId),
-          ) ?? [],
-      },
+      outcomes: null,
     });
     this.tasks.set(taskId, next);
     return next;

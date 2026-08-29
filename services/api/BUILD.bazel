@@ -26,7 +26,11 @@ rust_library(
     compile_data = glob([
         "admin-dist/**/*",
         "migrations/*.sql",
-    ]) + ["//protocol:agent_runtime_v4_contract"],
+    ]) + [
+        "//protocol:agent_orchestrator_v1_contract",
+        "//protocol:agent_runtime_v4_contract",
+        "//protocol:agent_runtime_v5_contract",
+    ],
     crate_name = "trocode_api",
     edition = crate_edition(),
     lint_config = ":rust_lints",
@@ -53,8 +57,12 @@ trocode_rust_integration_test(
     size = "small",
     src = "tests/agent_runtime_contract.rs",
     compile_data = [
+        "//:agent_orchestrator_v1_fixtures",
         "//:agent_runtime_v4_fixtures",
+        "//:agent_runtime_v5_fixtures",
+        "//protocol:agent_orchestrator_v1_contract",
         "//protocol:agent_runtime_v4_contract",
+        "//protocol:agent_runtime_v5_contract",
     ],
 )
 
@@ -62,6 +70,13 @@ trocode_rust_integration_test(
     name = "agent_runtime_compat_test",
     size = "large",
     src = "tests/agent_runtime_compat.rs",
+    tags = ["requires-postgres"],
+)
+
+trocode_rust_integration_test(
+    name = "agent_orchestrator_compat_test",
+    size = "large",
+    src = "tests/agent_orchestrator_compat.rs",
     tags = ["requires-postgres"],
 )
 
@@ -147,6 +162,7 @@ trocode_rust_integration_test(
 )
 
 RUST_TEST_TARGETS = [
+    ":agent_orchestrator_compat_test",
     ":agent_runtime_contract_test",
     ":agent_runtime_compat_test",
     ":api_lib_test",

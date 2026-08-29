@@ -3,11 +3,11 @@ use std::{collections::BTreeMap, sync::LazyLock};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::protocol::PROTOCOL_VERSION;
+use super::protocol::v5::PROTOCOL_VERSION;
 
 const CATALOG_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../protocol/agent-tools.v4.json"
+    "/../../protocol/agent-tools.v5.json"
 ));
 
 #[derive(Clone, Debug, Deserialize)]
@@ -61,6 +61,49 @@ static TOOLS_BY_MODEL_NAME: LazyLock<BTreeMap<String, HostedToolContract>> = Laz
 
 pub fn all() -> impl Iterator<Item = &'static HostedToolContract> {
     TOOLS_BY_ID.values()
+}
+
+#[must_use]
+pub fn allowed_by_contract(contract: &Value, tool_id: &str) -> bool {
+    match tool_id {
+        "workspace.filesystem" | "workspace.terminal" => {
+            contract.get("executionProfile").and_then(Value::as_str) == Some("workspace")
+                && !contract
+                    .get("workspaceSelectionId")
+                    .is_none_or(Value::is_null)
+        }
+        "knowledge.search" => !contract.get("activity").is_none_or(Value::is_null),
+        "activity.signal" => contract
+            .get("activity")
+            .filter(|activity| !activity.is_null())
+            .is_some_and(|activity| {
+                activity.get("insightPolicy").and_then(Value::as_str) == Some("evidence_candidates")
+                    && activity.get("policyAcknowledged").and_then(Value::as_bool) == Some(true)
+            }),
+        _ => true,
+    }
+}
+
+#[must_use]
+pub fn advertised_by_desktop(capabilities: &Value, tool: &HostedToolContract) -> bool {
+    capabilities
+        .get("tools")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                item.get("toolId").and_then(Value::as_str) == Some(tool.tool_id.as_str())
+                    && item
+                        .get("operations")
+                        .and_then(Value::as_array)
+                        .is_some_and(|operations| {
+                            tool.operations.iter().all(|operation| {
+                                operations
+                                    .iter()
+                                    .any(|value| value.as_str() == Some(operation))
+                            })
+                        })
+            })
+        })
 }
 
 #[must_use]
@@ -126,96 +169,18 @@ pub fn resolve_operation(tool: &HostedToolContract, input: &Value) -> Result<Str
 }
 
 pub fn validate_model_arguments(schema: &Value, input: &Value) -> Result<(), &'static str> {
-    if let Some(constant) = schema.get("const")
-        && input != constant
-    {
-        return Err("model argument does not match const");
-    }
-    if let Some(values) = schema.get("enum").and_then(Value::as_array)
-        && !values.contains(input)
-    {
-        return Err("model argument is outside enum");
-    }
-    if let Some(alternatives) = schema.get("anyOf").and_then(Value::as_array) {
-        return alternatives
-            .iter()
-            .any(|alternative| validate_model_arguments(alternative, input).is_ok())
-            .then_some(())
-            .ok_or("model argument matches no anyOf branch");
-    }
-    match schema.get("type").and_then(Value::as_str) {
-        Some("object") => {
-            let object = input
-                .as_object()
-                .ok_or("model argument must be an object")?;
-            let properties = schema
-                .get("properties")
-                .and_then(Value::as_object)
-                .ok_or("object schema properties are missing")?;
-            if schema.get("additionalProperties") == Some(&Value::Bool(false))
-                && object.keys().any(|key| !properties.contains_key(key))
-            {
-                return Err("model argument has an unknown property");
-            }
-            for required in schema
-                .get("required")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-            {
-                if !object.contains_key(required) {
-                    return Err("model argument is missing a required property");
-                }
-            }
-            for (name, value) in object {
-                if let Some(property_schema) = properties.get(name) {
-                    validate_model_arguments(property_schema, value)?;
-                }
-            }
-            Ok(())
-        }
-        Some("array") => {
-            let array = input.as_array().ok_or("model argument must be an array")?;
-            if let Some(items) = schema.get("items") {
-                for item in array {
-                    validate_model_arguments(items, item)?;
-                }
-            }
-            Ok(())
-        }
-        Some("string") => input
-            .is_string()
-            .then_some(())
-            .ok_or("model argument must be a string"),
-        Some("integer") => input
-            .as_i64()
-            .is_some()
-            .then_some(())
-            .ok_or("model argument must be an integer"),
-        Some("number") => input
-            .as_f64()
-            .is_some()
-            .then_some(())
-            .ok_or("model argument must be a number"),
-        Some("boolean") => input
-            .is_boolean()
-            .then_some(())
-            .ok_or("model argument must be a boolean"),
-        Some("null") => input
-            .is_null()
-            .then_some(())
-            .ok_or("model argument must be null"),
-        None => Ok(()),
-        Some(_) => Err("model argument schema type is unsupported"),
-    }
+    let validator = jsonschema::validator_for(schema)
+        .map_err(|_| "generated model argument schema is invalid")?;
+    validator
+        .validate(input)
+        .map_err(|_| "model arguments do not match the generated schema")
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{all, by_model_name, resolve_operation};
+    use super::{all, by_model_name, resolve_operation, validate_model_arguments};
 
     #[test]
     fn generated_catalog_is_strict_and_resolves_open_url() {
@@ -232,6 +197,13 @@ mod tests {
             Ok("open_url".to_owned())
         );
         assert!(tool.prerequisites.is_empty());
+        assert!(
+            validate_model_arguments(
+                &tool.parameters,
+                &json!({"url":"https://youtube.com","reason":"x".repeat(501)})
+            )
+            .is_err()
+        );
 
         let workspace = by_model_name("workspace_filesystem").expect("workspace contract");
         assert_eq!(

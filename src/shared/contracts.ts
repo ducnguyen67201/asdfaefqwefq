@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   AgentRunProjectionV4Schema,
+  AgentRunProjectionV5Schema,
   CancellationSourceV4Schema,
 } from './agent-runtime-protocol';
 import {
@@ -374,7 +375,10 @@ export const AgentTaskContractV4Schema = z.object({
   }),
 });
 
-export const AgentRuntimeKindSchema = z.literal('rust_hosted');
+export const AgentRuntimeKindSchema = z.enum([
+  'rust_hosted',
+  'openai_agents_sdk',
+]);
 
 export const ExecutionProfileSchema = z.enum(['everyday', 'workspace']);
 
@@ -888,6 +892,20 @@ export const AgentTaskContractV9Schema = z
   .strict()
   .superRefine(validateWorkspaceContract);
 
+export const AgentTaskContractV10Schema = z
+  .object({
+    schemaVersion: z.literal(10),
+    id: z.string().uuid(),
+    originalRequest: z.string().min(2).max(8_000),
+    runtimeKind: z.literal('openai_agents_sdk'),
+    executionProfile: ExecutionProfileSchema,
+    workspace: WorkspaceIdentitySchema.nullable(),
+    activity: ActivityContextSchema.nullable(),
+    limits: AgentTaskContractV4Schema.shape.limits,
+  })
+  .strict()
+  .superRefine(validateWorkspaceContract);
+
 function normalizeLegacyGoal(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   const goal = value as Record<string, unknown>;
@@ -916,6 +934,7 @@ export const TaskContractSchema = z.preprocess(
     AgentTaskContractV7Schema,
     AgentTaskContractV8Schema,
     AgentTaskContractV9Schema,
+    AgentTaskContractV10Schema,
   ]),
 );
 
@@ -1116,7 +1135,10 @@ export const TaskSnapshotSchema = z
     taskId: z.string().uuid(),
     request: z.string().min(2).max(8_000),
     phase: TaskPhaseSchema,
-    lifecycle: AgentRunProjectionV4Schema.nullable().optional(),
+    lifecycle: z
+      .union([AgentRunProjectionV4Schema, AgentRunProjectionV5Schema])
+      .nullable()
+      .optional(),
     goal: GoalSpecSchema.nullable(),
     messages: z.array(TaskMessageSchema).max(200),
     pendingInteraction: PendingInteractionSchema.nullable(),
@@ -1951,6 +1973,8 @@ export const TaskHistorySchema = z.object({
 
 export const HostedTaskStateSchema = z.enum([
   'queued',
+  'awaiting_orchestrator',
+  'running',
   'compiling_outcomes',
   'planning',
   'awaiting_worker',
@@ -2007,7 +2031,7 @@ export const DisconnectConnectorRequestSchema = z.object({
   connectionId: z.string().uuid(),
 }).strict();
 
-export const HostedTaskAuthorityContractSchema = z
+const HostedTaskAuthorityContractV9Schema = z
   .object({
     schemaVersion: z.literal(9),
     id: z.string().uuid(),
@@ -2020,6 +2044,24 @@ export const HostedTaskAuthorityContractSchema = z
     limits: AgentTaskContractV4Schema.shape.limits,
   })
   .strict();
+
+export const HostedTaskAuthorityContractV10Schema = z
+  .object({
+    schemaVersion: z.literal(10),
+    id: z.string().uuid(),
+    originalRequest: z.string().min(2).max(8_000),
+    runtimeKind: z.literal('openai_agents_sdk'),
+    executionProfile: ExecutionProfileSchema,
+    workspaceSelectionId: z.string().uuid().nullable(),
+    activity: ActivityContextSchema.nullable(),
+    limits: AgentTaskContractV4Schema.shape.limits,
+  })
+  .strict();
+
+export const HostedTaskAuthorityContractSchema = z.union([
+  HostedTaskAuthorityContractV9Schema,
+  HostedTaskAuthorityContractV10Schema,
+]);
 
 const LegacyHostedDigestSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
@@ -2045,15 +2087,15 @@ const CurrentHostedTaskRecordSchema = z
     protocolDigest: LegacyHostedDigestSchema,
     toolCatalogDigest: LegacyHostedDigestSchema,
     runVersion: z.number().int().positive(),
-    outcomeRevision: z.number().int().positive(),
+    outcomeRevision: z.number().int().positive().optional(),
     contractSchemaVersion: z
-      .union([z.literal(7), z.literal(8), z.literal(9)])
+      .union([z.literal(7), z.literal(8), z.literal(9), z.literal(10)])
       .optional(),
     outcomeContract: OutcomeContractSchema.optional(),
     contract: HostedTaskAuthorityContractSchema.optional(),
     activity: ActivityContextSchema.nullable().optional(),
     publicSummary: z.string().max(1_000),
-    lifecycle: AgentRunProjectionV4Schema.optional(),
+    lifecycle: z.union([AgentRunProjectionV4Schema, AgentRunProjectionV5Schema]).optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     newlyCreated: z.boolean().optional(),
@@ -2109,7 +2151,7 @@ export const HostedTaskEventSchema = z
       .max(20)
       .optional(),
     createdAt: z.string().datetime(),
-    lifecycle: AgentRunProjectionV4Schema.optional(),
+    lifecycle: z.union([AgentRunProjectionV4Schema, AgentRunProjectionV5Schema]).optional(),
   })
   .strict();
 
@@ -3171,7 +3213,7 @@ export type Domain = z.infer<typeof DomainSchema>;
 export type GoalSpec = z.infer<typeof GoalSpecSchema>;
 export type GetUsageBudgetRequest = z.infer<typeof GetUsageBudgetRequestSchema>;
 export type TaskContract = z.infer<typeof TaskContractSchema>;
-export type AgentTaskContract = z.infer<typeof AgentTaskContractV9Schema>;
+export type AgentTaskContract = z.infer<typeof AgentTaskContractV10Schema>;
 export type ExecutableAgentTaskContract = AgentTaskContract;
 export type ActivityContext = z.infer<typeof ActivityContextSchema>;
 export type ClassroomDirective = z.infer<typeof ClassroomDirectiveSchema>;
@@ -3268,6 +3310,9 @@ export type ConnectorAttemptRequest = z.infer<typeof ConnectorAttemptRequestSche
 export type DisconnectConnectorRequest = z.infer<typeof DisconnectConnectorRequestSchema>;
 export type HostedTaskAuthorityContract = z.infer<
   typeof HostedTaskAuthorityContractSchema
+>;
+export type HostedTaskAuthorityContractV10 = z.infer<
+  typeof HostedTaskAuthorityContractV10Schema
 >;
 export type LegacyHostedDesktopInvocationV2 = z.infer<
   typeof LegacyHostedDesktopInvocationV2Schema

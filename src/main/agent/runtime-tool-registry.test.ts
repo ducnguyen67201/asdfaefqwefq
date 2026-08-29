@@ -10,10 +10,10 @@ import {
 
 function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_candidates') {
   return {
-    schemaVersion: 9 as const,
+    schemaVersion: 10 as const,
     id: randomUUID(),
     originalRequest: 'Help with the Activity',
-    runtimeKind: 'rust_hosted' as const,
+    runtimeKind: 'openai_agents_sdk' as const,
     executionProfile: 'everyday' as const,
     workspace: null,
     activity: {
@@ -32,17 +32,6 @@ function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_cand
       insightPolicyVersion: '1', policyAcknowledged: insightPolicy === 'evidence_candidates',
       sourceCatalog: [{ title: 'Runbook', role: 'reference' as const }],
       priorProgress: { completedCriterionIds: [], sessionCount: 0, summary: 'No prior Work Sessions.' },
-    },
-    outcomeContract: {
-      schemaVersion: 1 as const,
-      revision: 1,
-      completionMode: 'all_required' as const,
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output' as const, constraints: [] },
-      }],
     },
     limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
   };
@@ -65,9 +54,21 @@ describe('RuntimeToolRegistry', () => {
 
   it('exposes knowledge and evidence tools only for the trusted Activity policy', () => {
     const registry = new RuntimeToolRegistry();
+    const explicitGoal = activityGoal('explicit_and_operational');
+    const evidenceGoal = activityGoal('evidence_candidates');
     const normal = registry.modelVisibleSpecs({ taskId: randomUUID() }).map((tool) => tool.name);
-    const explicit = registry.modelVisibleSpecs({ goal: activityGoal('explicit_and_operational'), taskId: randomUUID() }).map((tool) => tool.name);
-    const evidence = registry.modelVisibleSpecs({ goal: activityGoal('evidence_candidates'), taskId: randomUUID() }).map((tool) => tool.name);
+    const explicit = registry.modelVisibleSpecs({
+      activity: explicitGoal.activity,
+      executionProfile: explicitGoal.executionProfile,
+      taskId: randomUUID(),
+      workspace: explicitGoal.workspace,
+    }).map((tool) => tool.name);
+    const evidence = registry.modelVisibleSpecs({
+      activity: evidenceGoal.activity,
+      executionProfile: evidenceGoal.executionProfile,
+      taskId: randomUUID(),
+      workspace: evidenceGoal.workspace,
+    }).map((tool) => tool.name);
     expect(normal).not.toContain('search_activity_knowledge');
     expect(normal).not.toContain('record_activity_signal');
     expect(explicit).toContain('search_activity_knowledge');

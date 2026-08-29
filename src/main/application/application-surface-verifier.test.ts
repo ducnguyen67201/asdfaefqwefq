@@ -43,15 +43,12 @@ describe('ApplicationSurfaceVerifier', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([visible]);
     const result = await timedVerifier(query).verify(
-      randomUUID(),
-      'chrome-surface-visible',
       receipt(),
       new AbortController().signal,
     );
     expect(result).toMatchObject({
       status: 'confirmed',
-      evidence: {
-        source: 'fresh_observation',
+      observation: {
         observationId: visible.observationId,
       },
     });
@@ -59,8 +56,6 @@ describe('ApplicationSurfaceVerifier', () => {
 
   it('returns unknown when no surface appears before the deadline', async () => {
     const result = await timedVerifier(async () => []).verify(
-      randomUUID(),
-      'chrome-surface-visible',
       receipt(),
       new AbortController().signal,
     );
@@ -70,8 +65,6 @@ describe('ApplicationSurfaceVerifier', () => {
 
   it('returns unknown when matching surfaces remain ambiguous', async () => {
     const result = await timedVerifier(async () => [surface(), surface()]).verify(
-      randomUUID(),
-      'chrome-surface-visible',
       receipt(),
       new AbortController().signal,
     );
@@ -84,8 +77,6 @@ describe('ApplicationSurfaceVerifier', () => {
     controller.abort();
     await expect(
       timedVerifier(async () => []).verify(
-        randomUUID(),
-        'chrome-surface-visible',
         receipt(),
         controller.signal,
       ),

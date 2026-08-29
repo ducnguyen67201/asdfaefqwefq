@@ -9,8 +9,10 @@ tool catalog and the host account's capabilities as the action boundary.
 - The Electron renderer is sandboxed and has no Node integration.
 - Preload exposes narrow, schema-parsed functions; it does not expose raw IPC,
   CUA, OAuth tokens, provider credentials, or a generic command channel.
-- Rust owns task lifecycle, contracts, budgets, durable invocations, leases,
-  results, and verification.
+- The OpenAI Agents SDK worker owns planning, continuation, tool choice, and
+  final-output detection. It has no database or provider credential.
+- Rust owns authentication, task lifecycle, authority scope, budgets, encrypted
+  Session/checkpoint storage, durable invocations, leases, and provider proxying.
 - Electron owns local native handles and revalidates inputs immediately before
   local execution.
 - Models and connector/browser content are untrusted. They cannot register a
@@ -18,8 +20,8 @@ tool catalog and the host account's capabilities as the action boundary.
 
 ## Retained controls
 
-- Exact runtime v4 protocol, base catalog, and per-worker CUA catalog digest
-  negotiation.
+- Exact runtime v5/public catalog, private orchestrator, SDK/graph, and per-worker
+  CUA catalog digest negotiation.
 - Strict Tro tool parsing plus schema-bound CUA tool discovery and dispatch.
 - Public credential-free HTTPS validation for direct browser navigation.
 - Canonical selected-workspace identity and filesystem path/symlink checks.
@@ -57,10 +59,16 @@ approval prompt or retry it as a different action.
 
 ## Deployment
 
-New task execution is runtime v4 only. Cleanup migration 030 first asserts that
-no nonterminal run or legacy approval wait exists. It never converts historical
-pending work into execution. Operators must drain or cancel active work under
-the old release before applying the cleanup.
+New task execution is runtime v5/authority v10 only. Migration 031 first asserts
+that no legacy run is nonterminal, then adds SDK graph/session/worker metadata.
+It never converts historical work into SDK execution. Operators must drain or
+cancel active v2-v4 work under the old release before applying it.
+
+Only Rust receives `OPENAI_API_KEY`, database credentials, connector tokens, and
+user authentication. The SDK worker receives a private Rust URL and a dedicated
+orchestrator bearer token. Private routes reject browser origins, validate strict
+schemas, derive user/plan/task identity from the leased run, and never accept
+price or authority claims from the worker.
 
 Backend-agent canary runs are a separate, explicit privacy path: task text and
 bounded tool results are processed by Railway and short-lived operational state
@@ -110,7 +118,9 @@ Do not ship a shared model-provider API key inside the renderer, Electron main,
 or application bundle. Production OpenAI and optional ElevenLabs keys are
 injected into the Railway API only. Electron sends its opaque device session to
 fixed, HTTPS provider-proxy endpoints; provider credentials never reach the
-desktop. Responses streaming is SDK-driven behind the host broker. Voice audio
+desktop. Agents SDK model and compaction requests use bounded non-streaming
+Responses calls behind the host broker so each request digest can be committed
+to the no-replay ledger before any bytes return to the worker. Voice audio
 crosses the narrow preload boundary only as a schema-bounded base64 PCM WAV
 segment with UUIDs, sequence, and claimed duration. The hosted API parses mono,
 16 kHz, PCM16 WAV structure and authoritative duration before reserving spend;

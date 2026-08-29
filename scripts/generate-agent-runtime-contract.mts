@@ -7,6 +7,14 @@ import { z } from 'zod';
 
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION,
+  AGENT_RUNTIME_PROTOCOL_VERSION_V5,
+  AgentRunActionV5Schema,
+  AgentRunFailureCodeV5Schema,
+  AgentRunFailureStageV5Schema,
+  AgentRunPhaseV5Schema,
+  AgentRunStateV5Schema,
+  AgentRuntimeErrorCodeV5Schema,
+  AgentRuntimeProtocolDocumentV5Schema,
   AgentRunActionV4Schema,
   AgentRunFailureCodeV4Schema,
   AgentRunFailureStageV4Schema,
@@ -16,7 +24,9 @@ import {
   AgentRuntimeProtocolDocumentV4Schema,
   AgentRuntimeRolloutModeV4Schema,
   CancellationSourceV4Schema,
+  CancellationSourceV5Schema,
   ComputerPermissionV4Schema,
+  ComputerPermissionV5Schema,
 } from '../src/shared/agent-runtime-protocol.ts';
 import {
   HOSTED_TOOL_CONTRACTS,
@@ -79,10 +89,32 @@ const toolCatalogDocument = {
   tools,
 };
 
+const schemaV5 = z.toJSONSchema(AgentRuntimeProtocolDocumentV5Schema, {
+  target: 'draft-2020-12',
+  unrepresentable: 'throw',
+  cycles: 'ref',
+  reused: 'inline',
+  io: 'input',
+});
+const schemaDocumentV5 = {
+  ...schemaV5,
+  $id: 'https://tro.app/protocol/agent-runtime.v5.schema.json',
+  title: 'Tro canonical agent runtime protocol v5',
+};
+delete (schemaDocumentV5 as Record<string, unknown>)['~standard'];
+const toolCatalogDocumentV5 = {
+  schemaVersion: AGENT_RUNTIME_PROTOCOL_VERSION_V5,
+  tools,
+};
+
 const schemaContent = jsonBytes(schemaDocument);
 const toolCatalogContent = jsonBytes(toolCatalogDocument);
 const protocolDigest = digest(schemaContent);
 const toolCatalogDigest = digest(toolCatalogContent);
+const schemaContentV5 = jsonBytes(schemaDocumentV5);
+const toolCatalogContentV5 = jsonBytes(toolCatalogDocumentV5);
+const protocolDigestV5 = digest(schemaContentV5);
+const toolCatalogDigestV5 = digest(toolCatalogContentV5);
 
 const manifestDocument = {
   schemaVersion: AGENT_RUNTIME_PROTOCOL_VERSION,
@@ -131,6 +163,48 @@ const openUrlFixture = {
   },
 };
 
+const manifestDocumentV5 = {
+  schemaVersion: AGENT_RUNTIME_PROTOCOL_VERSION_V5,
+  generatorVersion: 1,
+  protocolDigest: protocolDigestV5,
+  toolCatalogDigest: toolCatalogDigestV5,
+  sourceFiles: [
+    'src/shared/agent-runtime-protocol.ts',
+    'src/shared/agent-tool-contracts.ts',
+  ],
+  inventories: {
+    actions: AgentRunActionV5Schema.options,
+    cancellationSources: CancellationSourceV5Schema.options,
+    errorCodes: AgentRuntimeErrorCodeV5Schema.options,
+    failureCodes: AgentRunFailureCodeV5Schema.options,
+    failureStages: AgentRunFailureStageV5Schema.options,
+    phases: AgentRunPhaseV5Schema.options,
+    permissions: ComputerPermissionV5Schema.options,
+    rolloutModes: ['enforce'],
+    states: AgentRunStateV5Schema.options,
+    toolIds: tools.map((tool) => tool.toolId),
+  },
+};
+
+const validStatusFixtureV5 = {
+  protocolVersion: 5,
+  protocolDigest: protocolDigestV5,
+  toolCatalogDigest: toolCatalogDigestV5,
+  supportedReadVersions: [2, 3, 4, 5],
+  supportedStartVersions: [5],
+  rolloutMode: 'enforce',
+  workerRequired: true,
+  enabled: true,
+};
+
+const openUrlFixtureV5 = {
+  ...openUrlFixture,
+  expected: {
+    ...openUrlFixture.expected,
+    protocolVersion: 5,
+  },
+};
+
 const outputs = new Map<string, string>([
   ['protocol/agent-runtime.v4.schema.json', schemaContent],
   ['protocol/agent-tools.v4.json', toolCatalogContent],
@@ -149,6 +223,24 @@ const outputs = new Map<string, string>([
   [
     'test/fixtures/agent-runtime-v4/open-url.valid.json',
     jsonBytes(openUrlFixture),
+  ],
+  ['protocol/agent-runtime.v5.schema.json', schemaContentV5],
+  ['protocol/agent-tools.v5.json', toolCatalogContentV5],
+  [
+    'protocol/agent-runtime.v5.manifest.json',
+    jsonBytes(manifestDocumentV5),
+  ],
+  [
+    'test/fixtures/agent-runtime-v5/status.valid.json',
+    jsonBytes(validStatusFixtureV5),
+  ],
+  [
+    'test/fixtures/agent-runtime-v5/status.unknown-field.invalid.json',
+    jsonBytes({ ...validStatusFixtureV5, guessedState: true }),
+  ],
+  [
+    'test/fixtures/agent-runtime-v5/open-url.valid.json',
+    jsonBytes(openUrlFixtureV5),
   ],
 ]);
 
