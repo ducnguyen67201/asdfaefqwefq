@@ -358,7 +358,7 @@ describe('registerGlobalVoiceShortcut', () => {
 });
 
 describe('registerGlobalVoiceModeToggleShortcut', () => {
-  it('delivers Command+Backslash to an unfocused macOS renderer once', () => {
+  it('delivers Command+Backslash once per press', () => {
     const callbacks = new Map<string, () => void>();
     const registry = {
       register: vi.fn((accelerator: string, callback: () => void) => {
@@ -372,7 +372,6 @@ describe('registerGlobalVoiceModeToggleShortcut', () => {
     const unregister = registerGlobalVoiceModeToggleShortcut({
       getTarget: () => ({
         isDestroyed: () => false,
-        isFocused: () => false,
         webContents: { send },
       }),
       now: () => now,
@@ -400,7 +399,7 @@ describe('registerGlobalVoiceModeToggleShortcut', () => {
     );
   });
 
-  it('leaves focused, destroyed, and missing targets to existing handlers', () => {
+  it('delivers the registered shortcut while the target is focused', () => {
     const callbacks = new Map<string, () => void>();
     const registry = {
       register: vi.fn((accelerator: string, callback: () => void) => {
@@ -410,14 +409,42 @@ describe('registerGlobalVoiceModeToggleShortcut', () => {
       unregister: vi.fn(),
     };
     const send = vi.fn();
-    let targetState: 'destroyed' | 'focused' | 'missing' = 'focused';
+    const focusedTarget = {
+      isDestroyed: () => false,
+      isFocused: () => true,
+      webContents: { send },
+    };
+    registerGlobalVoiceModeToggleShortcut({
+      getTarget: () => focusedTarget,
+      platform: 'darwin',
+      registry,
+    });
+
+    callbacks.get(MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT)?.();
+
+    expect(send).toHaveBeenCalledWith(
+      IPC_CHANNELS.voiceModeToggleRequested,
+      { source: 'global' },
+    );
+  });
+
+  it('ignores destroyed and missing targets', () => {
+    const callbacks = new Map<string, () => void>();
+    const registry = {
+      register: vi.fn((accelerator: string, callback: () => void) => {
+        callbacks.set(accelerator, callback);
+        return true;
+      }),
+      unregister: vi.fn(),
+    };
+    const send = vi.fn();
+    let targetState: 'destroyed' | 'missing' = 'destroyed';
     registerGlobalVoiceModeToggleShortcut({
       getTarget: () =>
         targetState === 'missing'
           ? null
           : {
-              isDestroyed: () => targetState === 'destroyed',
-              isFocused: () => targetState === 'focused',
+              isDestroyed: () => true,
               webContents: { send },
             },
       platform: 'win32',
@@ -425,8 +452,6 @@ describe('registerGlobalVoiceModeToggleShortcut', () => {
     });
 
     const trigger = callbacks.get(WINDOWS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT);
-    trigger?.();
-    targetState = 'destroyed';
     trigger?.();
     targetState = 'missing';
     trigger?.();
