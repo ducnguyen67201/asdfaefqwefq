@@ -232,7 +232,8 @@ fn build_reliability_report(
             baseline.cancellation_p95_ms,
             candidate.cancellation_p95_ms,
         ) {
-            (_, None) => true,
+            (None, None) => true,
+            (Some(_), None) => false,
             (Some(baseline), Some(candidate)) => candidate <= baseline.max(1_000.0),
             (None, Some(candidate)) => candidate <= 1_000.0,
         },
@@ -709,6 +710,16 @@ mod tests {
         let report = build_reliability_report(&[baseline], &[candidate]).expect("report");
         assert!(!report.gates.cancellation_responsiveness);
         assert!(!report.gates.unknown_effect_retries);
+        assert!(!report.passed);
+    }
+
+    #[test]
+    fn reliability_rejects_missing_candidate_cancellation_measurements() {
+        let baseline = reliability_scenario();
+        let mut candidate = reliability_scenario();
+        candidate.cancellation_latency_ms = None;
+        let report = build_reliability_report(&[baseline], &[candidate]).expect("report");
+        assert!(!report.gates.cancellation_responsiveness);
         assert!(!report.passed);
     }
 

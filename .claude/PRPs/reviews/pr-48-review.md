@@ -55,6 +55,13 @@ original strict JSON object to the service. The same preservation rule is used
 for v4 cancellation, execution claims, and permission transitions. The exact
 CI HTTP compatibility test passes against a disposable PostgreSQL 17 database.
 
+### P2 — Missing candidate cancellation measurements passed the reliability gate — resolved
+
+When the baseline contained cancellation measurements but the candidate omitted
+all of them, the cancellation-responsiveness gate treated the missing candidate
+summary as passing. The gate now fails when a measured baseline is compared with
+an unmeasured candidate, with a regression test covering the omitted-metric case.
+
 ### P2 — Generated v4 JSON had platform-dependent line endings — resolved
 
 The repository normalized v3 fixtures but not the new v4 fixture directory.
