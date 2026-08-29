@@ -56,4 +56,23 @@ describe('VoiceIslandContent', () => {
     expect(markup).toContain('Text kept in your Tro draft.');
     expect(markup).not.toContain('do not render me');
   });
+
+  it('confirms the selected mode without showing a listening meter', () => {
+    const markup = renderToStaticMarkup(
+      <VoiceIslandContent
+        activity={{
+          appLanguage: 'en',
+          destination: { kind: 'task', label: 'Tro task' },
+          mode: 'task',
+          phase: 'mode_selected',
+          transcript: '',
+        }}
+      />,
+    );
+
+    expect(markup).toContain('voice-island--mode_selected');
+    expect(markup).toContain('Ask Tro selected');
+    expect(markup).toContain('Ready for your next voice shortcut.');
+    expect(markup).not.toContain('voice-island__meter');
+  });
 });

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -75,5 +78,22 @@ describe('VoiceModeControl', () => {
     expect(voiceModeToggleShortcutDescriptor('unsupported')).toBeNull();
     expect(nextVoiceMode('dictation')).toBe('task');
     expect(nextVoiceMode('task')).toBe('dictation');
+  });
+
+  it('keeps the task composer voice controls bounded by responsive CSS constraints', () => {
+    const css = readFileSync(resolve(__dirname, '../index.css'), 'utf8');
+
+    expect(css).toContain('container-name: task-composer;');
+    expect(css).toContain('container-type: inline-size;');
+    expect(css).toContain(
+      'grid-template-columns: minmax(160px, 0.38fr) minmax(0, 1fr);',
+    );
+    expect(css).toContain(
+      'grid-template-columns: minmax(92px, 110px) minmax(0, 1fr);',
+    );
+    expect(css).toContain('flex-wrap: wrap;');
+    expect(css).toContain('@container task-composer (max-width: 700px)');
+    expect(css).toContain('@container task-composer (max-width: 620px)');
+    expect(css).toContain('@container task-composer (max-width: 440px)');
   });
 });

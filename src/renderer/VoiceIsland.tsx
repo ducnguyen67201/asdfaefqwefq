@@ -11,6 +11,8 @@ function voiceActivityLabel(
 ): string {
   if (mode === 'task') {
     switch (phase) {
+      case 'mode_selected':
+        return translate(appLanguage, 'Ask Tro selected');
       case 'requesting_permission':
         return translate(appLanguage, 'Preparing voice Task');
       case 'listening':
@@ -26,6 +28,8 @@ function voiceActivityLabel(
     }
   }
   switch (phase) {
+    case 'mode_selected':
+      return translate(appLanguage, 'Write my words selected');
     case 'requesting_permission':
       return translate(appLanguage, 'Preparing Dictation');
     case 'listening':
@@ -46,6 +50,8 @@ function voiceActivityPlaceholder(
   appLanguage: CompanionVoiceActivity['appLanguage'],
 ): string {
   switch (phase) {
+    case 'mode_selected':
+      return translate(appLanguage, 'Ready for your next voice shortcut.');
     case 'requesting_permission':
       return translate(appLanguage, 'Waiting for microphone access…');
     case 'listening':
@@ -62,7 +68,7 @@ function voiceActivityPlaceholder(
 }
 
 function DictationIcon({ phase }: { phase: CompanionVoiceActivity['phase'] }) {
-  if (phase === 'complete') {
+  if (phase === 'complete' || phase === 'mode_selected') {
     return <svg viewBox="0 0 24 24"><path d="m5 12.5 4.2 4.2L19 7" /></svg>;
   }
   if (phase === 'error') {
@@ -85,7 +91,10 @@ export function VoiceIslandContent({
 }: {
   activity: CompanionVoiceActivity;
 }) {
-  const terminal = activity.phase === 'complete' || activity.phase === 'error';
+  const terminal =
+    activity.phase === 'mode_selected' ||
+    activity.phase === 'complete' ||
+    activity.phase === 'error';
   const transcript = terminal ? '' : activity.transcript.trim();
   const detail =
     activity.message?.trim() ||

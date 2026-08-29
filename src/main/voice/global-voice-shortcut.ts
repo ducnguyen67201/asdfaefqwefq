@@ -1,9 +1,15 @@
 import { spawn } from 'node:child_process';
 
-import type { VoiceShortcutEvent } from '../../shared/contracts';
+import type {
+  VoiceModeToggleEvent,
+  VoiceShortcutEvent,
+} from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 
 export const WINDOWS_GLOBAL_VOICE_SHORTCUT = 'Control+Alt+Space';
+export const MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT = 'Command+\\';
+export const WINDOWS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT = 'Control+\\';
+const VOICE_MODE_TOGGLE_REPEAT_GUARD_MS = 500;
 const WINDOWS_KEY_RELEASE_POLL_INTERVAL_MS = 30;
 const WINDOWS_KEY_RELEASE_POLL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -48,6 +54,14 @@ interface VoiceShortcutTarget {
   };
 }
 
+interface VoiceModeToggleTarget {
+  isDestroyed(): boolean;
+  isFocused(): boolean;
+  webContents: {
+    send(channel: string, value: VoiceModeToggleEvent): void;
+  };
+}
+
 interface GlobalVoiceShortcutOptions {
   getTarget(): VoiceShortcutTarget | null;
   logger?: Pick<Console, 'warn'>;
@@ -62,6 +76,55 @@ type VoiceShortcutReleaseWatcher = (signal: AbortSignal) => Promise<void>;
 type VoiceShortcutWatcher = (
   listener: (event: VoiceShortcutEvent) => void,
 ) => (() => void) | undefined;
+
+interface GlobalVoiceModeToggleOptions {
+  getTarget(): VoiceModeToggleTarget | null;
+  logger?: Pick<Console, 'warn'>;
+  now?: () => number;
+  platform: NodeJS.Platform;
+  registry: GlobalShortcutRegistry;
+}
+
+export function registerGlobalVoiceModeToggleShortcut({
+  getTarget,
+  logger = console,
+  now = Date.now,
+  platform,
+  registry,
+}: GlobalVoiceModeToggleOptions): () => void {
+  const accelerator =
+    platform === 'darwin'
+      ? MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT
+      : platform === 'win32'
+        ? WINDOWS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT
+        : null;
+  if (!accelerator) return () => undefined;
+
+  let lastDeliveredAt = Number.NEGATIVE_INFINITY;
+  const registered = registry.register(accelerator, () => {
+    const target = getTarget();
+    if (!target || target.isDestroyed() || target.isFocused()) return;
+
+    const triggeredAt = now();
+    if (triggeredAt - lastDeliveredAt < VOICE_MODE_TOGGLE_REPEAT_GUARD_MS) {
+      return;
+    }
+
+    target.webContents.send(IPC_CHANNELS.voiceModeToggleRequested, {
+      source: 'global',
+    });
+    lastDeliveredAt = triggeredAt;
+  });
+
+  if (!registered) {
+    logger.warn('[voice] Could not register global voice mode shortcut.', {
+      accelerator,
+    });
+    return () => undefined;
+  }
+
+  return () => registry.unregister(accelerator);
+}
 
 function encodedPowerShellCommand(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');

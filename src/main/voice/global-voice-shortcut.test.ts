@@ -4,7 +4,10 @@ import type { VoiceShortcutEvent } from '../../shared/contracts';
 import { IPC_CHANNELS } from '../../shared/desktop-api';
 
 import {
+  MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT,
+  registerGlobalVoiceModeToggleShortcut,
   registerGlobalVoiceShortcut,
+  WINDOWS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT,
   WINDOWS_GLOBAL_VOICE_SHORTCUT,
 } from './global-voice-shortcut';
 
@@ -349,6 +352,121 @@ describe('registerGlobalVoiceShortcut', () => {
       '[voice] Could not register global voice shortcut.',
       { accelerator: WINDOWS_GLOBAL_VOICE_SHORTCUT },
     );
+    unregister();
+    expect(registry.unregister).not.toHaveBeenCalled();
+  });
+});
+
+describe('registerGlobalVoiceModeToggleShortcut', () => {
+  it('delivers Command+Backslash to an unfocused macOS renderer once', () => {
+    const callbacks = new Map<string, () => void>();
+    const registry = {
+      register: vi.fn((accelerator: string, callback: () => void) => {
+        callbacks.set(accelerator, callback);
+        return true;
+      }),
+      unregister: vi.fn(),
+    };
+    const send = vi.fn();
+    let now = 1_000;
+    const unregister = registerGlobalVoiceModeToggleShortcut({
+      getTarget: () => ({
+        isDestroyed: () => false,
+        isFocused: () => false,
+        webContents: { send },
+      }),
+      now: () => now,
+      platform: 'darwin',
+      registry,
+    });
+
+    expect(registry.register).toHaveBeenCalledWith(
+      MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT,
+      expect.any(Function),
+    );
+    callbacks.get(MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT)?.();
+    now += 100;
+    callbacks.get(MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT)?.();
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(
+      IPC_CHANNELS.voiceModeToggleRequested,
+      { source: 'global' },
+    );
+
+    unregister();
+    expect(registry.unregister).toHaveBeenCalledWith(
+      MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT,
+    );
+  });
+
+  it('leaves focused, destroyed, and missing targets to existing handlers', () => {
+    const callbacks = new Map<string, () => void>();
+    const registry = {
+      register: vi.fn((accelerator: string, callback: () => void) => {
+        callbacks.set(accelerator, callback);
+        return true;
+      }),
+      unregister: vi.fn(),
+    };
+    const send = vi.fn();
+    let targetState: 'destroyed' | 'focused' | 'missing' = 'focused';
+    registerGlobalVoiceModeToggleShortcut({
+      getTarget: () =>
+        targetState === 'missing'
+          ? null
+          : {
+              isDestroyed: () => targetState === 'destroyed',
+              isFocused: () => targetState === 'focused',
+              webContents: { send },
+            },
+      platform: 'win32',
+      registry,
+    });
+
+    const trigger = callbacks.get(WINDOWS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT);
+    trigger?.();
+    targetState = 'destroyed';
+    trigger?.();
+    targetState = 'missing';
+    trigger?.();
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('warns without unregistering when the accelerator is unavailable', () => {
+    const logger = { warn: vi.fn() };
+    const registry = {
+      register: vi.fn(() => false),
+      unregister: vi.fn(),
+    };
+    const unregister = registerGlobalVoiceModeToggleShortcut({
+      getTarget: () => null,
+      logger,
+      platform: 'darwin',
+      registry,
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[voice] Could not register global voice mode shortcut.',
+      { accelerator: MACOS_GLOBAL_VOICE_MODE_TOGGLE_SHORTCUT },
+    );
+    unregister();
+    expect(registry.unregister).not.toHaveBeenCalled();
+  });
+
+  it('does not register the mode toggle on unsupported platforms', () => {
+    const registry = {
+      register: vi.fn(),
+      unregister: vi.fn(),
+    };
+    const unregister = registerGlobalVoiceModeToggleShortcut({
+      getTarget: () => null,
+      platform: 'linux',
+      registry,
+    });
+
+    expect(registry.register).not.toHaveBeenCalled();
     unregister();
     expect(registry.unregister).not.toHaveBeenCalled();
   });

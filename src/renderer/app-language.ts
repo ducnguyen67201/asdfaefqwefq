@@ -58,6 +58,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   answer: 'trả lời',
   'Answer Tro to continue this task': 'Trả lời Tro để tiếp tục tác vụ',
   'Ask Tro': 'Hỏi Tro',
+  'Ask Tro selected': 'Đã chọn Hỏi Tro',
   'App controls will use {appLanguage}; new voice turns will use {spokenLanguage}.':
     'Giao diện ứng dụng sẽ dùng {appLanguage}; lượt nói mới sẽ dùng {spokenLanguage}.',
   'Assistant only': 'Chỉ dùng trợ lý',
@@ -399,6 +400,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Nhận dạng giọng nói không khả dụng. Hãy nhập yêu cầu bằng bàn phím.',
   'Waiting for microphone access…': 'Đang chờ quyền truy cập micrô…',
   'Write my words': 'Viết lời của tôi',
+  'Write my words selected': 'Đã chọn Viết lời của tôi',
+  'Ready for your next voice shortcut.':
+    'Sẵn sàng cho phím tắt giọng nói tiếp theo.',
   'Write my words adds text without sending. Ask Tro sends the spoken request after a one-second Escape window.':
     'Viết lời của tôi sẽ thêm văn bản mà không gửi. Hỏi Tro sẽ gửi yêu cầu bằng giọng nói sau khoảng một giây để nhấn Escape hủy.',
   'macOS: Command + Backslash · Windows: Control + Backslash':
