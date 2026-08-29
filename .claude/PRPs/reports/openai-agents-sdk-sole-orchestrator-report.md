@@ -105,7 +105,9 @@ The implementation review found and fixed the following issues before delivery:
 - Successful computer observations were cached by Electron but reduced to a
   fixed summary at the SDK boundary. Observation IDs, semantic state, coordinate
   space, and text now travel in the encrypted tool result, while screenshots are
-  emitted as the Agents SDK's structured image output.
+  emitted as the Agents SDK's structured image output. The authenticated result
+  endpoint and router body limits now cover the full bounded visual contract, so
+  valid detailed screenshots are not rejected after execution begins.
 - Identical session mutations at later revisions could collide with an earlier
   idempotency key and regress the SDK session cursor. Mutation identities now
   include their starting revision while remaining stable for transport retries.

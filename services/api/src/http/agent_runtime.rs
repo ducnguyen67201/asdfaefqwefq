@@ -21,6 +21,10 @@ use crate::{
     },
 };
 
+// Desktop observations may contain a 40 MB base64 visual plus bounded semantic
+// metadata. The router and this endpoint must accept the same contract envelope.
+pub(crate) const MAX_DESKTOP_RESULT_BODY_BYTES: usize = 48_000_000;
+
 pub async fn handle(
     state: &AppState,
     method: &Method,
@@ -304,7 +308,7 @@ pub async fn handle(
                     .await?
             }
             "result" => {
-                let input = read_json(headers, body, 1_000_000)?;
+                let input = read_json(headers, body, MAX_DESKTOP_RESULT_BODY_BYTES)?;
                 serde_json::from_value::<protocol::v5::DesktopResultV5>(input.clone()).map_err(
                     |_| {
                         ApiError::bad_request(

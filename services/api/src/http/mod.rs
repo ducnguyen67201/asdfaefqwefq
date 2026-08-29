@@ -22,7 +22,9 @@ use crate::{app::AppState, error::ApiResult};
 pub fn router(state: AppState) -> Router {
     Router::new()
         .fallback(dispatch)
-        .layer(DefaultBodyLimit::max(25_000_000))
+        .layer(DefaultBodyLimit::max(
+            agent_runtime::MAX_DESKTOP_RESULT_BODY_BYTES,
+        ))
         .layer(CatchPanicLayer::new())
         .layer(axum::middleware::from_fn(middleware::security_and_logs))
         .with_state(state)

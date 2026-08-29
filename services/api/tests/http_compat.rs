@@ -1885,6 +1885,28 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::POST,
+            &format!("/v1/desktop-worker/{worker_id}/result"),
+            Some(&owner_token),
+            Some(&json!({
+                "invocationId":Uuid::new_v4(),
+                "status":"confirmed",
+                "summary":"Captured a detailed desktop observation.",
+                "data":null,
+                "visual":{
+                    "dataBase64":"a".repeat(1_100_000),
+                    "detail":"original",
+                    "mimeType":"image/png",
+                    "observationId":Uuid::new_v4()
+                }
+            })),
+        )
+        .await,
+        StatusCode::OK,
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::POST,
             &format!("/v1/desktop-worker/{worker_id}/heartbeat"),
             Some(&owner_token),
             None,
