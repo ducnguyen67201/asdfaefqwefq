@@ -320,6 +320,93 @@ async fn dynamic_cua_calls_can_enter_the_operating_system_permission_wait() {
 
 #[tokio::test]
 #[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn recovery_reuses_the_frozen_tool_surface_and_existing_call_without_a_desktop() {
+    let (pool, service, orchestrator, sdk_worker, _) = setup().await;
+    let created = service
+        .submit_v5(USER, "basic", &task_input())
+        .await
+        .expect("submit v5 task");
+    let run_id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    let claim = orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("claim request")
+        .expect("claim run");
+    let frozen_tools = claim.tools.clone();
+    let call = launch_call("recover-without-desktop");
+    let queued = orchestrator
+        .queue_tool_call(run_id, sdk_worker, claim.run_version, &call)
+        .await
+        .expect("queue durable desktop call");
+
+    query(
+        "UPDATE agent_worker_sessions
+         SET disconnected_at=NOW(),expires_at=NOW()
+         WHERE user_id=$1",
+    )
+    .bind(USER)
+    .execute(&pool)
+    .await
+    .expect("disconnect desktop worker");
+    orchestrator
+        .release_lease(run_id, sdk_worker, queued.run_version)
+        .await
+        .expect("release interrupted worker lease");
+
+    let reclaimed = orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("reclaim request")
+        .expect("snapshot makes the run recoverable without a desktop");
+    assert_eq!(reclaimed.tools, frozen_tools);
+    let replayed = orchestrator
+        .queue_tool_call(run_id, sdk_worker, reclaimed.run_version, &call)
+        .await
+        .expect("replay must not require the vanished executor route");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.invocation_id, queued.invocation_id);
+    let invocation_count: i64 =
+        query_scalar("SELECT COUNT(*)::bigint FROM agent_tool_invocations WHERE run_id=$1")
+            .bind(run_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count durable invocations");
+    assert_eq!(invocation_count, 1);
+
+    let second = service
+        .submit_v5(USER, "basic", &task_input())
+        .await
+        .expect("submit a second task without a desktop");
+    assert_ne!(second["id"], created["id"]);
+    assert!(
+        orchestrator
+            .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+            .await
+            .expect("poll with no desktop")
+            .is_none(),
+        "a new run must wait rather than freeze an empty or stale tool surface"
+    );
+    query("UPDATE agent_runs SET payload_expires_at=NOW()-INTERVAL'1 second' WHERE id=$1")
+        .bind(run_id)
+        .execute(&pool)
+        .await
+        .expect("expire encrypted run payload");
+    service
+        .maintain()
+        .await
+        .expect("apply encrypted payload retention");
+    let snapshot_count: i64 =
+        query_scalar("SELECT COUNT(*)::bigint FROM agent_run_tool_snapshots WHERE run_id=$1")
+            .bind(run_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count retained snapshots");
+    assert_eq!(snapshot_count, 0);
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
 async fn requested_connector_calls_are_durably_recovered_after_restart() {
     let (pool, service, _, sdk_worker, _) = setup().await;
     let created = service

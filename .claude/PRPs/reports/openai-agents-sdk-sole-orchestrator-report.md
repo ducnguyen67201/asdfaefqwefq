@@ -56,10 +56,12 @@ Electron app <-> Rust durable control plane <-> OpenAI Agents SDK <-> model
 | CUA, application, browser, terminal, filesystem execution | Electron main process |
 | Renderer projection | Sandboxed Electron renderer through narrow `DesktopApi` |
 
-The tool catalog is a capability description, not a policy engine. Tro asks the
-current executor what it can do, filters only by factual run prerequisites such as
-whether a workspace or Activity context exists, and supplies that catalog to the
-SDK. The SDK decides which available capability helps fulfill the intent.
+The tool catalog is a capability description, not a policy engine. On the first
+compatible claim, Tro asks the current executor what it can do, filters only by
+factual run prerequisites such as whether a workspace or Activity context exists,
+and freezes that exact catalog in an encrypted per-run snapshot. Every recovery
+claim reconstructs the same SDK graph. The SDK decides which available capability
+helps fulfill the intent.
 
 ## Correctness and Review Fixes
 
@@ -71,6 +73,12 @@ The implementation review found and fixed the following issues before delivery:
 - The Rust broker originally trusted the static base catalog too broadly. It now
   revalidates every static call against compatible live desktop capabilities and
   validates dynamic CUA calls against the exact live digest and schema.
+- Recovery originally rebuilt the graph from whichever desktop and connector
+  routes were online at reclaim time. A disconnect could therefore make the SDK
+  unable to deserialize a checkpoint that referenced an already-queued tool. The
+  control plane now persists one encrypted immutable tool snapshot per run, checks
+  every new call against it, and performs the existing-call idempotency lookup
+  before requiring a live route.
 - Steering idempotency was incomplete. Migration 031 now binds steering events to
   `agent_turn_id` with a unique partial index; an identical retry returns the same
   event, while conflicting content or reuse of the task-start turn ID fails.
@@ -133,10 +141,11 @@ The implementation review found and fixed the following issues before delivery:
 `031_agents_sdk_orchestrator.sql` adds SDK worker registration, session mutation
 idempotency, versioned checkpoints, model-dispatch no-replay state, orchestration
 metadata, and steering-turn uniqueness. Migration 032 additively records the public
-protocol digest on SDK-worker sessions for rolling-deploy compatibility. Neither
-edits migration 29 or 30. Existing terminal history and its legacy schemas remain
-read-only for UI projection; no new v5 run writes legacy outcome/effect/approval
-data.
+protocol digest on SDK-worker sessions for rolling-deploy compatibility. Migration
+033 adds the encrypted per-run tool snapshot and refuses to apply while an SDK run
+is nonterminal. None edits migration 29 or 30. Existing terminal history and its
+legacy schemas remain read-only for UI projection; no new v5 run writes legacy
+outcome/effect/approval data.
 
 CUA task-session lifecycle operations remain host-owned and injected because the
 host must bind a tool call to the exact durable task session. All other compatible
@@ -185,6 +194,7 @@ or blanket-ignored by this change.
 | `services/api/src/http/agent_orchestrator.rs` | Authenticated private orchestrator and OpenAI-compatible broker routes. |
 | `services/api/migrations/031_agents_sdk_orchestrator.sql` | Additive SDK orchestration, no-replay, checkpoint, and idempotency state. |
 | `services/api/migrations/032_orchestrator_public_protocol_digest.sql` | SDK-worker/public-runtime compatibility binding for rolling deploys. |
+| `services/api/migrations/033_agent_run_tool_snapshots.sql` | Encrypted immutable tool surface for deterministic crash recovery. |
 | `src/main/hosted/desktop-tool-worker.ts` | v5 desktop worker with live catalogs, CAS execution, and unknown-result handling. |
 | `src/main/cua/cua-service.ts` | Live CUA discovery and generic dispatch. |
 | `src/shared/agent-runtime-protocol.ts` | Public v5, authority v10, and legacy history parsing. |

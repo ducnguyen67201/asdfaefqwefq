@@ -123,17 +123,30 @@ impl RunStore {
         let worker = worker_id.to_string();
         let row = sqlx::query(
             "WITH candidate AS (
-               SELECT id FROM agent_runs
-               WHERE orchestrator_kind='openai_agents_sdk'
-                 AND sdk_version=$2 AND orchestrator_graph_version=$3
-                 AND protocol_digest=$5
-                 AND state IN(
+               SELECT runs.id FROM agent_runs runs
+               WHERE runs.orchestrator_kind='openai_agents_sdk'
+                 AND runs.sdk_version=$2 AND runs.orchestrator_graph_version=$3
+                 AND runs.protocol_digest=$5
+                 AND runs.state IN(
                    'queued','awaiting_orchestrator','recovering','running',
                    'awaiting_worker','awaiting_permission','executing_tool'
                  )
-                 AND deadline_at>NOW()
-                 AND (lease_expires_at IS NULL OR lease_expires_at<NOW())
-               ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+                 AND runs.deadline_at>NOW()
+                 AND (runs.lease_expires_at IS NULL OR runs.lease_expires_at<NOW())
+                 AND (
+                   EXISTS(SELECT 1 FROM agent_run_tool_snapshots snapshots
+                          WHERE snapshots.run_id=runs.id)
+                   OR EXISTS(
+                     SELECT 1 FROM agent_worker_sessions sessions
+                     WHERE sessions.user_id=runs.user_id
+                       AND sessions.protocol_version=5
+                       AND sessions.protocol_digest=runs.protocol_digest
+                       AND sessions.tool_catalog_digest=runs.tool_catalog_digest
+                       AND sessions.disconnected_at IS NULL
+                       AND sessions.expires_at>NOW()
+                   )
+                 )
+               ORDER BY runs.created_at FOR UPDATE OF runs SKIP LOCKED LIMIT 1
              )
              UPDATE agent_runs runs
              SET state='running',lease_owner=$1,

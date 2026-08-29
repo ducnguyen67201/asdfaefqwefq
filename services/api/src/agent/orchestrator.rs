@@ -19,6 +19,7 @@ use super::{
     session_store::{SessionMutationResult, SessionSnapshot, SessionStore, SessionTransaction},
     tool_broker::{QueueToolCall, QueuedToolCall, ToolBroker, ToolCallResult},
     tool_catalog,
+    tool_snapshot::{ToolSnapshotIdentity, ToolSnapshotStore},
 };
 
 #[derive(Clone)]
@@ -29,6 +30,7 @@ pub struct AgentOrchestrator {
     pool: PgPool,
     runs: RunStore,
     sessions: SessionStore,
+    snapshots: ToolSnapshotStore,
     tools: ToolBroker,
     models: ModelDispatchStore,
 }
@@ -98,6 +100,7 @@ impl AgentOrchestrator {
         Self {
             models: ModelDispatchStore::new(pool.clone()),
             sessions: SessionStore::new(pool.clone(), crypto.clone(), runs.clone()),
+            snapshots: ToolSnapshotStore::new(pool.clone(), crypto.clone()),
             tools: ToolBroker::new(
                 pool.clone(),
                 crypto.clone(),
@@ -532,19 +535,41 @@ impl AgentOrchestrator {
     }
 
     async fn claim_bundle(&self, run: &ClaimedRunRecord) -> ApiResult<ClaimedRun> {
-        let capabilities = sqlx::query_scalar::<_, Value>(
-            "SELECT capabilities FROM agent_worker_sessions WHERE user_id=$1 AND protocol_version=5 AND protocol_digest=$2 AND tool_catalog_digest=$3 AND disconnected_at IS NULL AND expires_at>NOW() ORDER BY heartbeat_at DESC LIMIT 1",
-        )
-        .bind(&run.user_id)
-        .bind(&run.protocol_digest)
-        .bind(&run.tool_catalog_digest)
-        .fetch_optional(&self.pool)
-        .await?;
-        let connector_routes = match &self.connectors {
-            Some(connectors) => connectors.routes_for_user(&run.user_id).await?,
-            None => Vec::new(),
+        let identity = ToolSnapshotIdentity {
+            graph_version: &run.graph_version,
+            protocol_digest: &run.protocol_digest,
+            run_id: run.run_id,
+            sdk_version: &run.sdk_version,
+            tool_catalog_digest: &run.tool_catalog_digest,
         };
-        let tools = build_tools(capabilities.as_ref(), &run.contract, &connector_routes);
+        let tools = if let Some(tools) = self.snapshots.load(&identity).await? {
+            tools
+        } else {
+            let capabilities = sqlx::query_scalar::<_, Value>(
+                "SELECT capabilities FROM agent_worker_sessions
+             WHERE user_id=$1 AND protocol_version=5 AND protocol_digest=$2
+               AND tool_catalog_digest=$3
+             ORDER BY (disconnected_at IS NULL AND expires_at>NOW()) DESC,
+                      heartbeat_at DESC LIMIT 1",
+            )
+            .bind(&run.user_id)
+            .bind(&run.protocol_digest)
+            .bind(&run.tool_catalog_digest)
+            .fetch_optional(&self.pool)
+            .await?;
+            let capabilities = capabilities.ok_or_else(|| {
+                ApiError::conflict(
+                    "worker_unavailable",
+                    "No compatible desktop worker is available to freeze this run's tool surface.",
+                )
+            })?;
+            let connector_routes = match &self.connectors {
+                Some(connectors) => connectors.routes_for_user(&run.user_id).await?,
+                None => Vec::new(),
+            };
+            let tools = build_tools(Some(&capabilities), &run.contract, &connector_routes);
+            self.snapshots.freeze(&identity, &tools).await?
+        };
         let checkpoint = self.load_checkpoint(run).await?;
         Ok(ClaimedRun {
             checkpoint,

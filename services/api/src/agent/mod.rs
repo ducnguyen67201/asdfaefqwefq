@@ -9,6 +9,7 @@ mod service;
 mod session_store;
 mod tool_broker;
 pub mod tool_catalog;
+mod tool_snapshot;
 
 pub use model_dispatch_store::ModelDispatchContext;
 pub use orchestrator::AgentOrchestrator;

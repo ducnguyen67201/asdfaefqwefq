@@ -1322,6 +1322,12 @@ impl AgentService {
         .execute(&mut *tx)
         .await?;
         sqlx::query(
+            "DELETE FROM agent_run_tool_snapshots snapshots USING agent_runs runs
+             WHERE snapshots.run_id=runs.id AND runs.payload_expires_at<=NOW()",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
             "UPDATE agent_evidence SET detail_ciphertext=NULL,detail_iv=NULL,detail_tag=NULL,detail_key_version=NULL
              WHERE detail_expires_at<=NOW() AND detail_ciphertext IS NOT NULL",
         )

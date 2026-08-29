@@ -170,6 +170,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "orchestrator public protocol digest",
             include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
         ),
+        migration(
+            33,
+            "agent run tool snapshots",
+            include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

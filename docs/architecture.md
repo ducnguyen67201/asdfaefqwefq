@@ -20,11 +20,13 @@ renderer -> public runtime v5 -> Rust control plane -> Agents SDK worker
                            or Rust connector adapters
 ```
 
-For each task, Rust supplies the exact currently available tool catalog. The
-SDK decides how to fulfill the intent, chooses tools, consumes their results,
-and decides when the task is finished. SDK Session history and serialized
-`RunState` checkpoints are encrypted in PostgreSQL. Context compaction uses the
-SDK's input-mode Responses compaction session through the Rust model proxy.
+For each task, Rust freezes the exact currently available tool catalog on the
+first compatible claim, stores it encrypted, and supplies that same catalog on
+every recovery claim. The SDK decides how to fulfill the intent, chooses tools,
+consumes their results, and decides when the task is finished. SDK Session
+history and serialized `RunState` checkpoints are encrypted in PostgreSQL.
+Context compaction uses the SDK's input-mode Responses compaction session through
+the Rust model proxy.
 The proxy records only a request digest and dispatch state before contacting
 OpenAI. If the worker loses a response before its next durable SDK checkpoint,
 the same model request is blocked as ambiguous instead of being sent again.
@@ -76,6 +78,10 @@ over all pet nudges.
   the private worker also requires its exact SDK and agent-graph versions. CUA
   calls additionally require the exact live driver-catalog digest advertised by
   the worker that accepted the task.
+- A run's encrypted tool snapshot is immutable. Recovery reconstructs the same
+  SDK graph even if Electron or a connector disconnects; a new call still needs
+  a currently valid executor route, while the same durably queued call can be
+  resumed by call ID without dispatching it twice.
 - Authority contract v10 binds the intent, execution profile, trusted workspace,
   Activity context, and technical limits without prescribing a plan.
 - The registry rejects unknown Tro tools, operations, and malformed inputs.

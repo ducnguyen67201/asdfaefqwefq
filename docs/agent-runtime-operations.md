@@ -52,6 +52,12 @@ GROUP BY sdk_version, orchestrator_graph_version, state;
 A pending serialized `RunState` may resume only on the exact SDK and graph
 version that created it.
 
+Migration 033 also refuses to run while an Agents SDK task is nonterminal. It
+introduces the encrypted immutable per-run tool snapshot used to reconstruct the
+same agent graph after a crash. Drain the SDK graph with the query above before
+applying it; do not backfill a live run from whatever tools happen to be online
+later.
+
 ## Incident checks
 
 - Worker health: inspect `agent_orchestrator_workers` heartbeat, expiry, SDK,
@@ -69,6 +75,10 @@ version that created it.
   have been lost; provider bodies are never stored for replay.
 - Tool ambiguity: an invocation that reached `executing` and lost its executor
   becomes `unknown`; the SDK blocks and must not replan an equivalent action.
+- Tool-surface recovery: inspect only the snapshot digest and version columns in
+  `agent_run_tool_snapshots`. Do not replace or decrypt a run's frozen catalog.
+  An already-queued call may be rebound after an executor disconnects, but a new
+  call must pass the current route and schema checks.
 - OS permission wait: this is a macOS/Windows prerequisite for the same durable
   invocation, not an approval decision.
 - Connector OAuth failure: repair authorization, then start a new user task. Do
@@ -90,6 +100,7 @@ secret. Never log the token or place it in public protocol payloads.
 - `npm run bazel:check`
 - `npm run package`
 - zero nonterminal legacy rows before migration 031;
+- zero nonterminal Agents SDK rows before migration 033;
 - zero duplicate adapter dispatches or unknown-result retries;
 - packaged v5 handshake, cancellation, steering, direct navigation, and workspace
   smoke tests.

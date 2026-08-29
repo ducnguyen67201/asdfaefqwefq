@@ -14,6 +14,7 @@ use crate::{
 use super::{
     run_store::{RunStore, append_event, row_envelope},
     tool_catalog,
+    tool_snapshot::{ToolSnapshotIdentity, ToolSnapshotStore, call_was_offered},
 };
 
 #[derive(Clone)]
@@ -22,6 +23,7 @@ pub struct ToolBroker {
     crypto: AgentStateCrypto,
     pool: PgPool,
     runs: RunStore,
+    snapshots: ToolSnapshotStore,
 }
 
 #[derive(Debug)]
@@ -72,6 +74,7 @@ impl ToolBroker {
     ) -> Self {
         Self {
             connectors,
+            snapshots: ToolSnapshotStore::new(pool.clone(), crypto.clone()),
             crypto,
             pool,
             runs,
@@ -117,7 +120,43 @@ impl ToolBroker {
                 "The tool call does not match the claimed agent graph.",
             ));
         }
+        if let Some(replayed) = self
+            .replay_existing(run_id, worker_id, expected_run_version, call)
+            .await?
+        {
+            return Ok(replayed);
+        }
         let user_id: String = run.get("user_id");
+        let protocol_digest = run
+            .get::<Option<String>, _>("protocol_digest")
+            .ok_or_else(|| ApiError::internal(anyhow::anyhow!("v5 protocol digest missing")))?;
+        let tools = self
+            .snapshots
+            .load(&ToolSnapshotIdentity {
+                graph_version: &call.graph_version,
+                protocol_digest: &protocol_digest,
+                run_id,
+                sdk_version: &call.sdk_version,
+                tool_catalog_digest: &call.catalog_digest,
+            })
+            .await?
+            .ok_or_else(|| {
+                ApiError::conflict(
+                    "catalog_mismatch",
+                    "The run does not have a frozen tool surface.",
+                )
+            })?;
+        if !call_was_offered(
+            &tools,
+            &call.tool_id,
+            &call.operation,
+            call.driver_catalog_digest.as_deref(),
+        ) {
+            return Err(ApiError::conflict(
+                "catalog_mismatch",
+                "The requested tool was not offered for this run.",
+            ));
+        }
         let contract_envelope = row_envelope(&run, "contract")?.ok_or_else(|| {
             ApiError::conflict("run_payload_expired", "The task authority payload expired.")
         })?;
@@ -255,6 +294,45 @@ impl ToolBroker {
             replayed: false,
             run_version: next_version,
         })
+    }
+
+    async fn replay_existing(
+        &self,
+        run_id: Uuid,
+        worker_id: Uuid,
+        expected_run_version: i32,
+        call: &QueueToolCall,
+    ) -> ApiResult<Option<QueuedToolCall>> {
+        let mut tx = self.pool.begin().await?;
+        self.runs
+            .assert_lease(&mut tx, run_id, worker_id, expected_run_version)
+            .await?;
+        let existing = sqlx::query(
+            "SELECT id,idempotency_key FROM agent_tool_invocations
+             WHERE run_id=$1 AND call_id=$2 FOR UPDATE",
+        )
+        .bind(run_id)
+        .bind(&call.call_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(existing) = existing else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        if existing.get::<String, _>("idempotency_key") != call.idempotency_digest {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "tool_call_conflict",
+                "The SDK call ID was reused with different arguments.",
+            ));
+        }
+        let invocation_id = existing.get("id");
+        tx.commit().await?;
+        Ok(Some(QueuedToolCall {
+            invocation_id,
+            replayed: true,
+            run_version: expected_run_version,
+        }))
     }
 
     pub async fn result(
