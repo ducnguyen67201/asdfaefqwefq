@@ -1041,6 +1041,22 @@ const companionApi: CompanionApi = {
       );
   },
 
+  onCursorBuddyPositionChange(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(CompanionPositionSchema.parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.cursorBuddyPositionChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.cursorBuddyPositionChanged,
+        eventHandler,
+      );
+  },
+
   onPositionChange(listener) {
     const eventHandler = (
       _event: Electron.IpcRendererEvent,

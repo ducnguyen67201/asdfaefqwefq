@@ -2,8 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { CursorCompanion } from './CursorCompanion';
 import { CursorBuddy, CursorBuddyView } from './CursorBuddy';
+import { CursorCompanion } from './CursorCompanion';
 
 describe('CursorBuddy', () => {
   it('renders the original action cursor independently from the desktop pet', () => {

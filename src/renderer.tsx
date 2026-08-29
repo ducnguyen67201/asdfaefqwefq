@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import { AuthGate } from './renderer/AuthGate';
 import { BrandMark } from './renderer/BrandMark';
+import { CursorBuddy } from './renderer/CursorBuddy';
 import { CursorCompanion } from './renderer/CursorCompanion';
 import { DesktopControlIndicator } from './renderer/DesktopControlIndicator';
 import { GuidanceCallout } from './renderer/GuidanceCallout';
@@ -35,12 +36,14 @@ function DesktopBridgeUnavailable() {
 
 const rootElement = document.getElementById('root');
 const rendererMode = new URLSearchParams(window.location.search).get('mode');
+const isCursorBuddyWindow = rendererMode === 'cursor-buddy';
 const isCompanionWindow = rendererMode === 'companion';
 const isControlIndicatorWindow = rendererMode === 'control-indicator';
 const isGuidanceWindow = rendererMode === 'guidance';
 const isTargetMarkerWindow = rendererMode === 'target-marker';
 const isVoiceIslandWindow = rendererMode === 'voice-island';
 const isAuxiliaryWindow =
+  isCursorBuddyWindow ||
   isCompanionWindow ||
   isControlIndicatorWindow ||
   isGuidanceWindow ||
@@ -53,6 +56,9 @@ if (/win/i.test(`${navigator.platform} ${navigator.userAgent}`)) {
 
 if (!rootElement) throw new Error('The application root element is missing.');
 
+if (isCursorBuddyWindow) {
+  document.documentElement.classList.add('cursor-buddy-mode');
+}
 if (isCompanionWindow) document.documentElement.classList.add('companion-mode');
 if (isControlIndicatorWindow) {
   document.documentElement.classList.add('control-indicator-mode');
@@ -85,6 +91,8 @@ createRoot(rootElement).render(
       <GuidanceTargetMarker />
     ) : isVoiceIslandWindow ? (
       <VoiceIsland />
+    ) : isCursorBuddyWindow ? (
+      <CursorBuddy />
     ) : isCompanionWindow ? (
       <CursorCompanion />
     ) : (
