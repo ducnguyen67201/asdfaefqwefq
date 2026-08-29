@@ -1562,6 +1562,7 @@ html.voice-island-mode #root {
   --voice-mode-border: rgba(255, 132, 124, 0.38);
 }
 
+.voice-island--mode_selected,
 .voice-island--complete,
 .voice-island--error {
   grid-template-columns: 38px minmax(0, 1fr);
@@ -3750,6 +3751,8 @@ h1 {
 .task-composer {
   position: relative;
   z-index: 2;
+  container-name: task-composer;
+  container-type: inline-size;
   display: grid;
   margin: -64px 22px 0;
   padding: 17px 18px 18px;
@@ -3758,11 +3761,12 @@ h1 {
   background: #fff;
   box-shadow: 0 18px 48px rgba(22, 22, 18, 0.16);
   gap: 10px 14px;
-  grid-template-columns: minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(160px, 0.38fr) minmax(0, 1fr);
 }
 
 .task-composer label {
   display: flex;
+  min-width: 0;
   align-items: center;
   margin: 0;
   color: var(--text);
@@ -3777,6 +3781,7 @@ h1 {
   --voice-mode-soft: rgba(50, 174, 176, 0.14);
   --voice-mode-border: rgba(50, 174, 176, 0.36);
   display: grid;
+  min-width: 0;
   min-height: 58px;
   align-items: center;
   gap: 8px 12px;
@@ -3787,7 +3792,7 @@ h1 {
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 10px;
-  grid-template-columns: minmax(92px, 0.55fr) auto;
+  grid-template-columns: minmax(92px, 110px) minmax(0, 1fr);
   transition:
     background 140ms ease,
     border-color 140ms ease;
@@ -3851,9 +3856,11 @@ h1 {
 
 .voice-mode-control {
   display: inline-flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
@@ -3963,11 +3970,19 @@ h1 {
   font-size: 9px;
 }
 
-@media (max-width: 980px) {
-  .task-composer {
-    grid-template-columns: minmax(130px, 0.4fr) minmax(0, 1fr);
+@container task-composer (max-width: 700px) {
+  .task-composer > label,
+  .task-composer > .voice-status {
+    grid-column: 1 / -1;
   }
 
+  .task-composer > label {
+    min-height: 18px;
+    padding-inline: 2px;
+  }
+}
+
+@container task-composer (max-width: 620px) {
   .voice-status {
     align-items: stretch;
     grid-template-columns: minmax(0, 1fr);
@@ -3979,7 +3994,24 @@ h1 {
 
   .voice-mode-control {
     justify-content: flex-start;
-    flex-wrap: wrap;
+  }
+}
+
+@container task-composer (max-width: 440px) {
+  .voice-mode-control__options {
+    width: 100%;
+  }
+
+  .voice-mode-option {
+    min-width: 0;
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .voice-mode-option > span {
+    overflow-wrap: anywhere;
+    text-align: center;
+    white-space: normal;
   }
 }
 

@@ -59,6 +59,7 @@ import type {
   UpdateAppPreferencesRequest,
   VoiceSegmentTranscription,
   VoiceDiagnostic,
+  VoiceModeToggleEvent,
   VoiceShortcutEvent,
   VoiceStatus,
   WorkspaceRuntimeAvailability,
@@ -189,6 +190,7 @@ export const IPC_CHANNELS = {
   taskUpdate: 'task:update',
   taskComposerFocusRequested: 'task:composer-focus-requested',
   updateAppPreferences: 'preferences:update',
+  voiceModeToggleRequested: 'voice:mode-toggle-requested',
   voiceShortcut: 'voice:shortcut',
   getKnowledgeCapabilities: 'knowledge:capabilities',
   listKnowledgeSpaces: 'knowledge:spaces:list',
@@ -398,6 +400,9 @@ export interface DesktopApi {
   ): () => void;
   onAppUpdateStatusChanged(
     listener: (status: AppUpdateStatus) => void,
+  ): () => void;
+  onVoiceModeToggleRequested(
+    listener: (event: VoiceModeToggleEvent) => void,
   ): () => void;
   onVoiceShortcut(listener: (event: VoiceShortcutEvent) => void): () => void;
   openSystemPermissionSettings(permission: SystemPermission): Promise<void>;

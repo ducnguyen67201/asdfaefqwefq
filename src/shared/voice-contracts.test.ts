@@ -8,6 +8,7 @@ import {
   CompanionVoiceActivitySchema,
   DictationCommitResultSchema,
   RecordVoiceTranscriptRequestSchema,
+  VoiceModeToggleEventSchema,
   VoiceShortcutEventSchema,
 } from './contracts';
 
@@ -32,6 +33,21 @@ describe('voice mode contracts', () => {
         extra: true,
         source: 'global',
       }).success,
+    ).toBe(false);
+  });
+
+  it('accepts only a content-free global voice mode toggle request', () => {
+    expect(
+      VoiceModeToggleEventSchema.safeParse({ source: 'global' }).success,
+    ).toBe(true);
+    expect(
+      VoiceModeToggleEventSchema.safeParse({
+        mode: 'task',
+        source: 'global',
+      }).success,
+    ).toBe(false);
+    expect(
+      VoiceModeToggleEventSchema.safeParse({ source: 'local' }).success,
     ).toBe(false);
   });
 

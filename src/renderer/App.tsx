@@ -2451,6 +2451,37 @@ export function App({
   const voiceModeLocked =
     voiceStatus !== 'idle' && voiceStatus !== 'unavailable';
 
+  useEffect(
+    () =>
+      window.tro.onVoiceModeToggleRequested(() => {
+        if (voiceModeLocked) return;
+
+        const nextMode = nextVoiceMode(selectedVoiceMode);
+        selectVoiceMode(nextMode);
+        showVoiceTerminalActivity(
+          {
+            appLanguage: appLanguageDraft,
+            destination:
+              nextMode === 'task'
+                ? { kind: 'task', label: t('Tro task') }
+                : { kind: 'tro_composer', label: t('Tro composer') },
+            mode: nextMode,
+            phase: 'mode_selected',
+            transcript: '',
+          },
+          1_200,
+        );
+      }),
+    [
+      appLanguageDraft,
+      selectVoiceMode,
+      selectedVoiceMode,
+      showVoiceTerminalActivity,
+      t,
+      voiceModeLocked,
+    ],
+  );
+
   useEffect(() => {
     const handleVoiceModeToggle = (event: KeyboardEvent): void => {
       if (

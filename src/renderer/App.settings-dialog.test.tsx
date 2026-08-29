@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TaskUpdate } from '../shared/contracts';
+import type { TaskUpdate, VoiceModeToggleEvent } from '../shared/contracts';
 import type { DesktopApi } from '../shared/desktop-api';
 
 import { App } from './App';
@@ -58,12 +58,16 @@ describe('App settings dialog safety', () => {
   let signOut: ReturnType<typeof vi.fn<() => void>>;
   let taskUpdateListener: ((update: TaskUpdate) => void) | null;
   let updateAppPreferences: ReturnType<typeof vi.fn>;
+  let voiceModeToggleListener:
+    | ((event: VoiceModeToggleEvent) => void)
+    | null;
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
     taskUpdateListener = null;
+    voiceModeToggleListener = null;
     cancelTask = vi.fn();
     signOut = vi.fn<() => void>();
     updateAppPreferences = vi.fn(async (preferences) => preferences);
@@ -182,6 +186,12 @@ describe('App settings dialog safety', () => {
         taskUpdateListener = listener;
         return unsubscribe;
       }),
+      onVoiceModeToggleRequested: vi.fn(
+        (listener: (event: VoiceModeToggleEvent) => void) => {
+          voiceModeToggleListener = listener;
+          return unsubscribe;
+        },
+      ),
       onVoiceShortcut: vi.fn().mockReturnValue(unsubscribe),
       setCompanionVoiceActivity: vi.fn().mockResolvedValue(undefined),
       setVoiceAudioDucking: vi.fn().mockResolvedValue(undefined),
@@ -308,6 +318,21 @@ describe('App settings dialog safety', () => {
     expect(writeMode?.getAttribute('aria-pressed')).toBe('true');
     expect(updateAppPreferences).toHaveBeenLastCalledWith(
       expect.objectContaining({ voiceMode: 'dictation' }),
+    );
+
+    await act(async () => {
+      voiceModeToggleListener?.({ source: 'global' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(askMode?.getAttribute('aria-pressed')).toBe('true');
+    expect(updateAppPreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voiceMode: 'task' }),
+    );
+    expect(window.tro.setCompanionVoiceActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'task',
+        phase: 'mode_selected',
+      }),
     );
   });
 });

@@ -2611,6 +2611,7 @@ export const CompanionVoiceActivitySchema = z
     message: z.string().trim().min(1).max(240).optional(),
     mode: VoiceModeSchema,
     phase: z.enum([
+      'mode_selected',
       'requesting_permission',
       'listening',
       'processing',
@@ -2974,6 +2975,12 @@ export const VoiceDiagnosticSchema = z.object({
 export const VoiceShortcutEventSchema = z
   .object({
     action: z.enum(['pressed', 'released']),
+    source: z.literal('global'),
+  })
+  .strict();
+
+export const VoiceModeToggleEventSchema = z
+  .object({
     source: z.literal('global'),
   })
   .strict();
@@ -3501,5 +3508,8 @@ export type VoiceSegmentTranscription = z.infer<
   typeof VoiceSegmentTranscriptionSchema
 >;
 export type VoiceDiagnostic = z.infer<typeof VoiceDiagnosticSchema>;
+export type VoiceModeToggleEvent = z.infer<
+  typeof VoiceModeToggleEventSchema
+>;
 export type VoiceShortcutEvent = z.infer<typeof VoiceShortcutEventSchema>;
 export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;

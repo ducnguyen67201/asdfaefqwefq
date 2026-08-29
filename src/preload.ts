@@ -65,6 +65,7 @@ import {
   UpdateAppPreferencesRequestSchema,
   VoiceSegmentTranscriptionSchema,
   VoiceDiagnosticSchema,
+  VoiceModeToggleEventSchema,
   VoiceShortcutEventSchema,
   VoiceStatusSchema,
   WorkspaceRuntimeAvailabilitySchema,
@@ -930,6 +931,22 @@ const desktopApi: DesktopApi = {
     ipcRenderer.on(IPC_CHANNELS.voiceShortcut, eventHandler);
     return () =>
       ipcRenderer.removeListener(IPC_CHANNELS.voiceShortcut, eventHandler);
+  },
+
+  onVoiceModeToggleRequested(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(VoiceModeToggleEventSchema.parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.voiceModeToggleRequested, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.voiceModeToggleRequested,
+        eventHandler,
+      );
   },
 
   async useDefaultCompanion() {
