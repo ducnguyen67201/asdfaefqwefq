@@ -189,7 +189,7 @@ pub async fn handle(
     }
 
     if method == Method::POST && path == "/v1/desktop-worker/connect" {
-        let capabilities = read_json(headers, body, 64_000)?;
+        let capabilities = read_json(headers, body, 2_000_000)?;
         return Ok(Some(json_response(
             StatusCode::CREATED,
             agent

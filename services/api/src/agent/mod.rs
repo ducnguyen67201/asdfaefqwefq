@@ -1,3 +1,4 @@
+mod cua_catalog;
 pub mod lifecycle;
 pub mod protocol;
 mod service;

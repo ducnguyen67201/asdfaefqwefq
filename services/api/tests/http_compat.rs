@@ -1824,6 +1824,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
             "protocolVersion":4,
             "protocolDigest":protocol::protocol_digest(),
             "toolCatalogDigest":protocol::tool_catalog_digest(),
+            "cua":null,
             "tools":[{"operations":["launch"],"toolId":"application.launch"}]
         })),
     )

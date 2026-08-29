@@ -18,8 +18,9 @@ tool catalog and the host account's capabilities as the action boundary.
 
 ## Retained controls
 
-- Exact runtime v4 protocol and catalog digest negotiation.
-- Strict registered tool/operation and bounded input parsing.
+- Exact runtime v4 protocol, base catalog, and per-worker CUA catalog digest
+  negotiation.
+- Strict Tro tool parsing plus schema-bound CUA tool discovery and dispatch.
 - Public credential-free HTTPS validation for direct browser navigation.
 - Canonical selected-workspace identity and filesystem path/symlink checks.
 - Shell count, length, NUL, timeout, output, environment, and cancellation
@@ -46,11 +47,13 @@ tool execution produces a blocked run rather than a retry.
 
 ## Native CUA capability
 
-The CUA SDK's authorization-host interface is implemented as an internal
-capability broker, not a user approval system. Only `browser.prepare` may arm
-one exact task/session/window resource for a short TTL; it is consumed once.
-Unexpected, expired, malformed, mismatched, or replayed native requests are
-denied automatically.
+Tro runs the CUA SDK in its trusted unrestricted host mode. The worker advertises
+the driver's canonical tool schemas under a digest, and every invocation must
+match that exact catalog before the generic adapter calls CUA. Tro owns session
+start/end and overwrites model-supplied session identifiers with the current
+task ID. CUA still enforces its native contract, including capabilities that are
+not exposed in any execution mode; Tro does not turn a native refusal into an
+approval prompt or retry it as a different action.
 
 ## Deployment
 

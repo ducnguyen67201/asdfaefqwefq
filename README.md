@@ -36,13 +36,14 @@ Implemented:
 - An explicit Workspace mode backed by a canonical user-selected root and
   trusted local shell and patch adapters. Bounded shell commands run with the
   host user's capabilities; provider credentials remain backend-only.
-- A trusted model-visible tool registry with desktop observation/control,
-  public HTTPS navigation, grounded guidance, and user-input adapters.
+- A trusted model-visible Tro tool registry plus CUA's live, schema-validated
+  driver catalog; compatible new CUA tools require no Tro allowlist change.
 - Typed task lifecycle with guarded transitions.
 - Task-scoped clarification replies that continue the same goal conversation.
 - Structured clarification interactions when a material choice is missing.
 - Task steering applied by Rust at the next safe model boundary.
-- Rust-owned concrete tool/operation, target, and effect validation.
+- Rust-owned concrete Tro tool/operation and target validation, plus exact
+  per-worker CUA catalog-digest binding.
 - Native Google OAuth sign-in with Authorization Code + PKCE, Rust-side code
   exchange, server-verified identity claims, and an operating-system-encrypted,
   revocable hosted session.
@@ -50,10 +51,11 @@ Implemented:
   optional and requested only when their feature is used.
 - Hosted production access for signed-in users, with membership and plans
   authorized by the Rust API.
-- Lazy CUA initialization after a model desktop-observation request or an
-  explicit user-clicked Connect computer action.
-- Task-scoped CUA sessions with bounded screenshots, typed clicks, text entry,
-  keypresses, scrolling, dragging, and session cleanup.
+- Permission-free CUA catalog discovery when the worker connects, with native
+  CUA execution initialized only when a computer tool actually runs or the user
+  explicitly chooses Connect computer.
+- Host-owned, task-scoped CUA sessions. Tro injects the task session and forwards
+  every compatible driver tool except session start/end through `callTool`.
 - One configured GPT-5.6 model through the Responses API (Luna by default),
   with no classifier or fallback request after a failure.
 - API-owned Free, Basic, Pro, and Max entitlements with atomic agent-message and
@@ -97,11 +99,11 @@ Current computer-context support and limits:
   before screenshots, with opaque observation-local element references. Canvas
   editors, ambiguous windows, unsupported apps, and incomplete accessibility
   trees fall back to window or full-desktop vision.
-- Existing logged-in browser-profile attachment uses a short-lived, exact
-  internal driver capability that is armed automatically for the registered
-  browser preparation tool. Tro does not ship a browser or VS Code extension, so
-  unsaved editor buffers and diagnostics are available only when the browser or
-  operating-system accessibility surface exposes them.
+- CUA runs in its unrestricted trusted-host mode without a Tro action-approval
+  gate. The driver still rejects capabilities that its own contract does not
+  expose. Tro does not ship a browser or VS Code extension, so unsaved editor
+  buffers and diagnostics are available only when the browser or operating-
+  system accessibility surface exposes them.
 
 Not implemented yet:
 
@@ -651,7 +653,8 @@ MODULE.bazel          Bazel module and Rust toolchain graph
 ## Design rule
 
 GPT chooses between assistant text and host-advertised tools, but it cannot add
-tools or bypass their schemas. The main process owns tool registration, parsing,
-public-target checks, technical prerequisites, exactly-once execution,
-cancellation, and limits. CUA is one lazy execution adapter behind that
-boundary.
+tools or bypass their schemas. Tro base tools are registered explicitly; CUA
+tools come from the driver's canonical catalog and are bound to a per-worker
+digest. The main process owns session lifecycle, parsing, public-target checks,
+technical prerequisites, exactly-once execution, cancellation, and limits. CUA
+is one lazy execution adapter behind that boundary.

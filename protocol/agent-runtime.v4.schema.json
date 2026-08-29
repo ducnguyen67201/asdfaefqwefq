@@ -587,6 +587,88 @@
       ],
       "type": "string"
     },
+    "CuaDriverCatalogV4": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "contractVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "driverCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "driverVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/CuaDriverToolV4"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "toolsListSchemaVersion": {
+          "const": "1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "driverVersion",
+        "contractVersion",
+        "toolsListSchemaVersion",
+        "capabilityVersion",
+        "driverCatalogDigest",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "CuaDriverToolV4": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "injectSession": {
+          "type": "boolean"
+        },
+        "inputSchema": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "modelName": {
+          "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,99}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "modelName",
+        "description",
+        "inputSchema",
+        "injectSession"
+      ],
+      "type": "object"
+    },
     "DesktopInvocationV4": {
       "additionalProperties": false,
       "properties": {
@@ -594,6 +676,17 @@
           "maxLength": 255,
           "minLength": 1,
           "type": "string"
+        },
+        "driverCatalogDigest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "expiresAt": {
           "format": "date-time",
@@ -697,6 +790,7 @@
         "protocolVersion",
         "protocolDigest",
         "toolCatalogDigest",
+        "driverCatalogDigest",
         "invocationId",
         "runId",
         "runVersion",
@@ -871,6 +965,16 @@
     "DesktopWorkerCapabilitiesV4": {
       "additionalProperties": false,
       "properties": {
+        "cua": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CuaDriverCatalogV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "protocolDigest": {
           "pattern": "^[a-f0-9]{64}$",
           "type": "string"
@@ -915,6 +1019,7 @@
         "protocolVersion",
         "protocolDigest",
         "toolCatalogDigest",
+        "cua",
         "tools"
       ],
       "type": "object"

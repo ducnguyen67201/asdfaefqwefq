@@ -2,7 +2,7 @@ pub mod catalog;
 mod content_guard;
 mod mcp;
 mod oauth;
-mod schema;
+pub(crate) mod schema;
 
 use std::time::Duration;
 

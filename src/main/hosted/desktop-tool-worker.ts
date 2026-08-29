@@ -5,13 +5,17 @@ import {
   type DesktopResultV4,
 } from '../../shared/agent-runtime-protocol';
 import { type GoalSpec } from '../../shared/contracts';
-import type { ToolExecutionResult } from '../agent/agent-contracts';
+import type {
+  ResolvedToolInvocation,
+  ToolExecutionResult,
+} from '../agent/agent-contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
   InteractionToolInput,
   RuntimeToolRegistry,
 } from '../agent/runtime-tool-registry';
+import type { CuaService } from '../cua/cua-service';
 
 import type { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 import {
@@ -22,6 +26,7 @@ import {
 
 export interface DesktopToolWorkerOptions {
   commitResult(result: DesktopResultV4): Promise<void>;
+  cua?: Pick<CuaService, 'cuaToolCatalog' | 'executeCuaTool'>;
   permissionCoordinator?: Pick<ComputerPermissionCoordinator, 'requireReady'>;
   dispatcher: Pick<RuntimeToolDispatcher, 'dispatch'>;
   goalProvider(runId: string): GoalSpec | undefined;
@@ -82,7 +87,12 @@ export class DesktopToolWorker {
     if (Date.parse(envelope.expiresAt) <= Date.now()) {
       return this.result(envelope, 'not_executed', 'The desktop invocation expired.');
     }
-    const metadata = hostedToolMetadata(envelope.toolId, envelope.operation);
+    const dynamicCua = envelope.toolId === 'cua.driver';
+    const metadata = dynamicCua
+      ? {
+          prerequisites: ['accessibility', 'screen_recording'] as const,
+        }
+      : hostedToolMetadata(envelope.toolId, envelope.operation);
     if (!metadata) {
       return this.result(
         envelope,
@@ -97,22 +107,56 @@ export class DesktopToolWorker {
     const latestObservation =
       this.options.latestObservationProvider?.(envelope.runId) ??
       this.latestObservations.get(envelope.runId);
-    const definition = this.options.registry
-      .list({ goal, latestObservation, taskId })
-      .find((candidate) => candidate.id === envelope.toolId);
-    if (!definition || !definition.operations.includes(envelope.operation)) {
-      return this.result(envelope, 'not_executed', 'The desktop does not support this tool operation.');
+    let invocation: ResolvedToolInvocation;
+    if (dynamicCua) {
+      const catalog = this.options.cua?.cuaToolCatalog();
+      const tool = catalog?.tools.find(
+        (candidate) => candidate.name === envelope.operation,
+      );
+      if (
+        !catalog ||
+        !tool ||
+        envelope.driverCatalogDigest !== catalog.driverCatalogDigest
+      ) {
+        return this.result(
+          envelope,
+          'not_executed',
+          'The CUA invocation does not match the installed driver catalog.',
+        );
+      }
+      invocation = {
+        callId: envelope.callId,
+        input: envelope.input,
+        kind: 'desktop',
+        modelName: `cua.${tool.name}`,
+        operation: tool.name,
+        toolId: 'cua.driver',
+      };
+    } else {
+      if (envelope.driverCatalogDigest !== null) {
+        return this.result(
+          envelope,
+          'not_executed',
+          'A static desktop tool cannot claim a CUA driver catalog.',
+        );
+      }
+      const definition = this.options.registry
+        .list({ goal, latestObservation, taskId })
+        .find((candidate) => candidate.id === envelope.toolId);
+      if (!definition || !definition.operations.includes(envelope.operation)) {
+        return this.result(envelope, 'not_executed', 'The desktop does not support this tool operation.');
+      }
+      const parsedInput = definition.parse(JSON.stringify(envelope.input));
+      invocation = definition.normalize(
+        parsedInput,
+        { arguments: JSON.stringify(envelope.input), callId: envelope.callId, name: definition.modelName },
+        {
+          goal,
+          latestObservation,
+          taskId,
+        },
+      );
     }
-    const parsedInput = definition.parse(JSON.stringify(envelope.input));
-    const invocation = definition.normalize(
-      parsedInput,
-      { arguments: JSON.stringify(envelope.input), callId: envelope.callId, name: definition.modelName },
-      {
-        goal,
-        latestObservation,
-        taskId,
-      },
-    );
     if (invocation.operation !== envelope.operation || invocation.toolId !== envelope.toolId) {
       return this.result(envelope, 'not_executed', 'The normalized tool identity did not match the signed envelope.');
     }
@@ -157,10 +201,18 @@ export class DesktopToolWorker {
               })(),
             },
           }
-        : await this.options.dispatcher.dispatch(invocation, {
-            signal,
-            taskId,
-          });
+        : dynamicCua
+          ? await this.options.cua!.executeCuaTool(
+              taskId,
+              invocation.operation,
+              invocation.input as Record<string, unknown>,
+              envelope.driverCatalogDigest!,
+              signal,
+            )
+          : await this.options.dispatcher.dispatch(invocation, {
+              signal,
+              taskId,
+            });
     } catch {
       return this.result(
         envelope,

@@ -269,7 +269,31 @@ export const CancelAgentTaskRequestV4Schema = AgentRuntimeNegotiationV4Schema.ex
   .strict()
   .meta({ id: 'CancelAgentTaskRequestV4' });
 
+export const CuaDriverToolV4Schema = z
+  .object({
+    name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
+    modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
+    description: z.string().trim().min(1).max(20_000),
+    inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+    injectSession: z.boolean(),
+  })
+  .strict()
+  .meta({ id: 'CuaDriverToolV4' });
+
+export const CuaDriverCatalogV4Schema = z
+  .object({
+    driverVersion: z.string().trim().min(1).max(100),
+    contractVersion: z.string().trim().min(1).max(100),
+    toolsListSchemaVersion: z.literal('1'),
+    capabilityVersion: z.string().trim().min(1).max(100),
+    driverCatalogDigest: DigestSchema,
+    tools: z.array(CuaDriverToolV4Schema).max(128),
+  })
+  .strict()
+  .meta({ id: 'CuaDriverCatalogV4' });
+
 export const DesktopWorkerCapabilitiesV4Schema = AgentRuntimeNegotiationV4Schema.extend({
+  cua: CuaDriverCatalogV4Schema.nullable(),
   tools: z
     .array(
       z
@@ -301,6 +325,7 @@ export const DesktopInvocationV4Schema = z
     protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION),
     protocolDigest: DigestSchema,
     toolCatalogDigest: DigestSchema,
+    driverCatalogDigest: DigestSchema.nullable(),
     invocationId: UuidSchema,
     runId: UuidSchema,
     runVersion: z.number().int().positive(),
@@ -445,6 +470,8 @@ export type AgentTaskEventV4 = z.infer<typeof AgentTaskEventV4Schema>;
 export type CancelAgentTaskRequestV4 = z.infer<typeof CancelAgentTaskRequestV4Schema>;
 export type DesktopWorkerCapabilitiesV4 = z.infer<typeof DesktopWorkerCapabilitiesV4Schema>;
 export type DesktopInvocationV4 = z.infer<typeof DesktopInvocationV4Schema>;
+export type CuaDriverCatalogV4 = z.infer<typeof CuaDriverCatalogV4Schema>;
+export type CuaDriverToolV4 = z.infer<typeof CuaDriverToolV4Schema>;
 export type DesktopResultV4 = z.infer<typeof DesktopResultV4Schema>;
 export type PermissionWaitRequestV4 = z.infer<typeof PermissionWaitRequestV4Schema>;
 export type PermissionDecisionRequestV4 = z.infer<typeof PermissionDecisionRequestV4Schema>;

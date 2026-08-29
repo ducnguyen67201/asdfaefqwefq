@@ -2,6 +2,7 @@ import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION,
   DesktopWorkerCapabilitiesV4Schema,
+  type CuaDriverCatalogV4,
   type DesktopWorkerCapabilitiesV4,
 } from '../../shared/agent-runtime-protocol';
 import {
@@ -25,6 +26,7 @@ export function hostedToolMetadata(
 
 export function desktopWorkerCapabilities(
   registry: Pick<RuntimeToolRegistry, 'list'>,
+  cua: CuaDriverCatalogV4 | null = null,
 ): DesktopWorkerCapabilitiesV4 {
   const local = new Map(
     registry.list().map((definition) => [
@@ -36,6 +38,7 @@ export function desktopWorkerCapabilities(
     protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
+    cua,
     tools: HOSTED_TOOL_CONTRACTS.flatMap((contract) => {
       const supported = local.get(contract.toolId);
       const operations = contract.operations.filter((operation) =>

@@ -11,6 +11,7 @@ function invocation() {
     protocolVersion: 4 as const,
     protocolDigest: manifest.protocolDigest,
     toolCatalogDigest: manifest.toolCatalogDigest,
+    driverCatalogDigest: null,
     invocationId: randomUUID(),
     runId: randomUUID(),
     runVersion: 4,

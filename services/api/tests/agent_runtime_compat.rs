@@ -190,6 +190,7 @@ fn capabilities() -> Value {
         "protocolVersion":4,
         "protocolDigest":protocol::protocol_digest(),
         "toolCatalogDigest":protocol::tool_catalog_digest(),
+        "cua":null,
         "tools":[
             {"operations":["launch"],"toolId":"application.launch"},
             {"operations":["read_file","write_file"],"toolId":"workspace.filesystem"}

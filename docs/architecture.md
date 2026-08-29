@@ -9,7 +9,7 @@ processes, application launch, and browser navigation.
 ## Execution path
 
 ```text
-goal -> plan -> registered tool call -> schema and target validation
+goal -> plan -> advertised typed tool call -> schema and target validation
      -> OS/OAuth prerequisite -> requested-to-executing CAS
      -> adapter call -> bounded result/evidence -> verify -> replan or finish
 ```
@@ -21,10 +21,14 @@ permissions and provider OAuth remain external consent boundaries.
 
 ## Boundaries that remain
 
-- Runtime v4 requires exact protocol and tool-catalog digests.
+- Runtime v4 requires exact protocol and Tro base-tool catalog digests. CUA
+  calls additionally require the exact live driver-catalog digest advertised by
+  the worker that accepted the task.
 - Authority contract v9 binds the task, execution profile, trusted workspace,
   Activity context, outcome criteria, and limits.
-- The registry rejects unknown tools, operations, and malformed inputs.
+- The registry rejects unknown Tro tools, operations, and malformed inputs.
+  CUA tools are discovered from the driver's canonical `listToolsJson` contract;
+  the backend and desktop both reject names or schemas outside that snapshot.
 - Browser navigation accepts credential-free public HTTPS targets only.
 - Workspace filesystem operations remain root-confined. Workspace shell input
   is structurally bounded but intentionally has the host user's shell powers.
@@ -37,11 +41,16 @@ permissions and provider OAuth remain external consent boundaries.
 ## CUA
 
 CUA is an execution capability, not the planner and not an authority source.
-The native driver requires an authorization-host callback for privileged
-browser profile preparation. Tro implements that SDK boundary with an internal
-capability broker: the registered `browser.prepare` tool arms one exact,
-short-lived task/window capability, consumes it once, and denies unexpected
-native requests. It does not ask the user for a Tro approval.
+Tro reads CUA's canonical tool inventory, removes only driver session start/end
+because the host owns task cleanup, injects the current task session into tools
+that declare a `session` property, and forwards every other compatible tool
+through the driver's generic `callTool` adapter. New tools using tool-list schema
+version 1 therefore need no Tro allowlist or backend contract edit.
+
+Tro selects CUA's unrestricted host mode, so there is no Tro action-approval
+decision in the CUA path. The driver still validates its own schemas and may
+refuse capabilities its contract marks as unavailable in every mode. Operating-
+system Accessibility and Screen Recording grants remain real prerequisites.
 
 ## Compatibility
 

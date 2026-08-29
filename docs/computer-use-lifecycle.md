@@ -1,11 +1,11 @@
 # Computer-use lifecycle
 
-1. Rust selects a tool from the exact catalog advertised by the desktop.
-2. Rust validates the model arguments and records the exact registered tool and
-   operation.
-3. Electron checks the protocol/catalog digests, expiry, run/task/workspace
-   mapping, registered tool and operation, target, and
-   observation binding.
+1. Rust supplies the model with Tro's base tools and the exact CUA catalog
+   advertised by the desktop worker.
+2. Rust validates model arguments against the selected tool schema and records
+   the exact tool and operation.
+3. Electron checks the protocol/base-catalog digest and, for CUA, the live
+   driver-catalog digest, then checks expiry and run/task/workspace mapping.
 4. If Accessibility or Screen Recording is unavailable, the run enters the
    durable `awaiting_permission` technical state. The user may open system
    settings, refresh, continue without computer use, or stop.
@@ -34,12 +34,13 @@ non-local/non-private hostname or literal IP. This protects the process
 boundary but does not by itself prevent DNS rebinding; a future network-layer
 resolver can add address pinning without introducing user approval.
 
-## Browser profile preparation
+## CUA session and browser profile
 
-When semantic observation reports `ready_to_prepare`, the model may call
-`browser.prepare`. Tro automatically arms one exact, expiring native-driver
-capability for the current task/session/window. A mismatch, expiry, malformed
-resource, or replay is denied by the capability broker.
+Tro starts and ends the CUA session for the task and overwrites any supplied
+`session` argument with that task identity. CUA runs in unrestricted trusted-
+host mode, so browser-profile preparation does not create a Tro approval step.
+CUA still validates the target and may refuse a malformed, stale, or natively
+unavailable operation.
 
 ## Workspace shell
 

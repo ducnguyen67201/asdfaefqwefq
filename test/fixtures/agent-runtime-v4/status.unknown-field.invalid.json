@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "guessedState": true,
-  "protocolDigest": "a6ab540a9889cf49785c8e6bdb189cbb4ea09c8b767c854dcd630ddf7080935f",
+  "protocolDigest": "6541ce3bb28c5bad89f141f2aed2436bc0e803ec2f52287c43974113dd07c2ad",
   "protocolVersion": 4,
   "rolloutMode": "enforce",
   "supportedReadVersions": [

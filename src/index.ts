@@ -440,6 +440,7 @@ const computerPermissionCoordinator = new ComputerPermissionCoordinator({
 });
 const desktopToolWorker = new DesktopToolWorker({
   commitResult: (result) => desktopWorkerClient.commitResult(result),
+  cua: cuaService,
   dispatcher: {
     dispatch: (invocation, context) =>
       executionCoordinator.dispatchHostedTool(invocation, context),
@@ -1391,8 +1392,12 @@ async function startHostedDesktopWorker(): Promise<void> {
     console.error('[desktop-worker] active task restoration failed.', error);
     return 0;
   });
+  const cuaCatalog = await cuaService.discoverToolCatalog().catch((error: unknown) => {
+    console.error('[desktop-worker] CUA tool discovery failed.', error);
+    return null;
+  });
   await desktopWorkerClient
-    .start(desktopWorkerCapabilities(runtimeToolRegistry))
+    .start(desktopWorkerCapabilities(runtimeToolRegistry, cuaCatalog))
     .catch((error: unknown) => {
       console.error('[desktop-worker] could not connect.', error);
     });

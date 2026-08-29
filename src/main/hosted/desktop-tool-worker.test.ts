@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GoalSpec, WorkspaceIdentity } from '../../shared/contracts';
 import { createCuaSemanticToolDefinitions } from '../agent/cua-semantic-agent-tools';
 import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
+import { createCuaDriverCatalog } from '../cua/cua-semantic-contracts';
 
 import { DesktopToolWorker } from './desktop-tool-worker';
 import {
@@ -17,6 +18,7 @@ function envelope(overrides: Record<string, unknown> = {}) {
     protocolVersion: 4,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
+    driverCatalogDigest: null,
     invocationId: randomUUID(),
     runId: randomUUID(),
     runVersion: 1,
@@ -461,5 +463,72 @@ describe('DesktopToolWorker', () => {
     expect(result.status).toBe('confirmed');
     expect(requestExecuting).toHaveBeenCalledWith(expect.any(String), 1);
     expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it('dispatches a newly discovered CUA tool through the generic driver adapter', async () => {
+    const goal = hostedGoal('Use the future CUA capability.');
+    const catalog = createCuaDriverCatalog(
+      {
+        driverVersion: '0.20.0',
+        contractVersion: '0.7.0',
+        toolsListSchemaVersion: '1',
+        capabilityVersion: '2',
+      },
+      {
+        capability_version: '2',
+        schema_version: '1',
+        tools: [{
+          name: 'future_cua_action',
+          description: 'A future driver tool.',
+          capabilities: ['future.action'],
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { value: { type: 'string' } },
+            required: ['value'],
+          },
+        }],
+      },
+    );
+    const executeCuaTool = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'Future tool completed.',
+    }));
+    const dispatch = vi.fn();
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      cua: {
+        cuaToolCatalog: () => catalog,
+        executeCuaTool,
+      },
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      permissionCoordinator: {
+        requireReady: vi.fn(async ({ invocation }) => ({
+          outcome: 'granted' as const,
+          runVersion: invocation.runVersion,
+        })),
+      },
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => true),
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      driverCatalogDigest: catalog.driverCatalogDigest,
+      toolId: 'cua.driver',
+      operation: 'future_cua_action',
+      input: { value: 'hello' },
+    }));
+
+    expect(result.status).toBe('confirmed');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(executeCuaTool).toHaveBeenCalledWith(
+      goal.id,
+      'future_cua_action',
+      { value: 'hello' },
+      catalog.driverCatalogDigest,
+      expect.any(AbortSignal),
+    );
   });
 });

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CuaStatus } from '../../shared/contracts';
 
+import { createCuaDriverCatalog } from './cua-semantic-contracts';
 import {
   CuaService,
   getCuaModuleSpecifier,
@@ -117,7 +118,11 @@ describe('CUA Dictation adapter', () => {
   it('initializes with Accessibility alone while full CUA still requires Screen Recording', async () => {
     const driver = {
       isAvailable: vi.fn(() => true),
-      listToolsJson: vi.fn(async () => '[]'),
+      listToolsJson: vi.fn(async () => JSON.stringify({
+        capability_version: '1',
+        schema_version: '1',
+        tools: [],
+      })),
       metadata: vi.fn(async () => ({
         capabilityVersion: '1',
         contractVersion: '0.6.0',
@@ -128,6 +133,7 @@ describe('CUA Dictation adapter', () => {
       uniffiDestroy: vi.fn(),
     };
     const requestMacOsPermissions = vi.fn();
+    const runtimeAuthorizationOptions = vi.fn((value) => value);
     const module = {
       ...fakeCuaModule(),
       ConfiguredDriverOptions: recordFactory(),
@@ -135,8 +141,8 @@ describe('CUA Dictation adapter', () => {
         createConfiguredWithHostIntegrations: vi.fn(() => driver),
       },
       DriverAuthorizationAction: { Allow: 0, Cancel: 1, Deny: 2 },
-      RuntimeAuthorizationOptions: recordFactory(),
-      SessionPermissionMode: { Standard: 0 },
+      RuntimeAuthorizationOptions: { new: runtimeAuthorizationOptions },
+      SessionPermissionMode: { Standard: 0, Unrestricted: 2 },
       currentMacOsPermissionStatus: vi.fn(() => ({
         accessibility: true,
         screenRecording: false,
@@ -155,6 +161,13 @@ describe('CUA Dictation adapter', () => {
       permissions: { accessibility: true, screenRecording: false },
     });
     expect(requestMacOsPermissions).not.toHaveBeenCalled();
+    expect(runtimeAuthorizationOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowedModes: [2],
+        compatibilityMode: 2,
+        unrestrictedAcknowledged: true,
+      }),
+    );
     expect(module.CuaDriver.createConfiguredWithHostIntegrations).toHaveBeenCalledOnce();
   });
 
@@ -265,6 +278,64 @@ describe('CUA task sessions', () => {
     expect(pasteShortcutForPlatform('darwin')).toEqual(['cmd', 'v']);
     expect(pasteShortcutForPlatform('win32')).toEqual(['ctrl', 'v']);
     expect(pasteShortcutForPlatform('linux')).toEqual(['ctrl', 'v']);
+  });
+
+  it('injects the host task session into generic driver calls', async () => {
+    const taskId = randomUUID();
+    const callTool = vi.fn(async () => ({
+      text: 'Future tool completed.',
+      images: [],
+      isError: false,
+      degraded: false,
+      rawJson: '{}',
+    }));
+    const driver = {
+      callTool,
+      isAvailable: vi.fn(() => true),
+      startSession: vi.fn(async () => startedWindowSession()),
+    };
+    const catalog = createCuaDriverCatalog(
+      {
+        driverVersion: '0.20.0',
+        contractVersion: '0.7.0',
+        toolsListSchemaVersion: '1',
+        capabilityVersion: '2',
+      },
+      {
+        capability_version: '2',
+        schema_version: '1',
+        tools: [{
+          name: 'future_cua_action',
+          description: 'A future driver tool.',
+          capabilities: ['future.action'],
+          inputSchema: {
+            type: 'object',
+            properties: {
+              session: { type: 'string' },
+              value: { type: 'string' },
+            },
+            required: ['session', 'value'],
+          },
+        }],
+      },
+    );
+    const service = new CuaService();
+    Reflect.set(service, 'cuaModule', fakeCuaModule());
+    Reflect.set(service, 'driver', driver);
+    Reflect.set(service, 'driverCatalog', catalog);
+
+    await expect(service.executeCuaTool(
+      taskId,
+      'future_cua_action',
+      { session: 'spoofed-session', value: 'hello' },
+      catalog.driverCatalogDigest,
+    )).resolves.toMatchObject({ status: 'confirmed' });
+
+    expect(callTool).toHaveBeenCalledWith(
+      'future_cua_action',
+      JSON.stringify({ session: taskId, value: 'hello' }),
+      undefined,
+    );
   });
 
   it('starts a session, captures a bounded observation, and ends it', async () => {
