@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use trocode_api::{
     agent::{AgentService, protocol},
     auth::AgentStateCrypto,
-    config::{AgentRuntimeConfig, AgentRuntimeV4Mode, CostGuardConfig, CostGuardMode},
+    config::{AgentRuntimeConfig, CostGuardConfig, CostGuardMode},
     db,
     postgres::PgPoolOptions,
     providers::ResponsesService,
@@ -123,7 +123,6 @@ fn runtime_config() -> AgentRuntimeConfig {
         playwright_cdp_enabled: false,
         protocol_version: 4,
         rollout_percent: 0,
-        v4_mode: AgentRuntimeV4Mode::Observe,
     }
 }
 
@@ -179,7 +178,10 @@ fn task_input(request: &str, client: Uuid, task: Uuid) -> Value {
         "taskId":task,
         "workspaceSelectionId":null,
         "activityAttemptId":null,
-        "activityIntent":"work"
+        "activityIntent":"work",
+        "protocolVersion":4,
+        "protocolDigest":protocol::protocol_digest(),
+        "toolCatalogDigest":protocol::tool_catalog_digest()
     })
 }
 
@@ -238,7 +240,16 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     assert!(!agent.has_active(USER).await.unwrap());
 
     let invalid = agent
-        .submit(USER, "basic", &json!({"request":"missing fields"}))
+        .submit(
+            USER,
+            "basic",
+            &json!({
+                "protocolVersion":4,
+                "protocolDigest":protocol::protocol_digest(),
+                "toolCatalogDigest":protocol::tool_catalog_digest(),
+                "request":"missing fields"
+            }),
+        )
         .await
         .expect_err("invalid task must fail");
     assert_eq!(invalid.code, Some("invalid_request"));
@@ -252,6 +263,9 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
             &json!({
                 "clientTaskId":client,
                 "executionProfile":"everyday",
+                "protocolVersion":4,
+                "protocolDigest":protocol::protocol_digest(),
+                "toolCatalogDigest":protocol::tool_catalog_digest(),
                 "request":"A conflicting retry body must not replace the persisted request.",
                 "taskId":task
             }),

@@ -17,8 +17,8 @@ use trocode_api::{
     app::AppState,
     auth::User,
     config::{
-        AdminConfig, AgentRuntimeConfig, AgentRuntimeV4Mode, Config, ConnectorConfig,
-        CostGuardConfig, CostGuardMode, KnowledgeConfig, ObjectStoreConfig,
+        AdminConfig, AgentRuntimeConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode,
+        KnowledgeConfig, ObjectStoreConfig,
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
@@ -106,7 +106,6 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
             playwright_cdp_enabled: false,
             protocol_version: 4,
             rollout_percent: 0,
-            v4_mode: AgentRuntimeV4Mode::Observe,
         },
         connectors: ConnectorConfig {
             callback_url: None,

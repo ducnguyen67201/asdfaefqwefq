@@ -8,6 +8,10 @@ import type { CuaStatus } from '../../shared/contracts';
 
 type ComputerPermission = ComputerPermissionV4;
 type PermissionOutcome = 'granted' | 'continue_without_computer';
+export interface PermissionResolution {
+  outcome: PermissionOutcome;
+  runVersion: number;
+}
 
 interface PermissionBackend {
   decidePermission(input: {
@@ -27,10 +31,10 @@ interface PermissionBackend {
 interface PendingPermission {
   interactionId: string;
   invocationId: string;
-  promise: Promise<PermissionOutcome>;
+  promise: Promise<PermissionResolution>;
   reject(error: Error): void;
   requirements: ComputerPermission[];
-  resolve(outcome: PermissionOutcome): void;
+  resolve(resolution: PermissionResolution): void;
   resolving: boolean;
   runId: string;
   runVersion: number;
@@ -53,10 +57,14 @@ export class ComputerPermissionCoordinator {
     invocation: DesktopInvocationV4;
     requirements: readonly ComputerPermission[];
     taskId: string;
-  }): Promise<PermissionOutcome> {
-    if (input.requirements.length === 0) return 'granted';
+  }): Promise<PermissionResolution> {
+    if (input.requirements.length === 0) {
+      return { outcome: 'granted', runVersion: input.invocation.runVersion };
+    }
     const status = await this.readyStatus();
-    if (status.state === 'ready' && status.available) return 'granted';
+    if (status.state === 'ready' && status.available) {
+      return { outcome: 'granted', runVersion: input.invocation.runVersion };
+    }
 
     const existing = this.pendingByInvocation.get(input.invocation.invocationId);
     if (existing) return existing.promise;
@@ -70,9 +78,9 @@ export class ComputerPermissionCoordinator {
       requiredPermissions: [...input.requirements],
     });
 
-    let resolvePromise!: (outcome: PermissionOutcome) => void;
+    let resolvePromise!: (resolution: PermissionResolution) => void;
     let rejectPromise!: (error: Error) => void;
-    const promise = new Promise<PermissionOutcome>((resolve, reject) => {
+    const promise = new Promise<PermissionResolution>((resolve, reject) => {
       resolvePromise = resolve;
       rejectPromise = reject;
     });
@@ -154,14 +162,14 @@ export class ComputerPermissionCoordinator {
     if (pending.resolving) return;
     pending.resolving = true;
     try {
-      await this.options.backend.decidePermission({
+      const result = await this.options.backend.decidePermission({
         invocationId: pending.invocationId,
         interactionId: pending.interactionId,
         expectedRunVersion: pending.runVersion,
         decision,
       });
       this.pendingByInvocation.delete(pending.invocationId);
-      pending.resolve(decision);
+      pending.resolve({ outcome: decision, runVersion: result.runVersion });
     } catch (error) {
       pending.resolving = false;
       throw error;

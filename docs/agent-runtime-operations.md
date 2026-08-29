@@ -4,17 +4,17 @@ The Rust runtime is the only task backend. New work requires a configured API,
 an authenticated device session, authority contract v9, protocol v4, and exact
 protocol/tool-catalog digests. There is no TypeScript fallback loop.
 
-## Runtime v4 rollout
+## Runtime v4 cutover
 
 1. Generate and commit v4 artifacts with `npm run agent:protocol:generate` and
    enforce `npm run agent:protocol:check`.
-2. Deploy the v4/v9-compatible backend with `AGENT_RUNTIME_V4_MODE=observe`.
-3. Deploy v4 desktops, verify both digests, then use `dual` during the legacy
-   drain.
-4. Run `npm run agent:runtime-versions`. With `DATABASE_URL` configured it
+2. While the old deployment is still running, stop new agent starts and run
+   `npm run agent:runtime-versions`. With `DATABASE_URL` configured it
    reports active v2 and v3 rows.
-5. Switch to `enforce` for v4-only starts.
-6. Require zero nonterminal v2/v3 rows before cleanup migration 030.
+3. Let known in-flight effects finish, and cancel stale legacy waits through
+   the old deployment. Require zero nonterminal v2/v3 rows.
+4. Deploy the v4 desktop and v4/v9 backend together. Startup applies migration
+   030 and admits only v4 starts and workers with both exact digests.
 
 ```sql
 SELECT protocol_version, state, COUNT(*)

@@ -343,11 +343,7 @@
       "type": "object"
     },
     "AgentRuntimeRolloutModeV4": {
-      "enum": [
-        "observe",
-        "dual",
-        "enforce"
-      ],
+      "const": "enforce",
       "type": "string"
     },
     "AgentRuntimeStatusV4": {

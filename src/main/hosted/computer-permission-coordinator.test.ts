@@ -78,7 +78,10 @@ describe('ComputerPermissionCoordinator', () => {
     ready = true;
     await coordinator.refresh();
 
-    await expect(pending).resolves.toBe('granted');
+    await expect(pending).resolves.toEqual({
+      outcome: 'granted',
+      runVersion: 6,
+    });
     expect(decidePermission).toHaveBeenCalledOnce();
     await coordinator.refresh();
     expect(decidePermission).toHaveBeenCalledOnce();

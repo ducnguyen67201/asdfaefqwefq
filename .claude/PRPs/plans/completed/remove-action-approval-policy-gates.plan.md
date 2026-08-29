@@ -22,8 +22,8 @@ The same action is currently classified repeatedly by the Rust API, the local Ru
 - **Complexity**: XL
 - **Source PRD**: N/A; freeform user request
 - **PRD Phase**: N/A
-- **Estimated Files**: 60-75 files across two rollout PRs
-- **Recommended Delivery**: Two staged PRs and one production drain gate. PR A introduces protocol v4 / authority contract v9 and stops new approval-gated work. PR B, after active v2/v3 work reaches zero, deletes the old policy/approval code and columns.
+- **Delivered Files**: 129 files in one atomic-cutover PR
+- **Delivery**: One production drain gate followed by an atomic v4/v9 cutover. The old deployment must stop new starts and reach zero nonterminal v2/v3 runs before this PR is deployed, because migration 030 removes their executable approval state.
 - **Supersedes**: The approval-preserving portions of `.claude/PRPs/plans/general-purpose-gpt-led-agent.plan.md`, especially its Tasks 7-10. The runtime registry, fresh-observation, verification, and unknown-outcome patterns from that plan remain valid.
 
 ---
@@ -154,7 +154,7 @@ The repository references `docs/CODEX-NAVIGATION-GUIDE.md`, but that file is abs
 | Connector contract | `services/api/src/connectors/catalog.rs:69-218` | Reviewed tool list, strict schemas, no send/delete tools | Catalog availability remains; per-call policy/approval disappears |
 | Legacy read strategy | `src/shared/legacy-agent-runtime-v2.ts` | Isolated old protocol projection | Mirror for v3 history after v4 becomes canonical |
 | UI boundary | `src/shared/desktop-api.ts` + `src/preload.ts` + `src/main/ipc/register-ipc.ts` | Narrow parsed IPC | Delete approval mutation end-to-end; never expose raw dispatch |
-| Rollout | `docs/agent-runtime-operations.md:9-35` | Observe/dual/enforce plus active-run drain | Mirror for v4 and do not reinterpret active v3 approval waits |
+| Cutover | `docs/agent-runtime-operations.md:9-35` | Active-run drain and exact version checks | Require a zero-active-v2/v3 drain before the atomic v4 cutover; do not reinterpret active v3 approval waits |
 
 ---
 
@@ -288,13 +288,14 @@ Remove `intentRevision`, `approvalRequired`, and `authorizationSource`. `request
 
 ## Rollout and Compatibility
 
-### PR A — Introduce no-approval v4/v9
+### Atomic cutover — Introduce no-approval v4/v9 and remove legacy execution
 
-1. Add v4 schema/catalog/artifacts and v9 authority alongside legacy v3/v8 parsing.
+1. Add v4 schema/catalog/artifacts and v9 authority alongside legacy v3/v8 terminal-history parsing.
 2. Add `/v1/agent-runtime/v4/...` status/task/worker routes.
-3. Set v4-capable desktops to start v4 only; backend temporarily keeps v3 execution for already-active runs.
-4. Remove approval UI from the v4 projection. A legacy v3 `awaiting_approval` record may render as a read-only “Update required; stop this task” state during the drain, never as a v4 action.
-5. Rename rollout configuration to `AGENT_RUNTIME_V4_MODE`; support observe → dual → enforce. In `enforce`, new v2/v3 starts and worker registrations are rejected while GET/list/history remain readable.
+3. Stop new starts on the old deployment and drain all nonterminal v2/v3 runs before migration 030.
+4. Deploy v4-capable desktops and the v4-only backend together; exact protocol and tool-catalog digests are mandatory.
+5. Keep terminal v2/v3 history readable, but never admit an old start or worker after cutover. The v4 status reports `enforce` as a fixed compatibility fact, not as a mutable rollout control.
+6. Remove v3 start/control/worker execution paths, the approval endpoint, and approval/intent-authorization persistence in the same release.
 
 ### Drain Gate
 
@@ -307,16 +308,9 @@ GROUP BY protocol_version, state;
 
 Require zero active v2/v3 rows. Operators should cancel stale `awaiting_approval` runs through the old deployment before the cleanup migration. Never migrate them into `executing_tool` and never synthesize an approval.
 
-### PR B — Delete legacy execution and persistence
-
-1. Remove v3 start/control/worker execution paths and the approval endpoint.
-2. Apply the cleanup migration, guarded by the zero-active-legacy assertion.
-3. Drop approval and intent-authorization columns, constraints, indexes, and config.
-4. Keep a small legacy v3 read adapter for terminal history only.
-
 ### Migration Number
 
-The current checkout ends at migration 028, while migration 029 is known to exist in another pending checkout/development database. Sync/land 029 first, then use the next unused number—expected `030_remove_agent_approval_policy.sql`. Never create a different migration 029 or edit an already-applied migration, because SQLx will reproduce the “previously applied but missing” failure.
+Migration 029 is present on the base branch, so this cutover uses `030_remove_agent_approval_policy.sql`. Never create a different migration 029 or edit an already-applied migration, because SQLx will reproduce the “previously applied but missing” failure.
 
 ---
 
@@ -381,7 +375,7 @@ The current checkout ends at migration 028, while migration 029 is known to exis
 | `services/api/src/agent/tool_catalog.rs` | UPDATE | Consume v4 tool catalog; preserve strict schema/operation checks |
 | `services/api/src/http/agent_runtime.rs` | UPDATE | Add v4 routes/status, then remove v3 approval/start/control routes after drain |
 | `services/api/src/desktop_engine.rs` | UPDATE | Remove policy/intent methods and health features; preserve OAuth/voice |
-| `services/api/src/config.rs` | UPDATE | Replace v3 rollout with v4 rollout; delete intent-authorization canary config |
+| `services/api/src/config.rs` | UPDATE | Make v4 the only start protocol; delete obsolete rollout-mode and intent-authorization canary config |
 | `services/api/src/cli/checks.rs` | UPDATE | Report v4 readiness and v2/v3 drain |
 | `services/api/src/cli/reports.rs` | UPDATE | Replace approval/hard-confirm metrics with execution/evidence/no-retry metrics |
 | `services/api/migrations/030_remove_agent_approval_policy.sql` | CREATE expected | Drain guard, state constraint cleanup, approval/auth column/index/constraint removal |
@@ -448,7 +442,7 @@ The current checkout ends at migration 028, while migration 029 is known to exis
 | `src/main/analytics/analytics-service.ts` and test | UPDATE | Remove approval/autonomy/auth-source properties; retain fixed IDs and outcomes |
 | `README.md`, `PRIVACY.md` | UPDATE | Disclose direct autonomous execution and connector private-read behavior |
 | `docs/architecture.md`, `docs/computer-use-lifecycle.md`, `docs/conversational-task-execution.md`, `docs/connectors.md`, `docs/security.md`, `docs/agent-runtime-operations.md` | UPDATE | Document no-approval architecture, v4 rollout, and retained harness |
-| `.env.example` | UPDATE | v4 mode; remove intent-authorization rollout variables |
+| `.env.example` | UPDATE | Document the v4-only cutover; remove inert mode and intent-authorization rollout variables |
 
 Historical `docs/testing/*.tdd.md` files are evidence for past releases. Do not rewrite them to pretend approval never existed; add a new no-approval v4 TDD evidence document when implementation is complete.
 
@@ -518,7 +512,7 @@ Historical `docs/testing/*.tdd.md` files are evidence for past releases. Do not 
 - **MIRROR**: Existing `requested` invocation insertion, lease acquisition, result commit, and `effect_outcome_unknown` handling in `service.rs`; pure lifecycle `transition/project` in `lifecycle.rs`.
 - **IMPORTS**: `action::{ActionEffect, ProposedAction}`, protocol v4 DTOs, existing crypto/repository/provider/connector helpers.
 - **GOTCHA**: Connector execution and desktop execution have different workers, but both must use the same requested → executing → terminal ownership model. Do not call a connector before the requested invocation/checkpoint transaction commits.
-- **VALIDATE**: Rust policy tests are replaced by action-shape/lifecycle/service tests; no production `evaluate_action`, `compile_intent_authorization`, `awaiting_approval`, or approval SQL reference remains after PR B.
+- **VALIDATE**: Rust policy tests are replaced by action-shape/lifecycle/service tests; no production `evaluate_action`, `compile_intent_authorization`, `awaiting_approval`, or approval SQL reference remains after the atomic cutover.
 
 ### Task 5: Simplify Electron worker dispatch without weakening execution preconditions
 
@@ -615,20 +609,20 @@ Historical `docs/testing/*.tdd.md` files are evidence for past releases. Do not 
 - **GOTCHA**: Removing approval denominators can produce incomparable historical baselines. Version the reliability scenario/report schema and reject mixed old/new fixture versions with a clear error.
 - **VALIDATE**: Analytics privacy tests and Rust reliability report tests pass; a candidate that retries an unknown consequential action fails the gate.
 
-### Task 11: Roll out v4, delete the compatibility path, and align documentation
+### Task 11: Cut over to v4, delete the executable compatibility path, and align documentation
 
-- **ACTION**: Execute observe → dual → enforce → drain → cleanup, then update every active product/security claim.
+- **ACTION**: Drain → atomic v4 cutover → cleanup, then update every active product/security claim.
 - **IMPLEMENT**:
   - Add generic v4 readiness output to `npm run agent:runtime-versions` / CLI checks.
-  - Deploy PR A in observe, update desktops, switch dual, make v4 the only start version, then enforce.
-  - Query the drain by protocol/state. Cancel stale old approval waits using the old release; wait for executing consequential operations to reach known terminal states. Never force-replay.
-  - Apply PR B and migration only at zero active v2/v3.
+  - Stop new starts on the old release, query the drain by protocol/state, and cancel stale old approval waits using that release.
+  - Wait for executing consequential operations to reach known terminal states. Never force-replay.
+  - Deploy the v4 desktop, v4-only backend, and cleanup migration only at zero active v2/v3.
   - Update architecture, lifecycle, conversation, connector, security, privacy, README, env example, and runtime operations docs.
   - State plainly that registered tools run automatically and that OS/provider consent still applies.
   - Preserve historical testing documents; add the v4 evidence document with command output/commit references.
-- **MIRROR**: Existing canonical v3 rollout in `docs/agent-runtime-operations.md` and Rust backend cutover drain rules.
+- **MIRROR**: Existing active-version query in `docs/agent-runtime-operations.md` and Rust backend cutover drain rules.
 - **IMPORTS**: N/A.
-- **GOTCHA**: An older desktop must never connect as v4, and a v4 desktop must never claim a v3 invocation. Exact version plus both digests remain mandatory throughout rollout.
+- **GOTCHA**: An older desktop must never connect as v4, and a v4 desktop must never claim a v3 invocation. Exact version plus both digests remain mandatory across the cutover boundary.
 - **VALIDATE**: Runtime version report shows only v4 nonterminal work before cleanup; full release commands pass; packaged macOS smoke test completes goal-driven navigation and a workspace action without an approval card.
 
 ---
@@ -727,7 +721,7 @@ EXPECT: All focused v4/v9, direct execution, permission, history, UI, and privac
 cargo test --manifest-path services/api/Cargo.toml --locked
 ~~~
 
-EXPECT: v4 protocol/lifecycle/service/connector/report tests pass; no policy module remains after PR B.
+EXPECT: v4 protocol/lifecycle/service/connector/report tests pass; no policy module remains after the atomic cutover.
 
 ### PostgreSQL Compatibility
 
@@ -758,7 +752,7 @@ rg -n "awaiting_approval|approvalRequired|authorizationSource|intentAuthorizatio
   src services/api/src protocol/agent-runtime.v4.schema.json protocol/agent-tools.v4.json .env.example README.md PRIVACY.md docs
 ~~~
 
-EXPECT after PR B: no active-runtime/product references. Matches are allowed only in explicitly named legacy v2/v3/V8 parsers, frozen v3 artifacts, historical migrations, and historical `docs/testing` evidence.
+EXPECT after the atomic cutover: no active-runtime/product references. Matches are allowed only in explicitly named legacy v2/v3/V8 parsers, frozen v3 artifacts, historical migrations, and historical `docs/testing` evidence.
 
 ---
 
@@ -779,33 +773,33 @@ EXPECT after PR B: no active-runtime/product references. Matches are allowed onl
 
 ## Acceptance Criteria
 
-- [ ] Every new task uses authority contract v9 and protocol v4.
-- [ ] No current authority/wire/persistence/UI type contains intent grants, approval policy, approval required, authorization source, or approval decision.
-- [ ] No production function returns an action-level allowed/needs-approval/denied policy decision.
-- [ ] A registered schema-valid action proceeds automatically after technical preconditions and the one-time execution CAS.
-- [ ] Unknown/unregistered operations and malformed inputs are rejected as contract/precondition failures, not policy decisions.
-- [ ] OS permission, OAuth consent, clarification, cancellation, budgets, workspace binding, URL validation, and verification still work.
-- [ ] The CUA internal native authorization broker is automatic, task/window scoped, expiring, one-use, and not exposed as user approval.
-- [ ] Unknown consequential outcomes are blocked and never automatically retried.
-- [ ] No old pending approval is auto-approved, converted to executing, or resumed under v4 semantics.
-- [ ] New v4 work can roll out while v3 drains, and cleanup migration refuses to run with active legacy work.
-- [ ] Legacy terminal v2/v3/V8 history remains readable but noninteractive.
-- [ ] The Workspace shell risk is documented accurately; no hidden semantic command denylist remains.
-- [ ] Renderer remains sandboxed and receives no raw CUA, Electron IPC, connector token, or direct tool dispatch handle.
-- [ ] Analytics/reporting contain fixed identifiers and outcome aggregates only, with no private action content.
-- [ ] Required TypeScript, Rust, Bazel, package, protocol, and database checks pass.
+- [x] Every new task uses authority contract v9 and protocol v4.
+- [x] No current authority/wire/persistence/UI type contains intent grants, approval policy, approval required, authorization source, or approval decision.
+- [x] No production function returns an action-level allowed/needs-approval/denied policy decision.
+- [x] A registered schema-valid action proceeds automatically after technical preconditions and the one-time execution CAS.
+- [x] Unknown/unregistered operations and malformed inputs are rejected as contract/precondition failures, not policy decisions.
+- [x] OS permission, OAuth consent, clarification, cancellation, budgets, workspace binding, URL validation, and verification still work.
+- [x] The CUA internal native authorization broker is automatic, task/window scoped, expiring, one-use, and not exposed as user approval.
+- [x] Unknown consequential outcomes are blocked and never automatically retried.
+- [x] No old pending approval is auto-approved, converted to executing, or resumed under v4 semantics.
+- [x] The atomic cutover refuses to run with active legacy work and never mixes v3 and v4 execution.
+- [x] Legacy terminal v2/v3/V8 history remains readable but noninteractive.
+- [x] The Workspace shell risk is documented accurately; no hidden semantic command denylist remains.
+- [x] Renderer remains sandboxed and receives no raw CUA, Electron IPC, connector token, or direct tool dispatch handle.
+- [x] Analytics/reporting contain fixed identifiers and outcome aggregates only, with no private action content.
+- [x] Required TypeScript, Rust, Bazel, package, protocol, and database checks pass.
 
 ## Completion Checklist
 
-- [ ] PR A and PR B are separately reviewable and have explicit rollout/rollback notes.
-- [ ] v3 generated artifacts are frozen and v4 artifacts are generator-owned.
-- [ ] V9 is the only new executable authority contract.
-- [ ] Migration number is allocated after migration 029 is synchronized.
-- [ ] No old migration file is modified.
-- [ ] Existing uncommitted edits in `service.rs`, `App.tsx`, and renderer tests are preserved/reconciled.
-- [ ] Historical approval TDD documents remain historical; new v4 evidence is added.
-- [ ] Documentation no longer implies OpenCUA itself supplies a production harness.
-- [ ] Diff review confirms the policy was deleted rather than bypassed with `allowed: true` stubs.
+- [x] The atomic-cutover PR has explicit drain, rollout, and rollback notes.
+- [x] v3 generated artifacts are frozen and v4 artifacts are generator-owned.
+- [x] V9 is the only new executable authority contract.
+- [x] Migration number is allocated after migration 029 is synchronized.
+- [x] No old migration file is modified.
+- [x] Existing uncommitted edits in `service.rs`, `App.tsx`, and renderer tests are preserved/reconciled.
+- [x] Historical approval TDD documents remain historical; new v4 evidence is added.
+- [x] Documentation no longer implies OpenCUA itself supplies a production harness.
+- [x] Diff review confirms the policy was deleted rather than bypassed with `allowed: true` stubs.
 
 ---
 
@@ -815,7 +809,7 @@ EXPECT after PR B: no active-runtime/product references. Matches are allowed onl
 |---|---|---|---|
 | Model performs an unintended consequential action | Medium | Critical | Limit tools to explicit registered schemas, keep cancellation/audit/evidence, preserve one-action/reobserve loop, document accepted product risk |
 | Unrestricted Workspace shell escapes intended project scope | High | Critical | Explicit release warning, retain scrubbed env/time/output bounds, default Workspace opt-in, kill switch; future sandbox is a separate feature, not an approval disguise |
-| Mixed v3/v4 deployment strands work | Medium | High | Real version bump, dual rollout, exact digests, read-only legacy adapter, active-run drain |
+| Mixed v3/v4 deployment strands work | Medium | High | Prohibit mixed executable versions, require an active-run drain, use exact digests, and retain only a read-only legacy adapter |
 | Old approval wait is accidentally executed | Low | Critical | Never normalize active V8/v3 to v9/v4; drain guard; migration assertion; cancel with old release |
 | Removing approval types breaks history parsing | Medium | Medium | Dedicated V8/v3 legacy parser and representative persisted fixtures |
 | Connector private data enters the model without per-read approval | High | High | OAuth consent remains explicit, scopes/catalog stay narrow, content bounded/untrusted, privacy docs updated, connectors omitted from classroom runs |

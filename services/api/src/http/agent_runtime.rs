@@ -41,14 +41,13 @@ pub async fn handle(
     let enabled = agent.enabled_for(&current.user.id);
 
     if method == Method::GET && path == "/v1/agent-runtime/v4/status" {
-        let mode = agent.v4_mode().as_str();
         let value = json!({
             "protocolVersion": protocol::PROTOCOL_VERSION,
             "protocolDigest": protocol::protocol_digest(),
             "toolCatalogDigest": protocol::tool_catalog_digest(),
             "supportedReadVersions": [2, 3, 4],
             "supportedStartVersions": [4],
-            "rolloutMode": mode,
+            "rolloutMode": "enforce",
             "workerRequired": enabled || agent.has_active(&current.user.id).await?,
             "enabled": enabled
         });

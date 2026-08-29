@@ -150,7 +150,10 @@ describe('DesktopToolWorker', () => {
       status: 'confirmed' as const,
       summary: 'YouTube is open.',
     }));
-    const requireReady = vi.fn(async () => 'granted' as const);
+    const requireReady = vi.fn(async () => ({
+      outcome: 'granted' as const,
+      runVersion: 1,
+    }));
     const goal = hostedGoal('Mở YouTube.');
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
@@ -205,7 +208,10 @@ describe('DesktopToolWorker', () => {
         text: 'A send button is visible.',
       }),
       permissionCoordinator: {
-        requireReady: vi.fn(async () => 'granted' as const),
+        requireReady: vi.fn(async () => ({
+          outcome: 'granted' as const,
+          runVersion: 1,
+        })),
       },
       registry: new RuntimeToolRegistry(),
       requestExecuting,
@@ -246,6 +252,41 @@ describe('DesktopToolWorker', () => {
       expect.any(String),
       1,
     );
+  });
+
+  it('claims execution with the run version returned after permission resumes', async () => {
+    const requestExecuting = vi.fn(async () => true);
+    const goal = hostedGoal('Inspect the current screen.');
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: {
+        dispatch: vi.fn(async () => ({
+          status: 'confirmed' as const,
+          summary: 'Screen inspected.',
+        })),
+      },
+      goalProvider: () => goal,
+      permissionCoordinator: {
+        requireReady: vi.fn(async () => ({
+          outcome: 'granted' as const,
+          runVersion: 3,
+        })),
+      },
+      registry: new RuntimeToolRegistry(),
+      requestExecuting,
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'desktop.observe',
+      operation: 'observe',
+      input: {
+        reason: 'Inspect the current screen.',
+      },
+    }));
+
+    expect(result.status).toBe('confirmed');
+    expect(requestExecuting).toHaveBeenCalledWith(expect.any(String), 3);
   });
 
   it('commits a registered Workspace effect without a user-decision callback', async () => {

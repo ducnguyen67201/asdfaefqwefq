@@ -149,28 +149,30 @@ export class DesktopToolWorker {
         'The normalized tool effect did not match the server-owned invocation.',
       );
     }
+    let expectedRunVersion = envelope.runVersion;
     if (metadata.prerequisites.length > 0) {
-      const outcome = await this.options.permissionCoordinator?.requireReady({
+      const permission = await this.options.permissionCoordinator?.requireReady({
         invocation: envelope,
         requirements: metadata.prerequisites,
         taskId,
       });
-      if (!outcome) {
+      if (!permission) {
         return this.result(
           envelope,
           'not_executed',
           'Computer permission is required before this tool can run.',
         );
       }
-      if (outcome === 'continue_without_computer') {
+      if (permission.outcome === 'continue_without_computer') {
         return this.result(
           envelope,
           'not_executed',
           'Computer use was skipped at the user\'s request.',
         );
       }
+      expectedRunVersion = permission.runVersion;
     }
-    if (!await this.options.requestExecuting(envelope.invocationId, envelope.runVersion)) {
+    if (!await this.options.requestExecuting(envelope.invocationId, expectedRunVersion)) {
       return this.result(envelope, 'not_executed', 'The one-time executing transition was stale or unavailable.');
     }
     const outcome = invocation.toolId === 'task.interaction'

@@ -228,7 +228,7 @@ export class HostedTaskClient {
     workerRequired: boolean;
     protocolDigest?: string;
     toolCatalogDigest?: string;
-    rolloutMode?: 'observe' | 'dual' | 'enforce';
+    rolloutMode?: 'enforce';
   }> {
     try {
       const status = AgentRuntimeStatusV4Schema.parse(

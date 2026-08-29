@@ -101,7 +101,7 @@ const manifestDocument = {
     failureStages: AgentRunFailureStageV4Schema.options,
     phases: AgentRunPhaseV4Schema.options,
     permissions: ComputerPermissionV4Schema.options,
-    rolloutModes: AgentRuntimeRolloutModeV4Schema.options,
+    rolloutModes: [AgentRuntimeRolloutModeV4Schema.value],
     states: AgentRunStateV4Schema.options,
     toolIds: tools.map((tool) => tool.toolId),
   },

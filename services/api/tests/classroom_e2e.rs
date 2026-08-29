@@ -15,8 +15,8 @@ use trocode_api::{
     agent::protocol,
     app::AppState,
     config::{
-        AdminConfig, AgentRuntimeConfig, AgentRuntimeV4Mode, Config, ConnectorConfig,
-        CostGuardConfig, CostGuardMode, KnowledgeConfig,
+        AdminConfig, AgentRuntimeConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode,
+        KnowledgeConfig,
     },
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -759,7 +759,6 @@ fn test_config(database_url: String) -> Config {
             playwright_cdp_enabled: false,
             protocol_version: 4,
             rollout_percent: 100,
-            v4_mode: AgentRuntimeV4Mode::Observe,
         },
         connectors: ConnectorConfig {
             callback_url: None,

@@ -73,18 +73,11 @@ pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()
 
 pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
     check_agent_runtime_versions(repository_root)?;
-    let mode = std::env::var("AGENT_RUNTIME_V4_MODE")
-        .unwrap_or_else(|_| "observe".to_owned())
-        .to_lowercase();
-    anyhow::ensure!(
-        matches!(mode.as_str(), "observe" | "dual" | "enforce"),
-        "AGENT_RUNTIME_V4_MODE must be one of: observe, dual, enforce."
-    );
 
     println!("Canonical agent protocol: v{}", protocol::PROTOCOL_VERSION);
     println!("Protocol digest: {}", protocol::protocol_digest());
     println!("Tool catalog digest: {}", protocol::tool_catalog_digest());
-    println!("Rollout mode: {mode}");
+    println!("Start mode: v4 only (atomic cutover)");
 
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         println!("Active v2/v3 runs: unavailable (DATABASE_URL is not configured)");

@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     auth::{AgentEnvelope, AgentStateCrypto},
-    config::{AgentRuntimeConfig, AgentRuntimeV4Mode, CostGuardMode},
+    config::{AgentRuntimeConfig, CostGuardMode},
     connectors::{ConnectorRoute, ConnectorService},
     error::{ApiError, ApiResult},
     providers::{ProviderBody, ResponsesInput, ResponsesService},
@@ -69,11 +69,6 @@ impl AgentService {
             self.config.rollout_percent,
         )
     }
-    #[must_use]
-    pub const fn v4_mode(&self) -> AgentRuntimeV4Mode {
-        self.config.v4_mode
-    }
-
     fn rollout_enabled(
         &self,
         user: &str,

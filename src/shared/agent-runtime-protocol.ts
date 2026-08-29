@@ -7,7 +7,7 @@ const UuidSchema = z.string().uuid();
 const TimestampSchema = z.string().datetime({ offset: true });
 
 export const AgentRuntimeRolloutModeV4Schema = z
-  .enum(['observe', 'dual', 'enforce'])
+  .literal('enforce')
   .meta({ id: 'AgentRuntimeRolloutModeV4' });
 
 export const AgentRunStateV4Schema = z

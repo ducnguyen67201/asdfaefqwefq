@@ -2,3 +2,4 @@ services/api/migrations/*.sql text eol=lf
 services/api/admin-dist/** linguist-generated=true -whitespace
 protocol/*.json text eol=lf
 test/fixtures/agent-runtime-v3/*.json text eol=lf
+test/fixtures/agent-runtime-v4/*.json text eol=lf

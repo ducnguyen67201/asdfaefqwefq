@@ -30,19 +30,24 @@ and unknown-consequential-outcome no-retry behavior.
   stale-observation, cancellation, intervention, cost, and latency metrics.
 - Updated renderer copy and active architecture/security/operations documents to
   describe automatic registered-tool execution and retained prerequisites.
-- Added migration 029 from the existing main-line migration and registered the
-  guarded cleanup as migration 030.
+- Rebased onto the main-line migration 029 fix and registered the guarded
+  cleanup as migration 030.
+- Made the rollout contract honest: this is an atomic v4 cutover after the
+  legacy drain, not a configurable observe/dual rollout that the runtime cannot
+  execute after the old approval columns are removed.
 
 ## Migration Behavior
 
-`029_class_session_materials.sql` is present verbatim so databases that already
-recorded migration 29 resolve the same migration source.
+`029_class_session_materials.sql` now comes from `main`, so databases that
+already recorded migration 29 resolve the same migration source.
 
 `030_remove_agent_approval_policy.sql` refuses to run while a nonterminal
 protocol-v2/v3 run or any `awaiting_approval` row remains. After the drain, it
 removes approval/intent columns and constraints, removes the approval state, and
 renames the connector snapshot digest column without recomputing existing digest
-values. No production drain or production migration was executed by this task.
+values. The backend reports v4-only enforcement as a fixed status; there is no
+inert rollout-mode environment switch. No production drain or production
+migration was executed by this task.
 
 ## Verification
 
@@ -52,12 +57,19 @@ values. No production drain or production migration was executed by this task.
   mutability error. After correction, every remaining component passed:
   rust-only check, ESLint, TypeScript, rustfmt, Clippy with warnings denied,
   Cargo audit, Vitest, and Cargo tests.
-- Vitest: 116 files, 723 tests passed.
+- Vitest: 116 files, 724 tests passed, including the permission-resume run-version
+  regression.
 - Cargo: 80 library tests plus contract/corpus suites passed. Tests requiring a
   disposable PostgreSQL/S3 environment remained ignored by their existing guard.
 - `npm run package`: passed for macOS arm64 with the production Doppler config.
 - `npm run bazel:check`: passed all 15 Bazel test targets and the Clippy build.
 - `git diff --check`: passed.
+
+The PR code and holistic reviews also resolved the stale permission-resume CAS,
+v4 integration fixtures, Windows fixture line endings, inert rollout-mode
+configuration, and unrelated generated admin bundle drift. Review records are
+in `.claude/PRPs/reviews/pr-48-review.md` and
+`.claude/PRPs/reviews/pr-48-holistic-review.md`.
 
 Cargo audit exited successfully with the repository's three configured warnings:
 unmaintained `ttf-parser`, unsound `lru`, and yanked `chacha20`.

@@ -95,26 +95,7 @@ pub struct AgentRuntimeConfig {
     pub payload_ttl_ms: u64,
     pub playwright_cdp_enabled: bool,
     pub protocol_version: u32,
-    pub v4_mode: AgentRuntimeV4Mode,
     pub rollout_percent: u8,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentRuntimeV4Mode {
-    Observe,
-    Dual,
-    Enforce,
-}
-
-impl AgentRuntimeV4Mode {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Observe => "observe",
-            Self::Dual => "dual",
-            Self::Enforce => "enforce",
-        }
-    }
 }
 
 trait Environment {
@@ -156,13 +137,6 @@ impl Config {
         if protocol_version != 4 {
             bail!("TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION must be 4.");
         }
-        let v4_mode = match optional(environment, "AGENT_RUNTIME_V4_MODE").as_deref() {
-            None | Some("observe") => AgentRuntimeV4Mode::Observe,
-            Some("dual") => AgentRuntimeV4Mode::Dual,
-            Some("enforce") => AgentRuntimeV4Mode::Enforce,
-            Some(_) => bail!("AGENT_RUNTIME_V4_MODE must be one of: observe, dual, enforce."),
-        };
-
         let knowledge_access_key_id = optional(environment, "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID");
         let knowledge_bucket = optional(environment, "TROCODE_KNOWLEDGE_S3_BUCKET");
         let knowledge_endpoint = optional(environment, "TROCODE_KNOWLEDGE_S3_ENDPOINT");
@@ -317,7 +291,6 @@ impl Config {
                     false,
                 )?,
                 protocol_version,
-                v4_mode,
                 rollout_percent: percentage(
                     environment,
                     "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
