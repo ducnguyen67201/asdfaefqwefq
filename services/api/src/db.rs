@@ -150,6 +150,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "class sessions",
             include_str!("../migrations/028_class_sessions.sql"),
         ),
+        migration(
+            29,
+            "class session materials",
+            include_str!("../migrations/029_class_session_materials.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });
