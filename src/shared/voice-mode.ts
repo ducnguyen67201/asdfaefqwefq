@@ -14,33 +14,20 @@ export interface VoiceShortcutDescriptor {
 
 const VOICE_SHORTCUTS = {
   macos: {
-    dictation: {
-      accessibleName: 'Command + Control',
-      keys: ['⌘', '⌃'],
-    },
-    task: {
-      accessibleName: 'Command + Control + Shift',
-      keys: ['⌘', '⌃', '⇧'],
-    },
+    accessibleName: 'Command + Control',
+    keys: ['⌘', '⌃'],
   },
   windows: {
-    dictation: {
-      accessibleName: 'left Control + left Alt',
-      keys: ['Left Ctrl', 'Left Alt'],
-    },
-    task: {
-      accessibleName: 'left Control + left Alt + left Shift',
-      keys: ['Left Ctrl', 'Left Alt', 'Left Shift'],
-    },
+    accessibleName: 'left Control + left Alt',
+    keys: ['Left Ctrl', 'Left Alt'],
   },
 } as const satisfies Record<
   VoiceShortcutPlatform,
-  Record<VoiceModeValue, VoiceShortcutDescriptor>
+  VoiceShortcutDescriptor
 >;
 
 export function voiceShortcutDescriptor(
   platform: VoiceShortcutPlatform,
-  mode: VoiceModeValue,
 ): VoiceShortcutDescriptor {
-  return VOICE_SHORTCUTS[platform][mode];
+  return VOICE_SHORTCUTS[platform];
 }

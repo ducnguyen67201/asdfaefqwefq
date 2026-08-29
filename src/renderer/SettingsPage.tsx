@@ -690,7 +690,7 @@ export function SettingsPage({
                 aria-label={t('Voice shortcuts')}
               >
                 <p>
-                  <strong>{t('Dictation')}</strong>
+                  <strong>{t('Talk')}</strong>
                   <span>
                     {t(
                       'macOS: Command + Control · Windows: left Control + left Alt',
@@ -698,13 +698,17 @@ export function SettingsPage({
                   </span>
                 </p>
                 <p>
-                  <strong>{t('Task')}</strong>
-                  <span>{t('Add Shift to either Dictation shortcut')}</span>
+                  <strong>{t('Switch mode')}</strong>
+                  <span>
+                    {t(
+                      'macOS: Command + Backslash · Windows: Control + Backslash',
+                    )}
+                  </span>
                 </p>
               </div>
               <p className="settings-help">
                 {t(
-                  'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.',
+                  'Write my words adds text without sending. Ask Tro sends the spoken request after a one-second Escape window.',
                 )}
               </p>
               <label className="settings-toggle">
@@ -768,7 +772,7 @@ export function SettingsPage({
                   <strong>{t('Show desktop pet')}</strong>
                   <small>
                     {t(
-                      'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.',
+                      'Show a stateful animated companion on your desktop. Drag it anywhere you like; it reacts to task progress, pointer hover, and occasional local task or classroom messages. Hover checks only whether the pointer is over the pet on this device; coordinates are never recorded, stored, or sent. It does not inspect apps, websites, or typing.',
                     )}
                   </small>
                 </span>

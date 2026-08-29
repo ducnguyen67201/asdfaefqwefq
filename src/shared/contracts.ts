@@ -2273,12 +2273,14 @@ export const PrimaryLanguageSchema = z.enum([
 ]);
 
 export const AppLanguageSchema = z.enum(['en', 'vi']);
+export const VoiceModeSchema = z.enum(VOICE_MODES);
 
 export const AppPreferencesSchema = z.object({
   appLanguage: AppLanguageSchema.default('en'),
   classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema.nullable(),
+  voiceMode: VoiceModeSchema.default('dictation'),
 });
 
 export const UpdateAppPreferencesRequestSchema = z.object({
@@ -2286,6 +2288,7 @@ export const UpdateAppPreferencesRequestSchema = z.object({
   classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema,
+  voiceMode: VoiceModeSchema.default('dictation'),
 });
 
 export const SetVoiceAudioDuckingRequestSchema = z.object({
@@ -2341,6 +2344,8 @@ export const CompanionStateSchema = z.enum([
   'completed',
   'error',
 ]);
+
+export const CompanionHoverSchema = z.boolean();
 
 export const TROCODE_COMPANION_SCHEME = 'trocode-companion' as const;
 export const MAX_COMPANION_IMAGE_BYTES = 5 * 1_024 * 1_024;
@@ -2573,8 +2578,6 @@ export const UsageBudgetSnapshotSchema = z.object({
   warningThresholdMicroUsd: z.number().int().nonnegative(),
 });
 
-export const VoiceModeSchema = z.enum(VOICE_MODES);
-
 export const CompanionVoiceActivitySchema = z
   .object({
     appLanguage: AppLanguageSchema.default('en'),
@@ -2671,6 +2674,9 @@ export const CompanionPetMoodSchema = z.enum([
   'encouraging',
   'waiting',
   'celebrating',
+  'thinking',
+  'working',
+  'verifying',
 ]);
 
 export const CompanionPetNudgeDraftSchema = z
@@ -2922,7 +2928,6 @@ export const VoiceDiagnosticSchema = z.object({
 export const VoiceShortcutEventSchema = z
   .object({
     action: z.enum(['pressed', 'released']),
-    mode: VoiceModeSchema,
     source: z.literal('global'),
   })
   .strict();
@@ -3121,6 +3126,7 @@ export type CompanionGuidanceVisual = z.infer<
   typeof CompanionGuidanceVisualSchema
 >;
 export type CompanionState = z.infer<typeof CompanionStateSchema>;
+export type CompanionHover = z.infer<typeof CompanionHoverSchema>;
 export type PresentationState = z.infer<typeof PresentationStateSchema>;
 export type CompanionVoiceActivity = z.infer<
   typeof CompanionVoiceActivitySchema

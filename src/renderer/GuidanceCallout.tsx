@@ -16,7 +16,7 @@ import type {
   CompanionSpeech,
 } from '../shared/contracts';
 
-import { ClassroomPetNudge as ClassroomPetNudgeCard } from './ClassroomPetNudge';
+import { CompanionPetNudge as CompanionPetNudgeCard } from './CompanionPetNudge';
 import {
   CompanionResponseCard,
   getCompanionCalloutKind,
@@ -418,7 +418,7 @@ export function GuidanceCallout() {
           response={response}
         />
       ) : calloutKind === 'pet_nudge' && petNudge ? (
-        <ClassroomPetNudgeCard nudge={petNudge} />
+        <CompanionPetNudgeCard nudge={petNudge} />
       ) : null}
     </>
   );

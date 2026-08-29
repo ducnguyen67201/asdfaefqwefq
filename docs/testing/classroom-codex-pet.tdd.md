@@ -2,9 +2,8 @@
 
 ## Source Plan
 
-Implementation follows the approved
-`.claude/PRPs/plans/classroom-codex-pet.plan.md`. The shipped scope is a quiet,
-local classroom companion: curated English and Vietnamese encouragement,
+The shipped scope is a quiet, local classroom companion: curated English and
+Vietnamese encouragement,
 explicit Attempt-state celebrations, operational-overlay precedence, and a
 student-controlled preference. It does not detect or block YouTube, inspect
 applications or websites, infer attention or completion, add chat, or report
@@ -20,8 +19,8 @@ pet activity to teachers or analytics.
   supportive copy that does not claim the teacher has responded.
 - As a student, I can disable Classroom pet messages in Settings and have a
   visible message disappear immediately.
-- As a user completing operational Tro work, approvals, clarifications,
-  guidance, responses, voice, and task activity always preempt pet content.
+- As a user completing operational Tro work, clarifications, guidance,
+  responses, voice, and task activity always preempt pet content.
 
 ## Acceptance Matrix
 
@@ -31,16 +30,15 @@ pet activity to teachers or analytics.
 | Post-write preference events and failed-write inertness | `src/main/preferences/app-preferences-service.test.ts` | Green |
 | Explicit classroom eligibility, timing, localization, interruption, and stale callbacks | `src/main/companion/classroom-pet-service.test.ts` | Green |
 | `interaction > guidance > response > pet > activity` | `src/main/companion/companion-response-controller.test.ts`, `src/renderer/companion-response-card-view.test.ts` | Green |
-| Labelled polite status, bilingual mood labels, and plain-text rendering | `src/renderer/ClassroomPetNudge.test.tsx` | Green |
+| Labelled polite status, bilingual mood labels, and plain-text rendering | `src/renderer/CompanionPetNudge.test.tsx` | Green |
 | Controlled setting and English/Vietnamese privacy copy | `src/renderer/SettingsPage.test.ts` | Green |
 | Outbound-only, schema-parsed companion event | Typecheck, IPC boundary audit, manual diff review | Green |
 | No application/site/screen/input observation or pet telemetry | Production service grep, architecture diff review | Green |
 
 ## RED / GREEN Record
 
-The approved PRP supplied the behavior matrix before production changes. Tests
-were added alongside each bounded layer before the consolidated run; per the
-PRP implementation workflow, tests were not executed piecemeal while coding.
+Tests were added alongside each bounded layer before the consolidated run and
+were not executed piecemeal while coding.
 The first focused run could not start because this worktree had no installed
 dependencies. After restoring the exact lockfile environment with `npm ci`, the
 focused suite was green. The first static-analysis pass then exposed import

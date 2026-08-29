@@ -60,20 +60,17 @@ describe('Windows voice shortcut polling cadence', () => {
 });
 
 describe('windowsVoiceShortcutWatchScript', () => {
-  it('uses the left-side modifiers and tagged mode protocol', () => {
+  it('uses one left-side two-key shortcut without a Shift mode chord', () => {
     const script = windowsVoiceShortcutWatchScript(120);
 
     expect(script).toContain('GetAsyncKeyState(0xA2)');
     expect(script).toContain('GetAsyncKeyState(0xA4)');
-    expect(script).toContain('GetAsyncKeyState(0xA0)');
-    expect(script).toContain("'pressed:dictation'");
-    expect(script).toContain("'released:dictation'");
-    expect(script).toContain("'pressed:task'");
-    expect(script).toContain("'released:task'");
+    expect(script).not.toContain('GetAsyncKeyState(0xA0)');
+    expect(script).toContain("'pressed'");
+    expect(script).toContain("'released'");
+    expect(script).not.toContain('task');
+    expect(script).not.toContain('dictation');
     expect(script).toContain('$settleMilliseconds = 120');
-    expect(script.indexOf('$now -ge $deadline')).toBeLessThan(
-      script.indexOf('$leftShiftDown)', script.indexOf("$state -eq 'settling'")),
-    );
   });
 
   it('normalizes the internal settle duration before interpolation', () => {

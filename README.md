@@ -82,7 +82,16 @@ Implemented:
 - A custom cursor companion generator in Settings: any signed-in user with an
   active membership can edit one PNG/JPEG through the hosted OpenAI Images API,
   preview it in memory, and activate an account-scoped, operating-system-
-  encrypted local PNG. Every plan receives five generations per UTC month.
+  encrypted local PNG. A Codex-style picker switches between the animated Tro
+  default and previously generated pets without spending another preview.
+  Every plan receives five generations per UTC month.
+- A stateful animated desktop pet with distinct idle, guidance, voice,
+  thinking, sending, working, completion, and error poses. Long-running tasks
+  may show sparse curated local status messages, and idle pointer hover triggers
+  a click-through reaction without recording or transmitting coordinates.
+  Reduced-motion mode freezes a representative pose. Wayland keeps lifecycle
+  animation but disables hover because Electron does not expose cursor position
+  there.
 - PostHog product analytics for count-only app, model, and tool activity; task
   text, voice transcripts, screenshots, and tool arguments are excluded.
 - Account-scoped PostgreSQL task history that saves the latest validated task
@@ -414,8 +423,8 @@ answer, or a steering message. The desktop sends its message UUID to
 `POST /v1/agent-turns`; the API atomically and idempotently reserves the weekly
 allowance and returns the server turn token required by `/v1/openai/responses`.
 Internal model/tool continuations reuse that token and do not consume more agent
-messages. Approval decisions, speech, and transcription do not consume agent
-messages. A turn whose only provider request is explicitly rejected before
+messages. Speech and transcription do not consume agent messages. A turn whose
+only provider request is explicitly rejected before
 inference is released; an ambiguous dispatched turn remains counted. Whichever
 weekly message or monthly provider-cost limit is reached first blocks more inference.
 Environment budget values are emergency ceilings and may only lower a tier's
@@ -456,14 +465,16 @@ press **Command+Q** on macOS, to stop the cursor companion, shut down CUA, and
 exit. If native shutdown does not respond, Tro forces a process exit after
 a short grace period.
 
-Use one of two explicit hold gestures:
+Choose **Write my words** or **Ask Tro** in the composer voice bar, then use
+one shared hold gesture. The selected mode persists across launches and can
+also be toggled in the app with **Command + Backslash** on macOS or
+**Control + Backslash** on Windows.
 
-| Mode | macOS | Windows |
+| Action | macOS | Windows |
 |---|---|---|
-| Dictation | **Command + Control** | physical **left Control + left Alt** |
-| Task | **Command + Control + Shift** | physical **left Control + left Alt + left Shift** |
+| Talk in the selected mode | **Command + Control** | physical **left Control + left Alt** |
 
-The mode locks for the full turn. Dictation adds text at the saved selection in
+The selected mode locks for the full turn. Write my words adds text at the saved selection in
 Tro, or inserts once into the frontmost external window after release. The
 non-focusable Voice Island shows the locked mode, icon, destination, and
 teal Dictation or yellow Task accent; Tro does not recolor the operating-system
@@ -494,7 +505,7 @@ and body "The desktop loop works".`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
-   window or with the Shift-modified system-wide Task shortcut.
+   window or by selecting **Ask Tro** and using the shared voice shortcut.
 6. Watch the live task and use Stop/Escape if needed. A registered Send action
    is dispatched at most once after a fresh observation and the durable
    requested-to-executing transition.

@@ -49,6 +49,7 @@ import {
 import { UsageBudgetService } from './main/budget/usage-budget-service';
 import { ClassroomPetService } from './main/companion/classroom-pet-service';
 import { CompanionCustomizationService } from './main/companion/companion-customization-service';
+import { CompanionHoverTracker } from './main/companion/companion-hover-tracker';
 import {
   isAuthenticatedCompanionSession,
   toCompanionInteraction,
@@ -76,6 +77,7 @@ import {
   registerGlobalNumberedChoiceShortcuts,
   type GlobalNumberedChoiceShortcuts,
 } from './main/companion/global-numbered-choice-shortcuts';
+import { TaskPetService } from './main/companion/task-pet-service';
 import { ConnectorClient } from './main/connectors/connector-client';
 import { CuaService } from './main/cua/cua-service';
 import { createRustDesktopEngineClient } from './main/engine/rust-desktop-engine-client';
@@ -136,6 +138,7 @@ import {
   AgentActivityUpdateSchema,
   CompanionGuidanceSchema,
   CompanionGuidanceVisualSchema,
+  CompanionHoverSchema,
   CompanionPetNudgeSchema,
   CompanionResponseCardSchema,
   TaskUpdateSchema,
@@ -313,6 +316,12 @@ const classroomPetService = new ClassroomPetService({
   canPresent: canPresentClassroomPetNudge,
   present: showClassroomPetNudge,
   dismiss: hideClassroomPetNudge,
+});
+const taskPetService = new TaskPetService({
+  preferencesService: appPreferencesService,
+  canPresent: canPresentTaskPetNudge,
+  present: showTaskPetNudge,
+  dismiss: hideTaskPetNudge,
 });
 const workspaceSelectionService = new WorkspaceSelectionService(
   {
@@ -557,6 +566,7 @@ let activeGuidanceTargetBounds: Rectangle | null = null;
 let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
 let activeCompanionPetNudge: CompanionPetNudge | null = null;
+let activeCompanionPetNudgeOwner: 'classroom' | 'task' | null = null;
 let activeCompanionResponse: CompanionResponseCard | null = null;
 let activeCompanionSpeech: CompanionSpeech | null = null;
 let activeCompanionAppearance: CompanionAppearance = { kind: 'default' };
@@ -573,6 +583,7 @@ let backgroundTray: Tray | null = null;
 let isShuttingDown = false;
 let auxiliaryWindowsEnabled = false;
 let companionPetEnabled = true;
+let activeCompanionHover = false;
 const knownPresentationTaskIds = new Set<string>();
 const backgroundPresentationTaskIds = new Set<string>();
 let backgroundCompletionNarration: AbortController | null = null;
@@ -586,6 +597,27 @@ const companionCustomizationService = new CompanionCustomizationService({
   },
   safeStorage,
   userDataPath: app.getPath('userData'),
+});
+const companionHoverTracker = new CompanionHoverTracker({
+  getCompanionBounds: () => {
+    if (!companionWindow || companionWindow.isDestroyed()) return null;
+    return { ...getCurrentCompanionScreenPosition(), ...COMPANION_SIZE };
+  },
+  getCursorPoint: () => screen.getCursorScreenPoint(),
+  isEligible: () =>
+    auxiliaryWindowsEnabled &&
+    companionPetEnabled &&
+    companionState === 'idle' &&
+    Boolean(
+      companionWindow &&
+        !companionWindow.isDestroyed() &&
+        companionWindow.isVisible(),
+    ),
+  onEnter: pauseCompanionWanderingForHover,
+  onLeave: scheduleCompanionWander,
+  platform: process.platform,
+  publish: updateCompanionHover,
+  sessionType: process.env.XDG_SESSION_TYPE,
 });
 
 function stopCompanionMovement(): void {
@@ -607,6 +639,24 @@ function sendCompanionState(): void {
   );
 }
 
+function sendCompanionHover(): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  companionWindow.webContents.send(
+    IPC_CHANNELS.companionHoverChanged,
+    CompanionHoverSchema.parse(activeCompanionHover),
+  );
+}
+
+function updateCompanionHover(hovered: boolean): void {
+  activeCompanionHover = CompanionHoverSchema.parse(hovered);
+  sendCompanionHover();
+}
+
+function interruptPetNudges(): void {
+  classroomPetService.interrupt();
+  taskPetService.interrupt();
+}
+
 function sendCompanionAppearance(): void {
   if (!companionWindow || companionWindow.isDestroyed()) return;
   companionWindow.webContents.send(
@@ -616,10 +666,11 @@ function sendCompanionAppearance(): void {
 }
 
 function updateCompanionState(state: CompanionState): void {
-  if (state !== 'idle') classroomPetService.interrupt();
+  if (state !== 'idle') interruptPetNudges();
   if (state !== 'idle') pauseCompanionWandering();
   companionState = state;
   sendCompanionState();
+  companionHoverTracker.synchronizeEligibility();
   if (state === 'idle') scheduleCompanionWander();
 }
 
@@ -634,7 +685,7 @@ function sendCompanionVoiceActivity(): void {
 function updateCompanionVoiceActivity(
   activity: CompanionVoiceActivity | null,
 ): void {
-  if (activity) classroomPetService.interrupt();
+  if (activity) interruptPetNudges();
   activeCompanionVoiceActivity = activity;
   presentationCoordinator.handleVoiceActivity(activity);
   if (!auxiliaryWindowsEnabled) return;
@@ -855,11 +906,18 @@ function sendCompanionInteraction(): void {
 }
 
 function sendCompanionPetNudge(): void {
-  if (!guidanceWindow || guidanceWindow.isDestroyed()) return;
-  guidanceWindow.webContents.send(
-    IPC_CHANNELS.companionPetNudgeChanged,
-    activeCompanionPetNudge,
-  );
+  if (guidanceWindow && !guidanceWindow.isDestroyed()) {
+    guidanceWindow.webContents.send(
+      IPC_CHANNELS.companionPetNudgeChanged,
+      activeCompanionPetNudge,
+    );
+  }
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    companionWindow.webContents.send(
+      IPC_CHANNELS.companionPetNudgeChanged,
+      activeCompanionPetNudge,
+    );
+  }
 }
 
 function sendCompanionResponse(): void {
@@ -929,8 +987,28 @@ function canPresentClassroomPetNudge(): boolean {
   );
 }
 
-function showClassroomPetNudge(draft: CompanionPetNudgeDraft): boolean {
-  if (!canPresentClassroomPetNudge()) return false;
+function canPresentTaskPetNudge(): boolean {
+  return (
+    auxiliaryWindowsEnabled &&
+    companionPetEnabled &&
+    (companionState === 'processing' || companionState === 'working') &&
+    !activeCompanionPetNudge &&
+    selectCompanionOverlayMode({
+      guidance: activeCompanionGuidance,
+      interaction: activeCompanionInteraction,
+      response: activeCompanionResponse,
+    }) === 'hidden'
+  );
+}
+
+function showCompanionPetNudge(
+  draft: CompanionPetNudgeDraft,
+  owner: 'classroom' | 'task',
+): boolean {
+  const canPresent = owner === 'classroom'
+    ? canPresentClassroomPetNudge()
+    : canPresentTaskPetNudge();
+  if (!canPresent) return false;
   if (!guidanceWindow || guidanceWindow.isDestroyed()) createGuidanceWindow();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) return false;
 
@@ -949,6 +1027,7 @@ function showClassroomPetNudge(draft: CompanionPetNudgeDraft): boolean {
   if (!parsed.success) return false;
 
   activeCompanionPetNudge = parsed.data;
+  activeCompanionPetNudgeOwner = owner;
   globalNumberedChoiceShortcuts?.deactivate();
   setGuidanceWindowInteractive(false);
   guidanceWindow.setBounds({ ...position, ...PET_NUDGE_CALLOUT_SIZE }, false);
@@ -957,14 +1036,27 @@ function showClassroomPetNudge(draft: CompanionPetNudgeDraft): boolean {
   return true;
 }
 
-function hideClassroomPetNudge(id?: string): void {
+function showClassroomPetNudge(draft: CompanionPetNudgeDraft): boolean {
+  return showCompanionPetNudge(draft, 'classroom');
+}
+
+function showTaskPetNudge(draft: CompanionPetNudgeDraft): boolean {
+  return showCompanionPetNudge(draft, 'task');
+}
+
+function hideCompanionPetNudge(
+  id: string | undefined,
+  owner: 'classroom' | 'task',
+): void {
   if (
     !activeCompanionPetNudge ||
+    activeCompanionPetNudgeOwner !== owner ||
     (id && activeCompanionPetNudge.id !== id)
   ) {
     return;
   }
   activeCompanionPetNudge = null;
+  activeCompanionPetNudgeOwner = null;
   sendCompanionPetNudge();
   if (
     currentCompanionOverlayMode() === 'hidden' &&
@@ -977,11 +1069,19 @@ function hideClassroomPetNudge(id?: string): void {
   }
 }
 
+function hideClassroomPetNudge(id?: string): void {
+  hideCompanionPetNudge(id, 'classroom');
+}
+
+function hideTaskPetNudge(id?: string): void {
+  hideCompanionPetNudge(id, 'task');
+}
+
 function showCompanionResponseCard(
   response: CompanionResponseCard | null = companionResponseController.current,
 ): boolean {
   if (!auxiliaryWindowsEnabled || !response) return false;
-  classroomPetService.interrupt();
+  interruptPetNudges();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) createGuidanceWindow();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) return false;
 
@@ -1034,7 +1134,7 @@ function showWalkthroughRecap(task: TaskSnapshot): boolean {
   ) {
     return false;
   }
-  classroomPetService.interrupt();
+  interruptPetNudges();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) createGuidanceWindow();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) return false;
 
@@ -1134,7 +1234,7 @@ function showCompanionInteraction(interaction: PendingInteraction): void {
   if (!auxiliaryWindowsEnabled) return;
   if (activeCompanionInteraction?.id === interaction.id) return;
 
-  classroomPetService.interrupt();
+  interruptPetNudges();
   cancelBackgroundCompletionPresentation();
   dismissCompanionGuidance();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) createGuidanceWindow();
@@ -1209,7 +1309,7 @@ function showGuidanceCallout(
   ) {
     return false;
   }
-  classroomPetService.interrupt();
+  interruptPetNudges();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) {
     createGuidanceWindow();
   }
@@ -1449,12 +1549,15 @@ async function requestHostedInteraction(
 function enableAuthenticatedAuxiliaryWindows(): void {
   if (isShuttingDown) return;
   auxiliaryWindowsEnabled = true;
+  taskPetService.start();
   createCompanionWindow();
+  companionHoverTracker.synchronizeEligibility();
   ensureGlobalVoiceShortcut();
 }
 
 function synchronizeCompanionPetPreference(enabled: boolean): void {
   companionPetEnabled = enabled;
+  companionHoverTracker.synchronizeEligibility();
   if (!auxiliaryWindowsEnabled) return;
 
   if (enabled) {
@@ -1462,7 +1565,7 @@ function synchronizeCompanionPetPreference(enabled: boolean): void {
     return;
   }
 
-  classroomPetService.interrupt();
+  interruptPetNudges();
   if (companionWindow && !companionWindow.isDestroyed()) {
     companionWindow.destroy();
   } else {
@@ -1471,8 +1574,10 @@ function synchronizeCompanionPetPreference(enabled: boolean): void {
 }
 
 function disableAuthenticatedAuxiliaryWindows(): void {
-  classroomPetService.interrupt();
+  interruptPetNudges();
+  taskPetService.stop();
   auxiliaryWindowsEnabled = false;
+  companionHoverTracker.synchronizeEligibility();
   cancelBackgroundCompletionPresentation();
   companionState = 'idle';
   activeCompanionVoiceActivity = null;
@@ -1543,6 +1648,8 @@ function prepareApplicationShutdown(): Promise<void> {
   fileSelectionService.clear();
   activityProgressReporter.clear();
   classroomPetService.stop();
+  taskPetService.stop();
+  companionHoverTracker.stop();
   classroomDirectiveService.stop();
   classroomSessionService.clear();
 
@@ -1644,6 +1751,7 @@ function coordinateCompanionResponseActivity(value: unknown): void {
 
 function coordinateTaskPresentation(value: unknown): void {
   const update = TaskUpdateSchema.parse(value);
+  taskPetService.handleTaskUpdate(update);
   if (!knownPresentationTaskIds.has(update.snapshot.taskId)) {
     cancelBackgroundCompletionPresentation();
     syncCompanionResponse(
@@ -2358,6 +2466,12 @@ function pauseCompanionWandering(): void {
   companionWander = null;
 }
 
+function pauseCompanionWanderingForHover(): void {
+  if (companionMovementTimer) clearTimeout(companionMovementTimer);
+  companionMovementTimer = null;
+  pauseCompanionWandering();
+}
+
 function rememberCompanionUserPosition(bounds: Rectangle): void {
   if (companionState !== 'idle') return;
 
@@ -2381,7 +2495,10 @@ function scheduleCompanionWander(): void {
     companionGlide ||
     companionPinnedPosition ||
     companionUserPosition ||
+    activeCompanionHover ||
     companionState !== 'idle' ||
+    !auxiliaryWindowsEnabled ||
+    isShuttingDown ||
     !companionPetEnabled ||
     !companionWindow ||
     companionWindow.isDestroyed()
@@ -2401,7 +2518,10 @@ function startCompanionWander(): void {
     companionGlide ||
     companionPinnedPosition ||
     companionUserPosition ||
+    activeCompanionHover ||
     companionState !== 'idle' ||
+    !auxiliaryWindowsEnabled ||
+    isShuttingDown ||
     !companionPetEnabled ||
     !companionWindow ||
     companionWindow.isDestroyed()
@@ -2530,8 +2650,11 @@ const createCompanionWindow = (): void => {
   companionWindow.webContents.on('did-finish-load', () => {
     sendCompanionState();
     sendCompanionAppearance();
+    sendCompanionHover();
+    sendCompanionPetNudge();
     lastCompanionPosition = null;
     positionCompanion();
+    companionHoverTracker.synchronizeEligibility();
     scheduleCompanionWander();
   });
   companionWindow.webContents.on('will-navigate', (event) => {
@@ -2554,11 +2677,13 @@ const createCompanionWindow = (): void => {
     if (!auxiliaryWindowsEnabled || !companionPetEnabled) return;
     positionCompanion();
     companionWindow?.showInactive();
+    companionHoverTracker.synchronizeEligibility();
     scheduleCompanionWander();
   });
   companionWindow.on('closed', () => {
     companionWindow = null;
     stopCompanionMovement();
+    companionHoverTracker.synchronizeEligibility();
   });
 
   void companionWindow.loadURL(companionUrl.toString());
@@ -2723,7 +2848,7 @@ const createGuidanceWindow = (): void => {
   guidanceWindow.on('blur', syncGlobalNumberedChoiceShortcuts);
   guidanceWindow.on('closed', () => {
     const unresolvedInteraction = activeCompanionInteraction;
-    classroomPetService.interrupt();
+    interruptPetNudges();
     globalNumberedChoiceShortcuts?.deactivate();
     companionNarrationService.cancelCurrent();
     hideGuidanceTargetMarker();
@@ -2735,6 +2860,8 @@ const createGuidanceWindow = (): void => {
     activeCompanionGuidance = null;
     activeCompanionInteraction = null;
     activeCompanionPetNudge = null;
+    activeCompanionPetNudgeOwner = null;
+    sendCompanionPetNudge();
     activeCompanionResponse = null;
     activeCompanionSpeech = null;
     if (
@@ -2762,6 +2889,8 @@ if (hasSingleInstanceLock) {
     registerCompanionImageProtocol();
     appUpdateService.start();
     classroomPetService.start();
+    taskPetService.start();
+    companionHoverTracker.start();
     unregisterAppPreferencesChange = appPreferencesService.onChange(
       (preferences) =>
         synchronizeCompanionPetPreference(preferences.classroomPetEnabled),

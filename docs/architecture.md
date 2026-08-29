@@ -19,6 +19,41 @@ schema-valid tool call runs automatically when its technical prerequisites are
 ready. Clarification is reserved for a material missing choice. macOS/Windows
 permissions and provider OAuth remain external consent boundaries.
 
+## Private companion assets
+
+The renderer owns only the unsubmitted `File`, object URL, and prompt. Source
+bytes and prompts never enter global renderer state, local storage, PostgreSQL,
+analytics, or content-bearing logs. Electron main owns candidate expiry,
+account-bound encryption, and exact private-protocol authorization. Settings
+presents the bundled default and the encrypted saved library as one pet picker;
+selecting an existing entry is local and does not dispatch another provider
+request or consume generation quota.
+
+## Desktop companion presentation
+
+Electron main remains authoritative for the companion's lifecycle state,
+absolute desktop position, and window behavior. The sandboxed companion
+renderer receives only parsed state, appearance, nudge, position, and hover
+projections through the narrow preload API. The bundled default duck renders a
+fixed nine-row sprite atlas: the eight existing operational states select
+distinct rows, while hover may replace only the idle row. Operational state
+always wins over hover, and custom private companions continue to use their
+single encrypted image plus CSS state cues.
+
+Hover detection is an ephemeral main-process hit test. While the companion is
+visible and idle, Electron samples the current DIP cursor point at 10 Hz,
+compares it with the companion rectangle, and publishes only a boolean. The
+point never crosses IPC and is not logged, persisted, analyzed, or sent over
+the network. Wayland disables hover because Electron does not expose the
+required cursor API there; lifecycle animation remains available.
+
+Long-running task encouragement is a separate deterministic timer service. It
+parses `TaskUpdate`, maps only explicit thinking/working/verifying phases to
+curated bilingual copy, and uses the existing low-priority pet-nudge slot. It
+does not inspect request text, model output, tools, screen contents, or desktop
+activity. Clarifications, guidance, and responses keep their existing priority
+over all pet nudges.
+
 ## Boundaries that remain
 
 - Runtime v4 requires exact protocol and Tro base-tool catalog digests. CUA

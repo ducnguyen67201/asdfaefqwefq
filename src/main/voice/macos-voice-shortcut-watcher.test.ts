@@ -4,19 +4,19 @@ import { parseMacOSVoiceShortcutOutput } from './macos-voice-shortcut-watcher';
 
 describe('parseMacOSVoiceShortcutOutput', () => {
   it('parses press and release lines across process chunks', () => {
-    const first = parseMacOSVoiceShortcutOutput('', 'ready\npressed:ta');
+    const first = parseMacOSVoiceShortcutOutput('', 'ready\npress');
 
     expect(first.events).toEqual([]);
-    expect(first.remainder).toBe('pressed:ta');
+    expect(first.remainder).toBe('press');
 
     const second = parseMacOSVoiceShortcutOutput(
       first.remainder,
-      'sk\nreleased:task\n',
+      'ed\nreleased\n',
     );
 
     expect(second.events).toEqual([
-      { action: 'pressed', mode: 'task', source: 'global' },
-      { action: 'released', mode: 'task', source: 'global' },
+      { action: 'pressed', source: 'global' },
+      { action: 'released', source: 'global' },
     ]);
     expect(second.remainder).toBe('');
   });
@@ -32,12 +32,12 @@ describe('parseMacOSVoiceShortcutOutput', () => {
     expect(
       parseMacOSVoiceShortcutOutput(
         '',
-        'pressed:dictation\r\nreleased:dictation\r\n',
+        'pressed\r\nreleased\r\n',
       ),
     ).toEqual({
       events: [
-        { action: 'pressed', mode: 'dictation', source: 'global' },
-        { action: 'released', mode: 'dictation', source: 'global' },
+        { action: 'pressed', source: 'global' },
+        { action: 'released', source: 'global' },
       ],
       remainder: '',
     });

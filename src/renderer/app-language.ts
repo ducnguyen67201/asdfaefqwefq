@@ -36,6 +36,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Accessibility: 'Trợ năng',
   act: 'thực hiện',
   'Activate membership': 'Kích hoạt tư cách thành viên',
+  'Adds your words without sending.': 'Thêm lời nói của bạn mà không gửi đi.',
   'Activate your Tro membership': 'Kích hoạt tư cách thành viên Tro',
   Activating: 'Đang kích hoạt',
   'Activating…': 'Đang kích hoạt…',
@@ -53,6 +54,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Answer: 'Trả lời',
   answer: 'trả lời',
   'Answer Tro to continue this task': 'Trả lời Tro để tiếp tục tác vụ',
+  'Ask Tro': 'Hỏi Tro',
   'App controls will use {appLanguage}; new voice turns will use {spokenLanguage}.':
     'Giao diện ứng dụng sẽ dùng {appLanguage}; lượt nói mới sẽ dùng {spokenLanguage}.',
   'Assistant only': 'Chỉ dùng trợ lý',
@@ -76,11 +78,13 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Kết nối các công cụ Tro có thể dùng thay bạn.',
   'Desktop pet': 'Thú cưng trên màn hình',
   'Show desktop pet': 'Hiển thị thú cưng trên màn hình',
-  'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.':
-    'Hiển thị một bạn đồng hành nhỏ có chuyển động trên màn hình. Bạn có thể kéo thú cưng đến bất cứ đâu; thú cưng di chuyển độc lập và có thể động viên bạn ngay trên thiết bị trong lớp học trực tiếp. Thú cưng không theo dõi ứng dụng, trang web, hoạt động con trỏ hay thao tác gõ phím.',
+  'Show a stateful animated companion on your desktop. Drag it anywhere you like; it reacts to task progress, pointer hover, and occasional local task or classroom messages. Hover checks only whether the pointer is over the pet on this device; coordinates are never recorded, stored, or sent. It does not inspect apps, websites, or typing.':
+    'Hiển thị một bạn đồng hành có trạng thái và chuyển động trên màn hình. Bạn có thể kéo thú cưng đến bất cứ đâu; thú cưng phản ứng với tiến độ tác vụ, thao tác rê chuột và đôi khi hiển thị thông báo tác vụ hoặc lớp học ngay trên thiết bị. Phản ứng rê chuột chỉ kiểm tra con trỏ có ở trên thú cưng hay không; tọa độ không bao giờ được ghi lại, lưu trữ hay gửi đi. Thú cưng không đọc ứng dụng, trang web hay thao tác gõ phím.',
   'Keep going': 'Tiếp tục nhé',
   'While you wait': 'Trong lúc chờ',
   'Nice work': 'Làm tốt lắm',
+  Thinking: 'Đang suy nghĩ',
+  'On it': 'Đang làm',
   'Choose how you talk with Tro': 'Chọn cách bạn trò chuyện với Tro',
   'Choose your spoken language, then give Tro the macOS permissions it needs to hear your request, use the computer, and confirm the result. You stay in control and can revoke permissions in System Settings at any time.':
     'Chọn ngôn ngữ nói, sau đó cấp cho Tro các quyền macOS cần thiết để nghe yêu cầu, sử dụng máy tính và xác nhận kết quả. Bạn luôn nắm quyền kiểm soát và có thể thu hồi quyền trong Cài đặt hệ thống bất cứ lúc nào.',
@@ -93,6 +97,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Connecting…': 'Đang kết nối…',
   'Finishing your request…': 'Đang hoàn tất yêu cầu của bạn…',
   'Getting voice ready…': 'Đang chuẩn bị giọng nói…',
+  Hold: 'Giữ',
   'Connecting to OpenAI voice…': 'Đang kết nối với giọng nói OpenAI…',
   Conversation: 'Cuộc trò chuyện',
   completed: 'đã hoàn tất',
@@ -329,7 +334,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Voice input could not be completed.':
     'Không thể hoàn tất đầu vào giọng nói.',
   'Voice shortcuts': 'Phím tắt giọng nói',
-  'Add Shift to either Dictation shortcut': 'Thêm Shift vào phím tắt Chính tả',
   'macOS: Command + Control · Windows: left Control + left Alt':
     'macOS: Command + Control · Windows: Control trái + Alt trái',
   'No speech was detected. The draft was left unchanged.':
@@ -343,6 +347,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tác vụ văn bản đã sẵn sàng. Chỉ kết nối khi bạn muốn trợ lý sử dụng các ứng dụng hiển thị trên màn hình.',
   'Text tasks work without microphone or computer permissions. Choose your spoken language now; voice and computer use remain optional and can be connected only when you need them.':
     'Tác vụ văn bản hoạt động mà không cần quyền micrô hoặc máy tính. Hãy chọn ngôn ngữ nói; giọng nói và điều khiển máy tính vẫn là tùy chọn và chỉ cần kết nối khi bạn sử dụng.',
+  Talk: 'Nói',
   'The task finished. Its conversation and activity are available in History.':
     'Tác vụ đã kết thúc. Cuộc trò chuyện và hoạt động có trong Lịch sử.',
   'The trail is clear': 'Chưa có dấu vết',
@@ -362,6 +367,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro needs your input': 'Tro cần phản hồi của bạn',
   'Tro sends this as a transcription hint so short or noisy speech is less likely to be interpreted as an unexpected language or script.':
     'Tro gửi lựa chọn này làm gợi ý phiên âm để lời nói ngắn hoặc có tạp âm ít bị nhận diện nhầm thành ngôn ngữ hay hệ chữ khác.',
+  'Sends your request to Tro.': 'Gửi yêu cầu của bạn cho Tro.',
+  Switch: 'Chuyển',
+  'Switch mode': 'Chuyển chế độ',
   'Tro registers itself with macOS for Screen Recording. If System Settings opens, switch on the Tro row—you should not need the + button. Then return here and we’ll connect automatically. Screen Recording may require restarting Tro once.':
     'Tro tự đăng ký với macOS để ghi màn hình. Nếu Cài đặt hệ thống mở ra, hãy bật Tro trong danh sách—bạn không cần dùng nút +. Sau đó quay lại đây và chúng tôi sẽ tự động kết nối. Quyền ghi màn hình có thể yêu cầu khởi động lại Tro một lần.',
   'Updates unavailable': 'Không thể cập nhật',
@@ -374,15 +382,21 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Voice and language': 'Giọng nói và ngôn ngữ',
   Voice: 'Giọng nói',
   'Voice input': 'Đầu vào giọng nói',
-  'Voice ready. Hold {shortcut} to talk.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói.',
-  'Voice ready. Hold {shortcut} to talk from any app.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói từ bất kỳ ứng dụng nào.',
-  'Voice ready. Hold {shortcut} to talk, or hold {globalShortcut} globally.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói hoặc giữ {globalShortcut} trên toàn hệ thống.',
+  'Voice mode': 'Chế độ giọng nói',
+  'Voice ready.': 'Giọng nói đã sẵn sàng.',
   'Voice recognition is unavailable. Type your request instead.':
     'Nhận dạng giọng nói không khả dụng. Hãy nhập yêu cầu bằng bàn phím.',
   'Waiting for microphone access…': 'Đang chờ quyền truy cập micrô…',
+  'Write my words': 'Viết lời của tôi',
+  'Write my words adds text without sending. Ask Tro sends the spoken request after a one-second Escape window.':
+    'Viết lời của tôi sẽ thêm văn bản mà không gửi. Hỏi Tro sẽ gửi yêu cầu bằng giọng nói sau khoảng một giây để nhấn Escape hủy.',
+  'macOS: Command + Backslash · Windows: Control + Backslash':
+    'macOS: Command + dấu gạch chéo ngược · Windows: Control + dấu gạch chéo ngược',
+  'to talk': 'để nói',
+  'Type, dictate, or use Ask Tro to answer…':
+    'Nhập, đọc chính tả hoặc dùng Hỏi Tro để trả lời…',
+  'Type a task, or use Write my words to add text without sending…':
+    'Nhập một tác vụ hoặc dùng Viết lời của tôi để thêm văn bản mà không gửi…',
   Transcribing: 'Đang phiên âm',
   Workspace: 'Không gian làm việc',
   'Version, updates, and product details.':
@@ -696,18 +710,26 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro’s default companion is active.':
     'Bạn đồng hành mặc định của Tro đang hoạt động.',
   'Use default companion': 'Dùng bạn đồng hành mặc định',
-  'Your companions': 'Bạn đồng hành của bạn',
-  'Choose any companion you created before. Switching does not use a preview.':
-    'Chọn bất kỳ bạn đồng hành nào bạn đã tạo. Việc chuyển đổi không tốn lượt xem trước.',
-  '{count} saved': 'Đã lưu {count}',
-  'Saved companion {number}': 'Bạn đồng hành đã lưu {number}',
+  'Pick a pet': 'Chọn thú cưng',
+  'Choose Tro or a pet you generated. Switching does not use a preview.':
+    'Chọn Tro hoặc thú cưng bạn đã tạo. Việc chuyển đổi không tốn lượt xem trước.',
+  '{count} custom pets': '{count} thú cưng tùy chỉnh',
+  'Tro, active': 'Tro, đang dùng',
+  'Use Tro': 'Dùng Tro',
+  'Animated default pet': 'Thú cưng mặc định có hoạt ảnh',
+  'Generated pet {number}': 'Thú cưng đã tạo {number}',
   '{name}, active': '{name}, đang dùng',
   'Use {name}': 'Dùng {name}',
   'Created {date}': 'Đã tạo {date}',
   'Switching…': 'Đang chuyển…',
   Use: 'Dùng',
-  'Saved companions stay encrypted on this device.':
-    'Các bạn đồng hành đã lưu được mã hóa trên thiết bị này.',
+  'Generated pets stay encrypted on this device.':
+    'Các thú cưng đã tạo được mã hóa trên thiết bị này.',
+  'Create your own pet': 'Tạo thú cưng riêng',
+  'Start with a picture, then describe how your pet should look.':
+    'Bắt đầu bằng một bức ảnh, rồi mô tả diện mạo bạn muốn cho thú cưng.',
+  'Generated pets keep Tro’s state badges and motion reactions.':
+    'Thú cưng đã tạo vẫn dùng huy hiệu trạng thái và phản ứng chuyển động của Tro.',
   'Restoring…': 'Đang khôi phục…',
   'Generation unavailable': 'Không thể tạo hình',
   'Add a source image': 'Thêm ảnh nguồn',
@@ -863,12 +885,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tác vụ văn bản không cần quyền micrô hay máy tính. Chính tả và Tác vụ giọng nói dùng micrô; chèn Chính tả vào ứng dụng khác còn dùng quyền Trợ năng.',
   'Tro composer': 'Trình soạn thảo Tro',
   'Tro task': 'Tác vụ Tro',
-  'Type, dictate, or hold Shift with the voice shortcut to answer…':
-    'Nhập, đọc chính tả hoặc giữ thêm Shift cùng phím tắt giọng nói để trả lời…',
   'Type, dictate, or give Tro a voice task…':
     'Nhập, đọc chính tả hoặc giao việc cho Tro bằng giọng nói…',
-  'Type a task, or hold Dictation to add text without sending…':
-    'Nhập tác vụ, hoặc giữ Chính tả để thêm văn bản mà không gửi…',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

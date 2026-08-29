@@ -5,15 +5,10 @@ import Foundation
 private let pollIntervalMicroseconds: useconds_t = 12_000
 private let defaultSettleMilliseconds: UInt64 = 120
 
-private enum VoiceMode: String {
-  case dictation
-  case task
-}
-
 private enum ShortcutState {
   case idle
   case settling(deadlineMilliseconds: UInt64)
-  case active(VoiceMode)
+  case active
   case awaitAllReleased
 }
 
@@ -32,33 +27,25 @@ while true {
   let flags = CGEventSource.flagsState(.combinedSessionState)
   let commandDown = flags.contains(.maskCommand)
   let controlDown = flags.contains(.maskControl)
-  let shiftDown = flags.contains(.maskShift)
   let baseDown = commandDown && controlDown
   let anyBaseDown = commandDown || controlDown
   let nowMilliseconds = DispatchTime.now().uptimeNanoseconds / 1_000_000
 
   switch state {
   case .idle:
-    if baseDown && shiftDown {
-      state = .active(.task)
-      emit("pressed:task")
-    } else if baseDown {
+    if baseDown {
       state = .settling(deadlineMilliseconds: nowMilliseconds + settleMilliseconds)
     }
   case .settling(let deadlineMilliseconds):
     if !baseDown {
       state = .awaitAllReleased
     } else if nowMilliseconds >= deadlineMilliseconds {
-      state = .active(.dictation)
-      emit("pressed:dictation")
-    } else if shiftDown {
-      state = .active(.task)
-      emit("pressed:task")
+      state = .active
+      emit("pressed")
     }
-  case .active(let mode):
-    let remainsActive = mode == .task ? baseDown && shiftDown : baseDown
-    if !remainsActive {
-      emit("released:\(mode.rawValue)")
+  case .active:
+    if !baseDown {
+      emit("released")
       state = .awaitAllReleased
     }
   case .awaitAllReleased:

@@ -23,6 +23,8 @@ describe('push-to-talk shortcuts', () => {
       isPushToTalkChord('macos', new Set(['MetaLeft', 'ControlRight'])),
     ).toBe(true);
     expect(isPushToTalkChord('macos', new Set(['MetaLeft']))).toBe(false);
+    expect(pushToTalkShortcutName('macos')).toBe('Command + Control');
+    expect(globalPushToTalkShortcutName('macos')).toBe('Command + Control');
   });
 
   it('requires left Alt and left Control on Windows', () => {
@@ -36,27 +38,16 @@ describe('push-to-talk shortcuts', () => {
     expect(globalPushToTalkShortcutName('windows')).toBe(
       'left Control + left Alt',
     );
-    expect(globalPushToTalkShortcutName('macos')).toBe('Command + Control');
-    expect(globalPushToTalkShortcutName('macos', 'task')).toBe(
-      'Command + Control + Shift',
-    );
-    const rightShift = transitionVoiceShortcutArbiter(
-      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'windows',
-      new Set(['AltLeft', 'ControlLeft', 'ShiftRight']),
-      0,
-    );
-    expect(rightShift.events).toEqual([]);
-    expect(rightShift.state.phase).toBe('settling');
   });
 
-  it('waits before locking the base chord as dictation', () => {
+  it('waits 120 ms before activating the selected mode', () => {
     const pressed = new Set(['MetaLeft', 'ControlLeft']);
     const settling = transitionVoiceShortcutArbiter(
       INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
       'macos',
       pressed,
       1_000,
+      'task',
     );
     expect(settling.events).toEqual([]);
     expect(settling.state.phase).toBe('settling');
@@ -67,6 +58,7 @@ describe('push-to-talk shortcuts', () => {
         'macos',
         pressed,
         1_119,
+        'task',
       ).events,
     ).toEqual([]);
     expect(
@@ -75,120 +67,87 @@ describe('push-to-talk shortcuts', () => {
         'macos',
         pressed,
         1_120,
+        'task',
+      ),
+    ).toEqual({
+      events: [{ action: 'pressed', mode: 'task' }],
+      state: { deadlineMs: null, phase: 'active_task' },
+    });
+  });
+
+  it('does not let Shift change the selected mode', () => {
+    const pressed = new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']);
+    const settling = transitionVoiceShortcutArbiter(
+      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
+      'macos',
+      pressed,
+      1_000,
+      'dictation',
+    );
+    expect(settling.state.phase).toBe('settling');
+    expect(
+      transitionVoiceShortcutArbiter(
+        settling.state,
+        'macos',
+        pressed,
+        1_120,
+        'dictation',
       ).events,
     ).toEqual([{ action: 'pressed', mode: 'dictation' }]);
   });
 
-  it('emits nothing when the base chord is released inside settling', () => {
+  it('emits nothing when the chord is released inside settling', () => {
     const settling = transitionVoiceShortcutArbiter(
       INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
       'macos',
       new Set(['MetaLeft', 'ControlLeft']),
       1_000,
+      'task',
     );
     const released = transitionVoiceShortcutArbiter(
       settling.state,
       'macos',
       new Set(),
       1_050,
+      'task',
     );
     expect(released.events).toEqual([]);
     expect(released.state.phase).toBe('await_all_released');
   });
 
-  it('locks task when Shift is held first or arrives during settling', () => {
-    const task = new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']);
-    expect(
-      transitionVoiceShortcutArbiter(
-        INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-        'macos',
-        task,
-        1_000,
-      ).events,
-    ).toEqual([{ action: 'pressed', mode: 'task' }]);
-
+  it('locks the chosen mode for the full hold and waits for all modifiers', () => {
+    const pressed = new Set(['ControlLeft', 'AltLeft']);
     const settling = transitionVoiceShortcutArbiter(
       INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'macos',
-      new Set(['MetaLeft', 'ControlLeft']),
+      'windows',
+      pressed,
       1_000,
-    );
-    expect(
-      transitionVoiceShortcutArbiter(settling.state, 'macos', task, 1_119)
-        .events,
-    ).toEqual([{ action: 'pressed', mode: 'task' }]);
-  });
-
-  it('locks the mode deterministically at the 120 ms boundary', () => {
-    const settling = transitionVoiceShortcutArbiter(
-      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'macos',
-      new Set(['MetaLeft', 'ControlLeft']),
-      1_000,
-    );
-    const task = new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']);
-
-    expect(
-      transitionVoiceShortcutArbiter(settling.state, 'macos', task, 1_120)
-        .events,
-    ).toEqual([{ action: 'pressed', mode: 'dictation' }]);
-    expect(
-      transitionVoiceShortcutArbiter(settling.state, 'macos', task, 1_121)
-        .events,
-    ).toEqual([{ action: 'pressed', mode: 'dictation' }]);
-  });
-
-  it('does not convert a locked dictation turn into task', () => {
-    const settling = transitionVoiceShortcutArbiter(
-      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'macos',
-      new Set(['MetaLeft', 'ControlLeft']),
-      1_000,
+      'task',
     );
     const active = transitionVoiceShortcutArbiter(
       settling.state,
-      'macos',
-      new Set(['MetaLeft', 'ControlLeft']),
+      'windows',
+      pressed,
       1_120,
+      'task',
     );
+
     expect(
       transitionVoiceShortcutArbiter(
         active.state,
-        'macos',
-        new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']),
+        'windows',
+        pressed,
         1_130,
+        'dictation',
       ),
     ).toEqual({ events: [], state: active.state });
-  });
 
-  it('ignores repeated modifier observations after activation', () => {
-    const activeTask = transitionVoiceShortcutArbiter(
-      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'macos',
-      new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']),
-      1_000,
-    );
-
-    expect(
-      transitionVoiceShortcutArbiter(
-        activeTask.state,
-        'macos',
-        new Set(['MetaLeft', 'ControlLeft', 'ShiftLeft']),
-        1_010,
-      ),
-    ).toEqual({ events: [], state: activeTask.state });
-  });
-
-  it('waits for all base modifiers after a task release', () => {
-    const activeTask = {
-      deadlineMs: null,
-      phase: 'active_task' as const,
-    };
     const released = transitionVoiceShortcutArbiter(
-      activeTask,
+      active.state,
       'windows',
-      new Set(['ControlLeft', 'AltLeft']),
-      1_000,
+      new Set(['ControlLeft']),
+      1_140,
+      'dictation',
     );
     expect(released.events).toEqual([{ action: 'released', mode: 'task' }]);
     expect(released.state.phase).toBe('await_all_released');
@@ -197,7 +156,7 @@ describe('push-to-talk shortcuts', () => {
         released.state,
         'windows',
         new Set(['ControlLeft']),
-        1_010,
+        1_150,
       ).state.phase,
     ).toBe('await_all_released');
     expect(
@@ -205,23 +164,8 @@ describe('push-to-talk shortcuts', () => {
         released.state,
         'windows',
         new Set(),
-        1_020,
+        1_160,
       ).state.phase,
     ).toBe('idle');
-
-    const nextGesture = transitionVoiceShortcutArbiter(
-      INITIAL_VOICE_SHORTCUT_ARBITER_STATE,
-      'windows',
-      new Set(['ControlLeft', 'AltLeft']),
-      1_030,
-    );
-    expect(
-      transitionVoiceShortcutArbiter(
-        nextGesture.state,
-        'windows',
-        new Set(['ControlLeft', 'AltLeft']),
-        1_150,
-      ).events,
-    ).toEqual([{ action: 'pressed', mode: 'dictation' }]);
   });
 });

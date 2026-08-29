@@ -152,6 +152,7 @@ export function CompanionCustomizationCard({
   const t = (message: string, replacements?: Record<string, string | number>) =>
     translate(appLanguage, message, replacements);
   const isBusy = busy !== null;
+  const isDefaultActive = status?.appearance.kind === 'default';
   const quota = status?.quota ?? null;
   const hasPrompt = prompt.trim().length > 0;
   const canGenerate =
@@ -310,81 +311,101 @@ export function CompanionCustomizationCard({
             </div>
           </div>
 
-          {status.savedCompanions.length > 0 && (
-            <section
-              aria-labelledby="saved-companions-heading"
-              className="companion-customization-library"
-            >
-              <div className="companion-customization-library__heading">
-                <div>
-                  <h3 id="saved-companions-heading">{t('Your companions')}</h3>
-                  <p>
-                    {t(
-                      'Choose any companion you created before. Switching does not use a preview.',
-                    )}
-                  </p>
-                </div>
-                <span>
-                  {t('{count} saved', {
-                    count: status.savedCompanions.length,
-                  })}
-                </span>
+          <section
+            aria-labelledby="saved-companions-heading"
+            className="companion-customization-library"
+          >
+            <div className="companion-customization-library__heading">
+              <div>
+                <h3 id="saved-companions-heading">{t('Pick a pet')}</h3>
+                <p>
+                  {t(
+                    'Choose Tro or a pet you generated. Switching does not use a preview.',
+                  )}
+                </p>
               </div>
-              <div className="companion-customization-library__grid">
-                {status.savedCompanions.map((companion, index) => {
-                  const isActive =
-                    status.appearance.kind === 'custom' &&
-                    status.appearance.revision === companion.id;
-                  const label = t('Saved companion {number}', {
-                    number: index + 1,
-                  });
-                  return (
-                    <button
-                      aria-label={
-                        isActive
-                          ? t('{name}, active', { name: label })
-                          : t('Use {name}', { name: label })
-                      }
-                      aria-pressed={isActive}
-                      className={`companion-customization-library__item${isActive ? ' is-active' : ''}`}
-                      disabled={isBusy || isActive}
-                      key={companion.id}
-                      onClick={() => void onActivateSaved(companion.id)}
-                      type="button"
-                    >
-                      <span className="companion-customization-library__preview">
-                        <img alt="" src={companion.assetUrl} />
-                      </span>
-                      <span className="companion-customization-library__copy">
-                        <strong>{label}</strong>
-                        <small>
-                          {t('Created {date}', {
-                            date: new Intl.DateTimeFormat(
-                              appLocale(appLanguage),
-                              {
-                                dateStyle: 'medium',
-                                timeZone: 'UTC',
-                              },
-                            ).format(new Date(companion.createdAt)),
-                          })}
-                        </small>
-                      </span>
-                      <span className="companion-customization-library__action">
-                        {isActive
-                          ? t('Active')
-                          : busy === 'selecting'
-                            ? t('Switching…')
-                            : t('Use')}
-                      </span>
-                    </button>
-                  );
+              <span>
+                {t('{count} custom pets', {
+                  count: status.savedCompanions.length,
                 })}
-              </div>
-              <p className="companion-customization-library__privacy">
-                {t('Saved companions stay encrypted on this device.')}
-              </p>
-            </section>
-          )}
+              </span>
+            </div>
+            <div className="companion-customization-library__grid">
+              <button
+                aria-label={
+                  isDefaultActive ? t('Tro, active') : t('Use Tro')
+                }
+                aria-pressed={isDefaultActive}
+                className={`companion-customization-library__item${isDefaultActive ? ' is-active' : ''}`}
+                disabled={isBusy || isDefaultActive}
+                onClick={() => void onUseDefault()}
+                type="button"
+              >
+                <span className="companion-customization-library__preview">
+                  <img alt="" src={desktopPetUrl} />
+                </span>
+                <span className="companion-customization-library__copy">
+                  <strong>Tro</strong>
+                  <small>{t('Animated default pet')}</small>
+                </span>
+                <span className="companion-customization-library__action">
+                  {isDefaultActive ? t('Active') : t('Use')}
+                </span>
+              </button>
+
+              {status.savedCompanions.map((companion, index) => {
+                const isActive =
+                  status.appearance.kind === 'custom' &&
+                  status.appearance.revision === companion.id;
+                const label = t('Generated pet {number}', {
+                  number: index + 1,
+                });
+                return (
+                  <button
+                    aria-label={
+                      isActive
+                        ? t('{name}, active', { name: label })
+                        : t('Use {name}', { name: label })
+                    }
+                    aria-pressed={isActive}
+                    className={`companion-customization-library__item${isActive ? ' is-active' : ''}`}
+                    disabled={isBusy || isActive}
+                    key={companion.id}
+                    onClick={() => void onActivateSaved(companion.id)}
+                    type="button"
+                  >
+                    <span className="companion-customization-library__preview">
+                      <img alt="" src={companion.assetUrl} />
+                    </span>
+                    <span className="companion-customization-library__copy">
+                      <strong>{label}</strong>
+                      <small>
+                        {t('Created {date}', {
+                          date: new Intl.DateTimeFormat(
+                            appLocale(appLanguage),
+                            {
+                              dateStyle: 'medium',
+                              timeZone: 'UTC',
+                            },
+                          ).format(new Date(companion.createdAt)),
+                        })}
+                      </small>
+                    </span>
+                    <span className="companion-customization-library__action">
+                      {isActive
+                        ? t('Active')
+                        : busy === 'selecting'
+                          ? t('Switching…')
+                          : t('Use')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="companion-customization-library__privacy">
+              {t('Generated pets stay encrypted on this device.')}
+            </p>
+          </section>
 
           {status.state !== 'available' ? (
             <div
@@ -419,6 +440,21 @@ export function CompanionCustomizationCard({
             </div>
           ) : (
             <div className="companion-customization-generator">
+              <div className="companion-customization-generator__heading">
+                <div>
+                  <h3>{t('Create your own pet')}</h3>
+                  <p>
+                    {t(
+                      'Start with a picture, then describe how your pet should look.',
+                    )}
+                  </p>
+                </div>
+                <span>
+                  {t(
+                    'Generated pets keep Tro’s state badges and motion reactions.',
+                  )}
+                </span>
+              </div>
               <ol className="companion-customization-steps">
                 <li className="companion-customization-step">
                   <div className="companion-customization-step__heading">

@@ -14,6 +14,7 @@ const EMPTY_PREFERENCES: AppPreferences = {
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: null,
+  voiceMode: 'dictation',
 };
 
 export interface AppPreferencesStore {

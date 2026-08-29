@@ -16,6 +16,7 @@ import {
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
   CompanionGenerationQuotaSchema,
+  CompanionHoverSchema,
   CompanionPetNudgeDraftSchema,
   CompanionPetNudgeSchema,
   GenerateCompanionImageRequestSchema,
@@ -584,11 +585,18 @@ describe('shared task contracts', () => {
     }
   });
 
-  it('validates strict, bounded classroom pet nudges', () => {
+  it('validates strict, bounded companion pet nudges', () => {
     const id = randomUUID();
     const message = 'x'.repeat(160);
 
-    for (const mood of ['encouraging', 'waiting', 'celebrating'] as const) {
+    for (const mood of [
+      'encouraging',
+      'waiting',
+      'celebrating',
+      'thinking',
+      'working',
+      'verifying',
+    ] as const) {
       expect(
         CompanionPetNudgeSchema.parse({
           id,
@@ -622,6 +630,14 @@ describe('shared task contracts', () => {
         ? CompanionPetNudgeSchema
         : CompanionPetNudgeDraftSchema;
       expect(schema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it('accepts only boolean companion hover projections', () => {
+    expect(CompanionHoverSchema.parse(true)).toBe(true);
+    expect(CompanionHoverSchema.parse(false)).toBe(false);
+    for (const value of [0, 1, 'true', null, {}, { x: 10, y: 20 }]) {
+      expect(CompanionHoverSchema.safeParse(value).success).toBe(false);
     }
   });
 
@@ -877,7 +893,7 @@ describe('shared task contracts', () => {
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
       }),
-    ).toMatchObject({ classroomPetEnabled: true });
+    ).toMatchObject({ classroomPetEnabled: true, voiceMode: 'dictation' });
     expect(
       AppPreferencesSchema.parse({
         appLanguage: 'en',

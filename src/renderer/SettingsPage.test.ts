@@ -221,7 +221,7 @@ describe('SettingsPage app language', () => {
     expect(markup).toContain('Tắt âm thanh khác khi đang nói');
     expect(markup).toContain('Bạn đồng hành tùy chỉnh');
     expect(markup).toContain('Thú cưng trên màn hình');
-    expect(markup).toContain('không theo dõi ứng dụng');
+    expect(markup).toContain('không đọc ứng dụng');
     expect(markup).toContain('Còn 5 trên 5 trong tháng này');
     expect(markup).not.toContain('Custom companion');
   });
@@ -239,10 +239,12 @@ describe('SettingsPage voice audio preference', () => {
     expect(markup).toContain('Mute other audio while speaking');
     expect(markup).toContain('restore its previous mute state');
     expect(markup).toContain('type="checkbox"');
-    expect(markup).toContain('Dictation');
+    expect(markup).toContain('Talk');
     expect(markup).toContain('Command + Control');
     expect(markup).toContain('left Control + left Alt');
-    expect(markup).toContain('Add Shift');
+    expect(markup).toContain('Command + Backslash');
+    expect(markup).toContain('Control + Backslash');
+    expect(markup).not.toContain('Add Shift');
     expect(markup).toContain('without sending');
   });
 });
@@ -255,17 +257,19 @@ describe('SettingsPage desktop pet preference', () => {
     targetVersion: null,
   };
 
-  it('shows the independent-motion and local-only privacy explanation', () => {
+  it('shows expressive states and the local-only hover privacy explanation', () => {
     const markup = renderSettings(updateStatus);
 
     expect(markup).toContain('Desktop pet');
     expect(markup).toContain(
-      'Show a small animated companion on your desktop',
+      'Show a stateful animated companion on your desktop',
     );
     expect(markup).toContain('Drag it anywhere you like');
-    expect(markup).toContain(
-      'It never watches apps, websites, cursor activity, or typing.',
-    );
+    expect(markup).toContain('reacts to task progress');
+    expect(markup).toContain('occasional local task or classroom messages');
+    expect(markup).toContain('checks only whether the pointer is over the pet');
+    expect(markup).toContain('coordinates are never recorded, stored, or sent');
+    expect(markup).toContain('does not inspect apps, websites, or typing');
     expect(markup).toMatch(
       /id="settings-classroom-pet-enabled"[^>]*checked=""/u,
     );

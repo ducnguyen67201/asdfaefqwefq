@@ -51,9 +51,17 @@ describe('app language', () => {
       'Add an image to continue',
       'Private by design',
       'Meet your new companion',
-      'Your companions',
-      'Choose any companion you created before. Switching does not use a preview.',
-      'Saved companions stay encrypted on this device.',
+      'Pick a pet',
+      'Choose Tro or a pet you generated. Switching does not use a preview.',
+      '{count} custom pets',
+      'Tro, active',
+      'Use Tro',
+      'Animated default pet',
+      'Generated pet {number}',
+      'Create your own pet',
+      'Start with a picture, then describe how your pet should look.',
+      'Generated pets keep Tro’s state badges and motion reactions.',
+      'Generated pets stay encrypted on this device.',
       'Your source image and prompt are sent to OpenAI only for this generation; Tro does not save them. A companion you activate stays encrypted on this device. OpenAI may retain images flagged for child-safety review. An uncertain provider outcome may use one monthly slot, and Tro will not retry it automatically.',
     ];
 
@@ -66,6 +74,19 @@ describe('app language', () => {
         remaining: 3,
       }),
     ).toBe('Còn 3 trên 5 trong tháng này');
+  });
+
+  it('translates expressive desktop pet copy without English fallback', () => {
+    const messages = [
+      'Thinking',
+      'On it',
+      'Checking',
+      'Show a stateful animated companion on your desktop. Drag it anywhere you like; it reacts to task progress, pointer hover, and occasional local task or classroom messages. Hover checks only whether the pointer is over the pet on this device; coordinates are never recorded, stored, or sent. It does not inspect apps, websites, or typing.',
+    ];
+
+    for (const message of messages) {
+      expect(translate('vi', message)).not.toBe(message);
+    }
   });
 
   it('translates the role-aware live classroom flow', () => {
