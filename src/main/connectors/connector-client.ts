@@ -27,7 +27,12 @@ export class ConnectorClient {
   ) {}
 
   list(): Promise<ConnectorList> {
-    return this.request('/v1/connectors', { method: 'GET' }, ConnectorListSchema);
+    return this.request(
+      '/v1/connectors',
+      { method: 'GET' },
+      ConnectorListSchema,
+      { catalog: [], connections: [], enabled: false },
+    );
   }
 
   async connect(catalogKey: string): Promise<ConnectorAttemptStatus> {
@@ -77,7 +82,12 @@ export class ConnectorClient {
     };
   }
 
-  private async request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+    schema: z.ZodType<T>,
+    notFoundFallback?: T,
+  ): Promise<T> {
     const baseUrl = this.apiBaseUrl.trim().replace(/\/+$/u, '');
     if (!baseUrl) throw new Error('Connected applications require the hosted Tro service.');
     const token = await this.accessTokenProvider();
@@ -90,6 +100,9 @@ export class ConnectorClient {
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      if (response.status === 404 && notFoundFallback !== undefined) {
+        return notFoundFallback;
+      }
       const error = HostedErrorSchema.safeParse(body);
       throw new Error(error.success ? error.data.error : `Connector service returned HTTP ${response.status}.`);
     }
