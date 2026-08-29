@@ -63,6 +63,26 @@ describe('Tro development process cleanup', () => {
     ).toEqual([11, 12]);
   });
 
+  it('matches repository processes with Windows path separators', () => {
+    expect(
+      findTroDevelopmentRoots(
+        [
+          {
+            command: String.raw`C:\Program Files\node.exe C:\workspace\TroCode\node_modules\@electron-forge\cli\dist\electron-forge-start.js`,
+            parentPid: 1,
+            pid: 21,
+          },
+          {
+            command: String.raw`C:\Program Files\node.exe C:\workspace\Other\node_modules\@electron-forge\cli\dist\electron-forge-start.js`,
+            parentPid: 1,
+            pid: 22,
+          },
+        ],
+        String.raw`C:\workspace\TroCode`,
+      ),
+    ).toEqual([21]);
+  });
+
   it('orders descendants before roots and de-duplicates overlapping roots', () => {
     expect(
       collectProcessTreePostOrder(

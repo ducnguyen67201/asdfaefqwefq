@@ -24,39 +24,23 @@ export function findTroDevelopmentRoots(
   processes: readonly ProcessEntry[],
   repositoryRoot: string,
 ): number[] {
-  const forgeEntry = path.join(
-    repositoryRoot,
-    'node_modules',
-    '@electron-forge',
-    'cli',
-    'dist',
-    'electron-forge-start.js',
-  );
+  const normalizedRepositoryRoot = repositoryRoot
+    .replaceAll('\\', '/')
+    .replace(/\/+$/u, '');
+  const forgeEntry = `${normalizedRepositoryRoot}/node_modules/@electron-forge/cli/dist/electron-forge-start.js`;
   const electronEntries = new Set([
-    `${path.join(
-      repositoryRoot,
-      'node_modules',
-      'electron',
-      'dist',
-      'Electron.app',
-      'Contents',
-      'MacOS',
-      'Electron',
-    )} .`,
-    `${path.join(
-      repositoryRoot,
-      'node_modules',
-      'electron',
-      'dist',
-      'electron',
-    )} .`,
+    `${normalizedRepositoryRoot}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron .`,
+    `${normalizedRepositoryRoot}/node_modules/electron/dist/electron .`,
   ]);
 
   return processes
-    .filter(
-      ({ command }) =>
-        command.includes(forgeEntry) || electronEntries.has(command),
-    )
+    .filter(({ command }) => {
+      const normalizedCommand = command.replaceAll('\\', '/');
+      return (
+        normalizedCommand.includes(forgeEntry) ||
+        electronEntries.has(normalizedCommand)
+      );
+    })
     .map(({ pid }) => pid);
 }
 
