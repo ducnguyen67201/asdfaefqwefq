@@ -19,67 +19,24 @@ function fakeTransport(
 }
 
 describe('RustDesktopEngineClient', () => {
-  it('requires the Rust handshake before returning policy decisions', async () => {
-    const request = vi.fn(async (method: string) => {
-      if (method === 'health') {
-        return {
+  it('requires the Rust health handshake before provider methods', async () => {
+    const request = vi.fn(async (method: string) => method === 'health'
+      ? {
           engine: 'rust',
           protocolVersion: 1,
-          features: [
-            'intent_authorization',
-            'desktop_policy',
-            'google_oauth',
-            'voice',
-          ],
-        };
-      }
-      return {
-        status: 'allowed',
-        effect: {
-          kind: 'none',
-          resourceKind: null,
-          reversibility: 'none',
-          externality: 'local',
-          communication: 'none',
-          overwrite: 'none',
-          sensitiveDataTransfer: false,
-        },
-        authorizationSource: 'routine',
-        approvalRequired: false,
-        consequential: false,
-        summary: 'Observed the current surface.',
-        nextActions: ['Verify the observation.'],
-      };
-    });
+          features: ['google_oauth', 'voice'],
+        }
+      : { status: 200, body: { text: 'hello' } });
     const client = new RustDesktopEngineClient({
       transport: fakeTransport(request),
     });
 
-    await expect(client.evaluateAction({
-      action: {
-        action: 'observe_screen',
-        toolId: 'desktop.observe',
-        operation: 'observe',
-        description: 'Observe the current surface.',
-      },
-      goal: {} as never,
-      proposedEffect: {
-        kind: 'none',
-        resourceKind: null,
-        reversibility: 'none',
-        externality: 'local',
-        communication: 'none',
-        overwrite: 'none',
-        sensitiveDataTransfer: false,
-      },
-      supported: true,
-    })).resolves.toMatchObject({
-      status: 'allowed',
-      authorizationSource: 'routine',
+    await expect(client.validateVoiceCredential('sk-test')).resolves.toMatchObject({
+      status: 200,
     });
     expect(request.mock.calls.map(([method]) => method)).toEqual([
       'health',
-      'policy.evaluate_action',
+      'voice.validate_credential',
     ]);
   });
 
@@ -88,11 +45,11 @@ describe('RustDesktopEngineClient', () => {
       transport: fakeTransport(vi.fn(async () => ({
         engine: 'rust',
         protocolVersion: 1,
-        features: ['desktop_policy'],
+        features: ['voice'],
       }))),
     });
 
-    await expect(client.start()).rejects.toThrow('intent_authorization');
+    await expect(client.start()).rejects.toThrow('google_oauth');
   });
 
   it('resolves native packaged binaries and a Cargo development command', () => {

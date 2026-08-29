@@ -207,8 +207,8 @@ export function InsightsPage({
           <div className="event-summary">
             <div>
               <span className="event-summary__dot" aria-hidden="true" />
-              <span>{t('Approval decisions')}</span>
-              <strong>{summary.approvalDecisions}</strong>
+              <span>{t('Verified completions')}</span>
+              <strong>{summary.verifiedCompletions}</strong>
             </div>
             <div>
               <span

@@ -11,7 +11,7 @@ Read the [privacy policy](PRIVACY.md), [code signing policy](CODE_SIGNING_POLICY
 the [security model](docs/security.md), and the
 [Knowledge Spaces guide](docs/knowledge-spaces.md).
 
-The desktop application uses Electron, React, TypeScript, and [CUA Driver](https://github.com/trycua/cua). It is domain-agnostic: requests are not placed into a Gold domain/capability grant before execution. The host still enforces concrete tool availability, public HTTPS targets, fresh observations, exact consequential-action approvals, cancellation, and task limits.
+The desktop application uses Electron, React, TypeScript, and [CUA Driver](https://github.com/trycua/cua). It is domain-agnostic and goal-driven. Registered tools run automatically after protocol, schema, technical-prerequisite, and execution-ownership checks. Tro does not add a per-action approval gate.
 
 ## Current status
 
@@ -34,15 +34,15 @@ Implemented:
 - One durable Rust model/tool loop for multilingual reasoning, writing,
   desktop work, and installed tools, with replayable lifecycle events.
 - An explicit Workspace mode backed by a canonical user-selected root and
-  trusted local shell and patch adapters. Commands and file mutations require
-  exact, one-use Tro approval; provider credentials remain backend-only.
+  trusted local shell and patch adapters. Bounded shell commands run with the
+  host user's capabilities; provider credentials remain backend-only.
 - A trusted model-visible tool registry with desktop observation/control,
   public HTTPS navigation, grounded guidance, and user-input adapters.
 - Typed task lifecycle with guarded transitions.
 - Task-scoped clarification replies that continue the same goal conversation.
-- Structured pending interactions and exact, single-use approval decisions.
+- Structured clarification interactions when a material choice is missing.
 - Task steering applied by Rust at the next safe model boundary.
-- Rust-owned concrete tool/operation, target, and approval policy evaluation.
+- Rust-owned concrete tool/operation, target, and effect validation.
 - Native Google OAuth sign-in with Authorization Code + PKCE, Rust-side code
   exchange, server-verified identity claims, and an operating-system-encrypted,
   revocable hosted session.
@@ -63,8 +63,8 @@ Implemented:
 - Rust-owned model → tool → result continuation with host-owned
   tool/time limits, cancellation, safe steering, post-action screenshots, and
   no repeat after unknown results.
-- Direct public HTTPS navigation and exact, revalidated approval
-  before consequential CUA actions such as Send.
+- Direct public HTTPS navigation and fresh-observation validation for visual
+  CUA actions.
 - Explicit Dictation and Task push-to-talk modes with local VAD, bounded PCM
   WAV segments, and upload-based `gpt-transcribe` transcription. Dictation
   inserts text without sending; the Shift-modified Task gesture submits through
@@ -87,8 +87,8 @@ Implemented:
   snapshot and immutable lifecycle events, then restores History and Insights
   after restart.
 - Streamed draft text, bounded live activity and optional plan history, explicit
-  Everyday/Workspace selection, Balanced/Strict autonomy, automatic execution,
-  and always-available Stop/Escape cancellation.
+  Everyday/Workspace selection, goal-driven execution, and always-available
+  Stop/Escape cancellation.
 - Unit tests and cross-platform CI definition.
 
 Current computer-context support and limits:
@@ -97,8 +97,9 @@ Current computer-context support and limits:
   before screenshots, with opaque observation-local element references. Canvas
   editors, ambiguous windows, unsupported apps, and incomplete accessibility
   trees fall back to window or full-desktop vision.
-- Existing logged-in browser-profile attachment remains a separate exact
-  permission action. Tro does not ship a browser or VS Code extension, so
+- Existing logged-in browser-profile attachment uses a short-lived, exact
+  internal driver capability that is armed automatically for the registered
+  browser preparation tool. Tro does not ship a browser or VS Code extension, so
   unsaved editor buffers and diagnostics are available only when the browser or
   operating-system accessibility surface exposes them.
 
@@ -124,9 +125,9 @@ runtime. CUA remains stopped unless the agent requests a desktop tool.
 The visible **Stop task** control and
 **Escape while Tro is focused** can cancel a server-cancellable task. Escape is
 suppressed for editors, modals, and permission waits, and is never registered
-system-wide. The loop observes after every
-admitted action, and consequential actions still pause on an exact approval
-card before anything is dispatched.
+system-wide. The loop observes after every state-changing visual action. OS
+permission or provider OAuth setup can pause execution, but registered actions
+do not pause for a Tro approval card.
 
 ## Requirements
 
@@ -284,8 +285,8 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-Computer-use policy is evaluated by Rust; Electron owns schema validation,
-trusted workspace binding, approval presentation, and exactly-once native
+Rust selects only registered tools. Electron owns schema validation, trusted
+workspace binding, technical prerequisite checks, and exactly-once native
 dispatch.
 
 #### Custom companion availability
@@ -444,7 +445,7 @@ authenticated identity is associated with the same installation and its
 content-free voice events.
 
 Typed task text, messages, voice transcript content, screenshots, URLs,
-document contents, file paths, credentials, and approval descriptions are not
+document contents, file paths, credentials, and tool arguments are not
 added to analytics events.
 
 Closing the Tro window hides it while Tro stays available from the menu
@@ -487,14 +488,14 @@ authenticated and proxied by Railway.
 2. Sign in to Gmail yourself. Tro will not type passwords.
 3. Enter a complete bounded request, for example: `Open Gmail, compose an
 email from my work account to me@example.com with subject "Tro test"
-and body "The desktop loop works", then send it after I approve.`
+and body "The desktop loop works".`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
    window or with the Shift-modified system-wide Task shortcut.
-6. Before Send, confirm the approval card's account, recipients, subject, body,
-   target, and exact command. Send is dispatched once only after the button is
-   approved and the latest observation produces the same payload.
+6. Watch the live task and use Stop/Escape if needed. A registered Send action
+   is dispatched at most once after a fresh observation and the durable
+   requested-to-executing transition.
 
 ## Quality checks
 
@@ -604,7 +605,7 @@ React renderer
   -> typed preload API
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
-      -> bundled trocode-api desktop engine (Rust policy + voice transport)
+      -> bundled trocode-api desktop engine (model + voice transport)
       -> Rust durable agent runtime through the Tro backend
         -> trusted local CUA/Workspace adapters when explicitly selected
       -> PostHog analytics service (allowlisted metadata only)
@@ -649,7 +650,8 @@ MODULE.bazel          Bazel module and Rust toolchain graph
 
 ## Design rule
 
-GPT chooses between assistant text and host-advertised tools, but it never gains
-host authority. The main process owns tool registration, parsing, public-target
-checks, exact approval, execution, cancellation, and limits. CUA is only one
-lazy execution adapter behind that boundary.
+GPT chooses between assistant text and host-advertised tools, but it cannot add
+tools or bypass their schemas. The main process owns tool registration, parsing,
+public-target checks, technical prerequisites, exactly-once execution,
+cancellation, and limits. CUA is one lazy execution adapter behind that
+boundary.

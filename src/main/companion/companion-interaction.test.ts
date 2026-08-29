@@ -35,54 +35,6 @@ describe('companion interaction projection', () => {
     });
   });
 
-  it('preserves material email details without exposing observation metadata', () => {
-    const interaction: PendingInteraction = {
-      action: {
-        action: 'send',
-        description: 'Send the drafted launch update.',
-        parameters: {
-          observationFingerprint: 'secret-screen-fingerprint',
-          observationId: 'screen-observation-id',
-          recipient: 'friend@example.com',
-          subject: 'Launch update',
-          body: 'The launch is ready.',
-          x: '545',
-          y: '836',
-        },
-        target: 'Gmail message to friend@example.com',
-      },
-      actionDigest: 'a'.repeat(64),
-      consequence: 'This sends an external message as you.',
-      createdAt: CREATED_AT,
-      expiresAt: '2026-08-17T12:05:00.000Z',
-      id: INTERACTION_ID,
-      kind: 'approval',
-      prompt: 'Send this email?',
-      taskId: TASK_ID,
-    };
-
-    const projected = toCompanionInteraction(interaction, 'left');
-
-    expect(projected).toMatchObject({
-      action: {
-        details: [
-          { label: 'Recipient', value: 'friend@example.com' },
-          { label: 'Subject', value: 'Launch update' },
-          { label: 'Body', value: 'The launch is ready.' },
-        ],
-        hasMoreDetails: false,
-        label: 'Send',
-      },
-      actionDigest: 'a'.repeat(64),
-      kind: 'approval',
-      side: 'left',
-    });
-    expect(JSON.stringify(projected)).not.toContain('secret-screen-fingerprint');
-    expect(JSON.stringify(projected)).not.toContain('screen-observation-id');
-    expect(JSON.stringify(projected)).not.toContain('545');
-    expect(JSON.stringify(projected)).not.toContain('836');
-  });
-
   it('keeps malformed legacy labels from breaking the companion presenter', () => {
     const interaction = {
       choices: [{ id: ' ', label: ' ' }],

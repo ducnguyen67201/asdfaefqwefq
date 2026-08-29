@@ -26,7 +26,6 @@ function createUpdate(): TaskUpdate {
     timestamp,
   };
   const snapshot: TaskSnapshot = {
-    approvalGrant: null,
     createdAt: '2026-08-16T05:00:00.000Z',
     goal: null,
     lastEvent: event,

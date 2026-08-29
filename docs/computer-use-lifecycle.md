@@ -1,113 +1,50 @@
 # Computer-use lifecycle
 
-For hosted runs, CUA remains local to Electron main. The backend persists a
-tool interruption and waits; the desktop requests an exactly-once executing
-transition, performs the action through the existing CUA session, observes the
-result, and returns evidence. Requested or delivered invocations may be
-redelivered with the same ID. Executing invocations are never replayed after a
-disconnect; an absent terminal result becomes unknown.
+1. Rust selects a tool from the exact catalog advertised by the desktop.
+2. Rust validates the model arguments and derives effect metadata used for
+   verification and unknown-outcome handling.
+3. Electron checks the protocol/catalog digests, expiry, run/task/workspace
+   mapping, registered tool and operation, normalized effect, target, and
+   observation binding.
+4. If Accessibility or Screen Recording is unavailable, the run enters the
+   durable `awaiting_permission` technical state. The user may open system
+   settings, refresh, continue without computer use, or stop.
+5. Electron asks Rust to atomically move the invocation from `requested` to
+   `executing` using the expected run version.
+6. The selected adapter is called once. Results and bounded evidence are sent
+   back to Rust.
+7. Rust verifies required outcomes and either replans, completes, recovers from
+   a definite failure, or blocks an unknown consequential result.
 
-Visual evidence uses semantic facts without an image when sufficient, a
-1536-pixel overview by default, and an observation-bound original-resolution
-crop only on demand. One original is retained in task memory, every new
-observation invalidates prior crop authority, and cleanup removes both CUA and
-image state.
+Tro does not display an action approval card. OS permissions and account OAuth
+are technical/provider prerequisites, not per-action product policy.
 
-Computer use is an optional tool inside the Everyday Agents SDK loop. A new task
-does not create a CUA session, infer a computer capability, or capture a
-screenshot.
+## Observation freshness
 
-## Lazy flow
+Visual actions use opaque references bound to one task-scoped observation and
+fingerprint. A changed or stale target is rejected before dispatch. After a
+state-changing action, the next visual decision must use a fresh observation.
+Original-resolution crops are bounded and stay in active device memory.
 
-```text
-model calls an exact computer observation tool (when CUA is available)
-  -> backend persists the invocation before any local dispatch
-  -> host checks/starts task-scoped CUA in Auto scope
-  -> if permission is absent, persist awaiting_permission with stable interaction/invocation IDs
-  -> show Open System Settings and Continue without computer actions
-  -> opening Settings does not answer, cancel, or resume the interaction
-  -> on app focus, resume the same invocation once only when status is ready and available
-  -> identify one current non-TroCode browser/native window
-  -> try browser semantics, window accessibility, window screenshot, then desktop screenshot
-  -> return bounded facts and opaque e1/e2 references to the same call ID
-  -> model may call control_surface using the latest observation ID and reference
-  -> host resolves the private token and records the declared consequence
-  -> host merges the typed effect proposal with payload and visible risk raisers
-  -> policy matches a current reversible instruction grant, denies, or asks for exact approval
-  -> execute one atomic command
-  -> refresh the exact same bound surface and replace all old references
-  -> return outcome + fresh evidence to the same model session
+## Browser navigation
 
-If semantic capability is absent or the target is ambiguous, the existing
-observe_desktop/control_desktop coordinate flow is used unchanged. Auto is a
-hardcoded session invariant, not a user, environment, or model option. The host
-keeps the session window-scoped while semantic reading works and explicitly
-escalates it to desktop scope only when desktop vision or coordinate control is
-required.
-```
+`browser.navigate` is the direct adapter for public URLs. Both normalization
+and the final Electron adapter require HTTPS, no embedded credentials, and a
+non-local/non-private hostname or literal IP. This protects the process
+boundary but does not by itself prevent DNS rebinding; a future network-layer
+resolver can add address pinning without introducing user approval.
 
-The model never receives CUA, Electron IPC, driver handles, process/window/tab
-IDs, browser targets, accessibility tokens, or snapshots. Semantic references
-are observation-local aliases held only in Electron main. Its normalized legacy
-coordinates are converted once into screenshot pixels; companion presentation
-coordinates are mapped separately into desktop points.
+## Browser profile preparation
 
-Before model input, wide screenshots are resized to at most 1,536 pixels and
-encoded as bounded JPEG evidence. Exactly one current screenshot may appear in
-a Responses request. After that model boundary its bytes are demoted from the
-bounded SDK session while textual observation facts remain. A later action must
-produce a newer observation; historical screenshots are never replayed.
+When semantic observation reports `ready_to_prepare`, the model may call
+`browser.prepare`. Tro automatically arms one exact, expiring native-driver
+capability for the current task/session/window. A mismatch, expiry, malformed
+resource, or replay is denied by the capability broker.
 
-## Freshness and approvals
+## Workspace shell
 
-Every control call must cite the latest observation UUID. The host includes the
-observation UUID and fingerprint in the normalized `ProposedAction` and approval
-digest. Before executing a held consequential desktop action, it captures the
-screen again. Any fingerprint change invalidates the grant, returns
-`not_executed` plus the new screenshot, and requires a newly grounded proposal.
-Opening a browser URL also invalidates the cached observation before any later
-coordinate action can be resolved.
-
-For semantic approval, the host refreshes the same application/window/tab and
-requires one unique match for the approved element's bounded semantic identity.
-It then rebinds the new private token to the held public reference. A surface
-change, missing target, or duplicate match discards the grant and executes
-nothing. Existing-profile browser attachment is a separate one-use
-`system_permission` approval; the authorization host denies every callback
-unless its session, operation, and resource digest match the armed grant.
-
-The model's declared effect/consequence is retained for policy evidence and
-exact approval copy, but it cannot downgrade host normalization. Balanced
-autonomy allows effect-free grounded controls and current instruction-matched
-reversible private effects. Attendees force a calendar save to an invitation;
-generic submit is unknown. Sensitive cues, opaque targets, stale observations,
-or contradictory metadata raise to exact approval. Strict autonomy confirms
-every mutation or side effect.
-
-## Outcomes
-
-Adapters return `confirmed`, `unknown`, `failed`, `denied`, or `not_executed`
-with bounded text and optional in-memory image evidence. A dispatched desktop
-action is followed by a fresh observation even when the driver reports an
-unknown outcome. The exact action digest is then placed on a do-not-dispatch
-list. If an approved consequential action has an unknown outcome, TroCode blocks
-and cleans up the task so neither the same action nor another consequential
-action can be dispatched from that session.
-
-## Cancellation and cleanup
-
-One serialized run is active per task. A newer observation invalidates prior
-semantic references. Cancellation aborts model sampling,
-permission work, observation, or adapter work. CUA is ended only if it was
-started, the in-memory model session is erased, and resolved call IDs are
-released. Reference bindings and armed authorization are cleared on task end,
-disconnect, and shutdown. Stop requests carry a source, command ID, and expected
-run version. A pre-execution stop becomes `cancelled`; a stop after a
-consequential dispatch with no known result becomes terminal `blocked` with an
-unknown-effect failure. It is never described as cancelled or retried.
-
-Escape is window-scoped. It is accepted only while Tro is focused, no modal or
-editable control owns the key, and no permission interaction is waiting. Tro
-does not register a system-wide plain-Escape accelerator. On macOS, opening
-System Settings and pressing Escape there cannot cancel the task; Windows,
-Linux, and unsupported permission states follow the same focus rule.
+The shell adapter retains command-count, length, NUL, timeout, output,
+environment, cancellation, and selected-working-directory bounds. It has no
+semantic command allow/deny classifier. Commands such as network access,
+package installation, git push, or deployment can run with the host user's
+available credentials and operating-system access.

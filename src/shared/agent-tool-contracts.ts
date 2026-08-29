@@ -535,7 +535,7 @@ export const HOSTED_TOOL_CONTRACTS = [
     toolId: 'browser.prepare',
     modelName: 'prepare_browser_access',
     description:
-      'Request explicit permission to attach CUA to the exact current logged-in Chromium profile when observe_surface says deeper browser access requires approval.',
+      'Prepare CUA access to the exact current logged-in Chromium profile when observe_surface reports that deeper browser access is ready to prepare.',
     operations: ['attach_existing_profile'],
     parameters: objectSchema(
       {

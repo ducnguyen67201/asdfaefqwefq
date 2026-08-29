@@ -9,7 +9,6 @@ import {
 
 import type {
   AgentActivityUpdate,
-  AutonomyMode,
   AppLanguage,
   AppPreferences,
   AppUpdateStatus,
@@ -46,7 +45,6 @@ import {
   organizationSettingsAvailable,
   type ActiveView,
 } from './app-navigation';
-import { approvalDetails } from './approval-details';
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
 import { hasAssignedClassroomRole } from './class-workspace';
@@ -79,6 +77,7 @@ import { SettingsPage } from './SettingsPage';
 import { SidebarClassWorkspaceSwitcher } from './SidebarClassWorkspaceSwitcher';
 import type { SpaceDetailTab } from './SpaceDetailPage';
 import {
+  computerPermissionWaitPresentation,
   isTaskCancellable,
   isTaskSteerable,
   isTaskTerminal,
@@ -592,7 +591,8 @@ function LiveTaskRail({
             <div className="live-task-details__content">
               {(goal.schemaVersion === 6 ||
                 goal.schemaVersion === 7 ||
-                goal.schemaVersion === 8) &&
+                goal.schemaVersion === 8 ||
+                goal.schemaVersion === 9) &&
                 goal.activity && (
                   <div className="activity-context-chip">
                     <span>{goal.activity.space.name}</span>
@@ -603,18 +603,16 @@ function LiveTaskRail({
                 <span className="field-label">{t('Execution')}</span>
                 <p>
                   {t(
-                    goal.schemaVersion === 8 && goal.autonomyMode === 'balanced'
-                      ? 'Your instruction authorizes requested reversible work. Tro still asks before communications, deletion, publishing or deployment, money, credentials or permissions, installs, sensitive transfers, and scope expansion.'
-                      : goal.schemaVersion === 8
-                        ? 'Strict mode asks before every mutation or side effect.'
-                        : 'Tro chooses from the tools currently available and asks before consequential actions.',
+                    goal.schemaVersion === 9
+                      ? 'Tro executes the requested goal within the selected workspace and available capabilities. It pauses only when it needs clarification, an operating-system permission, or account authorization.'
+                      : 'Tro chooses from the tools currently available and stays within the task authority it received.',
                   )}
                 </p>
               </div>
               <div>
                 <span className="field-label">{t('Success looks like')}</span>
                 <p>
-                  {goal.schemaVersion === 7 || goal.schemaVersion === 8
+                  {goal.schemaVersion === 7 || goal.schemaVersion === 8 || goal.schemaVersion === 9
                     ? goal.outcomeContract.criteria
                         .filter((criterion) => criterion.required)
                         .map((criterion) => criterion.description)
@@ -794,107 +792,40 @@ function PendingInteractionCard({
   interaction,
   isSending,
   onAnswerChoice,
-  onApproval,
 }: {
   appLanguage: AppLanguage;
   interaction: PendingInteraction;
   isSending: boolean;
   onAnswerChoice: (answer: string, choiceId: string) => void;
-  onApproval: (decision: 'approve' | 'deny') => void;
 }) {
   const t = (message: string) => translate(appLanguage, message);
-  if (interaction.kind === 'clarification') {
-    return (
-      <section
-        aria-live="polite"
-        aria-labelledby="interaction-heading"
-        className="interaction-card interaction-card--clarification"
-      >
-        <p className="eyebrow">{t('Tro needs your input')}</p>
-        <h2 id="interaction-heading">{interaction.prompt}</h2>
-        {interaction.choices && (
-          <div className="interaction-choices">
-            {interaction.choices.map((choice) => (
-              <button
-                disabled={isSending}
-                key={choice.id}
-                onClick={() => onAnswerChoice(choice.label, choice.id)}
-                type="button"
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <p>
-          {t(
-            'Answer below by voice or text. Your response will continue this task.',
-          )}
-        </p>
-      </section>
-    );
-  }
-
   return (
     <section
-      aria-live="assertive"
+      aria-live="polite"
       aria-labelledby="interaction-heading"
-      className="interaction-card interaction-card--approval"
+      className="interaction-card interaction-card--clarification"
     >
-      <p className="eyebrow">{t('Exact approval required')}</p>
+      <p className="eyebrow">{t('Tro needs your input')}</p>
       <h2 id="interaction-heading">{interaction.prompt}</h2>
-      <p>{interaction.consequence}</p>
-      <dl className="approval-details">
-        <div>
-          <dt>{t('Action')}</dt>
-          <dd>{formatLabel(interaction.action.action, appLanguage)}</dd>
-        </div>
-        <div>
-          <dt>{t('Description')}</dt>
-          <dd>{interaction.action.description}</dd>
-        </div>
-        {interaction.action.target && (
-          <div>
-            <dt>{t('Target')}</dt>
-            <dd>{interaction.action.target}</dd>
-          </div>
-        )}
-        {approvalDetails(interaction.action.parameters).map((detail) => (
-          <div key={detail.key}>
-            <dt>{t(detail.label)}</dt>
-            <dd
-              className={
-                detail.payload ? 'approval-details__payload' : undefined
-              }
+      {interaction.choices && (
+        <div className="interaction-choices">
+          {interaction.choices.map((choice) => (
+            <button
+              disabled={isSending}
+              key={choice.id}
+              onClick={() => onAnswerChoice(choice.label, choice.id)}
+              type="button"
             >
-              {detail.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="approval-note">
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <p>
         {t(
-          'Approve here or in the cursor card. Spoken or typed “yes” cannot approve an exact action.',
+          'Answer below by voice or text. Your response will continue this task.',
         )}
       </p>
-      <div className="approval-actions">
-        <button
-          className="secondary-button"
-          disabled={isSending}
-          onClick={() => onApproval('deny')}
-          type="button"
-        >
-          {t('Deny')}
-        </button>
-        <button
-          className="primary-button"
-          disabled={isSending}
-          onClick={() => onApproval('approve')}
-          type="button"
-        >
-          {t('Approve exact action')}
-        </button>
-      </div>
     </section>
   );
 }
@@ -971,8 +902,6 @@ export function App({
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
   const [languageDraft, setLanguageDraft] = useState<PrimaryLanguage>('en');
   const [appLanguageDraft, setAppLanguageDraft] = useState<AppLanguage>('en');
-  const [autonomyModeDraft, setAutonomyModeDraft] =
-    useState<AutonomyMode>('balanced');
   const [classroomPetEnabledDraft, setClassroomPetEnabledDraft] =
     useState(true);
   const [executionProfile, setExecutionProfile] =
@@ -1322,7 +1251,6 @@ export function App({
       .then((preferences) => {
         setAppPreferences(preferences);
         setAppLanguageDraft(preferences.appLanguage);
-        setAutonomyModeDraft(preferences.autonomyMode);
         setClassroomPetEnabledDraft(preferences.classroomPetEnabled);
         setMuteSystemAudioWhileSpeakingDraft(
           preferences.muteSystemAudioWhileSpeaking,
@@ -1411,6 +1339,9 @@ export function App({
     snapshot?.lifecycle?.waitingOn?.kind === 'permission'
       ? snapshot.lifecycle.waitingOn
       : null;
+  const permissionPresentation = permissionWait
+    ? computerPermissionWaitPresentation(permissionWait.requiredPermissions)
+    : null;
   const pendingClarification =
     pendingInteraction?.kind === 'clarification' ? pendingInteraction : null;
   const isSteering = isTaskSteerable(snapshot);
@@ -1421,8 +1352,7 @@ export function App({
     (pendingClarification ||
       isSteering ||
       executionProfile === 'everyday' ||
-      Boolean(workspaceRuntime?.available && workspaceSelection)) &&
-    pendingInteraction?.kind !== 'approval';
+      Boolean(workspaceRuntime?.available && workspaceSelection));
   const taskPhase = useMemo(
     () =>
       snapshot
@@ -1440,9 +1370,9 @@ export function App({
     ? {
         state: 'interaction',
         eyebrow: t('Your move'),
-        heading: t('A decision is waiting.'),
+        heading: t('A clarification is waiting.'),
         description: t(
-          'Review the request below. Tro will hold position until you answer or approve the exact action.',
+          'Answer the question below so Tro can continue toward the goal.',
         ),
       }
     : hasLiveTask
@@ -1803,7 +1733,6 @@ export function App({
     try {
       const preferences = await window.tro.updateAppPreferences({
         appLanguage: appLanguageDraft,
-        autonomyMode: autonomyModeDraft,
         classroomPetEnabled: classroomPetEnabledDraft,
         muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
         primaryLanguage: languageDraft,
@@ -1833,7 +1762,6 @@ export function App({
     }
   }, [
     appLanguageDraft,
-    autonomyModeDraft,
     classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
@@ -2015,46 +1943,6 @@ export function App({
       }
     },
     [clearError, isSubmitting, recordSnapshot, reportError],
-  );
-
-  const decideApproval = useCallback(
-    async (decision: 'approve' | 'deny') => {
-      if (
-        !snapshot ||
-        snapshot.pendingInteraction?.kind !== 'approval' ||
-        isSubmitting ||
-        isSendingRef.current
-      ) {
-        return;
-      }
-
-      const approval = snapshot.pendingInteraction;
-      isSendingRef.current = true;
-      clearError();
-      setIsSubmitting(true);
-
-      try {
-        recordSnapshot(
-          await window.tro.decideApproval({
-            taskId: snapshot.taskId,
-            interactionId: approval.id,
-            kind: 'approval',
-            decision,
-            actionDigest: approval.actionDigest,
-          }),
-        );
-      } catch (approvalError) {
-        reportError(
-          approvalError instanceof Error
-            ? approvalError.message
-            : 'The approval decision could not be recorded.',
-        );
-      } finally {
-        isSendingRef.current = false;
-        setIsSubmitting(false);
-      }
-    },
-    [clearError, isSubmitting, recordSnapshot, reportError, snapshot],
   );
 
   const resetTask = useCallback(async () => {
@@ -2456,8 +2344,7 @@ export function App({
     disabled:
       !voiceReady ||
       !membershipAccessAllowed ||
-      isSubmitting ||
-      pendingInteraction?.kind === 'approval',
+      isSubmitting,
     enabled: voiceReady && languageSetupComplete && membershipAccessAllowed,
     onAttemptStart: handleVoiceAttemptStart,
     onError: reportError,
@@ -2540,7 +2427,6 @@ export function App({
       try {
         const preferences = await window.tro.updateAppPreferences({
           appLanguage: appLanguageDraft,
-          autonomyMode: autonomyModeDraft,
           classroomPetEnabled: classroomPetEnabledDraft,
           muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
           primaryLanguage: languageDraft,
@@ -2560,7 +2446,6 @@ export function App({
     }
   }, [
     appLanguageDraft,
-    autonomyModeDraft,
     classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
@@ -2959,8 +2844,8 @@ export function App({
           <div className="sidebar-footer">
             <span className="safety-indicator" aria-hidden="true" />
             <div>
-              <strong>{t('Bounded by default')}</strong>
-              <span>{t('Approval gates enabled')}</span>
+              <strong>{t('Scoped execution')}</strong>
+              <span>{t('Permissions and workspace bounds enforced')}</span>
             </div>
           </div>
 
@@ -3256,9 +3141,7 @@ export function App({
                       : isSteering
                         ? t('Steering is reviewed at the next safe boundary.')
                         : t(
-                            autonomyModeDraft === 'balanced'
-                              ? 'Your instruction authorizes requested reversible work; Tro still asks for high-impact or expanded-scope actions.'
-                              : 'Strict mode asks before every mutation or side effect.',
+                            'Tro will carry out this goal within the selected scope and pause only for clarification, system permission, or account access.',
                           )}
                   </span>
                   <button
@@ -3330,19 +3213,14 @@ export function App({
                   interaction={pendingInteraction}
                   isSending={isSubmitting}
                   onAnswerChoice={(answer) => void sendInput(answer)}
-                  onApproval={(decision) => void decideApproval(decision)}
                 />
               )}
 
-              {permissionWait && snapshot && (
+              {permissionWait && permissionPresentation && snapshot && (
                 <section className="pending-interaction" aria-live="polite">
                   <div>
-                    <strong>{t('Computer permission required')}</strong>
-                    <p>
-                      {t(
-                        'Tro is holding the same action until Accessibility and Screen Recording are genuinely ready.',
-                      )}
-                    </p>
+                    <strong>{t(permissionPresentation.title)}</strong>
+                    <p>{t(permissionPresentation.body)}</p>
                   </div>
                   <div className="pending-interaction__actions">
                     <button
@@ -3452,8 +3330,8 @@ export function App({
                 </div>
                 <h2 id="session-overview-heading">{taskPhase}</h2>
                 <div className="context-overview__guardrails">
-                  <span>{t('Bounded by default')}</span>
-                  <span>{t('Approval gates enabled')}</span>
+                  <span>{t('Goal-scoped execution')}</span>
+                  <span>{t('OS permissions enforced')}</span>
                   <span>{t('Tools selected at runtime')}</span>
                 </div>
               </section>
@@ -3489,7 +3367,6 @@ export function App({
         {settingsOpen && (
           <SettingsPage
             appLanguage={appLanguageDraft}
-            autonomyMode={autonomyModeDraft}
             appUpdateError={appUpdateError}
             appUpdateStatus={appUpdateStatus}
             classroomPetEnabled={classroomPetEnabledDraft}
@@ -3499,7 +3376,6 @@ export function App({
             error={settingsError}
             hasChanges={
               appPreferences?.appLanguage !== appLanguageDraft ||
-              appPreferences?.autonomyMode !== autonomyModeDraft ||
               appPreferences?.classroomPetEnabled !==
                 classroomPetEnabledDraft ||
               appPreferences?.muteSystemAudioWhileSpeaking !==
@@ -3518,11 +3394,6 @@ export function App({
             isLoadingOrganization={isLoadingOrganization}
             onAppLanguageChange={(language) => {
               setAppLanguageDraft(language);
-              setSettingsError(null);
-              setSettingsSaveMessage(null);
-            }}
-            onAutonomyModeChange={(mode) => {
-              setAutonomyModeDraft(mode);
               setSettingsError(null);
               setSettingsSaveMessage(null);
             }}

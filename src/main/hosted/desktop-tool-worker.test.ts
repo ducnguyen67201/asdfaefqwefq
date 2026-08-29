@@ -2,13 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
-  type GoalSpec,
-  type WorkspaceIdentity,
-} from '../../shared/contracts';
+import type { GoalSpec, WorkspaceIdentity } from '../../shared/contracts';
 import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
-import type { EvaluateRustPolicyInput } from '../engine/rust-desktop-engine-client';
 
 import { DesktopToolWorker } from './desktop-tool-worker';
 import {
@@ -18,7 +13,7 @@ import {
 
 function envelope(overrides: Record<string, unknown> = {}) {
   return {
-    protocolVersion: 3,
+    protocolVersion: 4,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
     invocationId: randomUUID(),
@@ -36,9 +31,6 @@ function envelope(overrides: Record<string, unknown> = {}) {
       overwrite: 'none',
       sensitiveDataTransfer: false,
     },
-    intentRevision: 1,
-    approvalRequired: false,
-    authorizationSource: 'routine',
     consequential: false,
     permissionInteractionId: null,
     permissionRequirements: [],
@@ -49,41 +41,16 @@ function envelope(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function evaluatePolicy({
-  proposedEffect,
-}: EvaluateRustPolicyInput) {
-  const consequential = proposedEffect.kind !== 'none';
-  const approvalRequired = HOST_ALWAYS_CONFIRM_EFFECTS.includes(
-    proposedEffect.kind as (typeof HOST_ALWAYS_CONFIRM_EFFECTS)[number],
-  );
-  return {
-    approvalRequired,
-    authorizationSource: approvalRequired
-      ? 'none' as const
-      : consequential
-        ? 'user_instruction' as const
-        : 'routine' as const,
-    consequential,
-    effect: proposedEffect,
-    nextActions: [],
-    status: approvalRequired ? 'needs_approval' as const : 'allowed' as const,
-    summary: approvalRequired
-      ? 'Rust requires exact approval.'
-      : 'Rust authorized the action.',
-  };
-}
-
 function hostedGoal(
   request: string,
   workspace: WorkspaceIdentity | null = null,
 ): GoalSpec {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: randomUUID(),
     originalRequest: request,
     runtimeKind: 'rust_hosted',
     executionProfile: workspace ? 'workspace' : 'everyday',
-    autonomyMode: 'balanced',
     workspace,
     activity: null,
     outcomeContract: {
@@ -97,13 +64,6 @@ function hostedGoal(
         verifier: { kind: 'assistant_output', constraints: [] },
       }],
     },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -123,7 +83,6 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult,
       dispatcher: { dispatch: vi.fn() },
-      evaluatePolicy,
       goalProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting,
@@ -154,7 +113,6 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult,
       dispatcher: { dispatch },
-      evaluatePolicy,
       goalProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting: vi.fn(async () => true),
@@ -169,6 +127,24 @@ describe('DesktopToolWorker', () => {
     expect(commitResult).toHaveBeenCalledTimes(2);
   });
 
+  it('does not dispatch when the one-time executing transition is stale', async () => {
+    const dispatch = vi.fn();
+    const goal = hostedGoal('Open Chrome.');
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => false),
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope());
+
+    expect(result).toMatchObject({ status: 'not_executed' });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('opens Mở YouTube through direct navigation without computer permission', async () => {
     const dispatch = vi.fn(async () => ({
       status: 'confirmed' as const,
@@ -179,7 +155,6 @@ describe('DesktopToolWorker', () => {
     const worker = new DesktopToolWorker({
       commitResult: vi.fn(async () => undefined),
       dispatcher: { dispatch },
-      evaluatePolicy,
       goalProvider: () => goal,
       permissionCoordinator: { requireReady },
       registry: new RuntimeToolRegistry(),
@@ -204,17 +179,15 @@ describe('DesktopToolWorker', () => {
     expect(requireReady).not.toHaveBeenCalled();
   });
 
-  it('upgrades an approved sensitive desktop action before execution', async () => {
+  it('dispatches a registered sensitive desktop action after the one-time transition', async () => {
     const requestExecuting = vi.fn(async () => true);
     const goal = hostedGoal('Send the visible message.');
     const observationId = randomUUID();
     const worker = new DesktopToolWorker({
-      approvalProvider: vi.fn(async () => true),
       commitResult: vi.fn(async () => undefined),
       dispatcher: {
         dispatch: vi.fn(async () => ({ status: 'confirmed' as const, summary: 'Sent.' })),
       },
-      evaluatePolicy,
       goalProvider: () => goal,
       latestObservationProvider: () => ({
         capturedAt: new Date().toISOString(),
@@ -250,8 +223,6 @@ describe('DesktopToolWorker', () => {
         overwrite: 'none',
         sensitiveDataTransfer: false,
       },
-      approvalRequired: true,
-      authorizationSource: 'none',
       consequential: true,
       input: {
         observationId,
@@ -273,31 +244,23 @@ describe('DesktopToolWorker', () => {
     expect(result).toMatchObject({ status: 'confirmed', summary: 'Sent.' });
     expect(requestExecuting).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({
-        approvalRequired: true,
-        authorizationSource: 'exact_approval',
-        consequential: true,
-        intentRevision: 1,
-      }),
+      1,
     );
   });
 
-  it('commits an instruction-authorized Workspace effect without user approval', async () => {
+  it('commits a registered Workspace effect without a user-decision callback', async () => {
     const goal = hostedGoal('Update the workspace file.', {
         selectionId: '11111111-1111-4111-8111-111111111111',
         canonicalPath: '/tmp/project',
         displayName: 'project',
         selectedAt: '2026-08-21T00:00:00.000Z',
     });
-    const approvalProvider = vi.fn(async () => true);
     const requestExecuting = vi.fn(async () => true);
     const worker = new DesktopToolWorker({
-      approvalProvider,
       commitResult: vi.fn(async () => undefined),
       dispatcher: {
         dispatch: vi.fn(async () => ({ status: 'confirmed' as const, summary: 'Updated.' })),
       },
-      evaluatePolicy,
       goalProvider: () => goal,
       registry: new RuntimeToolRegistry(),
       requestExecuting,
@@ -315,21 +278,59 @@ describe('DesktopToolWorker', () => {
         overwrite: 'requested',
         sensitiveDataTransfer: false,
       },
-      approvalRequired: true,
-      authorizationSource: 'none',
       consequential: true,
       input: { path: 'src/example.ts', content: 'export {};' },
     }));
 
     expect(result.status).toBe('confirmed');
-    expect(approvalProvider).not.toHaveBeenCalled();
     expect(requestExecuting).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({
-        approvalRequired: false,
-        authorizationSource: 'user_instruction',
-        consequential: true,
-      }),
+      1,
     );
+  });
+
+  it('dispatches an arbitrary bounded Workspace command without semantic classification', async () => {
+    const goal = hostedGoal('Run the requested release command.', {
+      selectionId: '11111111-1111-4111-8111-111111111111',
+      canonicalPath: '/tmp/project',
+      displayName: 'project',
+      selectedAt: '2026-08-21T00:00:00.000Z',
+    });
+    const dispatch = vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'Command completed.',
+    }));
+    const requestExecuting = vi.fn(async () => true);
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: { dispatch },
+      goalProvider: () => goal,
+      registry: new RuntimeToolRegistry(),
+      requestExecuting,
+      taskIdProvider: () => goal.id,
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'workspace.terminal',
+      operation: 'run_command',
+      effect: {
+        kind: 'workspace_command',
+        resourceKind: 'workspace_repository',
+        reversibility: 'unknown',
+        externality: 'unknown',
+        communication: 'unknown',
+        overwrite: 'unknown',
+        sensitiveDataTransfer: 'unknown',
+      },
+      consequential: true,
+      input: {
+        command: 'git push origin main && curl https://example.com/hook',
+        timeoutMs: 120_000,
+      },
+    }));
+
+    expect(result.status).toBe('confirmed');
+    expect(requestExecuting).toHaveBeenCalledWith(expect.any(String), 1);
+    expect(dispatch).toHaveBeenCalledOnce();
   });
 });

@@ -2,7 +2,7 @@ function normalizedHostname(hostname: string): string {
   return hostname.toLowerCase().replace(/^\[|\]$/gu, '').replace(/\.$/u, '');
 }
 
-export function isPublicClassroomHostname(hostname: string): boolean {
+export function isPublicHostname(hostname: string): boolean {
   const value = normalizedHostname(hostname);
   if (
     value === 'localhost' || value.endsWith('.localhost') || value.endsWith('.local') ||
@@ -21,13 +21,22 @@ export function isPublicClassroomHostname(hostname: string): boolean {
   );
 }
 
-export function validateClassroomUrl(value: string, expectedOrigin?: string): URL | null {
+/** Parses a credential-free public HTTPS target for browser-owned navigation. */
+export function validatePublicHttpsUrl(value: string): URL | null {
   let url: URL;
   try { url = new URL(value); } catch { return null; }
   if (
     url.protocol !== 'https:' || url.username || url.password ||
-    !isPublicClassroomHostname(url.hostname) ||
-    (expectedOrigin !== undefined && url.origin !== expectedOrigin)
+    !isPublicHostname(url.hostname)
   ) return null;
+  return url;
+}
+
+/** @deprecated Classroom callers should migrate to the generic hostname helper. */
+export const isPublicClassroomHostname = isPublicHostname;
+
+export function validateClassroomUrl(value: string, expectedOrigin?: string): URL | null {
+  const url = validatePublicHttpsUrl(value);
+  if (!url || (expectedOrigin !== undefined && url.origin !== expectedOrigin)) return null;
   return url;
 }

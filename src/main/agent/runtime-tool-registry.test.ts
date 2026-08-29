@@ -10,12 +10,11 @@ import {
 
 function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_candidates') {
   return {
-    schemaVersion: 6 as const,
+    schemaVersion: 9 as const,
     id: randomUUID(),
     originalRequest: 'Help with the Activity',
     runtimeKind: 'rust_hosted' as const,
     executionProfile: 'everyday' as const,
-    autonomyMode: 'balanced' as const,
     workspace: null,
     activity: {
       attemptId: randomUUID(), workSessionId: randomUUID(), activityVersionId: randomUUID(), runId: randomUUID(),
@@ -34,7 +33,17 @@ function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_cand
       sourceCatalog: [{ title: 'Runbook', role: 'reference' as const }],
       priorProgress: { completedCriterionIds: [], sessionCount: 0, summary: 'No prior Work Sessions.' },
     },
-    approvalPolicy: { alwaysConfirm: [] },
+    outcomeContract: {
+      schemaVersion: 1 as const,
+      revision: 1,
+      completionMode: 'all_required' as const,
+      criteria: [{
+        id: 'assistant-output',
+        description: 'Return a user-facing answer.',
+        required: true,
+        verifier: { kind: 'assistant_output' as const, constraints: [] },
+      }],
+    },
     limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
   };
 }
@@ -647,6 +656,28 @@ describe('RuntimeToolRegistry', () => {
         { taskId },
       ),
     ).toThrow('already resolved');
+  });
+
+  it('rejects non-public and non-HTTPS browser targets before execution', () => {
+    for (const url of [
+      'http://example.com/',
+      'https://localhost/',
+      'https://127.0.0.1/',
+      'https://192.168.1.10/',
+      'https://user:password@example.com/',
+    ]) {
+      const registry = new RuntimeToolRegistry();
+      expect(() =>
+        registry.resolve(
+          {
+            callId: `call-${url}`,
+            name: 'open_url',
+            arguments: JSON.stringify({ url, reason: 'Open a page.' }),
+          },
+          { taskId: randomUUID() },
+        ),
+      ).toThrow();
+    }
   });
 
   it('normalizes Chrome launch as a narrow direct host action', () => {

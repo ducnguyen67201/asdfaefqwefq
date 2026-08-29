@@ -26,7 +26,7 @@ rust_library(
     compile_data = glob([
         "admin-dist/**/*",
         "migrations/*.sql",
-    ]) + ["//protocol:agent_runtime_v3_contract"],
+    ]) + ["//protocol:agent_runtime_v4_contract"],
     crate_name = "trocode_api",
     edition = crate_edition(),
     lint_config = ":rust_lints",
@@ -53,8 +53,8 @@ trocode_rust_integration_test(
     size = "small",
     src = "tests/agent_runtime_contract.rs",
     compile_data = [
-        "//:agent_runtime_v3_fixtures",
-        "//protocol:agent_runtime_v3_contract",
+        "//:agent_runtime_v4_fixtures",
+        "//protocol:agent_runtime_v4_contract",
     ],
 )
 
@@ -168,7 +168,7 @@ rust_test(
         normal_dev = True,
         proc_macro_dev = True,
     ),
-    compile_data = ["//:test/fixtures/intent-authorization-cases.json"] + glob(["tests/fixtures/**/*"]),
+    compile_data = glob(["tests/fixtures/**/*"]),
     crate = ":api_lib",
     edition = crate_edition(),
     lint_config = ":rust_lints",

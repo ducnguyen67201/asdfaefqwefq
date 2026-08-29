@@ -1,7 +1,7 @@
 import type { DriverAuthorizationRequest } from '@trycua/cua-driver';
 import { describe, expect, it } from 'vitest';
 
-import { CuaAuthorizationBroker } from './cua-authorization-broker';
+import { CuaCapabilityBroker } from './cua-capability-broker';
 
 const actions = { allow: 0, deny: 1, cancel: 2 } as const;
 
@@ -24,9 +24,9 @@ function request(overrides: Partial<DriverAuthorizationRequest> = {}) {
   } satisfies DriverAuthorizationRequest;
 }
 
-describe('CuaAuthorizationBroker', () => {
+describe('CuaCapabilityBroker', () => {
   it('denies by default and returns the exact request digest', async () => {
-    const broker = new CuaAuthorizationBroker(actions, () => 1_000);
+    const broker = new CuaCapabilityBroker(actions, () => 1_000);
     await expect(broker.authorize(request())).resolves.toEqual({
       action: actions.deny,
       requestDigest: 'exact-digest',
@@ -34,7 +34,7 @@ describe('CuaAuthorizationBroker', () => {
   });
 
   it('allows one exact armed resource and consumes the grant', async () => {
-    const broker = new CuaAuthorizationBroker(actions, () => 1_000);
+    const broker = new CuaCapabilityBroker(actions, () => 1_000);
     broker.arm({
       expiresUnixMs: 2_000,
       publicSession: 'task',
@@ -51,7 +51,7 @@ describe('CuaAuthorizationBroker', () => {
   });
 
   it('denies mismatched, expired, malformed, and cancelled requests', async () => {
-    const broker = new CuaAuthorizationBroker(actions, () => 3_000);
+    const broker = new CuaCapabilityBroker(actions, () => 3_000);
     broker.arm({
       expiresUnixMs: 2_000,
       publicSession: 'task',
@@ -61,7 +61,7 @@ describe('CuaAuthorizationBroker', () => {
       action: actions.deny,
     });
 
-    const malformed = new CuaAuthorizationBroker(actions, () => 1_000);
+    const malformed = new CuaCapabilityBroker(actions, () => 1_000);
     malformed.arm({
       expiresUnixMs: 2_000,
       publicSession: 'task',

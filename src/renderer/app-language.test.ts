@@ -33,12 +33,9 @@ describe('app language', () => {
     expect(
       translate(
         'vi',
-        'Your instruction authorizes requested reversible work; Tro still asks for high-impact or expanded-scope actions.',
+        'Registered tools run automatically; OS permissions and Workspace bounds still apply',
       ),
-    ).not.toContain('Your instruction');
-    expect(
-      translate('vi', 'Strict mode asks before every mutation or side effect.'),
-    ).not.toContain('Strict mode');
+    ).not.toContain('Registered tools');
   });
 
   it('translates companion customization states without English fallback', () => {

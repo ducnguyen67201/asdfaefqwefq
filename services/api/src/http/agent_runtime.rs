@@ -3,7 +3,7 @@ use std::{collections::HashSet, convert::Infallible, time::Duration};
 use async_stream::stream;
 use axum::{
     body::Body,
-    http::{HeaderMap, HeaderValue, Method, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::Response,
 };
 use bytes::Bytes;
@@ -40,19 +40,19 @@ pub async fn handle(
     };
     let enabled = agent.enabled_for(&current.user.id);
 
-    if method == Method::GET && path == "/v1/agent-runtime/v3/status" {
-        let mode = agent.v3_mode().as_str();
+    if method == Method::GET && path == "/v1/agent-runtime/v4/status" {
+        let mode = agent.v4_mode().as_str();
         let value = json!({
             "protocolVersion": protocol::PROTOCOL_VERSION,
             "protocolDigest": protocol::protocol_digest(),
             "toolCatalogDigest": protocol::tool_catalog_digest(),
-            "supportedReadVersions": [2, 3],
-            "supportedStartVersions": if mode == "enforce" { vec![3] } else { vec![2, 3] },
+            "supportedReadVersions": [2, 3, 4],
+            "supportedStartVersions": [4],
             "rolloutMode": mode,
             "workerRequired": enabled || agent.has_active(&current.user.id).await?,
             "enabled": enabled
         });
-        let status: protocol::AgentRuntimeStatusV3 =
+        let status: protocol::AgentRuntimeStatusV4 =
             serde_json::from_value(value).map_err(ApiError::internal)?;
         return Ok(Some(json_response(StatusCode::OK, status)?));
     }
@@ -68,38 +68,7 @@ pub async fn handle(
         )?));
     }
 
-    if method == Method::POST && path == "/v1/tasks" {
-        if !enabled {
-            return Err(ApiError::coded(
-                StatusCode::CONFLICT,
-                "backend_agent_not_enabled",
-                "The durable agent runtime is not enabled for this user.",
-            ));
-        }
-        let input = read_json(headers, body, 64_000)?;
-        let run = agent
-            .submit(
-                &current.user.id,
-                membership.plan.as_deref().unwrap_or("free"),
-                &input,
-            )
-            .await?;
-        let status = if run["newlyCreated"].as_bool() == Some(true) {
-            StatusCode::CREATED
-        } else {
-            StatusCode::OK
-        };
-        let mut response = json_response(status, &run)?;
-        if let Some(id) = run["id"].as_str() {
-            response.headers_mut().insert(
-                "location",
-                HeaderValue::from_str(&format!("/v1/tasks/{id}")).map_err(ApiError::internal)?,
-            );
-        }
-        return Ok(Some(response));
-    }
-
-    if method == Method::POST && path == "/v1/agent-runtime/v3/tasks" {
+    if method == Method::POST && path == "/v1/agent-runtime/v4/tasks" {
         if !enabled {
             return Err(ApiError::coded(
                 StatusCode::CONFLICT,
@@ -108,7 +77,7 @@ pub async fn handle(
             ));
         }
         let input = read_json(headers, body, 64_000)?;
-        let typed: protocol::SubmitAgentTaskRequestV3 =
+        let typed: protocol::SubmitAgentTaskRequestV4 =
             serde_json::from_value(input).map_err(|_| {
                 ApiError::bad_request("invalid_agent_runtime_request", "Request data is invalid.")
             })?;
@@ -125,26 +94,26 @@ pub async fn handle(
         } else {
             StatusCode::OK
         };
-        return Ok(Some(json_response(status, agent.project_v3_run(&run)?)?));
+        return Ok(Some(json_response(status, agent.project_v4_run(&run)?)?));
     }
 
-    if method == Method::GET && path == "/v1/agent-runtime/v3/tasks" {
+    if method == Method::GET && path == "/v1/agent-runtime/v4/tasks" {
         return Ok(Some(json_response(
             StatusCode::OK,
-            json!({"items":agent.list_v3(&current.user.id).await?}),
+            json!({"items":agent.list_v4(&current.user.id).await?}),
         )?));
     }
 
-    if let Some((run_id, operation)) = v3_task_route(path)? {
+    if let Some((run_id, operation)) = v4_task_route(path)? {
         if method == Method::GET && operation.is_none() {
             let run = agent
-                .get_v3(&current.user.id, run_id)
+                .get_v4(&current.user.id, run_id)
                 .await?
                 .ok_or_else(not_found)?;
             return Ok(Some(json_response(StatusCode::OK, run)?));
         }
         if method == Method::GET && operation == Some("events") {
-            if agent.get_v3(&current.user.id, run_id).await?.is_none() {
+            if agent.get_v4(&current.user.id, run_id).await?.is_none() {
                 return Err(not_found());
             }
             return Ok(Some(run_event_stream(
@@ -158,7 +127,7 @@ pub async fn handle(
         }
         if method == Method::POST && operation == Some("cancel") {
             let input = read_json(headers, body, 16_000)?;
-            let typed: protocol::CancelAgentTaskRequestV3 =
+            let typed: protocol::CancelAgentTaskRequestV4 =
                 serde_json::from_value(input).map_err(|_| {
                     ApiError::bad_request(
                         "invalid_agent_runtime_request",
@@ -167,27 +136,7 @@ pub async fn handle(
                 })?;
             let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
             let run = agent
-                .cancel_v3(&current.user.id, run_id, &input)
-                .await?
-                .ok_or_else(not_found)?;
-            return Ok(Some(json_response(StatusCode::OK, run)?));
-        }
-        if method == Method::POST && operation == Some("approval") {
-            let input = read_json(headers, body, 16_000)?;
-            let typed: protocol::ApprovalDecisionRequestV3 = serde_json::from_value(input)
-                .map_err(|_| {
-                    ApiError::bad_request(
-                        "invalid_agent_runtime_request",
-                        "Request data is invalid.",
-                    )
-                })?;
-            let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
-            agent
-                .control(&current.user.id, run_id, "approval", &input)
-                .await?
-                .ok_or_else(not_found)?;
-            let run = agent
-                .get_v3(&current.user.id, run_id)
+                .cancel_v4(&current.user.id, run_id, &input)
                 .await?
                 .ok_or_else(not_found)?;
             return Ok(Some(json_response(StatusCode::OK, run)?));
@@ -231,7 +180,7 @@ pub async fn handle(
                 .ok_or_else(not_found)?;
             return Ok(Some(json_response(StatusCode::OK, run)?));
         }
-        if method == Method::POST && matches!(operation, Some("steering" | "approval")) {
+        if method == Method::POST && operation == Some("steering") {
             let kind = operation.expect("matched operation");
             let input = read_json(headers, body, 16_000)?;
             let event = agent
@@ -277,8 +226,16 @@ pub async fn handle(
             "disconnect" => agent.disconnect(&current.user.id, worker).await?,
             "executing" => {
                 let input = read_json(headers, body, 1_000_000)?;
+                let typed: protocol::BeginDesktopExecutionRequestV4 = serde_json::from_value(input)
+                    .map_err(|_| {
+                        ApiError::bad_request(
+                            "invalid_agent_runtime_request",
+                            "Request data is invalid.",
+                        )
+                    })?;
+                let input = serde_json::to_value(typed).map_err(ApiError::internal)?;
                 agent
-                    .grant_execution(&current.user.id, worker, &input)
+                    .begin_execution(&current.user.id, worker, &input)
                     .await?
             }
             "result" => {
@@ -289,7 +246,7 @@ pub async fn handle(
             }
             "permission-wait" => {
                 let input = read_json(headers, body, 16_000)?;
-                let typed: protocol::PermissionWaitRequestV3 = serde_json::from_value(input)
+                let typed: protocol::PermissionWaitRequestV4 = serde_json::from_value(input)
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
@@ -303,7 +260,7 @@ pub async fn handle(
             }
             "permission-decision" => {
                 let input = read_json(headers, body, 16_000)?;
-                let typed: protocol::PermissionDecisionRequestV3 = serde_json::from_value(input)
+                let typed: protocol::PermissionDecisionRequestV4 = serde_json::from_value(input)
                     .map_err(|_| {
                         ApiError::bad_request(
                             "invalid_agent_runtime_request",
@@ -325,14 +282,14 @@ pub async fn handle(
 
 fn matches_agent_runtime(path: &str) -> bool {
     path == "/v1/agent-runtime/status"
-        || path.starts_with("/v1/agent-runtime/v3/")
+        || path.starts_with("/v1/agent-runtime/v4/")
         || path == "/v1/tasks"
         || path.starts_with("/v1/tasks/")
         || path.starts_with("/v1/desktop-worker/")
 }
 
-fn v3_task_route(path: &str) -> ApiResult<Option<(Uuid, Option<&str>)>> {
-    let Some(rest) = path.strip_prefix("/v1/agent-runtime/v3/tasks/") else {
+fn v4_task_route(path: &str) -> ApiResult<Option<(Uuid, Option<&str>)>> {
+    let Some(rest) = path.strip_prefix("/v1/agent-runtime/v4/tasks/") else {
         return Ok(None);
     };
     let mut parts = rest.split('/');
@@ -362,8 +319,7 @@ fn task_route(path: &str) -> ApiResult<Option<(Uuid, Option<&str>)>> {
         .map_err(|_| invalid_uuid())?;
     let operation = parts.next();
     if parts.next().is_some()
-        || operation
-            .is_some_and(|value| !matches!(value, "events" | "steering" | "cancel" | "approval"))
+        || operation.is_some_and(|value| !matches!(value, "events" | "steering" | "cancel"))
     {
         return Ok(None);
     }
@@ -428,7 +384,7 @@ fn run_event_stream(
     run_id: Uuid,
     mut after: i64,
     shutdown: tokio_util::sync::CancellationToken,
-    v3: bool,
+    v4: bool,
 ) -> ApiResult<Response> {
     let stream = stream! {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -438,8 +394,8 @@ fn run_event_stream(
                 () = shutdown.cancelled() => break,
                 _ = interval.tick() => {}
             }
-            let fetched = if v3 {
-                agent.events_v3(&user_id, run_id, after).await
+            let fetched = if v4 {
+                agent.events_v4(&user_id, run_id, after).await
             } else {
                 agent.events(&user_id, run_id, after).await
             };
@@ -450,7 +406,7 @@ fn run_event_stream(
                             after = sequence;
                         }
                         let id = event["sequence"].as_i64().unwrap_or(after);
-                        let kind = event.get(if v3 { "eventType" } else { "type" }).and_then(serde_json::Value::as_str).unwrap_or("run.event");
+                        let kind = event.get(if v4 { "eventType" } else { "type" }).and_then(serde_json::Value::as_str).unwrap_or("run.event");
                         match serde_json::to_string(&event) {
                             Ok(data) => yield Ok::<_, Infallible>(format!("id: {id}\nevent: {kind}\ndata: {data}\n\n")),
                             Err(_) => continue,

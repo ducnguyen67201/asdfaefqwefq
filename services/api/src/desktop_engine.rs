@@ -12,8 +12,6 @@ use serde_json::{Value, json};
 use url::Url;
 use uuid::Uuid;
 
-use crate::agent::{compile_intent_authorization, evaluate_action};
-
 const MAX_REQUEST_BYTES: usize = 1_000_000;
 const MAX_VOICE_RESPONSE_BYTES: usize = 1_000_000;
 const MAX_AUDIO_BASE64_BYTES: usize = 750_000;
@@ -63,13 +61,8 @@ fn handle_line(line: &str) -> Value {
         "health" if request.params == json!({}) || request.params.is_null() => Ok(json!({
             "engine": "rust",
             "protocolVersion": 1,
-            "features": ["intent_authorization", "desktop_policy", "google_oauth", "voice"]
+            "features": ["google_oauth", "voice"]
         })),
-        "policy.evaluate_action" => serde_json::from_value(request.params)
-            .context("The desktop policy request is invalid.")
-            .and_then(evaluate_action)
-            .and_then(|value| serde_json::to_value(value).map_err(Into::into)),
-        "intent.compile" => compile_intent(&request.params),
         "oauth.google_exchange" => exchange_google_oauth_code(&request.params),
         "voice.transcribe" => transcribe_voice(&request.params),
         "voice.validate_credential" => validate_voice_credential(&request.params),
@@ -372,38 +365,6 @@ impl VoiceTranscriptionInput {
         }
         Ok(())
     }
-}
-
-fn compile_intent(params: &Value) -> anyhow::Result<Value> {
-    let object = params
-        .as_object()
-        .context("The intent compiler request must be an object.")?;
-    if object.len() != 3
-        || object
-            .keys()
-            .any(|key| !matches!(key.as_str(), "request" | "executionProfile" | "revision"))
-    {
-        anyhow::bail!("The intent compiler request is invalid.");
-    }
-    let request = params
-        .get("request")
-        .and_then(Value::as_str)
-        .filter(|value| (2..=8_000).contains(&value.chars().count()))
-        .context("The intent compiler request text is invalid.")?;
-    let execution_profile = params
-        .get("executionProfile")
-        .and_then(Value::as_str)
-        .context("The intent compiler execution profile is invalid.")?;
-    let revision = params
-        .get("revision")
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok())
-        .context("The intent compiler revision is invalid.")?;
-    Ok(serde_json::to_value(compile_intent_authorization(
-        request,
-        execution_profile,
-        revision,
-    )?)?)
 }
 
 fn error_response(id: Option<String>, message: &str) -> Value {

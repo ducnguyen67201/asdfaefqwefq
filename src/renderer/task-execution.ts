@@ -1,3 +1,4 @@
+import type { ComputerPermissionV4 } from '../shared/agent-runtime-protocol';
 import type { TaskSnapshot } from '../shared/contracts';
 import {
   isLegacyTaskPhaseSteerable,
@@ -6,6 +7,24 @@ import {
 
 type PhaseSnapshot = Pick<TaskSnapshot, 'phase'> &
   Partial<Pick<TaskSnapshot, 'lifecycle' | 'pendingInteraction'>>;
+
+export function computerPermissionWaitPresentation(
+  requiredPermissions: readonly ComputerPermissionV4[],
+): { body: string; title: string } {
+  const labels = requiredPermissions.map((permission) =>
+    permission === 'accessibility' ? 'Accessibility' : 'Screen Recording');
+  const permissionNames = labels.length === 2
+    ? `${labels[0]} and ${labels[1]}`
+    : labels[0] ?? 'Computer access';
+  const verb = labels.length === 1 ? 'is' : 'are';
+  const permissionWord = labels.length === 1 ? 'permission' : 'permissions';
+  return {
+    body:
+      `Tro paused computer observation or control because ${permissionNames} ${verb} not ready. ` +
+      'Open system settings to grant access, or continue without computer use.',
+    title: `${permissionNames} ${permissionWord} required`,
+  };
+}
 
 export function isTaskTerminal(snapshot: PhaseSnapshot | null): boolean {
   return Boolean(

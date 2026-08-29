@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
-  AutonomyMode,
   AppLanguage,
   AppUpdateStatus,
   CompanionCustomizationStatus,
@@ -329,7 +328,6 @@ function ConnectedApplicationsCard({
 }
 
 interface SettingsPageProps {
-  autonomyMode: AutonomyMode;
   appLanguage: AppLanguage;
   appUpdateError: string | null;
   appUpdateStatus: AppUpdateStatus | null;
@@ -348,7 +346,6 @@ interface SettingsPageProps {
   organizationError: string | null;
   isLoadingOrganization: boolean;
   muteSystemAudioWhileSpeaking: boolean;
-  onAutonomyModeChange(mode: AutonomyMode): void;
   onAppLanguageChange(language: AppLanguage): void;
   onActivateCompanion(candidateId: string): Promise<void>;
   onActivateSavedCompanion(companionId: string): Promise<void>;
@@ -400,7 +397,6 @@ function appUpdateActionLabel(
 }
 
 export function SettingsPage({
-  autonomyMode,
   appLanguage,
   appUpdateError,
   appUpdateStatus,
@@ -419,7 +415,6 @@ export function SettingsPage({
   organizationError,
   isLoadingOrganization,
   muteSystemAudioWhileSpeaking,
-  onAutonomyModeChange,
   onActivateCompanion,
   onActivateSavedCompanion,
   onAppLanguageChange,
@@ -551,8 +546,8 @@ export function SettingsPage({
         <div className="settings-dialog__rail-footer">
           <span className="safety-indicator" aria-hidden="true" />
           <div>
-            <strong>{t('Bounded by default')}</strong>
-            <span>{t('Approval gates enabled')}</span>
+            <strong>{t('Scoped execution')}</strong>
+            <span>{t('Registered tools run automatically; OS permissions and Workspace bounds still apply')}</span>
           </div>
         </div>
       </aside>
@@ -639,50 +634,6 @@ export function SettingsPage({
               </div>
             </section>
 
-            <section
-              className="settings-group"
-              aria-labelledby="settings-autonomy-heading"
-            >
-              <div className="settings-group__heading">
-                <div>
-                  <p className="eyebrow">{t('Task safety')}</p>
-                  <h2 id="settings-autonomy-heading">{t('Autonomy')}</h2>
-                </div>
-                <span className="settings-badge settings-badge--neutral">
-                  {autonomyMode === 'balanced' ? t('Balanced') : t('Strict')}
-                </span>
-              </div>
-              <div className="settings-row">
-                <div>
-                  <strong>{t('Approval style')}</strong>
-                  <p>
-                    {autonomyMode === 'balanced'
-                      ? t(
-                          'Routine, reversible actions continue automatically. Tro still pauses for destructive, financial, privacy-sensitive, or permission-changing actions.',
-                        )
-                      : t(
-                          'Ask before routine desktop mutations as well as consequential actions.',
-                        )}
-                  </p>
-                </div>
-                <label
-                  className="language-field"
-                  htmlFor="settings-autonomy-mode"
-                >
-                  <span>{t('Approval style')}</span>
-                  <select
-                    id="settings-autonomy-mode"
-                    onChange={(event) =>
-                      onAutonomyModeChange(event.target.value as AutonomyMode)
-                    }
-                    value={autonomyMode}
-                  >
-                    <option value="balanced">{t('Balanced')}</option>
-                    <option value="strict">{t('Strict')}</option>
-                  </select>
-                </label>
-              </div>
-            </section>
           </div>
 
           <div

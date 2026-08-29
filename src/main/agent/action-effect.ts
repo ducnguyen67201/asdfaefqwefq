@@ -1,14 +1,14 @@
 import {
   ActionEffectSchema,
-  HOST_ALWAYS_CONFIRM_EFFECTS,
+  HIGH_CONSEQUENCE_EFFECTS,
   type ActionEffect,
   type ActionEffectKind,
   type ProposedAction,
   type ResourceKind,
 } from '../../shared/contracts';
 
-const HARD_CONFIRM_EFFECTS: ReadonlySet<ActionEffectKind> = new Set(
-  HOST_ALWAYS_CONFIRM_EFFECTS,
+const HIGH_CONSEQUENCE_EFFECT_SET: ReadonlySet<ActionEffectKind> = new Set(
+  HIGH_CONSEQUENCE_EFFECTS,
 );
 
 const VISIBLE_SEND_PATTERN = /\b(?:invite|notify|send)\b/iu;
@@ -257,9 +257,9 @@ export function resolveActionEffect(action: ProposedAction): ActionEffect {
   return raisedVisibleEffect(action, resolved);
 }
 
-export function isHardConfirmEffect(effect: ActionEffect): boolean {
+export function isHighConsequenceEffect(effect: ActionEffect): boolean {
   return (
-    HARD_CONFIRM_EFFECTS.has(effect.kind) ||
+    HIGH_CONSEQUENCE_EFFECT_SET.has(effect.kind) ||
     ['send', 'invite', 'notify', 'unknown'].includes(effect.communication) ||
     ['destructive', 'unknown'].includes(effect.reversibility) ||
     ['unexpected', 'unknown'].includes(effect.overwrite) ||
@@ -277,10 +277,10 @@ export function raiseActionEffect(
   hostEffect: ActionEffect,
   proposedEffect: ActionEffect,
 ): ActionEffect {
-  const hostHard = isHardConfirmEffect(hostEffect);
-  const proposedHard = isHardConfirmEffect(proposedEffect);
-  if (hostHard) return hostEffect;
-  if (proposedHard) return proposedEffect;
+  const hostIsHighConsequence = isHighConsequenceEffect(hostEffect);
+  const proposalIsHighConsequence = isHighConsequenceEffect(proposedEffect);
+  if (hostIsHighConsequence) return hostEffect;
+  if (proposalIsHighConsequence) return proposedEffect;
   if (hostEffect.kind === 'none') return proposedEffect;
   if (proposedEffect.kind === 'none') return hostEffect;
   if (

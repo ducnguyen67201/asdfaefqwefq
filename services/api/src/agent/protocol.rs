@@ -2,13 +2,13 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-typify::import_types!(schema = "../../protocol/agent-runtime.v3.schema.json");
+typify::import_types!(schema = "../../protocol/agent-runtime.v4.schema.json");
 
-pub const PROTOCOL_VERSION: u8 = 3;
+pub const PROTOCOL_VERSION: u8 = 4;
 
 const MANIFEST_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../protocol/agent-runtime.v3.manifest.json"
+    "/../../protocol/agent-runtime.v4.manifest.json"
 ));
 
 #[derive(Debug, Deserialize)]

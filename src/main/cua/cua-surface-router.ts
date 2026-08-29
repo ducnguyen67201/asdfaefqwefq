@@ -10,7 +10,7 @@ import {
   type SurfaceElement,
 } from '../agent/execution-contracts';
 
-import type { CuaAuthorizationBroker } from './cua-authorization-broker';
+import type { CuaCapabilityBroker } from './cua-capability-broker';
 import {
   CuaBrowserStateSchema,
   CuaWindowListSchema,
@@ -66,7 +66,7 @@ export interface SurfaceRevalidationResult {
 }
 
 export interface CuaSurfaceRouterOptions {
-  authorizationBroker: CuaAuthorizationBroker;
+  authorizationBroker: CuaCapabilityBroker;
   callTool: CuaToolCaller;
   capabilities: () => CuaSemanticCapabilities;
   now?: () => number;
@@ -377,7 +377,7 @@ export class CuaSurfaceRouter {
     signal?: AbortSignal,
   ): Promise<SurfaceRevalidationResult> {
     const previous = this.referenceStore.require(taskId, observationId);
-    const approved = publicRef
+    const priorReference = publicRef
       ? this.referenceStore.resolve(taskId, observationId, publicRef)
       : undefined;
     const fresh = await this.observeBoundSurface(taskId, previous, {}, signal);
@@ -387,7 +387,7 @@ export class CuaSurfaceRouter {
         rebound: false,
       };
     }
-    if (!approved || !publicRef) {
+    if (!priorReference || !publicRef) {
       this.referenceStore.replace({
         ...fresh.binding,
         observationId,
@@ -396,7 +396,7 @@ export class CuaSurfaceRouter {
     }
     const match = this.referenceStore.findUniqueMatch(
       fresh.binding,
-      approved.semanticFingerprint,
+      priorReference.semanticFingerprint,
     );
     if (!match) {
       this.referenceStore.replace(fresh.binding);
@@ -411,7 +411,7 @@ export class CuaSurfaceRouter {
           publicRef,
           {
             ...match,
-            publicElement: approved.publicElement,
+            publicElement: priorReference.publicElement,
           },
         ],
       ]),
@@ -579,7 +579,7 @@ export class CuaSurfaceRouter {
       ...(BROWSER_PATTERN.test(window.app_name)
         ? {
             deepAccess: this.options.capabilities().browserPrepare
-              ? ('available_requires_approval' as const)
+              ? ('ready_to_prepare' as const)
               : ('unavailable' as const),
           }
         : {}),

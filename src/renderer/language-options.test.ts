@@ -28,7 +28,6 @@ describe('primary language options', () => {
       isPrimaryLanguageSetupComplete(
         {
           appLanguage: 'en',
-          autonomyMode: 'balanced',
           classroomPetEnabled: true,
           muteSystemAudioWhileSpeaking: false,
           primaryLanguage: null,
@@ -40,7 +39,6 @@ describe('primary language options', () => {
       isPrimaryLanguageSetupComplete(
         {
           appLanguage: 'en',
-          autonomyMode: 'balanced',
           classroomPetEnabled: true,
           muteSystemAudioWhileSpeaking: false,
           primaryLanguage: 'en',

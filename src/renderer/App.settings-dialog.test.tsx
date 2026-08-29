@@ -25,7 +25,6 @@ const ACTIVE_TASK_UPDATE: TaskUpdate = {
     timestamp: TIMESTAMP,
   },
   snapshot: {
-    approvalGrant: null,
     createdAt: TIMESTAMP,
     goal: null,
     lastEvent: {
@@ -48,6 +47,34 @@ const ACTIVE_TASK_UPDATE: TaskUpdate = {
     runtimeResume: null,
     taskId: TASK_ID,
     updatedAt: TIMESTAMP,
+  },
+};
+
+const PERMISSION_TASK_UPDATE: TaskUpdate = {
+  event: {
+    ...ACTIVE_TASK_UPDATE.event,
+    phase: 'awaiting_permission',
+    summary: 'Computer permission is required before this action can run.',
+  },
+  snapshot: {
+    ...ACTIVE_TASK_UPDATE.snapshot,
+    lifecycle: {
+      state: 'awaiting_permission',
+      runVersion: 2,
+      phase: 'awaiting_permission',
+      terminal: false,
+      availableActions: ['cancel'],
+      waitingOn: {
+        kind: 'permission',
+        interactionId: '33333333-3333-4333-8333-333333333333',
+        invocationId: '44444444-4444-4444-8444-444444444444',
+        requiredPermissions: ['accessibility'],
+        since: TIMESTAMP,
+      },
+      failure: null,
+      cancellationSource: null,
+    },
+    phase: 'awaiting_permission',
   },
 };
 
@@ -101,7 +128,6 @@ describe('App settings dialog safety', () => {
       cancelTask,
       getAppPreferences: vi.fn().mockResolvedValue({
         appLanguage: 'en',
-        autonomyMode: 'balanced',
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
@@ -247,5 +273,34 @@ describe('App settings dialog safety', () => {
     expect(document.activeElement).toBe(settingsTrigger);
     expect(container.querySelector('#task')).not.toBeNull();
     expect(cancelTask).not.toHaveBeenCalled();
+  });
+
+  it('renders the exact system permission instead of a hardcoded permission pair', async () => {
+    await act(async () => {
+      root.render(
+        <App
+          currentUser={{
+            email: 'student@example.com',
+            id: 'preview-user',
+            name: 'Student',
+          }}
+          isSigningOut={false}
+          onSignOut={signOut}
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => taskUpdateListener?.(PERMISSION_TASK_UPDATE));
+
+    const permissionCard = container.querySelector('.pending-interaction');
+    expect(permissionCard?.textContent).toContain(
+      'Accessibility permission required',
+    );
+    expect(permissionCard?.textContent).toContain(
+      'Open system settings to grant access',
+    );
+    expect(permissionCard?.textContent).not.toContain('Screen Recording');
   });
 });

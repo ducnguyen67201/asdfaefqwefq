@@ -7,7 +7,6 @@ import type { EventMessage, IdentifyMessage } from 'posthog-node';
 import { describe, expect, it } from 'vitest';
 
 import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
   type HostedTaskAuthorityContract,
   type WorkspaceIdentity,
 } from '../../shared/contracts';
@@ -90,12 +89,11 @@ function authority(
   workspaceSelectionId: string | null = null,
 ): HostedTaskAuthorityContract {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: randomUUID(),
     originalRequest: request,
     runtimeKind: 'rust_hosted',
     executionProfile: workspaceSelectionId ? 'workspace' : 'everyday',
-    autonomyMode: 'balanced',
     workspaceSelectionId,
     activity: null,
     outcomeContract: {
@@ -109,13 +107,6 @@ function authority(
         verifier: { kind: 'assistant_output', constraints: [] },
       }],
     },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -276,8 +267,7 @@ describe('AnalyticsService', () => {
     expect(serializedEvents).not.toContain('private acquisition');
     expect(serializedEvents).not.toContain('/Users/example');
     expect(client.events.at(-1)?.properties).toMatchObject({
-      autonomy_mode: 'balanced',
-      contract_version: 8,
+      contract_version: 9,
       execution_profile: 'workspace',
       runtime_kind: 'rust_hosted',
     });
@@ -324,7 +314,7 @@ describe('AnalyticsService', () => {
     expect(JSON.stringify(client.events)).not.toContain('Another private chunk');
   });
 
-  it('records only aggregate approval and tool counts at terminal status', async () => {
+  it('records bounded outcome and tool counts at terminal status', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -354,19 +344,15 @@ describe('AnalyticsService', () => {
     expect(client.events.at(-1)).toMatchObject({
       event: 'task ended',
       properties: {
-        approval_count: 0,
-        approvals_per_verified_success: 0,
         outcome: 'completed',
         tool_count: 2,
-        unnecessary_approval_count: 0,
-        unnecessary_approval_rate: 0,
-        user_intervention_count: 0,
-        user_intervention_rate: 0,
+        cancellation_source: 'none',
+        failure_code: 'none',
       },
     });
   });
 
-  it('records closed authorization metadata for completed tools without private intent', async () => {
+  it('records closed effect metadata for completed tools without private intent', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -396,8 +382,6 @@ describe('AnalyticsService', () => {
         operation: 'apply_patch',
         effectKind: 'workspace_write',
         resourceKind: 'workspace_file',
-        authorizationSource: 'user_instruction',
-        approvalRequired: false,
         consequential: true,
       },
       },
@@ -411,8 +395,6 @@ describe('AnalyticsService', () => {
     expect(client.events.at(-1)).toMatchObject({
       event: 'tool call completed',
       properties: {
-        approval_required: false,
-        authorization_source: 'user_instruction',
         consequential: true,
         effect_kind: 'workspace_write',
         operation: 'apply_patch',

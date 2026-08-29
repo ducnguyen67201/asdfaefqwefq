@@ -31,7 +31,7 @@ provider; do not remove it while the Electron `package.json` remains at root.
 - Pass disposable PostgreSQL/S3 integration tests and the PDF corpus.
 - Rehearse deploy, previous-deployment rollback, and roll-forward in staging.
 - Inventory Railway variable names only. Never copy secret values into logs or reports.
-- Set backend-agent and intent-authorization rollout to zero and disable Knowledge Spaces until its worker smoke passes.
+- Set the agent runtime rollout to observe and disable Knowledge Spaces until its worker smoke passes.
 
 ## Active-work drain gate
 
@@ -76,12 +76,12 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 - Any auth, session, cookie, digest, or encrypted-row incompatibility.
 - Double charge, missing settlement, or a material increase in uncertain reservations.
 - SSE buffering, truncation, or replay breakage affecting installed clients.
-- Stale-lease commit, duplicate consequential dispatch, or weaker approval/effect enforcement.
+- Stale-lease commit, duplicate consequential dispatch, or weaker effect/outcome enforcement.
 - Object checksum/key/parser corruption or an unapproved latency/RSS regression.
 
 ## Rollback
 
-1. Set backend-agent and intent rollout to zero; disable Knowledge Spaces if implicated.
+1. Set the agent runtime rollout to observe; disable Knowledge Spaces if implicated.
 2. Stop the Rust ingestion worker after its current lease.
 3. Require zero nonterminal runs before a full rollback. Never ask an older deployment to interpret a newer checkpoint version.
 4. Redeploy the recorded previous deployment to the same service.
@@ -89,7 +89,7 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or consequential action because local completion is missing.
 7. Preserve logs, diagnostic rows, and backups. Do not delete or manually roll back domain data.
 
-The Rust backend owns all 24 domain migrations and SQLx bookkeeping. A temporary
+The Rust backend owns all 30 domain migrations and SQLx bookkeeping. A temporary
 rollback to a pre-Rust deployment is permitted only during the first monitored
 cutover window and must be proven against a scrubbed clone in staging; current
 source contains no legacy backend implementation.

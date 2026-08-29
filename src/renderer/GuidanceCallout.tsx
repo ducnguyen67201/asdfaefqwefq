@@ -18,10 +18,6 @@ import type {
 
 import { ClassroomPetNudge as ClassroomPetNudgeCard } from './ClassroomPetNudge';
 import {
-  getFocusedApprovalShortcut,
-  isApprovalExpired,
-} from './companion-interaction';
-import {
   CompanionResponseCard,
   getCompanionCalloutKind,
 } from './CompanionResponseCard';
@@ -107,7 +103,6 @@ export function GuidanceCallout() {
   const [petNudge, setPetNudge] = useState<CompanionPetNudge | null>(null);
   const [interaction, setInteraction] =
     useState<CompanionInteraction | null>(null);
-  const [approvalExpired, setApprovalExpired] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [speech, setSpeech] = useState<CompanionSpeech | null>(null);
   const [audioStatus, setAudioStatus] =
@@ -126,11 +121,6 @@ export function GuidanceCallout() {
   useEffect(
     () =>
       window.troCompanion.onInteractionChange((nextInteraction) => {
-        setApprovalExpired(
-          nextInteraction?.kind === 'approval'
-            ? isApprovalExpired(nextInteraction.expiresAt)
-            : false,
-        );
         setInteraction(nextInteraction);
       }),
     [],
@@ -170,12 +160,10 @@ export function GuidanceCallout() {
     setIsSending(false);
   }, [presentationIdentity]);
 
-  const interactionSpokenMessage = useMemo(() => {
-    if (interaction?.kind === 'approval') {
-      return `${interaction.prompt}. ${interaction.consequence} Use the exact approval buttons or the displayed keyboard shortcut.`;
-    }
-    return interaction?.prompt ?? '';
-  }, [interaction]);
+  const interactionSpokenMessage = useMemo(
+    () => interaction?.prompt ?? '',
+    [interaction],
+  );
 
   useEffect(() => {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -230,18 +218,9 @@ export function GuidanceCallout() {
     audioPlaybackRef.current?.setPaused(guidance?.playback === 'paused');
   }, [guidance?.playback]);
 
-  useEffect(() => {
-    if (interaction?.kind !== 'approval') return undefined;
-    const updateExpiration = (): void => {
-      setApprovalExpired(isApprovalExpired(interaction.expiresAt));
-    };
-    const timer = window.setInterval(updateExpiration, 1_000);
-    return () => window.clearInterval(timer);
-  }, [interaction]);
-
   const submitAnswer = useCallback(
     async (text: string) => {
-      if (interaction?.kind !== 'clarification' || isSending) return;
+      if (!interaction || isSending) return;
       const normalized = text.trim();
       if (!normalized) return;
 
@@ -260,34 +239,6 @@ export function GuidanceCallout() {
       }
     },
     [interaction, isSending],
-  );
-
-  const decideApproval = useCallback(
-    async (decision: 'approve' | 'deny') => {
-      if (
-        interaction?.kind !== 'approval' ||
-        isSending ||
-        approvalExpired
-      ) {
-        return;
-      }
-
-      setError(null);
-      setIsSending(true);
-      try {
-        await window.troCompanion.decideApproval({
-          actionDigest: interaction.actionDigest,
-          decision,
-          interactionId: interaction.id,
-          kind: 'approval',
-          taskId: interaction.taskId,
-        });
-      } catch (nextError) {
-        setError(friendlyError(nextError));
-        setIsSending(false);
-      }
-    },
-    [approvalExpired, interaction, isSending],
   );
 
   const performResponseAction = useCallback(
@@ -314,14 +265,6 @@ export function GuidanceCallout() {
   useEffect(() => {
     if (!interaction) return undefined;
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (interaction.kind === 'approval') {
-        const decision = getFocusedApprovalShortcut(event);
-        if (!decision) return;
-        event.preventDefault();
-        void decideApproval(decision);
-        return;
-      }
-
       const target = event.target;
       const isTyping =
         target instanceof HTMLInputElement ||
@@ -344,7 +287,7 @@ export function GuidanceCallout() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [decideApproval, interaction, submitAnswer]);
+  }, [interaction, submitAnswer]);
 
   const handleAnswerSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -364,7 +307,7 @@ export function GuidanceCallout() {
       {calloutKind === 'interaction' && interaction ? (
         <aside
           aria-labelledby="companion-interaction-title"
-          aria-live={interaction.kind === 'approval' ? 'assertive' : 'polite'}
+          aria-live="polite"
           className={`guidance-callout guidance-callout--interactive guidance-callout--${interaction.side}`}
           role="dialog"
         >
@@ -374,18 +317,15 @@ export function GuidanceCallout() {
             </span>
             <span className="guidance-callout__name">Tro</span>
             <span className="guidance-callout__status">
-              {interaction.kind === 'approval' ? 'Approval' : 'Question'}
+              Question
             </span>
           </div>
           <p className="guidance-callout__eyebrow">
-            {interaction.kind === 'approval'
-              ? 'Exact approval required'
-              : 'I need one detail'}
+            I need one detail
           </p>
           <h2 id="companion-interaction-title">{interaction.prompt}</h2>
 
-          {interaction.kind === 'clarification' ? (
-            <>
+          <>
               {interaction.choices?.length ? (
                 <div className="guidance-callout__choices">
                   {interaction.choices.map((choice, index) => (
@@ -429,72 +369,7 @@ export function GuidanceCallout() {
               <p className="guidance-callout__hint">
                 Or use your voice shortcut to answer · <kbd>⌘/Ctrl ↵</kbd> send
               </p>
-            </>
-          ) : (
-            <>
-              <p className="guidance-callout__consequence">
-                {interaction.consequence}
-              </p>
-              <dl className="guidance-callout__approval-details">
-                <div>
-                  <dt>Action</dt>
-                  <dd>{interaction.action.label}</dd>
-                </div>
-                <div>
-                  <dt>Description</dt>
-                  <dd>{interaction.action.description}</dd>
-                </div>
-                {interaction.action.target ? (
-                  <div>
-                    <dt>Target</dt>
-                    <dd>{interaction.action.target}</dd>
-                  </div>
-                ) : null}
-                {interaction.action.details.map((detail) => (
-                  <div key={detail.label}>
-                    <dt>{detail.label}</dt>
-                    <dd>{detail.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              {interaction.action.hasMoreDetails ? (
-                <button
-                  className="guidance-callout__details-link"
-                  onClick={() => void window.troCompanion.revealMainWindow()}
-                  type="button"
-                >
-                  Open this task in Tro
-                </button>
-              ) : null}
-              {approvalExpired ? (
-                <p className="guidance-callout__expired">
-                  This approval expired. Ask Tro to try again.
-                </p>
-              ) : (
-                <div className="guidance-callout__approval-actions">
-                  <button
-                    disabled={isSending}
-                    onClick={() => void decideApproval('deny')}
-                    type="button"
-                  >
-                    Deny
-                  </button>
-                  <button
-                    className="guidance-callout__approve"
-                    disabled={isSending}
-                    onClick={() => void decideApproval('approve')}
-                    type="button"
-                  >
-                    {isSending ? 'Submitting…' : 'Approve exact action'}
-                  </button>
-                </div>
-              )}
-              <p className="guidance-callout__hint">
-                Voice or typed “yes” cannot approve · <kbd>⌘/Ctrl ⇧ ↵</kbd>{' '}
-                approve
-              </p>
-            </>
-          )}
+          </>
           {error ? <p className="guidance-callout__error">{error}</p> : null}
         </aside>
       ) : calloutKind === 'guidance' && guidance ? (

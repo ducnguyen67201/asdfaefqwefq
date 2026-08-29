@@ -653,7 +653,7 @@ export function createCuaSemanticToolDefinitions(
       id: 'browser.prepare',
       modelName: 'prepare_browser_access',
       description:
-        'Request explicit permission to attach CUA to the exact current logged-in Chromium profile when observe_surface says deeper browser access requires approval.',
+        'Prepare CUA access to the exact current logged-in Chromium profile when observe_surface reports that deeper browser access is ready to prepare.',
       operations: ['attach_existing_profile'],
       available: () =>
         options.semanticAvailable() && options.browserPrepareAvailable(),
@@ -673,10 +673,10 @@ export function createCuaSemanticToolDefinitions(
         const observation = requireSemanticObservation(context, input.observationId);
         if (
           observation.surface?.kind !== 'browser' ||
-          observation.surface.deepAccess !== 'available_requires_approval'
+          observation.surface.deepAccess !== 'ready_to_prepare'
         ) {
           throw new Error(
-            'The current observation does not require browser-profile preparation.',
+            'The current observation is not ready for browser-profile preparation.',
           );
         }
         return {

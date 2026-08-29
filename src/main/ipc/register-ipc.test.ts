@@ -95,7 +95,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   handleCompanionResponseAction: ReturnType<typeof vi.fn>;
   revealMainWindow: ReturnType<typeof vi.fn>;
   taskRuntime: {
-    decideApproval: ReturnType<typeof vi.fn>;
     respondToInteraction: ReturnType<typeof vi.fn>;
   };
   submit: ReturnType<typeof vi.fn>;
@@ -185,10 +184,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
       taskId: input.taskId,
       phase: 'planning',
     })),
-    decideApproval: vi.fn((input: { taskId: string }) => ({
-      taskId: input.taskId,
-      phase: 'planning',
-    })),
     steer: vi.fn(),
     off: vi.fn(),
     on: vi.fn(),
@@ -203,11 +198,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   const cancelActiveTasks = vi.fn(async () => undefined);
   const taskApplicationService = {
     cancel: vi.fn((input: unknown) => input),
-    decideApproval: vi.fn((input: { taskId: string }) => {
-      const snapshot = taskRuntime.decideApproval(input);
-      executionCoordinator.resume(snapshot.taskId);
-      return snapshot;
-    }),
     respond: vi.fn((input: { taskId: string }) => {
       const snapshot = taskRuntime.respondToInteraction(input);
       executionCoordinator.resume(snapshot.taskId);
@@ -812,36 +802,6 @@ describe('registerIpcHandlers auth boundary', () => {
     unregister();
   });
 
-  it('lets the authenticated cursor card decide only a parsed exact approval', async () => {
-    const {
-      executionCoordinator,
-      interactionEvent,
-      taskRuntime,
-      unregister,
-    } = setup(true);
-    const request = {
-      actionDigest: 'a'.repeat(64),
-      decision: 'approve',
-      interactionId: '00000000-0000-4000-8000-000000000002',
-      kind: 'approval',
-      taskId: '00000000-0000-4000-8000-000000000001',
-    } as const;
-    const handler = electronMock.handlers.get(IPC_CHANNELS.decideApproval);
-
-    await expect(handler?.(interactionEvent, request)).resolves.toMatchObject({
-      taskId: request.taskId,
-      phase: 'planning',
-    });
-    expect(taskRuntime.decideApproval).toHaveBeenCalledWith(request);
-    expect(executionCoordinator.resume).toHaveBeenCalledWith(request.taskId);
-
-    await expect(
-      handler?.(interactionEvent, { ...request, actionDigest: 'not-a-digest' }),
-    ).rejects.toThrow();
-    expect(taskRuntime.decideApproval).toHaveBeenCalledOnce();
-    unregister();
-  });
-
   it('rejects protected cursor-card commands from other renderers', async () => {
     const { revealMainWindow, taskRuntime, unregister } = setup(true);
     const untrustedEvent = { sender: { id: 99 }, senderFrame: {} };
@@ -997,7 +957,6 @@ describe('registerIpcHandlers auth boundary', () => {
         ?.(event, { classroomPetEnabled: false, primaryLanguage: 'vi' }),
     ).resolves.toEqual({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
@@ -1006,7 +965,6 @@ describe('registerIpcHandlers auth boundary', () => {
     expect(getAppPreferences).toHaveBeenCalledOnce();
     expect(updateAppPreferences).toHaveBeenCalledWith({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',

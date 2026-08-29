@@ -4,7 +4,7 @@ import type { ProposedAction } from '../../shared/contracts';
 
 import {
   isConsequentialEffect,
-  isHardConfirmEffect,
+  isHighConsequenceEffect,
   resolveActionEffect,
 } from './action-effect';
 
@@ -31,7 +31,7 @@ describe('action effect resolution', () => {
   it('keeps an explicit private calendar creation reversible but consequential', () => {
     const resolved = resolveActionEffect(action());
     expect(resolved.kind).toBe('create_resource');
-    expect(isHardConfirmEffect(resolved)).toBe(false);
+    expect(isHighConsequenceEffect(resolved)).toBe(false);
     expect(isConsequentialEffect(resolved)).toBe(true);
   });
 
@@ -44,7 +44,7 @@ describe('action effect resolution', () => {
       resourceKind: 'calendar_event',
       communication: 'invite',
     });
-    expect(isHardConfirmEffect(resolved)).toBe(true);
+    expect(isHighConsequenceEffect(resolved)).toBe(true);
   });
 
   it('never lets a proposed safe effect lower a harder declared consequence', () => {

@@ -11,17 +11,21 @@ interface AuthorizationActions {
   deny: DriverAuthorizationAction;
 }
 
-export interface CuaAuthorizationGrant {
+export interface CuaCapabilityGrant {
   expiresUnixMs: number;
   matchesResource(resource: unknown): boolean;
   publicSession: string;
 }
 
-interface PendingGrant extends CuaAuthorizationGrant {
+interface PendingGrant extends CuaCapabilityGrant {
   consumed: boolean;
 }
 
-export class CuaAuthorizationBroker implements DriverAuthorizationHost {
+/**
+ * Supplies one exact, short-lived native driver capability. This is an internal
+ * execution precondition; it never represents a user approval decision.
+ */
+export class CuaCapabilityBroker implements DriverAuthorizationHost {
   private readonly pending = new Map<string, PendingGrant>();
 
   constructor(
@@ -29,9 +33,9 @@ export class CuaAuthorizationBroker implements DriverAuthorizationHost {
     private readonly now: () => number = Date.now,
   ) {}
 
-  arm(grant: CuaAuthorizationGrant): () => void {
+  arm(grant: CuaCapabilityGrant): () => void {
     if (this.pending.has(grant.publicSession)) {
-      throw new Error('A CUA authorization grant is already armed for this task.');
+      throw new Error('A CUA native capability is already armed for this task.');
     }
     this.pending.set(grant.publicSession, { ...grant, consumed: false });
     return () => this.pending.delete(grant.publicSession);

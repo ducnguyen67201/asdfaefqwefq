@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
-import { HOST_ALWAYS_CONFIRM_EFFECTS } from '../../shared/contracts';
+import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
 
 import { HostedTaskClient, HostedTaskOutcomeUnknownError } from './hosted-task-client';
 
@@ -9,7 +8,6 @@ const input = {
   clientTaskId: '00000000-0000-4000-8000-000000000001',
   taskId: '00000000-0000-4000-8000-000000000002',
   request: 'Help with this exercise.',
-  autonomyMode: 'balanced' as const,
   executionProfile: 'everyday' as const,
   workspaceSelectionId: null,
   activityAttemptId: '00000000-0000-4000-8000-000000000003',
@@ -23,18 +21,17 @@ const record = {
   request: input.request,
   executionProfile: input.executionProfile,
   workspaceSelectionId: null,
-  protocolVersion: 3,
+  protocolVersion: 4,
   protocolDigest: manifest.protocolDigest,
   toolCatalogDigest: manifest.toolCatalogDigest,
   outcomeRevision: 1,
   publicSummary: 'Queued.',
   authorityContract: {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: '00000000-0000-4000-8000-000000000005',
     originalRequest: input.request,
     runtimeKind: 'rust_hosted',
     executionProfile: input.executionProfile,
-    autonomyMode: input.autonomyMode,
     workspaceSelectionId: null,
     activity: null,
     outcomeContract: {
@@ -47,15 +44,6 @@ const record = {
         required: true,
         verifier: { kind: 'assistant_output', constraints: [] },
       }],
-    },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: {
-      alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS],
     },
     limits: {
       maxImages: 20,
@@ -166,7 +154,7 @@ describe('HostedTaskClient.list', () => {
     expect(runs[0]?.toolCatalogDigest).toBeUndefined();
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
-      'https://api.example.com/v1/agent-runtime/v3/tasks',
+      'https://api.example.com/v1/agent-runtime/v4/tasks',
       expect.any(Object),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
@@ -176,7 +164,7 @@ describe('HostedTaskClient.list', () => {
     );
   });
 
-  it('keeps canonical protocol-v3 digest validation strict', async () => {
+  it('keeps canonical protocol-v4 digest validation strict', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({

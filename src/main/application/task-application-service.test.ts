@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
-  type HostedTaskAuthorityContract,
-  type HostedTaskRecord,
+import type {
+  HostedTaskAuthorityContract,
+  HostedTaskRecord,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
@@ -16,12 +15,11 @@ function hostedRecord(
 ): HostedTaskRecord {
   const request = overrides.request ?? 'Create a calendar event.';
   const contract: HostedTaskAuthorityContract = {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: '55555555-5555-4555-8555-555555555555',
     originalRequest: request,
     runtimeKind: 'rust_hosted',
     executionProfile: 'everyday',
-    autonomyMode: 'balanced',
     workspaceSelectionId: null,
     activity: null,
     outcomeContract: {
@@ -35,15 +33,6 @@ function hostedRecord(
         verifier: { kind: 'assistant_output', constraints: [] },
       }],
     },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: {
-      alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS],
-    },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -54,14 +43,12 @@ function hostedRecord(
   };
   return {
     activity: null,
-    autonomyMode: 'balanced',
     clientTaskId: '44444444-4444-4444-8444-444444444444',
-    contractSchemaVersion: 8,
+    contractSchemaVersion: 9,
     createdAt: '2026-08-25T00:00:00.000Z',
     executionProfile: 'everyday',
     id: '33333333-3333-4333-8333-333333333333',
     contract,
-    intentAuthorization: contract.intentAuthorization,
     outcomeContract: contract.outcomeContract,
     outcomeRevision: 1,
     protocolVersion: 2,
@@ -88,7 +75,7 @@ describe('TaskApplicationService', () => {
       .toThrow();
   });
 
-  it('uses the backend v8 projection as the only local task authority', async () => {
+  it('uses the backend v9 projection as the only local task authority', async () => {
     const runtime = new TaskRuntime();
     const submit = vi.fn(async (input: { taskId: string }) =>
       hostedRecord(input.taskId));
@@ -105,10 +92,8 @@ describe('TaskApplicationService', () => {
 
     expect(submit).toHaveBeenCalledOnce();
     expect(snapshot.goal).toMatchObject({
-      autonomyMode: 'balanced',
-      intentAuthorization: { schemaVersion: 1 },
       outcomeContract: { schemaVersion: 1 },
-      schemaVersion: 8,
+      schemaVersion: 9,
     });
     expect(service.start({ taskId: snapshot.taskId })).toEqual(snapshot);
   });
@@ -150,10 +135,6 @@ describe('TaskApplicationService', () => {
     const get = vi.fn(async () => {
       const contract = {
         ...record.contract!,
-        intentAuthorization: {
-          ...record.contract!.intentAuthorization,
-          revision: 2,
-        },
         outcomeContract: {
           ...record.contract!.outcomeContract,
           revision: 2,
@@ -162,7 +143,6 @@ describe('TaskApplicationService', () => {
       return {
         ...record,
         contract,
-        intentAuthorization: contract.intentAuthorization,
         outcomeContract: contract.outcomeContract,
         outcomeRevision: 2,
       };
@@ -185,7 +165,6 @@ describe('TaskApplicationService', () => {
 
     expect(get).toHaveBeenCalledWith(record.id);
     expect(revised.goal).toMatchObject({
-      intentAuthorization: { revision: 2 },
       outcomeContract: { revision: 2 },
     });
   });

@@ -155,6 +155,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "class session materials",
             include_str!("../migrations/029_class_session_materials.sql"),
         ),
+        migration(
+            30,
+            "remove agent approval policy",
+            include_str!("../migrations/030_remove_agent_approval_policy.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

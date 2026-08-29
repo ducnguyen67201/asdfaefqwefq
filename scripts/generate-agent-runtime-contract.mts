@@ -7,16 +7,16 @@ import { z } from 'zod';
 
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION,
-  AgentRunActionV3Schema,
-  AgentRunFailureCodeV3Schema,
-  AgentRunFailureStageV3Schema,
-  AgentRunPhaseV3Schema,
-  AgentRunStateV3Schema,
-  AgentRuntimeErrorCodeV3Schema,
-  AgentRuntimeProtocolDocumentV3Schema,
-  AgentRuntimeRolloutModeV3Schema,
-  CancellationSourceV3Schema,
-  ComputerPermissionV3Schema,
+  AgentRunActionV4Schema,
+  AgentRunFailureCodeV4Schema,
+  AgentRunFailureStageV4Schema,
+  AgentRunPhaseV4Schema,
+  AgentRunStateV4Schema,
+  AgentRuntimeErrorCodeV4Schema,
+  AgentRuntimeProtocolDocumentV4Schema,
+  AgentRuntimeRolloutModeV4Schema,
+  CancellationSourceV4Schema,
+  ComputerPermissionV4Schema,
 } from '../src/shared/agent-runtime-protocol.ts';
 import {
   HOSTED_TOOL_CONTRACTS,
@@ -53,7 +53,7 @@ function digest(bytes: string): string {
   return createHash('sha256').update(bytes, 'utf8').digest('hex');
 }
 
-const schema = z.toJSONSchema(AgentRuntimeProtocolDocumentV3Schema, {
+const schema = z.toJSONSchema(AgentRuntimeProtocolDocumentV4Schema, {
   target: 'draft-2020-12',
   unrepresentable: 'throw',
   cycles: 'ref',
@@ -63,8 +63,8 @@ const schema = z.toJSONSchema(AgentRuntimeProtocolDocumentV3Schema, {
 
 const schemaDocument = {
   ...schema,
-  $id: 'https://tro.app/protocol/agent-runtime.v3.schema.json',
-  title: 'Tro canonical agent runtime protocol v3',
+  $id: 'https://tro.app/protocol/agent-runtime.v4.schema.json',
+  title: 'Tro canonical agent runtime protocol v4',
 };
 delete (schemaDocument as Record<string, unknown>)['~standard'];
 
@@ -94,25 +94,25 @@ const manifestDocument = {
     'src/shared/agent-tool-contracts.ts',
   ],
   inventories: {
-    actions: AgentRunActionV3Schema.options,
-    cancellationSources: CancellationSourceV3Schema.options,
-    errorCodes: AgentRuntimeErrorCodeV3Schema.options,
-    failureCodes: AgentRunFailureCodeV3Schema.options,
-    failureStages: AgentRunFailureStageV3Schema.options,
-    phases: AgentRunPhaseV3Schema.options,
-    permissions: ComputerPermissionV3Schema.options,
-    rolloutModes: AgentRuntimeRolloutModeV3Schema.options,
-    states: AgentRunStateV3Schema.options,
+    actions: AgentRunActionV4Schema.options,
+    cancellationSources: CancellationSourceV4Schema.options,
+    errorCodes: AgentRuntimeErrorCodeV4Schema.options,
+    failureCodes: AgentRunFailureCodeV4Schema.options,
+    failureStages: AgentRunFailureStageV4Schema.options,
+    phases: AgentRunPhaseV4Schema.options,
+    permissions: ComputerPermissionV4Schema.options,
+    rolloutModes: AgentRuntimeRolloutModeV4Schema.options,
+    states: AgentRunStateV4Schema.options,
     toolIds: tools.map((tool) => tool.toolId),
   },
 };
 
 const validStatusFixture = {
-  protocolVersion: 3,
+  protocolVersion: 4,
   protocolDigest,
   toolCatalogDigest,
-  supportedReadVersions: [2, 3],
-  supportedStartVersions: [3],
+  supportedReadVersions: [2, 3, 4],
+  supportedStartVersions: [4],
   rolloutMode: 'enforce',
   workerRequired: true,
   enabled: true,
@@ -132,22 +132,22 @@ const openUrlFixture = {
 };
 
 const outputs = new Map<string, string>([
-  ['protocol/agent-runtime.v3.schema.json', schemaContent],
-  ['protocol/agent-tools.v3.json', toolCatalogContent],
+  ['protocol/agent-runtime.v4.schema.json', schemaContent],
+  ['protocol/agent-tools.v4.json', toolCatalogContent],
   [
-    'protocol/agent-runtime.v3.manifest.json',
+    'protocol/agent-runtime.v4.manifest.json',
     jsonBytes(manifestDocument),
   ],
   [
-    'test/fixtures/agent-runtime-v3/status.valid.json',
+    'test/fixtures/agent-runtime-v4/status.valid.json',
     jsonBytes(validStatusFixture),
   ],
   [
-    'test/fixtures/agent-runtime-v3/status.unknown-field.invalid.json',
+    'test/fixtures/agent-runtime-v4/status.unknown-field.invalid.json',
     jsonBytes({ ...validStatusFixture, guessedState: true }),
   ],
   [
-    'test/fixtures/agent-runtime-v3/open-url.valid.json',
+    'test/fixtures/agent-runtime-v4/open-url.valid.json',
     jsonBytes(openUrlFixture),
   ],
 ]);

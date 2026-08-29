@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v4.manifest.json';
 
 import { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 
 function invocation() {
   return {
-    protocolVersion: 3 as const,
+    protocolVersion: 4 as const,
     protocolDigest: manifest.protocolDigest,
     toolCatalogDigest: manifest.toolCatalogDigest,
     invocationId: randomUUID(),
@@ -26,9 +26,6 @@ function invocation() {
       overwrite: 'none' as const,
       sensitiveDataTransfer: false as const,
     },
-    intentRevision: 1,
-    approvalRequired: false,
-    authorizationSource: 'routine' as const,
     consequential: false,
     permissionInteractionId: null,
     permissionRequirements: [],

@@ -53,7 +53,6 @@ function renderSettings(
   return renderToStaticMarkup(
     createElement(SettingsPage, {
       appLanguage: options.appLanguage ?? 'en',
-      autonomyMode: 'balanced',
       appUpdateError: null,
       appUpdateStatus,
       classroomPetEnabled: options.classroomPetEnabled ?? true,
@@ -83,7 +82,6 @@ function renderSettings(
       onActivateCompanion: vi.fn(),
       onActivateSavedCompanion: vi.fn(),
       onAppLanguageChange: vi.fn(),
-      onAutonomyModeChange: vi.fn(),
       onCheckForUpdates: vi.fn(),
       onClassroomPetEnabledChange: vi.fn(),
       onGenerateCompanion: vi.fn(),
@@ -166,7 +164,6 @@ describe('SettingsPage app language', () => {
     const markup = renderToStaticMarkup(
       createElement(SettingsPage, {
         appLanguage: 'vi',
-        autonomyMode: 'strict',
         appUpdateError: null,
         appUpdateStatus: {
           currentVersion: '0.1.0',
@@ -200,7 +197,6 @@ describe('SettingsPage app language', () => {
         onActivateCompanion: vi.fn(),
         onActivateSavedCompanion: vi.fn(),
         onAppLanguageChange: vi.fn(),
-        onAutonomyModeChange: vi.fn(),
         onCheckForUpdates: vi.fn(),
         onClassroomPetEnabledChange: vi.fn(),
         onGenerateCompanion: vi.fn(),
@@ -287,8 +283,8 @@ describe('SettingsPage desktop pet preference', () => {
   });
 });
 
-describe('SettingsPage autonomy preference', () => {
-  it('explains balanced autonomy without hiding strict mode', () => {
+describe('SettingsPage execution boundary', () => {
+  it('describes automatic scoped execution without an autonomy selector', () => {
     const markup = renderSettings({
       currentVersion: '0.1.0',
       message: 'No updates found.',
@@ -296,9 +292,9 @@ describe('SettingsPage autonomy preference', () => {
       targetVersion: null,
     });
 
-    expect(markup).toContain('Autonomy');
-    expect(markup).toContain('Routine, reversible actions continue automatically');
-    expect(markup).toContain('value="strict"');
+    expect(markup).toContain('Scoped execution');
+    expect(markup).toContain('Registered tools run automatically');
+    expect(markup).not.toContain('value="strict"');
   });
 });
 

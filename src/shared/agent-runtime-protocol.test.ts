@@ -1,33 +1,33 @@
 import { describe, expect, it } from 'vitest';
 
-import manifest from '../../protocol/agent-runtime.v3.manifest.json';
+import manifest from '../../protocol/agent-runtime.v4.manifest.json';
 
 import {
-  AgentRunProjectionV3Schema,
-  AgentRuntimeStatusV3Schema,
-  validateAgentRunProjectionV3,
+  AgentRunProjectionV4Schema,
+  AgentRuntimeStatusV4Schema,
+  validateAgentRunProjectionV4,
 } from './agent-runtime-protocol';
 
-describe('canonical agent runtime protocol v3', () => {
+describe('canonical agent runtime protocol v4', () => {
   it('accepts the generated negotiation status and rejects unknown fields', () => {
     const status = {
-      protocolVersion: 3,
+      protocolVersion: 4,
       protocolDigest: manifest.protocolDigest,
       toolCatalogDigest: manifest.toolCatalogDigest,
-      supportedReadVersions: [2, 3],
-      supportedStartVersions: [3],
+      supportedReadVersions: [2, 3, 4],
+      supportedStartVersions: [4],
       rolloutMode: 'enforce',
       workerRequired: true,
       enabled: true,
     };
-    expect(AgentRuntimeStatusV3Schema.parse(status)).toEqual(status);
+    expect(AgentRuntimeStatusV4Schema.parse(status)).toEqual(status);
     expect(() =>
-      AgentRuntimeStatusV3Schema.parse({ ...status, guessedState: true }),
+      AgentRuntimeStatusV4Schema.parse({ ...status, guessedState: true }),
     ).toThrow();
   });
 
   it('makes blocked authoritative, terminal, and non-cancellable', () => {
-    const projection = AgentRunProjectionV3Schema.parse({
+    const projection = AgentRunProjectionV4Schema.parse({
       state: 'blocked',
       runVersion: 4,
       phase: 'blocked',
@@ -42,9 +42,9 @@ describe('canonical agent runtime protocol v3', () => {
       },
       cancellationSource: null,
     });
-    expect(validateAgentRunProjectionV3(projection)).toEqual(projection);
+    expect(validateAgentRunProjectionV4(projection)).toEqual(projection);
     expect(() =>
-      validateAgentRunProjectionV3({
+      validateAgentRunProjectionV4({
         ...projection,
         terminal: false,
         availableActions: ['cancel'],
@@ -54,7 +54,7 @@ describe('canonical agent runtime protocol v3', () => {
 
   it('requires typed permission metadata for the permission state', () => {
     expect(() =>
-      validateAgentRunProjectionV3({
+      validateAgentRunProjectionV4({
         state: 'awaiting_permission',
         runVersion: 2,
         phase: 'awaiting_permission',

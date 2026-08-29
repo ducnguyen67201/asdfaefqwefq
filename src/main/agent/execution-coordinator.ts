@@ -1,3 +1,4 @@
+import { validatePublicHttpsUrl } from '../../shared/classroom-url-policy';
 import type { ApplicationSurfaceVerifier } from '../application/application-surface-verifier';
 import type {
   ApplicationLaunchReceipt,
@@ -154,7 +155,7 @@ export class TaskExecutionCoordinator {
             const receipt = await openApplication(input.application);
             const snapshot = runtime.getSnapshot(context.taskId);
             const criterion =
-              snapshot.goal?.schemaVersion === 8
+              snapshot.goal?.schemaVersion === 9
                 ? snapshot.goal.outcomeContract.criteria.find(
                     (candidate) =>
                       candidate.verifier.kind === 'application_surface' &&
@@ -195,7 +196,11 @@ export class TaskExecutionCoordinator {
           id: 'browser.navigate',
           execute: async (invocation) => {
             const input = invocation.input as OpenUrlToolInput;
-            await openExternal(input.url);
+            const target = validatePublicHttpsUrl(input.url);
+            if (!target) {
+              throw new Error('Browser navigation requires a credential-free public HTTPS URL.');
+            }
+            await openExternal(target.toString());
             return {
               status: 'confirmed',
               summary: 'The browser accepted the HTTPS navigation request.',

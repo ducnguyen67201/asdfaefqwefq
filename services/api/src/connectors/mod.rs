@@ -4,21 +4,21 @@ mod mcp;
 mod oauth;
 mod schema;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use sqlx::{PgPool, Row};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    agent::{ActionEffect, ProposedAction},
-    auth::{AgentEnvelope, ConnectorTokenCrypto, stable_json},
+    agent::ActionEffect,
+    auth::{AgentEnvelope, ConnectorTokenCrypto},
     config::ConnectorConfig,
     error::{ApiError, ApiResult},
 };
@@ -81,8 +81,6 @@ pub struct ConnectorRoute {
 
 #[derive(Clone, Debug)]
 pub struct NormalizedConnectorAction {
-    pub action: Value,
-    pub digest: String,
     pub effect: ActionEffect,
 }
 
@@ -314,14 +312,15 @@ impl ConnectorService {
             .bind(&catalog_key)
             .fetch_one(&self.pool)
             .await?;
-        let policy_digest = catalog::policy_digest().map_err(ApiError::internal)?;
+        let catalog_contract_digest =
+            catalog::catalog_contract_digest().map_err(ApiError::internal)?;
         let cancellation = CancellationToken::new();
         let discovered = match self
             .mcp
             .discover(
                 definition,
                 &token.access_token,
-                &policy_digest,
+                &catalog_contract_digest,
                 &cancellation,
             )
             .await
@@ -382,8 +381,8 @@ impl ConnectorService {
         let mut tx = self.pool.begin().await?;
         sqlx::query("UPDATE connector_tool_snapshots SET active=FALSE WHERE connection_id=$1 AND active=TRUE")
             .bind(connection_id).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO connector_tool_snapshots(id,connection_id,catalog_key,schema_digest,policy_digest,tools,active)VALUES($1,$2,$3,$4,$5,$6,TRUE)")
-            .bind(snapshot_id).bind(connection_id).bind(&catalog_key).bind(&discovered.digest).bind(&policy_digest).bind(Value::Array(discovered.tools)).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO connector_tool_snapshots(id,connection_id,catalog_key,schema_digest,catalog_contract_digest,tools,active)VALUES($1,$2,$3,$4,$5,$6,TRUE)")
+            .bind(snapshot_id).bind(connection_id).bind(&catalog_key).bind(&discovered.digest).bind(&catalog_contract_digest).bind(Value::Array(discovered.tools)).execute(&mut *tx).await?;
         sqlx::query("UPDATE connector_connections SET status='connected',token_ciphertext=$3,token_iv=$4,token_tag=$5,token_key_version=$6,granted_scopes=$7,token_expires_at=$8,active_snapshot_id=$9,active_schema_digest=$10,connected_at=NOW(),disconnected_at=NULL,updated_at=NOW()WHERE id=$1 AND user_id=$2")
             .bind(connection_id).bind(&user).bind(token_envelope.ciphertext).bind(token_envelope.iv).bind(token_envelope.tag).bind(i32::try_from(token_envelope.key_version).unwrap_or(i32::MAX)).bind(scopes).bind(token_expires_at).bind(snapshot_id).bind(&discovered.digest).execute(&mut *tx).await?;
         sqlx::query("UPDATE connector_oauth_attempts SET status='connected',failure_code=NULL,updated_at=NOW()WHERE id=$1")
@@ -453,16 +452,17 @@ impl ConnectorService {
         if !self.enabled_for(user) {
             return Ok(Vec::new());
         }
-        let policy_digest = catalog::policy_digest().map_err(ApiError::internal)?;
-        let rows = sqlx::query("SELECT connections.id AS connection_id,connections.catalog_key,snapshots.id AS snapshot_id,snapshots.policy_digest,snapshots.tools FROM connector_connections connections JOIN connector_tool_snapshots snapshots ON snapshots.id=connections.active_snapshot_id AND snapshots.active=TRUE WHERE connections.user_id=$1 AND connections.status='connected' ORDER BY connections.catalog_key")
+        let catalog_contract_digest =
+            catalog::catalog_contract_digest().map_err(ApiError::internal)?;
+        let rows = sqlx::query("SELECT connections.id AS connection_id,connections.catalog_key,snapshots.id AS snapshot_id,snapshots.catalog_contract_digest,snapshots.tools FROM connector_connections connections JOIN connector_tool_snapshots snapshots ON snapshots.id=connections.active_snapshot_id AND snapshots.active=TRUE WHERE connections.user_id=$1 AND connections.status='connected' ORDER BY connections.catalog_key")
             .bind(user).fetch_all(&self.pool).await?;
         let mut routes = Vec::new();
         for row in rows {
             let catalog_key: String = row.get("catalog_key");
             let connection_id: Uuid = row.get("connection_id");
             let snapshot_id: Uuid = row.get("snapshot_id");
-            if row.get::<String, _>("policy_digest") != policy_digest {
-                tracing::warn!(event="connector.snapshot.policy_changed", %connection_id, catalog_key, code="contract_changed");
+            if row.get::<String, _>("catalog_contract_digest") != catalog_contract_digest {
+                tracing::warn!(event="connector.snapshot.contract_changed", %connection_id, catalog_key, code="contract_changed");
                 sqlx::query("UPDATE connector_connections SET status='contract_changed',updated_at=NOW()WHERE id=$1 AND user_id=$2 AND active_snapshot_id=$3")
                     .bind(connection_id).bind(user).bind(snapshot_id).execute(&self.pool).await?;
                 continue;
@@ -472,18 +472,18 @@ impl ConnectorService {
                 let Some(name) = tool.get("mcpName").and_then(Value::as_str) else {
                     continue;
                 };
-                let Some(policy) = catalog::tool(&catalog_key, name) else {
+                let Some(contract) = catalog::tool(&catalog_key, name) else {
                     continue;
                 };
                 routes.push(ConnectorRoute {
                     catalog_key: catalog_key.clone(),
                     connection_id,
                     snapshot_id,
-                    namespace: policy.namespace.to_owned(),
-                    tool_name: policy.name.to_owned(),
-                    description: policy.description.to_owned(),
-                    input_schema: policy.input_schema.clone(),
-                    effect: catalog::effect_for(policy),
+                    namespace: contract.namespace.to_owned(),
+                    tool_name: contract.name.to_owned(),
+                    description: contract.description.to_owned(),
+                    input_schema: contract.input_schema.clone(),
+                    effect: catalog::effect_for(contract),
                 });
             }
         }
@@ -499,7 +499,7 @@ impl ConnectorService {
     ) -> ApiResult<Value> {
         self.require_enabled(user)?;
         let definition = catalog::by_key(&route.catalog_key).ok_or_else(connector_not_found)?;
-        let policy =
+        let contract =
             catalog::tool(&route.catalog_key, &route.tool_name).ok_or_else(connector_not_found)?;
         let route_is_active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM connector_connections connections JOIN connector_tool_snapshots snapshots ON snapshots.id=connections.active_snapshot_id AND snapshots.active=TRUE WHERE connections.id=$1 AND connections.user_id=$2 AND connections.catalog_key=$3 AND connections.status='connected'AND snapshots.id=$4)")
             .bind(route.connection_id).bind(user).bind(&route.catalog_key).bind(route.snapshot_id).fetch_one(&self.pool).await?;
@@ -516,7 +516,7 @@ impl ConnectorService {
         let started = std::time::Instant::now();
         let result = self
             .mcp
-            .call_tool(definition, policy, &access_token, arguments, cancellation)
+            .call_tool(definition, contract, &access_token, arguments, cancellation)
             .await;
         let elapsed_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         match result {
@@ -679,7 +679,6 @@ impl ConnectorService {
 pub fn normalize_action(
     route: &ConnectorRoute,
     arguments: &Value,
-    intent_revision: u32,
 ) -> ApiResult<NormalizedConnectorAction> {
     schema::validate_arguments(&route.input_schema, arguments).map_err(|_| {
         ApiError::bad_request(
@@ -690,78 +689,7 @@ pub fn normalize_action(
     let policy =
         catalog::tool(&route.catalog_key, &route.tool_name).ok_or_else(connector_not_found)?;
     let effect = catalog::effect_for(policy);
-    let target = arguments
-        .get("messageId")
-        .or_else(|| arguments.get("threadId"))
-        .or_else(|| arguments.get("query"))
-        .and_then(Value::as_str)
-        .unwrap_or("Gmail");
-    let parameters = presentation_parameters(arguments);
-    let proposed = ProposedAction {
-        action: match policy.effect {
-            catalog::ConnectorEffect::ReadPrivate => "guide",
-            catalog::ConnectorEffect::CreateDraft => "type_text",
-            catalog::ConnectorEffect::UpdateLabels => "click_element",
-        }
-        .to_owned(),
-        tool_id: Some(format!("connector.{}", route.catalog_key)),
-        operation: Some(route.tool_name.clone()),
-        effect: Some(effect.clone()),
-        description: match policy.effect {
-            catalog::ConnectorEffect::ReadPrivate => format!(
-                "Allow Tro to read private Gmail data with {}.",
-                route.tool_name
-            ),
-            catalog::ConnectorEffect::CreateDraft => {
-                "Create this Gmail draft without sending it.".to_owned()
-            }
-            catalog::ConnectorEffect::UpdateLabels => format!(
-                "Apply this reviewed Gmail label change with {}.",
-                route.tool_name
-            ),
-        },
-        target: Some(target.chars().take(500).collect()),
-        parameters,
-    };
-    let action = serde_json::to_value(&proposed).map_err(ApiError::internal)?;
-    let digest_value = json!({
-        "arguments":arguments,
-        "catalogKey":route.catalog_key,
-        "connectionId":route.connection_id,
-        "effect":effect,
-        "intentRevision":intent_revision,
-        "namespace":route.namespace,
-        "snapshotId":route.snapshot_id,
-        "toolName":route.tool_name
-    });
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(stable_json(&digest_value)?.as_bytes())
-    );
-    Ok(NormalizedConnectorAction {
-        action,
-        digest,
-        effect,
-    })
-}
-
-fn presentation_parameters(arguments: &Value) -> BTreeMap<String, Value> {
-    let mut result = BTreeMap::new();
-    for (key, value) in arguments.as_object().into_iter().flatten() {
-        if matches!(key.as_str(), "body" | "htmlBody") {
-            result.insert(
-                key.clone(),
-                Value::String("(content hidden; included in approval digest)".to_owned()),
-            );
-        } else if value.is_string()
-            || value
-                .as_array()
-                .is_some_and(|items| items.iter().all(Value::is_string))
-        {
-            result.insert(key.clone(), value.clone());
-        }
-    }
-    result
+    Ok(NormalizedConnectorAction { effect })
 }
 
 fn attempt_metadata(id: Uuid, user: &str, catalog_key: &str) -> Value {
@@ -822,7 +750,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn action_digest_binds_private_arguments_while_presentation_redacts_bodies() {
+    fn normalized_action_uses_the_reviewed_catalog_effect_without_retaining_arguments() {
         let route = ConnectorRoute {
             catalog_key: "gmail".to_owned(),
             connection_id: Uuid::nil(),
@@ -836,14 +764,12 @@ mod tests {
                 .clone(),
             effect: catalog::effect_for(catalog::tool("gmail", "create_draft").expect("tool")),
         };
-        let first = normalize_action(&route, &json!({"to":["a@example.com"],"body":"first"}), 1)
-            .expect("action");
-        let second = normalize_action(&route, &json!({"to":["a@example.com"],"body":"second"}), 1)
-            .expect("action");
-        assert_ne!(first.digest, second.digest);
-        assert_eq!(
-            first.action["parameters"]["body"],
-            "(content hidden; included in approval digest)"
-        );
+        let action = normalize_action(
+            &route,
+            &json!({"to":["a@example.com"],"body":"private body"}),
+        )
+        .expect("action");
+        assert_eq!(action.effect.kind, "create_resource");
+        assert_eq!(action.effect.resource_kind.as_deref(), Some("email"));
     }
 }

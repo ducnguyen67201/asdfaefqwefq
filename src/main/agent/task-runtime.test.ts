@@ -2,21 +2,17 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
-  type HostedTaskAuthorityContract,
-} from '../../shared/contracts';
+import type { HostedTaskAuthorityContract } from '../../shared/contracts';
 
 import { TaskRuntime } from './task-runtime';
 
 function authority(request: string): HostedTaskAuthorityContract {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: randomUUID(),
     originalRequest: request,
     runtimeKind: 'rust_hosted',
     executionProfile: 'everyday',
-    autonomyMode: 'balanced',
     workspaceSelectionId: null,
     activity: null,
     outcomeContract: {
@@ -30,13 +26,6 @@ function authority(request: string): HostedTaskAuthorityContract {
         verifier: { kind: 'assistant_output', constraints: [] },
       }],
     },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -54,22 +43,6 @@ function submit(runtime: TaskRuntime, request = 'Send the message.') {
   );
 }
 
-const sendAction = {
-  action: 'send' as const,
-  toolId: 'desktop.control' as const,
-  operation: 'click',
-  effect: {
-    kind: 'send_communication' as const,
-    resourceKind: 'message' as const,
-    reversibility: 'reversible' as const,
-    externality: 'external' as const,
-    communication: 'send' as const,
-    overwrite: 'none' as const,
-    sensitiveDataTransfer: false as const,
-  },
-  description: 'Send the exact message.',
-};
-
 describe('TaskRuntime Rust projection', () => {
   it('requires an exact Rust authority contract', () => {
     const runtime = new TaskRuntime();
@@ -86,32 +59,25 @@ describe('TaskRuntime Rust projection', () => {
     ).toThrow('does not match the task request');
   });
 
-  it('binds and consumes one exact local approval without reevaluating policy', () => {
+  it('keeps clarification as the only local pending interaction', () => {
     const runtime = new TaskRuntime();
     const task = submit(runtime);
-    const waiting = runtime.requestApproval({
-      action: sendAction,
-      consequence: sendAction.description,
-      prompt: sendAction.description,
+    const waiting = runtime.requestInput({
+      prompt: 'Which account should Tro use?',
       taskId: task.taskId,
+      choices: [{ id: 'work', label: 'Work' }],
     });
     const interaction = waiting.pendingInteraction;
-    expect(interaction?.kind).toBe('approval');
-    if (!interaction || interaction.kind !== 'approval') throw new Error('missing approval');
+    expect(interaction?.kind).toBe('clarification');
+    if (!interaction) throw new Error('missing clarification');
 
-    const approved = runtime.decideApproval({
+    const answered = runtime.respondToInteraction({
       taskId: task.taskId,
       interactionId: interaction.id,
-      kind: 'approval',
-      decision: 'approve',
-      actionDigest: interaction.actionDigest,
+      kind: 'answer',
+      text: 'Use my work account.',
     });
-    expect(approved.approvalGrant?.actionDigest).toBe(interaction.actionDigest);
-    expect(runtime.consumeApprovalGrant({ taskId: task.taskId, action: sendAction }))
-      .toMatchObject({ approvalGrant: null, phase: 'acting' });
-    expect(() =>
-      runtime.consumeApprovalGrant({ taskId: task.taskId, action: sendAction }),
-    ).toThrow('no approved action grant');
+    expect(answered).toMatchObject({ pendingInteraction: null, phase: 'planning' });
   });
 
   it('forwards canonical hosted snapshots to renderer subscribers', () => {

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
-  ComputerPermissionV3,
-  DesktopInvocationV3,
+  ComputerPermissionV4,
+  DesktopInvocationV4,
 } from '../../shared/agent-runtime-protocol';
 import type { CuaStatus } from '../../shared/contracts';
 
-type ComputerPermission = ComputerPermissionV3;
+type ComputerPermission = ComputerPermissionV4;
 type PermissionOutcome = 'granted' | 'continue_without_computer';
 
 interface PermissionBackend {
@@ -50,7 +50,7 @@ export class ComputerPermissionCoordinator {
   constructor(private readonly options: ComputerPermissionCoordinatorOptions) {}
 
   async requireReady(input: {
-    invocation: DesktopInvocationV3;
+    invocation: DesktopInvocationV4;
     requirements: readonly ComputerPermission[];
     taskId: string;
   }): Promise<PermissionOutcome> {

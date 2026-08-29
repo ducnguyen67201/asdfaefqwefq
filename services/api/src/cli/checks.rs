@@ -73,12 +73,12 @@ pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()
 
 pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
     check_agent_runtime_versions(repository_root)?;
-    let mode = std::env::var("AGENT_RUNTIME_V3_MODE")
+    let mode = std::env::var("AGENT_RUNTIME_V4_MODE")
         .unwrap_or_else(|_| "observe".to_owned())
         .to_lowercase();
     anyhow::ensure!(
         matches!(mode.as_str(), "observe" | "dual" | "enforce"),
-        "AGENT_RUNTIME_V3_MODE must be one of: observe, dual, enforce."
+        "AGENT_RUNTIME_V4_MODE must be one of: observe, dual, enforce."
     );
 
     println!("Canonical agent protocol: v{}", protocol::PROTOCOL_VERSION);
@@ -111,10 +111,10 @@ pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Re
     println!("Active runs: v2={active_v2}, v3={active_v3}");
     println!(
         "Enforcement readiness: {}",
-        if active_v2 == 0 {
-            "ready (no active v2 runs)"
+        if active_v2 == 0 && active_v3 == 0 {
+            "ready (no active v2/v3 runs)"
         } else {
-            "not ready (drain active v2 runs before enforce)"
+            "not ready (drain active v2/v3 runs before cleanup)"
         }
     );
     Ok(())

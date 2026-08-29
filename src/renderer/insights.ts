@@ -50,7 +50,6 @@ export interface ActivityDay {
 
 export interface InsightsSummary {
   activityDays: ActivityDay[];
-  approvalDecisions: number;
   legacyBehaviorUsage: BehaviorUsage[];
   completedTasks: number;
   completionRate: number;
@@ -62,6 +61,7 @@ export interface InsightsSummary {
   stepsObserved: number;
   taskCount: number;
   toolUsage: ToolUsage[];
+  verifiedCompletions: number;
 }
 
 export interface LearningFocus {
@@ -279,18 +279,8 @@ export function createInsightsSummary(
     cursor = addUtcDays(cursor, -1);
   }
 
-  const approvalMessageIds = new Set<string>();
-  for (const task of tasks) {
-    for (const message of task.messages) {
-      if (message.kind === 'approval_decision') {
-        approvalMessageIds.add(message.messageId);
-      }
-    }
-  }
-
   return {
     activityDays,
-    approvalDecisions: approvalMessageIds.size,
     legacyBehaviorUsage: behaviorUsage,
     completedTasks,
     completionRate:
@@ -314,5 +304,6 @@ export function createInsightsSummary(
     ),
     taskCount: tasks.length,
     toolUsage,
+    verifiedCompletions: completedTasks,
   };
 }

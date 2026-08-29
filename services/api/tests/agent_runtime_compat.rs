@@ -6,11 +6,9 @@ use std::{
 
 use serde_json::{Value, json};
 use trocode_api::{
-    agent::{AgentService, TOOL_SCHEMA_DIGEST},
+    agent::{AgentService, protocol},
     auth::AgentStateCrypto,
-    config::{
-        AgentRuntimeConfig, AgentRuntimeV3Mode, CostGuardConfig, CostGuardMode, RolloutConfig,
-    },
+    config::{AgentRuntimeConfig, AgentRuntimeV4Mode, CostGuardConfig, CostGuardMode},
     db,
     postgres::PgPoolOptions,
     providers::ResponsesService,
@@ -118,19 +116,14 @@ fn runtime_config() -> AgentRuntimeConfig {
         enabled: true,
         encryption_keys: Some("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
         heartbeat_ttl_ms: 35_000,
-        intent_authorization: RolloutConfig {
-            canary_users: BTreeSet::new(),
-            enabled: false,
-            rollout_percent: 0,
-        },
         lease_ms: 30_000,
         max_active_runs_per_user: 10,
         max_queue_depth: 1_000,
         payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
         playwright_cdp_enabled: false,
-        protocol_version: 2,
+        protocol_version: 4,
         rollout_percent: 0,
-        v3_mode: AgentRuntimeV3Mode::Observe,
+        v4_mode: AgentRuntimeV4Mode::Observe,
     }
 }
 
@@ -180,18 +173,21 @@ async fn setup(server: &MockServer) -> (trocode_api::PgPool, AgentService) {
 
 fn task_input(request: &str, client: Uuid, task: Uuid) -> Value {
     json!({
-        "autonomyMode":"balanced",
         "clientTaskId":client,
         "executionProfile":"everyday",
         "request":request,
-        "taskId":task
+        "taskId":task,
+        "workspaceSelectionId":null,
+        "activityAttemptId":null,
+        "activityIntent":"work"
     })
 }
 
 fn capabilities() -> Value {
     json!({
-        "protocolVersion":2,
-        "schemaDigest":TOOL_SCHEMA_DIGEST.as_str(),
+        "protocolVersion":4,
+        "protocolDigest":protocol::protocol_digest(),
+        "toolCatalogDigest":protocol::tool_catalog_digest(),
         "tools":[
             {"operations":["launch"],"toolId":"application.launch"},
             {"operations":["read_file","write_file"],"toolId":"workspace.filesystem"}
@@ -199,13 +195,9 @@ fn capabilities() -> Value {
     })
 }
 
-fn execution_grant(invocation: &Value, exact_approval: bool) -> Value {
+fn begin_execution_request(invocation: &Value) -> Value {
     json!({
-        "approvalRequired":exact_approval,
-        "authorizationSource":if exact_approval{"exact_approval"}else{"routine"},
-        "consequential":exact_approval,
-        "effect":invocation["effect"],
-        "intentRevision":invocation["intentRevision"],
+        "expectedRunVersion":invocation["runVersion"],
         "invocationId":invocation["invocationId"]
     })
 }
@@ -258,7 +250,6 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
             USER,
             "basic",
             &json!({
-                "autonomyMode":"strict",
                 "clientTaskId":client,
                 "executionProfile":"everyday",
                 "request":"A conflicting retry body must not replace the persisted request.",
@@ -272,7 +263,8 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
         duplicate["request"],
         "Open Chrome and confirm the visible surface."
     );
-    assert_eq!(duplicate["autonomyMode"], "balanced");
+    assert_eq!(duplicate["contract"]["schemaVersion"], 9);
+    assert!(duplicate.get("autonomyMode").is_none());
     let conflict = agent
         .submit(
             USER,
@@ -308,11 +300,11 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0]["toolId"], "application.launch");
     assert_eq!(pending[0]["consequential"], false);
-    let grant = agent
-        .grant_execution(USER, worker, &execution_grant(&pending[0], false))
+    let executing = agent
+        .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
         .await
-        .expect("grant non-consequential execution");
-    assert_eq!(grant["kind"], "granted");
+        .expect("begin non-consequential execution");
+    assert_eq!(executing["kind"], "executing");
     let committed = agent
         .record_result(
             USER,
@@ -348,22 +340,6 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     }));
     assert!(!agent.list(USER).await.unwrap().is_empty());
 
-    let approval = agent
-        .control(
-            USER,
-            run,
-            "approval",
-            &json!({
-                "actionDigest":"0".repeat(64),
-                "decision":"approve",
-                "interactionId":Uuid::new_v4()
-            }),
-        )
-        .await
-        .expect("record approval event")
-        .expect("existing run");
-    assert_eq!(approval["type"], "run.approval_decided");
-
     let (unknown_run, _, _) = submit(
         &agent,
         "Perform a consequential workspace change and verify it.",
@@ -376,10 +352,10 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     assert_eq!(pending[0]["consequential"], true);
     assert_eq!(
         agent
-            .grant_execution(USER, worker, &execution_grant(&pending[0], true))
+            .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
             .await
             .unwrap()["kind"],
-        "granted"
+        "executing"
     );
     assert_eq!(
         agent
@@ -410,7 +386,7 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     assert!(agent.run_once().await.unwrap());
     let pending = agent.pending(USER, worker).await.unwrap();
     agent
-        .grant_execution(USER, worker, &execution_grant(&pending[0], true))
+        .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
         .await
         .unwrap();
     let disconnected = agent.disconnect(USER, worker).await.unwrap();
@@ -499,7 +475,7 @@ async fn durable_agent_completes_verified_work_and_blocks_unknown_effects() {
     assert!(agent.run_once().await.unwrap());
     let pending = agent.pending(USER, worker).await.unwrap();
     agent
-        .grant_execution(USER, worker, &execution_grant(&pending[0], true))
+        .begin_execution(USER, worker, &begin_execution_request(&pending[0]))
         .await
         .unwrap();
     query("UPDATE agent_worker_sessions SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1")

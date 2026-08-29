@@ -1,23 +1,16 @@
 import {
-  DesktopInvocationV3Schema,
-  DesktopResultV3Schema,
-  type DesktopInvocationV3,
-  type DesktopResultV3,
+  DesktopInvocationV4Schema,
+  DesktopResultV4Schema,
+  type DesktopInvocationV4,
+  type DesktopResultV4,
 } from '../../shared/agent-runtime-protocol';
-import {
-  type GoalSpec,
-  type ProposedAction,
-} from '../../shared/contracts';
+import { type ActionEffect, type GoalSpec } from '../../shared/contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { RuntimeToolDispatcher } from '../agent/runtime-tool-dispatcher';
 import type {
   InteractionToolInput,
   RuntimeToolRegistry,
 } from '../agent/runtime-tool-registry';
-import {
-  type EvaluateRustPolicyInput,
-  type RustPolicyDecision,
-} from '../engine/rust-desktop-engine-client';
 
 import type { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 import {
@@ -27,11 +20,9 @@ import {
 } from './desktop-worker-protocol';
 
 export interface DesktopToolWorkerOptions {
-  approvalProvider?: (runId: string, action: ProposedAction) => Promise<boolean>;
-  commitResult(result: DesktopResultV3): Promise<void>;
+  commitResult(result: DesktopResultV4): Promise<void>;
   permissionCoordinator?: Pick<ComputerPermissionCoordinator, 'requireReady'>;
   dispatcher: Pick<RuntimeToolDispatcher, 'dispatch'>;
-  evaluatePolicy(input: EvaluateRustPolicyInput): Promise<RustPolicyDecision>;
   goalProvider(runId: string): GoalSpec | undefined;
   interactionProvider?: (
     runId: string,
@@ -41,27 +32,36 @@ export interface DesktopToolWorkerOptions {
   registry: Pick<RuntimeToolRegistry, 'list' | 'supports'>;
   requestExecuting(
     invocationId: string,
-    metadata: {
-      effect: DesktopInvocationV3['effect'];
-      intentRevision: number;
-      approvalRequired: boolean;
-      authorizationSource: DesktopInvocationV3['authorizationSource'];
-      consequential: boolean;
-    },
+    expectedRunVersion: number,
   ): Promise<boolean>;
   taskIdProvider(runId: string): string | undefined;
 }
 
 const MAX_RECENT_RESULTS = 500;
 
+function effectsMatch(
+  left: ActionEffect,
+  right: DesktopInvocationV4['effect'],
+): boolean {
+  return (
+    left.kind === right.kind &&
+    left.resourceKind === right.resourceKind &&
+    left.reversibility === right.reversibility &&
+    left.externality === right.externality &&
+    left.communication === right.communication &&
+    left.overwrite === right.overwrite &&
+    left.sensitiveDataTransfer === right.sensitiveDataTransfer
+  );
+}
+
 export class DesktopToolWorker {
-  private readonly recent = new Map<string, DesktopResultV3>();
+  private readonly recent = new Map<string, DesktopResultV4>();
   private readonly latestObservations = new Map<string, DesktopObservation>();
 
   constructor(private readonly options: DesktopToolWorkerOptions) {}
 
-  async handle(input: unknown, signal = new AbortController().signal): Promise<DesktopResultV3> {
-    const envelope = DesktopInvocationV3Schema.parse(input);
+  async handle(input: unknown, signal = new AbortController().signal): Promise<DesktopResultV4> {
+    const envelope = DesktopInvocationV4Schema.parse(input);
     const cached = this.recent.get(envelope.invocationId);
     if (cached) {
       await this.options.commitResult(cached);
@@ -73,16 +73,16 @@ export class DesktopToolWorker {
       summary: error instanceof Error ? error.message.slice(0, 1_000) : 'Desktop execution failed.',
       evidence: [],
     }));
-    const parsed = DesktopResultV3Schema.parse(result);
+    const parsed = DesktopResultV4Schema.parse(result);
     this.remember(parsed);
     await this.options.commitResult(parsed);
     return parsed;
   }
 
   private async execute(
-    envelope: DesktopInvocationV3,
+    envelope: DesktopInvocationV4,
     signal: AbortSignal,
-  ): Promise<DesktopResultV3> {
+  ): Promise<DesktopResultV4> {
     if (
       envelope.protocolDigest !== HOSTED_AGENT_PROTOCOL_DIGEST ||
       envelope.toolCatalogDigest !== HOSTED_AGENT_TOOL_CATALOG_DIGEST
@@ -101,7 +101,7 @@ export class DesktopToolWorker {
       return this.result(
         envelope,
         'not_executed',
-        'The desktop invocation policy metadata did not match.',
+        'The desktop invocation tool metadata did not match.',
       );
     }
     const goal = this.options.goalProvider(envelope.runId);
@@ -118,7 +118,7 @@ export class DesktopToolWorker {
       return this.result(envelope, 'not_executed', 'The desktop does not support this tool operation.');
     }
     const normalizedInput =
-      envelope.toolId === 'computer.control'
+      envelope.toolId === 'computer.control' || envelope.toolId === 'desktop.control'
         ? {
             ...envelope.input,
             effect: envelope.input.effect ?? envelope.effect,
@@ -138,47 +138,16 @@ export class DesktopToolWorker {
     if (invocation.operation !== envelope.operation || invocation.toolId !== envelope.toolId) {
       return this.result(envelope, 'not_executed', 'The normalized tool identity did not match the signed envelope.');
     }
-    const currentIntentRevision = goal.schemaVersion === 8
-      ? goal.intentAuthorization.revision
-      : 0;
-    if (envelope.intentRevision !== currentIntentRevision) {
-      return this.result(envelope, 'not_executed', 'The desktop invocation uses a stale intent revision.');
-    }
-    let executionMetadata = {
-      effect: envelope.effect,
-      intentRevision: currentIntentRevision,
-      approvalRequired: envelope.approvalRequired,
-      authorizationSource: envelope.authorizationSource,
-      consequential: envelope.consequential,
-    };
-    if (invocation.action) {
-      const decision = await this.options.evaluatePolicy({
-        action: invocation.action,
-        goal,
-        proposedEffect: envelope.effect,
-        supported: this.options.registry.supports(invocation.action),
-      });
-      const action = { ...invocation.action, effect: decision.effect };
-      if (decision.status === 'denied') return this.result(envelope, 'not_executed', decision.summary);
-      if (decision.status === 'needs_approval') {
-        const approved = await this.options.approvalProvider?.(envelope.runId, action);
-        if (!approved) return this.result(envelope, 'denied', 'The user denied or did not grant the exact action approval.');
-        executionMetadata = {
-          effect: decision.effect,
-          intentRevision: currentIntentRevision,
-          approvalRequired: true,
-          authorizationSource: 'exact_approval',
-          consequential: decision.consequential,
-        };
-      } else {
-        executionMetadata = {
-          effect: decision.effect,
-          intentRevision: currentIntentRevision,
-          approvalRequired: false,
-          authorizationSource: decision.authorizationSource,
-          consequential: decision.consequential,
-        };
-      }
+    if (
+      invocation.action &&
+      (!invocation.action.effect ||
+        !effectsMatch(invocation.action.effect, envelope.effect))
+    ) {
+      return this.result(
+        envelope,
+        'not_executed',
+        'The normalized tool effect did not match the server-owned invocation.',
+      );
     }
     if (metadata.prerequisites.length > 0) {
       const outcome = await this.options.permissionCoordinator?.requireReady({
@@ -201,8 +170,8 @@ export class DesktopToolWorker {
         );
       }
     }
-    if (!await this.options.requestExecuting(envelope.invocationId, executionMetadata)) {
-      return this.result(envelope, 'not_executed', 'The backend did not grant the one-time executing transition.');
+    if (!await this.options.requestExecuting(envelope.invocationId, envelope.runVersion)) {
+      return this.result(envelope, 'not_executed', 'The one-time executing transition was stale or unavailable.');
     }
     const outcome = invocation.toolId === 'task.interaction'
       ? {
@@ -255,7 +224,7 @@ export class DesktopToolWorker {
         summary: outcome.summary,
       };
     });
-    return DesktopResultV3Schema.parse({
+    return DesktopResultV4Schema.parse({
       invocationId: envelope.invocationId,
       status: outcome.status,
       summary: outcome.summary,
@@ -278,11 +247,11 @@ export class DesktopToolWorker {
   }
 
   private result(
-    envelope: DesktopInvocationV3,
-    status: DesktopResultV3['status'],
+    envelope: DesktopInvocationV4,
+    status: DesktopResultV4['status'],
     summary: string,
-  ): DesktopResultV3 {
-    return DesktopResultV3Schema.parse({
+  ): DesktopResultV4 {
+    return DesktopResultV4Schema.parse({
       invocationId: envelope.invocationId,
       status,
       summary,
@@ -295,7 +264,7 @@ export class DesktopToolWorker {
     });
   }
 
-  private remember(result: DesktopResultV3): void {
+  private remember(result: DesktopResultV4): void {
     this.recent.set(result.invocationId, result);
     while (this.recent.size > MAX_RECENT_RESULTS) {
       const oldest = this.recent.keys().next().value;

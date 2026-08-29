@@ -89,25 +89,24 @@ pub struct AgentRuntimeConfig {
     pub enabled: bool,
     pub encryption_keys: Option<String>,
     pub heartbeat_ttl_ms: u64,
-    pub intent_authorization: RolloutConfig,
     pub lease_ms: u64,
     pub max_active_runs_per_user: i64,
     pub max_queue_depth: i64,
     pub payload_ttl_ms: u64,
     pub playwright_cdp_enabled: bool,
     pub protocol_version: u32,
-    pub v3_mode: AgentRuntimeV3Mode,
+    pub v4_mode: AgentRuntimeV4Mode,
     pub rollout_percent: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentRuntimeV3Mode {
+pub enum AgentRuntimeV4Mode {
     Observe,
     Dual,
     Enforce,
 }
 
-impl AgentRuntimeV3Mode {
+impl AgentRuntimeV4Mode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -116,13 +115,6 @@ impl AgentRuntimeV3Mode {
             Self::Enforce => "enforce",
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct RolloutConfig {
-    pub canary_users: BTreeSet<String>,
-    pub enabled: bool,
-    pub rollout_percent: u8,
 }
 
 trait Environment {
@@ -160,15 +152,15 @@ impl Config {
             );
         }
         let protocol_version =
-            positive_u32(environment, "TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION", 2)?;
-        if protocol_version != 2 {
-            bail!("TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION must be 2.");
+            positive_u32(environment, "TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION", 4)?;
+        if protocol_version != 4 {
+            bail!("TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION must be 4.");
         }
-        let v3_mode = match optional(environment, "AGENT_RUNTIME_V3_MODE").as_deref() {
-            None | Some("observe") => AgentRuntimeV3Mode::Observe,
-            Some("dual") => AgentRuntimeV3Mode::Dual,
-            Some("enforce") => AgentRuntimeV3Mode::Enforce,
-            Some(_) => bail!("AGENT_RUNTIME_V3_MODE must be one of: observe, dual, enforce."),
+        let v4_mode = match optional(environment, "AGENT_RUNTIME_V4_MODE").as_deref() {
+            None | Some("observe") => AgentRuntimeV4Mode::Observe,
+            Some("dual") => AgentRuntimeV4Mode::Dual,
+            Some("enforce") => AgentRuntimeV4Mode::Enforce,
+            Some(_) => bail!("AGENT_RUNTIME_V4_MODE must be one of: observe, dual, enforce."),
         };
 
         let knowledge_access_key_id = optional(environment, "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID");
@@ -303,18 +295,6 @@ impl Config {
                     "TROCODE_DESKTOP_WORKER_TTL_MS",
                     35_000,
                 )?,
-                intent_authorization: RolloutConfig {
-                    canary_users: comma_separated(
-                        environment,
-                        "TROCODE_INTENT_AUTHORIZATION_CANARY_USERS",
-                    ),
-                    enabled: boolean(environment, "TROCODE_INTENT_AUTHORIZATION_ENABLED", false)?,
-                    rollout_percent: percentage(
-                        environment,
-                        "TROCODE_INTENT_AUTHORIZATION_ROLLOUT_PERCENT",
-                        0,
-                    )?,
-                },
                 lease_ms: positive_u64(environment, "TROCODE_AGENT_LEASE_MS", 30_000)?,
                 max_active_runs_per_user: i64::from(positive_u32(
                     environment,
@@ -337,7 +317,7 @@ impl Config {
                     false,
                 )?,
                 protocol_version,
-                v3_mode,
+                v4_mode,
                 rollout_percent: percentage(
                     environment,
                     "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
@@ -551,7 +531,7 @@ mod tests {
     fn loads_defaults() {
         let config = Config::from_source(&environment()).expect("valid config");
         assert_eq!(config.port, 8080);
-        assert_eq!(config.agent_runtime.protocol_version, 2);
+        assert_eq!(config.agent_runtime.protocol_version, 4);
         assert!(config.openai_models.contains("gpt-5.6-luna"));
     }
 

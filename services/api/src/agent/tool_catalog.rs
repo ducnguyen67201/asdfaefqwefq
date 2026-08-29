@@ -7,7 +7,7 @@ use super::protocol::PROTOCOL_VERSION;
 
 const CATALOG_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../protocol/agent-tools.v3.json"
+    "/../../protocol/agent-tools.v4.json"
 ));
 
 #[derive(Clone, Debug, Deserialize)]
@@ -171,7 +171,7 @@ pub fn resolve_effect(tool: &HostedToolContract, input: &Value) -> Result<Value,
             })
         }),
         "workspace_terminal" => Ok(serde_json::json!({
-            "kind": "unknown",
+            "kind": "workspace_command",
             "resourceKind": "workspace_repository",
             "reversibility": "unknown",
             "externality": "unknown",

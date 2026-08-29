@@ -277,7 +277,6 @@ function createTask(
 ): TaskSnapshot {
   const timestamp = '2026-08-18T00:00:00.000Z';
   return {
-    approvalGrant: null,
     createdAt: timestamp,
     goal: null,
     lastEvent: null,

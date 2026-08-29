@@ -22,7 +22,7 @@ import {
 } from '../agent/execution-contracts';
 import type { ImageEvidencePolicy } from '../inference/image-evidence-policy';
 
-import { CuaAuthorizationBroker } from './cua-authorization-broker';
+import { CuaCapabilityBroker } from './cua-capability-broker';
 import {
   CuaDriverMetadataSchema,
   CuaWindowListSchema,
@@ -287,7 +287,7 @@ export class CuaService {
 
   private surfaceRouter: CuaSurfaceRouter | null = null;
 
-  private authorizationBroker: CuaAuthorizationBroker | null = null;
+  private authorizationBroker: CuaCapabilityBroker | null = null;
 
   private readonly activeSessions = new Set<string>();
 
@@ -1150,7 +1150,7 @@ export class CuaService {
   }
 
   private async initializeDriverInstance(cua: CuaModule): Promise<void> {
-    const authorizationBroker = new CuaAuthorizationBroker({
+    const authorizationBroker = new CuaCapabilityBroker({
       allow: cua.DriverAuthorizationAction.Allow,
       cancel: cua.DriverAuthorizationAction.Cancel,
       deny: cua.DriverAuthorizationAction.Deny,

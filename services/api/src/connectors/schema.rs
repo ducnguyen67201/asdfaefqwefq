@@ -141,8 +141,10 @@ pub fn validate_arguments(schema: &Value, arguments: &Value) -> anyhow::Result<(
         .map_err(|_| anyhow::anyhow!("Tool arguments do not match the reviewed schema."))
 }
 
-pub fn snapshot_digest(tools: &[Value], policy_digest: &str) -> anyhow::Result<String> {
-    let canonical = stable_json(&json!({"policyDigest":policy_digest,"tools":tools}))?;
+pub fn snapshot_digest(tools: &[Value], catalog_contract_digest: &str) -> anyhow::Result<String> {
+    // Keep the legacy canonical JSON key so renaming the persisted column does
+    // not invalidate every existing connector snapshot digest.
+    let canonical = stable_json(&json!({"policyDigest":catalog_contract_digest,"tools":tools}))?;
     Ok(format!("{:x}", Sha256::digest(canonical.as_bytes())))
 }
 

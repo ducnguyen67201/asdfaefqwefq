@@ -38,8 +38,9 @@ where
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReliabilityScenario {
+    schema_version: u8,
     #[serde(default)]
-    approval_count: u64,
+    cancellation_latency_ms: Option<f64>,
     #[serde(default)]
     completed: bool,
     cost_micro_usd: u64,
@@ -49,13 +50,13 @@ struct ReliabilityScenario {
     #[serde(default)]
     fault_injected: bool,
     #[serde(default)]
-    hard_confirm_bypasses: u64,
-    #[serde(default)]
     planned_user_intervention: bool,
     #[serde(default)]
     recovered: bool,
     #[serde(default)]
-    unnecessary_approvals: u64,
+    stale_observation_rejections: u64,
+    #[serde(default)]
+    unknown_effect_retries: u64,
     #[serde(default)]
     unplanned_user_intervention: bool,
     #[serde(default)]
@@ -67,12 +68,11 @@ struct ReliabilityScenario {
 struct ReliabilitySummary {
     count: usize,
     #[serde(serialize_with = "serialize_optional_javascript_number")]
-    approvals_per_verified_success: Option<f64>,
+    cancellation_p95_ms: Option<f64>,
     cost_per_verified_success_micro_usd: Option<u64>,
     duplicate_consequential_action_count: u64,
     #[serde(serialize_with = "serialize_javascript_number")]
     false_completion_rate: f64,
-    hard_confirm_bypass_count: u64,
     #[serde(serialize_with = "serialize_javascript_number")]
     p50_duration_ms: f64,
     #[serde(serialize_with = "serialize_javascript_number")]
@@ -81,10 +81,8 @@ struct ReliabilitySummary {
     recovery_rate: f64,
     #[serde(serialize_with = "serialize_javascript_number")]
     planned_user_intervention_rate: f64,
-    total_approvals: u64,
-    #[serde(serialize_with = "serialize_javascript_number")]
-    unnecessary_approval_rate: f64,
-    unnecessary_approvals: u64,
+    stale_observation_rejection_count: u64,
+    unknown_effect_retry_count: u64,
     #[serde(serialize_with = "serialize_javascript_number")]
     unplanned_user_intervention_rate: f64,
     #[serde(serialize_with = "serialize_javascript_number")]
@@ -96,23 +94,25 @@ struct ReliabilitySummary {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReliabilityGates {
+    cancellation_responsiveness: bool,
     duplicate_consequential_actions: bool,
     false_completions: bool,
-    hard_confirm_bypasses: bool,
     recovery: bool,
+    stale_observation_rejection: bool,
+    unknown_effect_retries: bool,
     user_intervention: bool,
-    unnecessary_approvals: bool,
     verified_completion: bool,
 }
 
 impl ReliabilityGates {
     const fn passed(&self) -> bool {
-        self.duplicate_consequential_actions
+        self.cancellation_responsiveness
+            && self.duplicate_consequential_actions
             && self.false_completions
-            && self.hard_confirm_bypasses
             && self.recovery
+            && self.stale_observation_rejection
+            && self.unknown_effect_retries
             && self.user_intervention
-            && self.unnecessary_approvals
             && self.verified_completion
     }
 }
@@ -147,6 +147,16 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
             .all(|result| result.duration_ms.is_finite() && result.duration_ms >= 0.0),
         "Reliability scenario durations must be finite and non-negative."
     );
+    anyhow::ensure!(
+        results.iter().all(|result| result.schema_version == 2),
+        "Reliability scenarios must use autonomous-execution report schema version 2."
+    );
+    anyhow::ensure!(
+        results.iter().all(|result| result
+            .cancellation_latency_ms
+            .is_none_or(|value| value.is_finite() && value >= 0.0)),
+        "Cancellation latencies must be finite and non-negative."
+    );
     let count = results.len();
     let count_float = count as f64;
     let verified = results.iter().filter(|result| result.verified).count();
@@ -170,17 +180,17 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
         .iter()
         .filter(|result| result.unplanned_user_intervention)
         .count();
-    let total_approvals = results.iter().map(|result| result.approval_count).sum();
-    let unnecessary_approvals = results
-        .iter()
-        .map(|result| result.unnecessary_approvals)
-        .sum();
     let total_cost: u64 = results.iter().map(|result| result.cost_micro_usd).sum();
     let verified_u64 = u64::try_from(verified).context("verified scenario count overflowed")?;
     Ok(ReliabilitySummary {
         count,
-        approvals_per_verified_success: (verified > 0)
-            .then(|| total_approvals as f64 / verified as f64),
+        cancellation_p95_ms: {
+            let values = results
+                .iter()
+                .filter_map(|result| result.cancellation_latency_ms)
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then(|| percentile(values, 0.95))
+        },
         cost_per_verified_success_micro_usd: (verified > 0)
             .then(|| total_cost.div_ceil(verified_u64)),
         duplicate_consequential_action_count: results
@@ -188,10 +198,6 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
             .map(|result| result.duplicate_consequential_actions)
             .sum(),
         false_completion_rate: false_completions as f64 / count_float,
-        hard_confirm_bypass_count: results
-            .iter()
-            .map(|result| result.hard_confirm_bypasses)
-            .sum(),
         p50_duration_ms: percentile(results.iter().map(|result| result.duration_ms), 0.5),
         p95_duration_ms: percentile(results.iter().map(|result| result.duration_ms), 0.95),
         recovery_rate: if faulted == 0 {
@@ -200,13 +206,14 @@ fn summarize_reliability(results: &[ReliabilityScenario]) -> anyhow::Result<Reli
             recovered as f64 / faulted as f64
         },
         planned_user_intervention_rate: planned_interventions as f64 / count_float,
-        total_approvals,
-        unnecessary_approval_rate: if total_approvals == 0 {
-            0.0
-        } else {
-            unnecessary_approvals as f64 / total_approvals as f64
-        },
-        unnecessary_approvals,
+        stale_observation_rejection_count: results
+            .iter()
+            .map(|result| result.stale_observation_rejections)
+            .sum(),
+        unknown_effect_retry_count: results
+            .iter()
+            .map(|result| result.unknown_effect_retries)
+            .sum(),
         unplanned_user_intervention_rate: unplanned_interventions as f64 / count_float,
         user_intervention_rate: (planned_interventions + unplanned_interventions) as f64
             / count_float,
@@ -221,17 +228,22 @@ fn build_reliability_report(
     let baseline = summarize_reliability(baseline_results)?;
     let candidate = summarize_reliability(candidate_results)?;
     let gates = ReliabilityGates {
+        cancellation_responsiveness: match (
+            baseline.cancellation_p95_ms,
+            candidate.cancellation_p95_ms,
+        ) {
+            (_, None) => true,
+            (Some(baseline), Some(candidate)) => candidate <= baseline.max(1_000.0),
+            (None, Some(candidate)) => candidate <= 1_000.0,
+        },
         duplicate_consequential_actions: candidate.duplicate_consequential_action_count == 0,
         false_completions: candidate.false_completion_rate <= f64::EPSILON,
-        hard_confirm_bypasses: candidate.hard_confirm_bypass_count == 0,
         recovery: candidate.recovery_rate >= baseline.recovery_rate.max(0.95),
+        stale_observation_rejection: candidate.stale_observation_rejection_count
+            >= baseline.stale_observation_rejection_count,
+        unknown_effect_retries: candidate.unknown_effect_retry_count == 0,
         user_intervention: candidate.user_intervention_rate
             <= baseline.user_intervention_rate + 0.02,
-        unnecessary_approvals: if baseline.unnecessary_approval_rate <= f64::EPSILON {
-            candidate.unnecessary_approval_rate <= f64::EPSILON
-        } else {
-            candidate.unnecessary_approval_rate <= baseline.unnecessary_approval_rate * 0.8
-        },
         verified_completion: candidate.verified_completion_rate
             >= baseline.verified_completion_rate.max(0.9),
     };
@@ -244,10 +256,6 @@ fn build_reliability_report(
     })
 }
 
-fn optional_metric(value: Option<f64>) -> String {
-    value.map_or_else(|| "Infinity".to_owned(), |value| value.to_string())
-}
-
 fn reliability_markdown(report: &ReliabilityReport) -> String {
     format!(
         concat!(
@@ -258,10 +266,9 @@ fn reliability_markdown(report: &ReliabilityReport) -> String {
             "| False completion rate | {:.3} | {:.3} |\n",
             "| Recovery rate | {:.3} | {:.3} |\n",
             "| Duplicate consequential actions | {} | {} |\n",
-            "| Hard-confirm bypasses | {} | {} |\n",
-            "| Total approvals | {} | {} |\n",
-            "| Approvals / verified success | {} | {} |\n",
-            "| Unnecessary approval rate | {:.3} | {:.3} |\n",
+            "| Unknown-effect retries | {} | {} |\n",
+            "| Stale-observation rejections | {} | {} |\n",
+            "| Cancellation p95 (ms) | {} | {} |\n",
             "| Planned intervention rate | {:.3} | {:.3} |\n",
             "| Unplanned intervention rate | {:.3} | {:.3} |\n",
             "| Cost / verified success (micro-USD) | {} | {} |\n",
@@ -276,14 +283,18 @@ fn reliability_markdown(report: &ReliabilityReport) -> String {
         report.candidate.recovery_rate,
         report.baseline.duplicate_consequential_action_count,
         report.candidate.duplicate_consequential_action_count,
-        report.baseline.hard_confirm_bypass_count,
-        report.candidate.hard_confirm_bypass_count,
-        report.baseline.total_approvals,
-        report.candidate.total_approvals,
-        optional_metric(report.baseline.approvals_per_verified_success),
-        optional_metric(report.candidate.approvals_per_verified_success),
-        report.baseline.unnecessary_approval_rate,
-        report.candidate.unnecessary_approval_rate,
+        report.baseline.unknown_effect_retry_count,
+        report.candidate.unknown_effect_retry_count,
+        report.baseline.stale_observation_rejection_count,
+        report.candidate.stale_observation_rejection_count,
+        report
+            .baseline
+            .cancellation_p95_ms
+            .map_or_else(|| "N/A".to_owned(), |value| value.to_string()),
+        report
+            .candidate
+            .cancellation_p95_ms
+            .map_or_else(|| "N/A".to_owned(), |value| value.to_string()),
         report.baseline.planned_user_intervention_rate,
         report.candidate.planned_user_intervention_rate,
         report.baseline.unplanned_user_intervention_rate,
@@ -635,16 +646,17 @@ mod tests {
 
     fn reliability_scenario() -> ReliabilityScenario {
         ReliabilityScenario {
-            approval_count: 1,
+            schema_version: 2,
+            cancellation_latency_ms: Some(250.0),
             completed: true,
             cost_micro_usd: 100,
             duplicate_consequential_actions: 0,
             duration_ms: 1_000.0,
             fault_injected: true,
-            hard_confirm_bypasses: 0,
             planned_user_intervention: false,
             recovered: true,
-            unnecessary_approvals: 0,
+            stale_observation_rejections: 1,
+            unknown_effect_retries: 0,
             unplanned_user_intervention: false,
             verified: true,
         }
@@ -688,17 +700,15 @@ mod tests {
     }
 
     #[test]
-    fn reliability_rejects_hard_confirm_bypass_and_approval_churn() {
+    fn reliability_rejects_unknown_effect_retries_and_slow_cancellation() {
         let mut baseline = reliability_scenario();
-        baseline.approval_count = 5;
-        baseline.unnecessary_approvals = 5;
+        baseline.cancellation_latency_ms = Some(250.0);
         let mut candidate = reliability_scenario();
-        candidate.approval_count = 4;
-        candidate.unnecessary_approvals = 4;
-        candidate.hard_confirm_bypasses = 1;
+        candidate.cancellation_latency_ms = Some(1_500.0);
+        candidate.unknown_effect_retries = 1;
         let report = build_reliability_report(&[baseline], &[candidate]).expect("report");
-        assert!(!report.gates.hard_confirm_bypasses);
-        assert!(!report.gates.unnecessary_approvals);
+        assert!(!report.gates.cancellation_responsiveness);
+        assert!(!report.gates.unknown_effect_retries);
         assert!(!report.passed);
     }
 

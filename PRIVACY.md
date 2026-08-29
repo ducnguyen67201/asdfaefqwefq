@@ -50,7 +50,7 @@ user requests:
 - **ElevenLabs:** when an operator configures ElevenLabs companion speech,
   the short visible text of each grounded guidance step is sent for
   text-to-speech generation. Generated audio is streamed to the current
-  guidance window and is not persisted by Tro. Clarification, approval,
+  guidance window and is not persisted by Tro. Clarification,
   internal action, observation, and final-response text is not sent to
   ElevenLabs for narration. See the
   [ElevenLabs privacy policy](https://elevenlabs.io/privacy-policy).
@@ -62,8 +62,9 @@ user requests:
 - **User-selected websites and applications:** when the user asks Tro to
   navigate, type, upload, submit, or otherwise act in a third-party service,
   that service receives the information involved in the requested action under
-  its own privacy policy. Consequential actions require confirmation in the
-  cases enforced by Tro's host policy.
+  its own privacy policy. Registered actions run automatically; the live task
+  can be stopped, while provider OAuth and operating-system permissions remain
+  separate consent boundaries.
 
 ## Data stored by Tro
 

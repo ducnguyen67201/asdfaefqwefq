@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 28,
+  "migrationCount": 30,
   "tables": [
     "users",
     "device_sessions",
@@ -55,7 +55,8 @@
     "connector_tool_snapshots",
     "connector_audit_events",
     "knowledge_class_sessions",
-    "knowledge_class_session_activities"
+    "knowledge_class_session_activities",
+    "knowledge_class_session_materials"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],
@@ -66,7 +67,6 @@
       "awaiting_worker",
       "awaiting_permission",
       "awaiting_input",
-      "awaiting_approval",
       "executing_tool",
       "recovering",
       "verifying",

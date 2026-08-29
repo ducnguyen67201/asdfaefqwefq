@@ -4,12 +4,12 @@
  * New task creation and desktop execution must use agent-runtime-protocol.ts.
  */
 export {
-  HostedDesktopInvocationSchema as LegacyHostedDesktopInvocationV2Schema,
+  LegacyHostedDesktopInvocationV2Schema,
   HostedTaskEventSchema as LegacyHostedTaskEventV2Schema,
   HostedTaskListSchema as LegacyHostedTaskListV2Schema,
   HostedTaskRecordSchema as LegacyHostedTaskRecordV2Schema,
   HostedWorkerSessionSchema as LegacyHostedWorkerSessionV2Schema,
-  type HostedDesktopInvocation as LegacyHostedDesktopInvocationV2,
+  type LegacyHostedDesktopInvocationV2,
   type HostedTaskEvent as LegacyHostedTaskEventV2,
   type HostedTaskRecord as LegacyHostedTaskRecordV2,
 } from './contracts';
@@ -49,7 +49,7 @@ export function legacyTaskPhaseForHostedState(
     case 'awaiting_input':
       return 'awaiting_input';
     case 'awaiting_approval':
-      return 'awaiting_approval';
+      return 'blocked';
     case 'verifying':
       return 'verifying';
     case 'completed':

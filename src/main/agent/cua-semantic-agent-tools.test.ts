@@ -129,7 +129,7 @@ describe('CUA semantic agent tools', () => {
       surface: {
         kind: 'browser' as const,
         application: 'Chrome',
-        deepAccess: 'available_requires_approval' as const,
+        deepAccess: 'ready_to_prepare' as const,
       },
     };
     const invocation = registry().resolve(

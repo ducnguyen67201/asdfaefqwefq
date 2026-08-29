@@ -12,10 +12,11 @@ use sha2::Sha256;
 use tower::ServiceExt;
 use trocode_api::{
     PgPool,
+    agent::protocol,
     app::AppState,
     config::{
-        AdminConfig, AgentRuntimeConfig, AgentRuntimeV3Mode, Config, ConnectorConfig,
-        CostGuardConfig, CostGuardMode, KnowledgeConfig, RolloutConfig,
+        AdminConfig, AgentRuntimeConfig, AgentRuntimeV4Mode, Config, ConnectorConfig,
+        CostGuardConfig, CostGuardMode, KnowledgeConfig,
     },
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -284,13 +285,15 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     let classroom_task = call(
         &router,
         Method::POST,
-        "/v1/tasks",
+        "/v1/agent-runtime/v4/tasks",
         Some(&fixture.student_token),
         Some(json!({
+            "protocolVersion":4,
+            "protocolDigest":protocol::protocol_digest(),
+            "toolCatalogDigest":protocol::tool_catalog_digest(),
             "clientTaskId":client_task_id,
             "taskId":task_id,
             "request":"Help me understand the next step.",
-            "autonomyMode":"balanced",
             "executionProfile":"everyday",
             "workspaceSelectionId":null,
             "activityAttemptId":attempt_id,
@@ -300,29 +303,34 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     .await;
     assert_eq!(classroom_task.status, StatusCode::CREATED);
     assert_eq!(
-        classroom_task.body["activity"]["attemptId"],
+        classroom_task.body["authorityContract"]["activity"]["attemptId"],
         attempt_id.to_string()
     );
-    assert_eq!(classroom_task.body["activity"]["purpose"], "help");
     assert_eq!(
-        classroom_task.body["activity"]["currentDirective"]["id"],
+        classroom_task.body["authorityContract"]["activity"]["purpose"],
+        "help"
+    );
+    assert_eq!(
+        classroom_task.body["authorityContract"]["activity"]["currentDirective"]["id"],
         directive_id.to_string()
     );
     assert_eq!(
-        classroom_task.body["activity"]["priorProgress"]["sessionCount"],
+        classroom_task.body["authorityContract"]["activity"]["priorProgress"]["sessionCount"],
         1
     );
 
     let replayed_task = call(
         &router,
         Method::POST,
-        "/v1/tasks",
+        "/v1/agent-runtime/v4/tasks",
         Some(&fixture.student_token),
         Some(json!({
+            "protocolVersion":4,
+            "protocolDigest":protocol::protocol_digest(),
+            "toolCatalogDigest":protocol::tool_catalog_digest(),
             "clientTaskId":client_task_id,
             "taskId":task_id,
             "request":"Help me understand the next step.",
-            "autonomyMode":"balanced",
             "executionProfile":"everyday",
             "workspaceSelectionId":null,
             "activityAttemptId":attempt_id,
@@ -333,8 +341,8 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     assert_eq!(replayed_task.status, StatusCode::OK);
     assert_eq!(replayed_task.body["id"], classroom_task.body["id"]);
     assert_eq!(
-        replayed_task.body["activity"],
-        classroom_task.body["activity"]
+        replayed_task.body["authorityContract"]["activity"],
+        classroom_task.body["authorityContract"]["activity"]
     );
 
     let dashboard_response = dashboard(&router, &fixture).await;
@@ -744,19 +752,14 @@ fn test_config(database_url: String) -> Config {
             enabled: true,
             encryption_keys: Some("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
             heartbeat_ttl_ms: 35_000,
-            intent_authorization: RolloutConfig {
-                canary_users: BTreeSet::new(),
-                enabled: false,
-                rollout_percent: 0,
-            },
             lease_ms: 30_000,
             max_active_runs_per_user: 10,
             max_queue_depth: 1_000,
             payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
             playwright_cdp_enabled: false,
-            protocol_version: 2,
+            protocol_version: 4,
             rollout_percent: 100,
-            v3_mode: AgentRuntimeV3Mode::Observe,
+            v4_mode: AgentRuntimeV4Mode::Observe,
         },
         connectors: ConnectorConfig {
             callback_url: None,

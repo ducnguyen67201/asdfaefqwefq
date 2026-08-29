@@ -2,12 +2,9 @@ use std::collections::HashSet;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
-use trocode_api::{
-    agent::TOOL_SCHEMA_DIGEST,
-    auth::{
-        AgentEnvelope, AgentStateCrypto, digest_access_code, issue_admin_session, open_access_code,
-        verify_admin_session,
-    },
+use trocode_api::auth::{
+    AgentEnvelope, AgentStateCrypto, digest_access_code, issue_admin_session, open_access_code,
+    verify_admin_session,
 };
 
 fn fixture(name: &str) -> Value {
@@ -92,7 +89,6 @@ fn opens_stable_crypto_fixtures() {
             .expect("decrypt"),
         state["value"]
     );
-    assert_eq!(TOOL_SCHEMA_DIGEST.as_str(), value["digests"]["toolSchema"]);
 }
 
 #[test]
@@ -127,15 +123,15 @@ fn route_inventory_is_unique_and_covers_every_family() {
             "usage"
         ])
     );
-    assert_eq!(value["sse"].as_array().expect("sse").len(), 3);
+    assert_eq!(value["sse"].as_array().expect("sse").len(), 4);
 }
 
 #[test]
 fn schema_inventory_matches_embedded_migrations() {
     let value = fixture("schema");
     let tables = value["tables"].as_array().expect("tables");
-    assert_eq!(tables.len(), 54);
-    assert_eq!(value["migrationCount"], 28);
+    assert_eq!(tables.len(), 55);
+    assert_eq!(value["migrationCount"], 30);
     let migration_sources = [
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),
@@ -165,6 +161,8 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/026_organization_home_banners.sql"),
         include_str!("../migrations/027_mcp_connectors.sql"),
         include_str!("../migrations/028_class_sessions.sql"),
+        include_str!("../migrations/029_class_session_materials.sql"),
+        include_str!("../migrations/030_remove_agent_approval_policy.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {
