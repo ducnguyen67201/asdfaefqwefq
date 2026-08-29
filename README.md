@@ -462,14 +462,16 @@ press **Command+Q** on macOS, to stop the cursor companion, shut down CUA, and
 exit. If native shutdown does not respond, Tro forces a process exit after
 a short grace period.
 
-Use one of two explicit hold gestures:
+Choose **Write my words** or **Ask Tro** in the composer voice bar, then use
+one shared hold gesture. The selected mode persists across launches and can
+also be toggled in the app with **Command + Backslash** on macOS or
+**Control + Backslash** on Windows.
 
-| Mode | macOS | Windows |
+| Action | macOS | Windows |
 |---|---|---|
-| Dictation | **Command + Control** | physical **left Control + left Alt** |
-| Task | **Command + Control + Shift** | physical **left Control + left Alt + left Shift** |
+| Talk in the selected mode | **Command + Control** | physical **left Control + left Alt** |
 
-The mode locks for the full turn. Dictation adds text at the saved selection in
+The selected mode locks for the full turn. Write my words adds text at the saved selection in
 Tro, or inserts once into the frontmost external window after release. The
 non-focusable Voice Island shows the locked mode, icon, destination, and
 teal Dictation or yellow Task accent; Tro does not recolor the operating-system
@@ -500,7 +502,7 @@ and body "The desktop loop works", then send it after I approve.`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
-   window or with the Shift-modified system-wide Task shortcut.
+   window or by selecting **Ask Tro** and using the shared voice shortcut.
 6. Before Send, confirm the approval card's account, recipients, subject, body,
    target, and exact command. Send is dispatched once only after the button is
    approved and the latest observation produces the same payload.

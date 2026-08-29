@@ -44,17 +44,12 @@ $deadline = [long]0
 while ($true) {
   $leftControlDown = ([TroModifierState]::GetAsyncKeyState(0xA2) -band 0x8000) -ne 0
   $leftAltDown = ([TroModifierState]::GetAsyncKeyState(0xA4) -band 0x8000) -ne 0
-  $leftShiftDown = ([TroModifierState]::GetAsyncKeyState(0xA0) -band 0x8000) -ne 0
   $baseDown = $leftControlDown -and $leftAltDown
   $anyBaseDown = $leftControlDown -or $leftAltDown
   $now = [Environment]::TickCount64
 
   if ($state -eq 'idle') {
-    if ($baseDown -and $leftShiftDown) {
-      $state = 'active_task'
-      [Console]::Out.WriteLine('pressed:task')
-      [Console]::Out.Flush()
-    } elseif ($baseDown) {
+    if ($baseDown) {
       $state = 'settling'
       $deadline = $now + $settleMilliseconds
     }
@@ -62,24 +57,14 @@ while ($true) {
     if (-not $baseDown) {
       $state = 'await_all_released'
     } elseif ($now -ge $deadline) {
-      $state = 'active_dictation'
-      [Console]::Out.WriteLine('pressed:dictation')
-      [Console]::Out.Flush()
-    } elseif ($leftShiftDown) {
-      $state = 'active_task'
-      [Console]::Out.WriteLine('pressed:task')
+      $state = 'active'
+      [Console]::Out.WriteLine('pressed')
       [Console]::Out.Flush()
     }
-  } elseif ($state -eq 'active_task') {
-    if (-not ($baseDown -and $leftShiftDown)) {
-      $state = 'await_all_released'
-      [Console]::Out.WriteLine('released:task')
-      [Console]::Out.Flush()
-    }
-  } elseif ($state -eq 'active_dictation') {
+  } elseif ($state -eq 'active') {
     if (-not $baseDown) {
       $state = 'await_all_released'
-      [Console]::Out.WriteLine('released:dictation')
+      [Console]::Out.WriteLine('released')
       [Console]::Out.Flush()
     }
   } elseif ($state -eq 'await_all_released' -and -not $anyBaseDown) {

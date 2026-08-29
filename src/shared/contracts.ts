@@ -2292,6 +2292,7 @@ export const PrimaryLanguageSchema = z.enum([
 ]);
 
 export const AppLanguageSchema = z.enum(['en', 'vi']);
+export const VoiceModeSchema = z.enum(VOICE_MODES);
 
 export const AppPreferencesSchema = z.object({
   appLanguage: AppLanguageSchema.default('en'),
@@ -2299,6 +2300,7 @@ export const AppPreferencesSchema = z.object({
   classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema.nullable(),
+  voiceMode: VoiceModeSchema.default('dictation'),
 });
 
 export const UpdateAppPreferencesRequestSchema = z.object({
@@ -2307,6 +2309,7 @@ export const UpdateAppPreferencesRequestSchema = z.object({
   classroomPetEnabled: z.boolean().default(true),
   muteSystemAudioWhileSpeaking: z.boolean().default(false),
   primaryLanguage: PrimaryLanguageSchema,
+  voiceMode: VoiceModeSchema.default('dictation'),
 });
 
 export const SetVoiceAudioDuckingRequestSchema = z.object({
@@ -2595,8 +2598,6 @@ export const UsageBudgetSnapshotSchema = z.object({
   task: UsageBudgetPeriodSchema,
   warningThresholdMicroUsd: z.number().int().nonnegative(),
 });
-
-export const VoiceModeSchema = z.enum(VOICE_MODES);
 
 export const CompanionVoiceActivitySchema = z
   .object({
@@ -2973,7 +2974,6 @@ export const VoiceDiagnosticSchema = z.object({
 export const VoiceShortcutEventSchema = z
   .object({
     action: z.enum(['pressed', 'released']),
-    mode: VoiceModeSchema,
     source: z.literal('global'),
   })
   .strict();

@@ -67,7 +67,7 @@ function emitFrames(count: number, amplitude: number): void {
   }
 }
 
-function pressShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task'): void {
+function pressShortcut(target: EventTarget, activate = true): void {
   target.dispatchEvent(
     Object.assign(new Event('keydown'), {
       code: 'MetaLeft',
@@ -82,26 +82,10 @@ function pressShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task')
       repeat: false,
     }),
   );
-  if (mode === 'task') {
-    target.dispatchEvent(
-      Object.assign(new Event('keydown'), {
-        code: 'ShiftLeft',
-        key: 'Shift',
-        repeat: false,
-      }),
-    );
-  }
+  if (activate) vi.advanceTimersByTime(120);
 }
 
-function releaseShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task'): void {
-  if (mode === 'task') {
-    target.dispatchEvent(
-      Object.assign(new Event('keyup'), {
-        code: 'ShiftLeft',
-        key: 'Shift',
-      }),
-    );
-  }
+function releaseShortcut(target: EventTarget): void {
   target.dispatchEvent(
     Object.assign(new Event('keyup'), {
       code: 'ControlLeft',
@@ -116,7 +100,7 @@ function releaseShortcut(target: EventTarget, mode: 'dictation' | 'task' = 'task
   );
 }
 
-function setup(upload = vi.fn()) {
+function setup(upload = vi.fn(), selectedMode: 'dictation' | 'task' = 'task') {
   const fakeWindow = Object.assign(new EventTarget(), {
     tro: {
       onVoiceShortcut: vi.fn(() => vi.fn()),
@@ -153,7 +137,7 @@ function setup(upload = vi.fn()) {
   };
   // The lightweight test harness invokes the hook with mocked React primitives.
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const state = usePushToTalk(callbacks);
+  const state = usePushToTalk({ ...callbacks, selectedMode });
   return { callbacks, fakeWindow, state, upload };
 }
 
@@ -198,8 +182,8 @@ describe('segmented push-to-talk lifecycle', () => {
   });
 
   it('cancels a local Dictation gesture during the settle interval', async () => {
-    const { callbacks, fakeWindow } = setup(vi.fn());
-    pressShortcut(fakeWindow, 'dictation');
+    const { callbacks, fakeWindow } = setup(vi.fn(), 'dictation');
+    pressShortcut(fakeWindow, false);
     fakeWindow.dispatchEvent(
       Object.assign(new Event('keydown'), {
         code: 'Escape',
@@ -223,15 +207,15 @@ describe('segmented push-to-talk lifecycle', () => {
       text: 'dictated words',
       utteranceId: request.utteranceId,
     }));
-    const { callbacks, fakeWindow } = setup(upload);
+    const { callbacks, fakeWindow } = setup(upload, 'dictation');
 
-    pressShortcut(fakeWindow, 'dictation');
+    pressShortcut(fakeWindow);
     await vi.advanceTimersByTimeAsync(120);
     await flushMicrotasks();
     emitFrames(15, 0.1);
     emitFrames(35, 0);
     await flushMicrotasks();
-    releaseShortcut(fakeWindow, 'dictation');
+    releaseShortcut(fakeWindow);
     await flushMicrotasks();
 
     expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
@@ -399,12 +383,12 @@ describe('segmented push-to-talk lifecycle', () => {
   });
 
   it('ends a no-speech turn exactly once without provider work', async () => {
-    const { callbacks, fakeWindow, upload } = setup(vi.fn());
-    pressShortcut(fakeWindow, 'dictation');
+    const { callbacks, fakeWindow, upload } = setup(vi.fn(), 'dictation');
+    pressShortcut(fakeWindow);
     await vi.advanceTimersByTimeAsync(120);
     await flushMicrotasks();
 
-    releaseShortcut(fakeWindow, 'dictation');
+    releaseShortcut(fakeWindow);
     await flushMicrotasks();
 
     expect(upload).not.toHaveBeenCalled();
@@ -535,10 +519,15 @@ describe('push-to-talk helpers', () => {
     const beginListening = vi.fn();
     const finishListening = vi.fn();
     handleVoiceShortcutEvent(
-      { action: 'pressed', mode: 'task', source: 'global' },
-      { beginListening, finishListening, isListening: false },
+      { action: 'pressed', source: 'global' },
+      {
+        beginListening,
+        finishListening,
+        isListening: false,
+        selectedMode: 'task',
+      },
     );
-    expect(beginListening).toHaveBeenCalledOnce();
+    expect(beginListening).toHaveBeenCalledWith('task');
     expect(
       shouldFinishVoiceOnLocalRelease({
         activationMode: 'global_hold',

@@ -27,11 +27,10 @@ export function parseMacOSVoiceShortcutOutput(
 
   for (const line of lines) {
     const eventName = line.endsWith('\r') ? line.slice(0, -1) : line;
-    const match = /^(pressed|released):(dictation|task)$/u.exec(eventName);
+    const match = /^(pressed|released)$/u.exec(eventName);
     if (!match) continue;
     events.push({
       action: match[1] as VoiceShortcutEvent['action'],
-      mode: match[2] as VoiceShortcutEvent['mode'],
       source: 'global',
     });
   }

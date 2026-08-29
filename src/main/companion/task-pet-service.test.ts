@@ -71,6 +71,7 @@ function preferences(initial: AppPreferences = {
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: 'en',
+  voiceMode: 'dictation',
 }) {
   let current = initial;
   const listeners = new Set<(value: AppPreferences) => void>();
@@ -263,6 +264,7 @@ describe('TaskPetService', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'en',
+      voiceMode: 'dictation',
     });
     expect(dismiss).toHaveBeenCalledWith(NUDGE_IDS[0]);
     await vi.runAllTimersAsync();
@@ -278,6 +280,7 @@ describe('TaskPetService', () => {
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'vi',
+        voiceMode: 'dictation',
       },
     });
     await flushPreferences();

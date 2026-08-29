@@ -894,7 +894,11 @@ describe('shared task contracts', () => {
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
       }),
-    ).toMatchObject({ autonomyMode: 'balanced', classroomPetEnabled: true });
+    ).toMatchObject({
+      autonomyMode: 'balanced',
+      classroomPetEnabled: true,
+      voiceMode: 'dictation',
+    });
   });
 
   it('loads mixed persisted v1 through v4 history', () => {
