@@ -109,6 +109,9 @@ The implementation review found and fixed the following issues before delivery:
   endpoint and router share a total serialized-result ceiling; Electron compacts
   oversized extensible data while preserving grounding identifiers and semantic
   controls, so valid detailed screenshots are not rejected after execution begins.
+  The 48 MB ceiling is also a required, literal worker capability in the generated
+  v5 contract, which changes the negotiated protocol digest; the backend refuses
+  heartbeats and execution from older sessions and maintenance disconnects them.
 - Identical session mutations at later revisions could collide with an earlier
   idempotency key and regress the SDK session cursor. Mutation identities now
   include their starting revision while remaining stable for transport retries.
@@ -139,7 +142,7 @@ driver tools discovered from the live CUA catalog flow through generically.
 |---|---|
 | `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 788 tests, Rust fmt/clippy/tests |
 | Agents SDK service | Pass — lint, typecheck, 4 test files / 12 tests |
-| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
+| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, worker result-bound upgrade rejection and session retirement, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |
 | `npm run package` | Pass — Electron Forge macOS arm64 package |
 | `git diff --check` | Pass |

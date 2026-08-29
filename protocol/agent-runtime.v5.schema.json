@@ -860,6 +860,10 @@
             }
           ]
         },
+        "maxResultBytes": {
+          "const": 48000000,
+          "type": "number"
+        },
         "protocolDigest": {
           "pattern": "^[a-f0-9]{64}$",
           "type": "string"
@@ -904,6 +908,7 @@
         "protocolVersion",
         "protocolDigest",
         "toolCatalogDigest",
+        "maxResultBytes",
         "cua",
         "tools"
       ],

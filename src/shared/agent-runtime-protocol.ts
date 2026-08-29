@@ -750,7 +750,10 @@ export const CuaDriverCatalogV5Schema = z
   .strict()
   .meta({ id: 'CuaDriverCatalogV5' });
 
+export const MAX_DESKTOP_RESULT_V5_BYTES = 48_000_000;
+
 export const DesktopWorkerCapabilitiesV5Schema = AgentRuntimeNegotiationV5Schema.extend({
+  maxResultBytes: z.literal(MAX_DESKTOP_RESULT_V5_BYTES),
   cua: CuaDriverCatalogV5Schema.nullable(),
   tools: z
     .array(
@@ -797,8 +800,6 @@ export const DesktopInvocationV5Schema = z
   })
   .strict()
   .meta({ id: 'DesktopInvocationV5' });
-
-export const MAX_DESKTOP_RESULT_V5_BYTES = 48_000_000;
 
 export const DesktopResultV5Schema = z
   .object({

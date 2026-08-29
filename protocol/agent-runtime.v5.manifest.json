@@ -98,7 +98,7 @@
       "workspace.terminal"
     ]
   },
-  "protocolDigest": "dec4a2c1d3ec0e69e76d0fdcc78e1bdf1344e892bf96f28b8d989fb82997aa48",
+  "protocolDigest": "081c1d07cf45b6f2248a7dead502d07e14cdbae434017ed184e37d659d815ec7",
   "schemaVersion": 5,
   "sourceFiles": [
     "src/shared/agent-runtime-protocol.ts",

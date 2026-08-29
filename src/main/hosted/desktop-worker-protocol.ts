@@ -2,6 +2,7 @@ import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION_V5,
   DesktopWorkerCapabilitiesV5Schema,
+  MAX_DESKTOP_RESULT_V5_BYTES,
   type CuaDriverCatalogV5,
   type DesktopWorkerCapabilitiesV5,
 } from '../../shared/agent-runtime-protocol';
@@ -38,6 +39,7 @@ export function desktopWorkerCapabilities(
     protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION_V5,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
+    maxResultBytes: MAX_DESKTOP_RESULT_V5_BYTES,
     cua,
     tools: HOSTED_TOOL_CONTRACTS.flatMap((contract) => {
       const supported = local.get(contract.toolId);

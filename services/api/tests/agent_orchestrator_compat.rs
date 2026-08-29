@@ -129,6 +129,7 @@ fn desktop_capabilities() -> Value {
         "protocolVersion":5,
         "protocolDigest":protocol::v5::protocol_digest(),
         "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
+        "maxResultBytes":48_000_000,
         "cua":driver_catalog(),
         "tools":[{"operations":["launch"],"toolId":"application.launch"}]
     })

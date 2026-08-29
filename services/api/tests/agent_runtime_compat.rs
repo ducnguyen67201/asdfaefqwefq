@@ -112,6 +112,7 @@ fn capabilities() -> Value {
         "protocolVersion":5,
         "protocolDigest":protocol::v5::protocol_digest(),
         "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
+        "maxResultBytes":48_000_000,
         "cua":null,
         "tools":[
             {"operations":["launch"],"toolId":"application.launch"},
@@ -182,6 +183,18 @@ async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
     assert_eq!(conflict.code, Some("agent_run_conflict"));
 
     let device = seed_device(&pool).await;
+    let mut legacy_capabilities = capabilities();
+    legacy_capabilities
+        .as_object_mut()
+        .expect("capabilities object")
+        .remove("maxResultBytes");
+    legacy_capabilities["protocolDigest"] = Value::String("0".repeat(64));
+    let legacy_error = agent
+        .connect_worker(USER, device, &legacy_capabilities)
+        .await
+        .expect_err("desktop workers without the versioned result bound must upgrade");
+    assert_eq!(legacy_error.code, Some("tool_catalog_upgrade_required"));
+
     let worker = agent
         .connect_worker(USER, device, &capabilities())
         .await
@@ -275,5 +288,30 @@ async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
             .await
             .expect("read cancelled clarification");
     assert_eq!(invocation_state, "cancelled");
+
+    query("UPDATE agent_worker_sessions SET protocol_digest=$2 WHERE id=$1")
+        .bind(desktop_worker)
+        .bind("0".repeat(64))
+        .execute(&pool)
+        .await
+        .expect("simulate a worker session from the previous protocol digest");
+    assert!(
+        agent
+            .heartbeat(USER, desktop_worker)
+            .await
+            .expect("reject incompatible heartbeat")
+            .is_none()
+    );
+    agent
+        .maintain()
+        .await
+        .expect("disconnect incompatible worker session");
+    let disconnected: bool =
+        query_scalar("SELECT disconnected_at IS NOT NULL FROM agent_worker_sessions WHERE id=$1")
+            .bind(desktop_worker)
+            .fetch_one(&pool)
+            .await
+            .expect("read disconnected worker session");
+    assert!(disconnected);
     pool.close().await;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_DESKTOP_RESULT_V5_BYTES } from '../../shared/agent-runtime-protocol';
 import { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
 
 import { desktopWorkerCapabilities } from './desktop-worker-protocol';
@@ -10,6 +11,7 @@ describe('desktopWorkerCapabilities', () => {
     const capabilities = desktopWorkerCapabilities(registry);
     const toolIds = capabilities.tools.map((tool) => tool.toolId);
 
+    expect(capabilities.maxResultBytes).toBe(MAX_DESKTOP_RESULT_V5_BYTES);
     expect(toolIds).toContain('workspace.filesystem');
     expect(toolIds).toContain('workspace.terminal');
     expect(toolIds).toContain('knowledge.search');

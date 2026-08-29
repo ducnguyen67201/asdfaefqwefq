@@ -755,7 +755,6 @@ impl AgentService {
         device: Uuid,
         capabilities: &Value,
     ) -> ApiResult<Value> {
-        let capabilities = validate_capabilities(capabilities)?;
         let version = capabilities["protocolVersion"].as_i64().unwrap_or_default();
         let compatible = version == 5
             && capabilities["protocolDigest"].as_str() == Some(protocol::v5::protocol_digest())
@@ -772,6 +771,7 @@ impl AgentService {
                 "Desktop worker must upgrade before accepting tasks.",
             ));
         }
+        let capabilities = validate_capabilities(capabilities)?;
         let id = Uuid::new_v4();
         let expires = OffsetDateTime::now_utc()
             + time::Duration::milliseconds(
@@ -783,14 +783,14 @@ impl AgentService {
         )
     }
     async fn require_worker(&self, user: &str, worker: Uuid) -> ApiResult<Value> {
-        sqlx::query_scalar("SELECT to_jsonb(workers) FROM agent_worker_sessions workers WHERE id=$1 AND user_id=$2 AND disconnected_at IS NULL AND expires_at>NOW()").bind(worker).bind(user).fetch_optional(&self.pool).await?.ok_or_else(||ApiError::coded(http::StatusCode::CONFLICT,"stale_worker_session","Desktop worker session is stale or disconnected."))
+        sqlx::query_scalar("SELECT to_jsonb(workers) FROM agent_worker_sessions workers WHERE id=$1 AND user_id=$2 AND protocol_version=5 AND protocol_digest=$3 AND tool_catalog_digest=$4 AND disconnected_at IS NULL AND expires_at>NOW()").bind(worker).bind(user).bind(protocol::v5::protocol_digest()).bind(protocol::v5::tool_catalog_digest()).fetch_optional(&self.pool).await?.ok_or_else(||ApiError::coded(http::StatusCode::CONFLICT,"stale_worker_session","Desktop worker session is stale, incompatible, or disconnected."))
     }
     pub async fn heartbeat(&self, user: &str, worker: Uuid) -> ApiResult<Option<Value>> {
         let expires = OffsetDateTime::now_utc()
             + time::Duration::milliseconds(
                 i64::try_from(self.config.heartbeat_ttl_ms).unwrap_or(i64::MAX),
             );
-        let updated = sqlx::query_scalar::<_, OffsetDateTime>("UPDATE agent_worker_sessions SET heartbeat_at=NOW(),expires_at=$3 WHERE id=$1 AND user_id=$2 AND disconnected_at IS NULL RETURNING expires_at").bind(worker).bind(user).bind(expires).fetch_optional(&self.pool).await?;
+        let updated = sqlx::query_scalar::<_, OffsetDateTime>("UPDATE agent_worker_sessions SET heartbeat_at=NOW(),expires_at=$3 WHERE id=$1 AND user_id=$2 AND protocol_version=5 AND protocol_digest=$4 AND tool_catalog_digest=$5 AND disconnected_at IS NULL RETURNING expires_at").bind(worker).bind(user).bind(expires).bind(protocol::v5::protocol_digest()).bind(protocol::v5::tool_catalog_digest()).fetch_optional(&self.pool).await?;
         Ok(updated.map(|expires| json!({"expiresAt":iso(expires)})))
     }
     pub async fn pending(&self, user: &str, worker: Uuid) -> ApiResult<Vec<Value>> {
@@ -1198,8 +1198,10 @@ impl AgentService {
     pub async fn maintain(&self) -> ApiResult<()> {
         let stale_workers = sqlx::query(
             "SELECT id,user_id FROM agent_worker_sessions
-             WHERE disconnected_at IS NULL AND expires_at<=NOW() LIMIT 500",
+             WHERE disconnected_at IS NULL AND (expires_at<=NOW() OR protocol_version<>5 OR protocol_digest IS DISTINCT FROM $1 OR tool_catalog_digest IS DISTINCT FROM $2) LIMIT 500",
         )
+        .bind(protocol::v5::protocol_digest())
+        .bind(protocol::v5::tool_catalog_digest())
         .fetch_all(&self.pool)
         .await?;
         for worker in stale_workers {
@@ -1575,11 +1577,16 @@ fn validate_capabilities(capabilities: &Value) -> ApiResult<Value> {
         .and_then(Value::as_i64)
         .filter(|value| *value == 5)
         .ok_or_else(invalid)?;
-    if object.len() != 5
+    if object.len() != 6
         || object.keys().any(|key| {
             !matches!(
                 key.as_str(),
-                "protocolVersion" | "protocolDigest" | "toolCatalogDigest" | "tools" | "cua"
+                "protocolVersion"
+                    | "protocolDigest"
+                    | "toolCatalogDigest"
+                    | "maxResultBytes"
+                    | "tools"
+                    | "cua"
             )
         })
     {
@@ -1599,6 +1606,11 @@ fn validate_capabilities(capabilities: &Value) -> ApiResult<Value> {
     };
     let protocol_digest = parse_digest("protocolDigest")?;
     let tool_catalog_digest = parse_digest("toolCatalogDigest")?;
+    let max_result_bytes = capabilities
+        .get("maxResultBytes")
+        .and_then(Value::as_u64)
+        .filter(|value| *value == 48_000_000)
+        .ok_or_else(invalid)?;
     let tools = capabilities
         .get("tools")
         .and_then(Value::as_array)
@@ -1655,6 +1667,7 @@ fn validate_capabilities(capabilities: &Value) -> ApiResult<Value> {
         "protocolVersion":version,
         "protocolDigest":protocol_digest,
         "toolCatalogDigest":tool_catalog_digest,
+        "maxResultBytes":max_result_bytes,
         "tools":normalized_tools,
         "cua":cua
     }))
