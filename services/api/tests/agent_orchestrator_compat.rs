@@ -7,8 +7,9 @@ use trocode_api::{
         AgentOrchestrator, AgentService, PutCheckpoint, QueueToolCall, SessionTransaction,
         orchestrator_protocol, protocol,
     },
-    auth::{AgentStateCrypto, stable_json},
-    config::{AgentRuntimeConfig, CostGuardMode},
+    auth::{AgentStateCrypto, ConnectorTokenCrypto, stable_json},
+    config::{AgentRuntimeConfig, ConnectorConfig, CostGuardMode},
+    connectors::{ConnectorService, catalog},
     db,
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -128,8 +129,37 @@ fn desktop_capabilities() -> Value {
         "protocolVersion":5,
         "protocolDigest":protocol::v5::protocol_digest(),
         "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
-        "cua":null,
+        "cua":driver_catalog(),
         "tools":[{"operations":["launch"],"toolId":"application.launch"}]
+    })
+}
+
+fn driver_catalog() -> Value {
+    let payload = json!({
+        "driverVersion":"0.20.0",
+        "contractVersion":"0.7.0",
+        "toolsListSchemaVersion":"1",
+        "capabilityVersion":"2",
+        "tools":[{
+            "name":"future_cua_action",
+            "modelName":"cua_future_cua_action",
+            "description":"A dynamically discovered CUA action.",
+            "inputSchema":{
+                "type":"object",
+                "additionalProperties":false,
+                "properties":{"value":{"type":"string"}},
+                "required":["value"]
+            },
+            "injectSession":true
+        }]
+    });
+    json!({
+        "driverVersion":payload["driverVersion"],
+        "contractVersion":payload["contractVersion"],
+        "toolsListSchemaVersion":payload["toolsListSchemaVersion"],
+        "capabilityVersion":payload["capabilityVersion"],
+        "driverCatalogDigest":digest(&payload),
+        "tools":payload["tools"]
     })
 }
 
@@ -203,6 +233,217 @@ fn workspace_call(call_id: &str) -> QueueToolCall {
         sdk_version: "0.17.0".to_owned(),
         tool_id: "workspace.filesystem".to_owned(),
     }
+}
+
+fn dynamic_cua_call(call_id: &str) -> QueueToolCall {
+    let arguments = json!({"value":"hello"});
+    let driver_catalog_digest = driver_catalog()["driverCatalogDigest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let value = json!({
+        "arguments":arguments,
+        "callId":call_id,
+        "catalogDigest":protocol::v5::tool_catalog_digest(),
+        "driverCatalogDigest":&driver_catalog_digest,
+        "graphVersion":GRAPH_VERSION,
+        "operation":"future_cua_action",
+        "sdkVersion":"0.17.0",
+        "toolId":"cua.driver"
+    });
+    QueueToolCall {
+        arguments,
+        call_id: call_id.to_owned(),
+        catalog_digest: protocol::v5::tool_catalog_digest().to_owned(),
+        driver_catalog_digest: Some(driver_catalog_digest),
+        graph_version: GRAPH_VERSION.to_owned(),
+        idempotency_digest: digest(&value),
+        operation: "future_cua_action".to_owned(),
+        sdk_version: "0.17.0".to_owned(),
+        tool_id: "cua.driver".to_owned(),
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn dynamic_cua_calls_can_enter_the_operating_system_permission_wait() {
+    let (pool, service, orchestrator, sdk_worker, desktop_worker) = setup().await;
+    let created = service
+        .submit_v5(USER, "basic", &task_input())
+        .await
+        .expect("submit v5 task");
+    let run_id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    let claim = orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("claim request")
+        .expect("claim run");
+    let queued = orchestrator
+        .queue_tool_call(
+            run_id,
+            sdk_worker,
+            claim.run_version,
+            &dynamic_cua_call("dynamic-cua-permission"),
+        )
+        .await
+        .expect("queue dynamic CUA call");
+    let pending = service
+        .pending(USER, desktop_worker)
+        .await
+        .expect("load dynamic desktop work");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0]["toolId"], "cua.driver");
+    let interaction_id = Uuid::new_v4();
+    let waiting = service
+        .wait_for_permission(
+            USER,
+            desktop_worker,
+            &json!({
+                "invocationId":queued.invocation_id,
+                "interactionId":interaction_id,
+                "expectedRunVersion":queued.run_version,
+                "requiredPermissions":["accessibility","screen_recording"]
+            }),
+        )
+        .await
+        .expect("record dynamic CUA permission wait");
+    assert_eq!(waiting["kind"], "waiting");
+    assert_eq!(waiting["interactionId"], interaction_id.to_string());
+    assert_eq!(
+        service.get_v5(USER, run_id).await.unwrap().unwrap()["projection"]["state"],
+        "awaiting_permission"
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn requested_connector_calls_are_durably_recovered_after_restart() {
+    let (pool, service, _, sdk_worker, _) = setup().await;
+    let created = service
+        .submit_v5(USER, "basic", &task_input())
+        .await
+        .expect("submit v5 task");
+    let run_id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    let base_orchestrator = AgentOrchestrator::new(
+        pool.clone(),
+        AgentStateCrypto::parse("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 1)
+            .expect("parse agent state key"),
+        runtime_config(),
+        None,
+    );
+    base_orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("claim request")
+        .expect("claim run");
+
+    let connection_id = Uuid::new_v4();
+    let snapshot_id = Uuid::new_v4();
+    let schema_digest = "c".repeat(64);
+    query("INSERT INTO connector_connections(id,user_id,catalog_key,status,connected_at)VALUES($1,$2,'gmail','connected',NOW())")
+        .bind(connection_id)
+        .bind(USER)
+        .execute(&pool)
+        .await
+        .expect("seed connector connection");
+    query("INSERT INTO connector_tool_snapshots(id,connection_id,catalog_key,schema_digest,catalog_contract_digest,tools,active)VALUES($1,$2,'gmail',$3,$4,$5,TRUE)")
+        .bind(snapshot_id)
+        .bind(connection_id)
+        .bind(&schema_digest)
+        .bind(catalog::catalog_contract_digest().expect("connector contract digest"))
+        .bind(json!([{"mcpName":"get_message"}]))
+        .execute(&pool)
+        .await
+        .expect("seed connector snapshot");
+    query("UPDATE connector_connections SET active_snapshot_id=$2,active_schema_digest=$3 WHERE id=$1")
+        .bind(connection_id)
+        .bind(snapshot_id)
+        .bind(&schema_digest)
+        .execute(&pool)
+        .await
+        .expect("activate connector snapshot");
+
+    let invocation_id = Uuid::new_v4();
+    let agent_crypto = AgentStateCrypto::parse("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 1)
+        .expect("parse agent state key");
+    let request = json!({
+        "callId":"recover-connector",
+        "connectorRoute":{
+            "catalogKey":"gmail",
+            "connectionId":connection_id,
+            "namespace":"gmail_read",
+            "snapshotId":snapshot_id,
+            "toolName":"get_message"
+        },
+        "input":{"messageId":"message-1"},
+        "operation":"get_message",
+        "toolId":"connector.gmail"
+    });
+    let envelope = agent_crypto
+        .encrypt_json(
+            &request,
+            &json!({"invocationId":invocation_id,"kind":"agent_tool_request","runId":run_id,"schemaVersion":1}),
+        )
+        .expect("encrypt queued connector request");
+    query("INSERT INTO agent_tool_invocations(id,run_id,call_id,tool_id,operation,state,idempotency_key,request_ciphertext,request_iv,request_tag,request_key_version,public_summary,expires_at,executor_kind,connector_connection_id,connector_snapshot_id,catalog_digest,sdk_version,graph_version)VALUES($1,$2,'recover-connector','connector.gmail','get_message','requested','recover-connector-digest',$3,$4,$5,$6,'Connected-app action queued.',NOW()+INTERVAL'5 minutes','connector',$7,$8,$9,'0.17.0',$10)")
+        .bind(invocation_id)
+        .bind(run_id)
+        .bind(envelope.ciphertext)
+        .bind(envelope.iv)
+        .bind(envelope.tag)
+        .bind(i32::try_from(envelope.key_version).unwrap())
+        .bind(connection_id)
+        .bind(snapshot_id)
+        .bind(protocol::v5::tool_catalog_digest())
+        .bind(GRAPH_VERSION)
+        .execute(&pool)
+        .await
+        .expect("seed connector request committed before process exit");
+
+    let connector_config = ConnectorConfig {
+        callback_url: None,
+        canary_users: BTreeSet::from([USER.to_owned()]),
+        current_encryption_key_version: 1,
+        enabled: true,
+        encryption_keys: Some("1:eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=".to_owned()),
+        gmail_client_id: None,
+        gmail_client_secret: None,
+        max_result_bytes: 512_000,
+        max_schema_bytes: 128_000,
+        mcp_timeout_ms: 1,
+        oauth_attempt_ttl_ms: 600_000,
+        rollout_percent: 0,
+    };
+    let connectors = ConnectorService::new(
+        pool.clone(),
+        ConnectorTokenCrypto::parse("1:eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=", 1)
+            .expect("parse connector key"),
+        reqwest::Client::new(),
+        connector_config,
+        "durable_agent_hmac_key_0123456789abcdef",
+    )
+    .expect("construct connector service");
+    let recovered_orchestrator = AgentOrchestrator::new(
+        pool.clone(),
+        agent_crypto,
+        runtime_config(),
+        Some(connectors),
+    );
+    assert_eq!(
+        recovered_orchestrator
+            .maintain()
+            .await
+            .expect("recover queued connector"),
+        1
+    );
+    let state: String = query_scalar("SELECT state FROM agent_tool_invocations WHERE id=$1")
+        .bind(invocation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read recovered connector state");
+    assert_ne!(state, "requested");
+    pool.close().await;
 }
 
 #[tokio::test]

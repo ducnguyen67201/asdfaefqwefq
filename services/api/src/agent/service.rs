@@ -868,8 +868,15 @@ impl AgentService {
                 "The agent task changed before the permission wait was recorded.",
             ));
         }
-        let tool = tool_catalog::by_id(&row.get::<String, _>("tool_id")).ok_or_else(invalid)?;
-        if tool.prerequisites != requirements {
+        let tool_id = row.get::<String, _>("tool_id");
+        let expected_requirements = if tool_id == "cua.driver" {
+            vec!["accessibility".to_owned(), "screen_recording".to_owned()]
+        } else {
+            tool_catalog::by_id(&tool_id)
+                .map(|tool| tool.prerequisites.clone())
+                .ok_or_else(invalid)?
+        };
+        if expected_requirements != requirements {
             tx.rollback().await?;
             return Err(invalid());
         }

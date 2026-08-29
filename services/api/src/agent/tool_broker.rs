@@ -308,6 +308,97 @@ impl ToolBroker {
         })
     }
 
+    pub async fn recover_requested_connectors(&self) -> ApiResult<usize> {
+        let rows = sqlx::query(
+            "SELECT invocations.*,runs.user_id
+             FROM agent_tool_invocations invocations
+             JOIN agent_runs runs ON runs.id=invocations.run_id
+             WHERE invocations.executor_kind='connector'
+               AND invocations.state='requested'
+               AND invocations.expires_at>NOW()
+               AND runs.deadline_at>NOW()
+               AND runs.state NOT IN('completed','blocked','failed','cancelled','expired')
+             ORDER BY invocations.requested_at
+             LIMIT 100",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let mut recovered = 0;
+        for row in rows {
+            let invocation_id: Uuid = row.get("id");
+            let run_id: Uuid = row.get("run_id");
+            let user_id: String = row.get("user_id");
+            let request = row_envelope(&row, "request")?
+                .and_then(|envelope| {
+                    self.crypto
+                        .decrypt_json(
+                            &envelope,
+                            &json!({"invocationId":invocation_id,"kind":"agent_tool_request","runId":run_id,"schemaVersion":1}),
+                        )
+                        .ok()
+                });
+            let arguments = request
+                .as_ref()
+                .and_then(|value| value.get("input"))
+                .cloned();
+            let identity = request
+                .as_ref()
+                .and_then(|value| value.get("connectorRoute"))
+                .and_then(|route| {
+                    Some((
+                        route.get("catalogKey")?.as_str()?.to_owned(),
+                        route.get("connectionId")?.as_str()?.parse::<Uuid>().ok()?,
+                        route.get("namespace")?.as_str()?.to_owned(),
+                        route.get("snapshotId")?.as_str()?.parse::<Uuid>().ok()?,
+                        route.get("toolName")?.as_str()?.to_owned(),
+                    ))
+                });
+            let route =
+                if let (Some(connectors), Some(identity)) = (self.connectors.as_ref(), identity) {
+                    connectors
+                        .routes_for_user(&user_id)
+                        .await?
+                        .into_iter()
+                        .find(|route| {
+                            route.catalog_key == identity.0
+                                && route.connection_id == identity.1
+                                && route.namespace == identity.2
+                                && route.snapshot_id == identity.3
+                                && route.tool_name == identity.4
+                        })
+                } else {
+                    None
+                };
+            if let (Some(route), Some(arguments)) = (route, arguments) {
+                if let Some(execution_owner) = self.claim_connector(invocation_id).await? {
+                    recovered += 1;
+                    let broker = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = broker
+                            .execute_claimed_connector(
+                                invocation_id,
+                                run_id,
+                                &user_id,
+                                &route,
+                                arguments,
+                                execution_owner,
+                            )
+                            .await
+                        {
+                            tracing::error!(event="agent.connector_recovery_failed", %run_id, %invocation_id, %error);
+                        }
+                    });
+                }
+            } else if self
+                .fail_connector_before_dispatch(invocation_id, run_id)
+                .await?
+            {
+                recovered += 1;
+            }
+        }
+        Ok(recovered)
+    }
+
     async fn execute_connector(
         &self,
         invocation_id: Uuid,
@@ -316,12 +407,21 @@ impl ToolBroker {
         route: &ConnectorRoute,
         arguments: Value,
     ) -> ApiResult<()> {
-        let service = self.connectors.as_ref().ok_or_else(|| {
-            ApiError::conflict(
-                "connector_unavailable",
-                "The connected application is unavailable.",
-            )
-        })?;
+        let Some(execution_owner) = self.claim_connector(invocation_id).await? else {
+            return Ok(());
+        };
+        self.execute_claimed_connector(
+            invocation_id,
+            run_id,
+            user_id,
+            route,
+            arguments,
+            execution_owner,
+        )
+        .await
+    }
+
+    async fn claim_connector(&self, invocation_id: Uuid) -> ApiResult<Option<Uuid>> {
         let execution_owner = Uuid::new_v4();
         let started = sqlx::query(
             "UPDATE agent_tool_invocations SET state='executing',executing_at=NOW(),execution_lease_owner=$2,execution_lease_expires_at=NOW()+INTERVAL'45 seconds',public_summary='Connected-app action is executing.' WHERE id=$1 AND executor_kind='connector' AND state='requested' RETURNING id",
@@ -330,9 +430,24 @@ impl ToolBroker {
         .bind(execution_owner)
         .fetch_optional(&self.pool)
         .await?;
-        if started.is_none() {
-            return Ok(());
-        }
+        Ok(started.map(|_| execution_owner))
+    }
+
+    async fn execute_claimed_connector(
+        &self,
+        invocation_id: Uuid,
+        run_id: Uuid,
+        user_id: &str,
+        route: &ConnectorRoute,
+        arguments: Value,
+        execution_owner: Uuid,
+    ) -> ApiResult<()> {
+        let service = self.connectors.as_ref().ok_or_else(|| {
+            ApiError::conflict(
+                "connector_unavailable",
+                "The connected application is unavailable.",
+            )
+        })?;
         let cancellation = CancellationToken::new();
         let executed = service
             .execute(user_id, route, arguments, &cancellation)
@@ -388,6 +503,38 @@ impl ToolBroker {
         }
         tx.commit().await?;
         Ok(())
+    }
+
+    async fn fail_connector_before_dispatch(
+        &self,
+        invocation_id: Uuid,
+        run_id: Uuid,
+    ) -> ApiResult<bool> {
+        let summary = "Connected-app action was not dispatched.";
+        let envelope = self.crypto.encrypt_json(
+            &json!({"data":Value::Null,"status":"failed"}),
+            &json!({"invocationId":invocation_id,"kind":"agent_tool_result","runId":run_id,"schemaVersion":1}),
+        )?;
+        let mut tx = self.pool.begin().await?;
+        let changed = sqlx::query(
+            "UPDATE agent_tool_invocations SET state='failed',result_ciphertext=$3,result_iv=$4,result_tag=$5,result_key_version=$6,public_summary=$7,terminal_at=NOW() WHERE id=$1 AND run_id=$2 AND executor_kind='connector' AND state='requested'",
+        )
+        .bind(invocation_id)
+        .bind(run_id)
+        .bind(envelope.ciphertext)
+        .bind(envelope.iv)
+        .bind(envelope.tag)
+        .bind(i32::try_from(envelope.key_version).unwrap_or(i32::MAX))
+        .bind(summary)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1;
+        if changed {
+            append_event(&mut tx, run_id, "tool.completed", summary, None).await?;
+        }
+        tx.commit().await?;
+        Ok(changed)
     }
 
     async fn validate_route(

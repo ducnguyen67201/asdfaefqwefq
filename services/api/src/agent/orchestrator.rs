@@ -132,6 +132,10 @@ impl AgentOrchestrator {
             .await
     }
 
+    pub async fn maintain(&self) -> ApiResult<usize> {
+        self.tools.recover_requested_connectors().await
+    }
+
     pub async fn heartbeat_worker(
         &self,
         worker_id: Uuid,

@@ -132,6 +132,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
     let state = AppState::compose(config).await?;
     let cancel = state.shutdown.clone();
     if let Some(agent) = state.agent.clone() {
+        let orchestrator = state.orchestrator.clone();
         let token = cancel.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval_at(
@@ -140,7 +141,12 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             );
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}}}
+                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{
+                    if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}
+                    if let Some(orchestrator)=&orchestrator
+                        && let Err(error)=orchestrator.maintain().await
+                    {tracing::error!(event="agent.orchestrator_maintenance.failed",error=%error);}
+                }}
             }
         });
     }
