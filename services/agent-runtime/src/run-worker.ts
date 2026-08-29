@@ -87,6 +87,7 @@ export class RunWorker {
       );
       let checkpointRevision = claim.checkpoint?.revision ?? 0;
       let deliveredControlSequence = claim.lastControlSequence;
+      let nextRequest: string | AgentInputItem[] = claim.request;
       let state = claim.checkpoint
         ? await RunState.fromStringWithContext(
             graph.agent,
@@ -95,10 +96,28 @@ export class RunWorker {
           )
         : undefined;
 
+      if (state && claim.checkpoint?.pendingCallId === null) {
+        const currentStep = state.toJSON().currentStep;
+        if (currentStep?.type !== 'next_step_final_output') {
+          throw new Error('terminal_checkpoint_missing_final_output');
+        }
+        const finalOutput = boundedFinalOutput(currentStep.output);
+        const steeringRequest = await this.completeOrLoadSteering(
+          lease,
+          finalOutput,
+          deliveredControlSequence,
+          signal,
+        );
+        if (steeringRequest === null) return;
+        deliveredControlSequence = steeringRequest.sequence;
+        nextRequest = steeringRequest.request;
+        state = undefined;
+      }
+
       for (;;) {
         const result = await this.graphs.runner.run(
           graph.agent,
-          state ?? claim.request,
+          state ?? nextRequest,
           {
             callModelInputFilter: async ({ modelData }) => {
               const updates = await this.client.steeringUpdates(
@@ -123,7 +142,7 @@ export class RunWorker {
           },
         );
         if (result.interruptions.length === 0) {
-          await this.client.putCheckpoint(
+          checkpointRevision = await this.client.putCheckpoint(
             lease,
             {
               expectedCheckpointRevision: checkpointRevision,
@@ -136,8 +155,17 @@ export class RunWorker {
             signal,
           );
           const finalOutput = boundedFinalOutput(result.finalOutput);
-          await this.client.complete(lease, finalOutput, signal);
-          return;
+          const steeringRequest = await this.completeOrLoadSteering(
+            lease,
+            finalOutput,
+            deliveredControlSequence,
+            signal,
+          );
+          if (steeringRequest === null) return;
+          deliveredControlSequence = steeringRequest.sequence;
+          nextRequest = steeringRequest.request;
+          state = undefined;
+          continue;
         }
         if (result.interruptions.length !== 1) {
           throw new Error('parallel_tool_interruption_not_supported');
@@ -198,6 +226,40 @@ export class RunWorker {
     }, 5_000);
   }
 
+  private async completeOrLoadSteering(
+    lease: RunLease,
+    finalOutput: string,
+    deliveredControlSequence: number,
+    signal: AbortSignal,
+  ): Promise<{ readonly request: AgentInputItem[]; readonly sequence: number } | null> {
+    try {
+      await this.client.complete(
+        lease,
+        finalOutput,
+        deliveredControlSequence,
+        signal,
+      );
+      return null;
+    } catch (error) {
+      if (!(error instanceof ControlPlaneError && error.code === 'steering_pending')) {
+        throw error;
+      }
+    }
+
+    const updates = await this.client.steeringUpdates(
+      lease,
+      deliveredControlSequence,
+      signal,
+    );
+    if (updates.items.length === 0) {
+      throw new Error('steering_pending_without_update');
+    }
+    return {
+      request: steeringInput(updates.items.map((item) => item.instruction)),
+      sequence: Math.max(...updates.items.map((item) => item.sequence)),
+    };
+  }
+
   private async bestEffortRelease(lease: RunLease): Promise<void> {
     try {
       await this.client.release(lease);
@@ -213,11 +275,14 @@ function injectSteering(
 ): ModelInputData {
   if (instructions.length === 0) return modelData;
   const input = modelData.input as AgentInputItem[];
-  const steering: AgentInputItem[] = instructions.map((instruction) => ({
+  return { ...modelData, input: [...input, ...steeringInput(instructions)] };
+}
+
+function steeringInput(instructions: readonly string[]): AgentInputItem[] {
+  return instructions.map((instruction) => ({
     role: 'user',
     content: [{ type: 'input_text', text: instruction }],
   }));
-  return { ...modelData, input: [...input, ...steering] };
 }
 
 function boundedFinalOutput(value: unknown): string {

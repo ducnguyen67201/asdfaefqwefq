@@ -282,6 +282,7 @@ pub async fn handle(
                 run_id,
                 uuid(&input, "workerId")?,
                 integer(&input, "expectedRunVersion")?,
+                integer_i64(&input, "appliedControlSequence")?,
                 string(&input, "finalOutput")?,
             )
             .await?;

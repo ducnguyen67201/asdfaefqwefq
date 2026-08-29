@@ -232,6 +232,7 @@ export const CompleteRunRequestSchema = z
   .object({
     workerId: UuidSchema,
     expectedRunVersion: z.number().int().positive(),
+    appliedControlSequence: z.number().int().nonnegative(),
     finalOutput: z.string().trim().min(1).max(8_000),
   })
   .strict();

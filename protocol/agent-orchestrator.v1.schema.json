@@ -498,6 +498,11 @@
     "completeRunRequest": {
       "additionalProperties": false,
       "properties": {
+        "appliedControlSequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "expectedRunVersion": {
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991,
@@ -517,6 +522,7 @@
       "required": [
         "workerId",
         "expectedRunVersion",
+        "appliedControlSequence",
         "finalOutput"
       ],
       "type": "object"

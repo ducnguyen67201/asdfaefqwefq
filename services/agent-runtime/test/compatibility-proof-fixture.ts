@@ -209,6 +209,43 @@ class ToolThenFinalModel implements Model {
   }
 }
 
+class TerminalRecoveryModel implements Model {
+  private calls = 0;
+
+  async getResponse(request: ModelRequest): Promise<ModelResponse> {
+    this.calls += 1;
+    const input = JSON.stringify(request.input);
+    if (
+      this.calls === 2 &&
+      (!input.includes('initial complete') || !input.includes('Also open a new tab.'))
+    ) {
+      throw new Error('Fresh steering turn did not inherit durable session history.');
+    }
+    return {
+      usage: new Usage(),
+      responseId: `terminal_recovery_${this.calls}`,
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            {
+              type: 'output_text',
+              text: this.calls === 1 ? 'initial complete' : 'steering complete',
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  getStreamedResponse(request: ModelRequest): AsyncIterable<never> {
+    void request;
+    throw new Error('The compatibility proof uses non-streaming model responses.');
+  }
+}
+
 export interface CompatibilityGraph {
   readonly agent: Agent<ProofContext, 'text'>;
   readonly executedCallIds: string[];
@@ -293,6 +330,50 @@ export async function proveSerializedResume(): Promise<{
     throw new Error('Serialized SDK state did not preserve exactly-once call identity.');
   }
   return { callId: secondGraph.executedCallIds[0], finalOutput: resumed.finalOutput };
+}
+
+export async function proveTerminalCheckpointRecovery(): Promise<{
+  restoredOutput: string;
+  steeredOutput: string;
+}> {
+  const model = new TerminalRecoveryModel();
+  const agent = new Agent<ProofContext, 'text'>({
+    name: 'TroTerminalRecoveryProof',
+    instructions: 'Finish each requested turn.',
+    model,
+  });
+  const runner = new Runner({
+    model,
+    traceIncludeSensitiveData: false,
+    tracingDisabled: true,
+  });
+  const session = new TransactionalMemorySession('terminal-recovery-proof');
+  const initial = await runner.run(agent, 'Open Chrome.', {
+    context: { runId: 'terminal-recovery-run' },
+    maxTurns: 4,
+    session,
+  });
+  const restored = await RunState.fromStringWithContext(
+    agent,
+    initial.state.toString(),
+    new RunContext<ProofContext>({ runId: 'terminal-recovery-run' }),
+  );
+  const currentStep = restored.toJSON().currentStep;
+  if (currentStep?.type !== 'next_step_final_output') {
+    throw new Error('Serialized terminal state lost its final output.');
+  }
+  const steered = await runner.run(agent, 'Also open a new tab.', {
+    context: { runId: 'terminal-recovery-run' },
+    maxTurns: 4,
+    session,
+  });
+  if (steered.finalOutput !== 'steering complete') {
+    throw new Error('Fresh SDK turn did not apply late steering.');
+  }
+  return {
+    restoredOutput: currentStep.output,
+    steeredOutput: steered.finalOutput,
+  };
 }
 
 export function constructDeferredToolSurface(): readonly unknown[] {

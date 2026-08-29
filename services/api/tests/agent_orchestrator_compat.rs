@@ -661,8 +661,85 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
         .await
         .expect("read durable result");
     assert_eq!(result.status, "confirmed");
+    let missing_terminal_checkpoint = orchestrator
+        .complete(
+            run_id,
+            sdk_worker,
+            queued.run_version,
+            steering[0].sequence,
+            "Chrome was opened.",
+        )
+        .await
+        .expect_err("completion must require a terminal checkpoint");
+    assert_eq!(
+        missing_terminal_checkpoint.code,
+        Some("checkpoint_conflict")
+    );
+
+    let terminal_checkpoint = PutCheckpoint {
+        applied_control_sequence: steering[0].sequence,
+        expected_checkpoint_revision: revision,
+        graph_version: GRAPH_VERSION.to_owned(),
+        pending_call_id: None,
+        sdk_version: "0.17.0".to_owned(),
+        state: "serialized-terminal-sdk-run-state".to_owned(),
+    };
+    let (terminal_revision, _) = orchestrator
+        .put_checkpoint(run_id, sdk_worker, queued.run_version, &terminal_checkpoint)
+        .await
+        .expect("checkpoint terminal SDK state");
+    assert_eq!(terminal_revision, 2);
+
+    let late_steering_event = service
+        .control(
+            USER,
+            run_id,
+            "steering",
+            &json!({"clientTurnId":Uuid::new_v4(),"instruction":"Also open a new tab."}),
+        )
+        .await
+        .expect("queue late steering")
+        .expect("run exists");
+    let completion_error = orchestrator
+        .complete(
+            run_id,
+            sdk_worker,
+            queued.run_version,
+            steering[0].sequence,
+            "Chrome was opened.",
+        )
+        .await
+        .expect_err("late steering must prevent completion");
+    assert_eq!(completion_error.code, Some("steering_pending"));
+
+    let late_steering = orchestrator
+        .steering_updates(run_id, sdk_worker, queued.run_version, steering[0].sequence)
+        .await
+        .expect("load late steering");
+    assert_eq!(late_steering.len(), 1);
+    assert_eq!(late_steering[0].instruction, "Also open a new tab.");
+    assert_eq!(late_steering[0].sequence, late_steering_event["sequence"]);
+    let final_checkpoint = PutCheckpoint {
+        applied_control_sequence: late_steering[0].sequence,
+        expected_checkpoint_revision: terminal_revision,
+        graph_version: GRAPH_VERSION.to_owned(),
+        pending_call_id: None,
+        sdk_version: "0.17.0".to_owned(),
+        state: "serialized-final-sdk-run-state".to_owned(),
+    };
+    let (final_revision, _) = orchestrator
+        .put_checkpoint(run_id, sdk_worker, queued.run_version, &final_checkpoint)
+        .await
+        .expect("checkpoint late steering cursor");
+    assert_eq!(final_revision, 3);
     orchestrator
-        .complete(run_id, sdk_worker, queued.run_version, "Chrome was opened.")
+        .complete(
+            run_id,
+            sdk_worker,
+            queued.run_version,
+            late_steering[0].sequence,
+            "Chrome and the new tab were opened.",
+        )
         .await
         .expect("complete through control plane");
     assert_eq!(

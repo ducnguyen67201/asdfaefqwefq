@@ -465,10 +465,17 @@ impl AgentOrchestrator {
         run_id: Uuid,
         worker_id: Uuid,
         expected_run_version: i32,
+        applied_control_sequence: i64,
         final_output: &str,
     ) -> ApiResult<i32> {
         self.runs
-            .complete(run_id, worker_id, expected_run_version, final_output)
+            .complete(
+                run_id,
+                worker_id,
+                expected_run_version,
+                applied_control_sequence,
+                final_output,
+            )
             .await
     }
 

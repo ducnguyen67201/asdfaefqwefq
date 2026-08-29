@@ -6,6 +6,7 @@ import {
   constructDeferredToolSurface,
   proveInputCompaction,
   proveSerializedResume,
+  proveTerminalCheckpointRecovery,
 } from './compatibility-proof-fixture.js';
 
 describe('Agents SDK compatibility proof', () => {
@@ -13,6 +14,13 @@ describe('Agents SDK compatibility proof', () => {
     await expect(proveSerializedResume()).resolves.toEqual({
       callId: 'proof_call_1',
       finalOutput: 'proof complete',
+    });
+  });
+
+  it('recovers a terminal checkpoint and applies late steering as a fresh session turn', async () => {
+    await expect(proveTerminalCheckpointRecovery()).resolves.toEqual({
+      restoredOutput: 'initial complete',
+      steeredOutput: 'steering complete',
     });
   });
 

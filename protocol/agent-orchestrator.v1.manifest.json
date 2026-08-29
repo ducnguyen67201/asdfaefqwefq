@@ -1,6 +1,6 @@
 {
   "generatorVersion": 1,
-  "protocolDigest": "90a3b946c49d9bd37cda3e24c84feba8ddb51dd3bc945388d592e3f4ddab0fe4",
+  "protocolDigest": "10da0cf1b20c920a91cdbe3a5613070d275891126b3a95ac6c3c0962f953a399",
   "schemaVersion": 1,
   "sourceFiles": [
     "services/agent-runtime/src/protocol.ts"

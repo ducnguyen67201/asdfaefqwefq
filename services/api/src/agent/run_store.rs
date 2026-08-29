@@ -197,6 +197,7 @@ impl RunStore {
         run_id: Uuid,
         worker_id: Uuid,
         expected_run_version: i32,
+        applied_control_sequence: i64,
         final_output: &str,
     ) -> ApiResult<i32> {
         let envelope = self.crypto.encrypt_json(
@@ -204,6 +205,52 @@ impl RunStore {
             &json!({"kind":"agent_final_output","runId":run_id,"schemaVersion":1}),
         )?;
         let mut tx = self.pool.begin().await?;
+        self.assert_lease(&mut tx, run_id, worker_id, expected_run_version)
+            .await?;
+        let durable_control_sequence: i64 =
+            sqlx::query_scalar("SELECT last_control_sequence FROM agent_runs WHERE id=$1")
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if applied_control_sequence != durable_control_sequence {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "checkpoint_conflict",
+                "The completion cursor does not match the durable SDK checkpoint.",
+            ));
+        }
+        let checkpoint = sqlx::query(
+            "SELECT applied_control_sequence,pending_call_id
+             FROM agent_run_checkpoints WHERE run_id=$1 AND run_version=$2",
+        )
+        .bind(run_id)
+        .bind(expected_run_version)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if checkpoint.as_ref().is_none_or(|row| {
+            row.get::<i64, _>("applied_control_sequence") != applied_control_sequence
+                || row.get::<Option<String>, _>("pending_call_id").is_some()
+        }) {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "checkpoint_conflict",
+                "Completion requires the current terminal SDK checkpoint.",
+            ));
+        }
+        let steering_pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM agent_run_events WHERE run_id=$1 AND type='run.steering_queued' AND sequence>$2)",
+        )
+        .bind(run_id)
+        .bind(applied_control_sequence)
+        .fetch_one(&mut *tx)
+        .await?;
+        if steering_pending {
+            tx.rollback().await?;
+            return Err(ApiError::conflict(
+                "steering_pending",
+                "New steering must be applied before the run can complete.",
+            ));
+        }
         let pending: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM agent_tool_invocations WHERE run_id=$1 AND state IN('requested','delivered','awaiting_permission','executing'))",
         )

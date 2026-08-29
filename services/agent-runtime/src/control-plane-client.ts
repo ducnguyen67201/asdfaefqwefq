@@ -282,13 +282,19 @@ export class ControlPlaneClient {
     lease.update(response.runVersion);
   }
 
-  async complete(lease: RunLease, finalOutput: string, signal?: AbortSignal): Promise<void> {
+  async complete(
+    lease: RunLease,
+    finalOutput: string,
+    appliedControlSequence: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const response = await this.request(
       'POST',
       `/runs/${lease.runId}/complete`,
       {
         workerId: lease.workerId,
         expectedRunVersion: lease.runVersion,
+        appliedControlSequence,
         finalOutput,
       },
       RunMutationResponseSchema,
