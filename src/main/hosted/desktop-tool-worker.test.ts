@@ -395,6 +395,64 @@ describe('DesktopToolWorker', () => {
     expect(requestExecuting).toHaveBeenCalledWith(expect.any(String), 3);
   });
 
+  it('returns observation metadata and visual evidence to the hosted SDK', async () => {
+    const goal = hostedGoal('Inspect the current screen.');
+    const observationId = randomUUID();
+    const worker = new DesktopToolWorker({
+      commitResult: vi.fn(async () => undefined),
+      dispatcher: {
+        dispatch: vi.fn(async () => ({
+          status: 'confirmed' as const,
+          summary: 'Captured a fresh desktop observation.',
+          observation: {
+            capturedAt: new Date().toISOString(),
+            coordinateSpace: {
+              screenHeight: 900,
+              screenWidth: 1_440,
+              screenshotHeight: 900,
+              screenshotWidth: 1_440,
+            },
+            degraded: false,
+            fingerprint: 'a'.repeat(64),
+            observationId,
+            route: 'desktop_vision' as const,
+            screenshot: {
+              dataBase64: Buffer.from('desktop screenshot').toString('base64'),
+              mimeType: 'image/png',
+            },
+            taskId: goal.taskId,
+            text: 'Chrome is visible with an empty address bar.',
+          },
+        })),
+      },
+      executionContextProvider: () => goal,
+      permissionCoordinator: {
+        requireReady: vi.fn(async () => ({ outcome: 'granted' as const, runVersion: 1 })),
+      },
+      registry: new RuntimeToolRegistry(),
+      requestExecuting: vi.fn(async () => true),
+    });
+
+    const result = await worker.handle(envelope({
+      toolId: 'desktop.observe',
+      operation: 'observe',
+      input: { reason: 'Inspect the current screen.' },
+    }));
+
+    expect(result.data?.observation).toMatchObject({
+      coordinateSpace: { screenshotHeight: 900, screenshotWidth: 1_440 },
+      observationId,
+      text: 'Chrome is visible with an empty address bar.',
+    });
+    expect((result.data?.observation as { screenshot?: unknown }).screenshot).toBeUndefined();
+    expect(result.visual).toEqual({
+      dataBase64: Buffer.from('desktop screenshot').toString('base64'),
+      detail: 'original',
+      mimeType: 'image/png',
+      observationId,
+    });
+  });
+
   it('commits a registered Workspace write without a user-decision callback', async () => {
     const goal = hostedGoal('Update the workspace file.', {
         selectionId: '11111111-1111-4111-8111-111111111111',

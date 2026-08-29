@@ -10,6 +10,10 @@ class MemoryControlPlane implements AgentControlPlane {
 
   revision = 0;
 
+  mutations = new Map<string, { digest: string; revision: number }>();
+
+  operationIds: string[] = [];
+
   transactions: unknown[] = [];
 
   async getSession() {
@@ -20,6 +24,12 @@ class MemoryControlPlane implements AgentControlPlane {
     _lease: RunLease,
     request: Parameters<AgentControlPlane['applySessionTransaction']>[1],
   ) {
+    this.operationIds.push(request.operationId);
+    const replay = this.mutations.get(request.operationId);
+    if (replay) {
+      if (replay.digest !== request.operationDigest) throw new Error('session_conflict');
+      return { revision: replay.revision, replayed: true };
+    }
     if (request.expectedSessionRevision !== this.revision) throw new Error('session_conflict');
     this.transactions.push(request.transaction);
     const transaction = request.transaction;
@@ -35,6 +45,10 @@ class MemoryControlPlane implements AgentControlPlane {
       this.items = [];
     }
     this.revision += 1;
+    this.mutations.set(request.operationId, {
+      digest: request.operationDigest,
+      revision: this.revision,
+    });
     return { revision: this.revision, replayed: false };
   }
 
@@ -44,6 +58,31 @@ class MemoryControlPlane implements AgentControlPlane {
 }
 
 describe('Rust-backed SDK session compaction', () => {
+  it('scopes identical session mutations to their starting revision', async () => {
+    const control = new MemoryControlPlane();
+    const session = new RustSession(
+      control,
+      new RunLease(
+        '4e49660f-47b2-4e1c-a7f5-b9ea93e4e720',
+        '989104b5-ea79-49d5-a125-87930712bd84',
+        1,
+      ),
+      0,
+    );
+    const repeatedItem: AgentInputItem = {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: 'Use the existing window.' }],
+    };
+
+    await session.addItems([repeatedItem]);
+    await session.addItems([repeatedItem]);
+
+    expect(control.items).toEqual([repeatedItem, repeatedItem]);
+    expect(control.operationIds).toHaveLength(2);
+    expect(control.operationIds[0]).not.toBe(control.operationIds[1]);
+  });
+
   it('commits clear plus add as one atomic suffix replacement', async () => {
     const control = new MemoryControlPlane();
     const lease = new RunLease(

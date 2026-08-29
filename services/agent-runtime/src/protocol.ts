@@ -201,6 +201,15 @@ export const QueueToolCallResponseSchema = z
   })
   .strict();
 
+export const ToolResultVisualSchema = z
+  .object({
+    dataBase64: z.string().min(1).max(40_000_000),
+    detail: z.literal('original'),
+    mimeType: z.enum(['image/jpeg', 'image/png']),
+    observationId: UuidSchema,
+  })
+  .strict();
+
 export const ToolCallResultSchema = z
   .object({
     status: z.enum([
@@ -215,6 +224,7 @@ export const ToolCallResultSchema = z
     ]),
     summary: z.string().trim().min(1).max(1_000),
     data: JsonObjectSchema.nullable(),
+    visual: ToolResultVisualSchema.nullable().optional(),
   })
   .strict();
 

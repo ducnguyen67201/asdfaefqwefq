@@ -254,7 +254,7 @@ pub async fn handle(
             .await?;
         return Ok(Some(json_response(
             StatusCode::OK,
-            json!({"status":result.status,"summary":result.summary,"data":result.data}),
+            json!({"status":result.status,"summary":result.summary,"data":result.data,"visual":result.visual}),
         )?));
     }
 

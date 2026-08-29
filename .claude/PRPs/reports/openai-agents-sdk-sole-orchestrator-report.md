@@ -102,6 +102,16 @@ The implementation review found and fixed the following issues before delivery:
   SDK-forbidden terminal-state resume. A reclaimed worker first rebinds that
   terminal checkpoint to its new lease version, so the Rust completion CAS can
   verify the recovered result without accepting an older worker's authority.
+- Successful computer observations were cached by Electron but reduced to a
+  fixed summary at the SDK boundary. Observation IDs, semantic state, coordinate
+  space, and text now travel in the encrypted tool result, while screenshots are
+  emitted as the Agents SDK's structured image output.
+- Identical session mutations at later revisions could collide with an earlier
+  idempotency key and regress the SDK session cursor. Mutation identities now
+  include their starting revision while remaining stable for transport retries.
+- Cancelling an unanswered `task.interaction` was treated like an ambiguous
+  external side effect. Clarification waits now cancel deterministically; only
+  genuinely dispatched desktop actions retain unknown-on-interruption behavior.
 - The SDK compatibility proof was test scaffolding accidentally compiled into the
   service. It now lives under the test tree, production build output is ignored,
   and CI installs, audits, tests, and builds the independently pinned SDK package.
@@ -124,9 +134,9 @@ driver tools discovered from the live CUA catalog flow through generically.
 
 | Check | Result |
 |---|---|
-| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 786 tests, Rust fmt/clippy/tests |
-| Agents SDK service | Pass — lint, typecheck, 4 test files / 10 tests |
-| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility plus claim/checkpoint/tool/result/complete flow, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
+| `npm run check` | Pass — protocol generation/drift, SDK check, admin build, ESLint, TypeScript, 120 Vitest files / 787 tests, Rust fmt/clippy/tests |
+| Agents SDK service | Pass — lint, typecheck, 4 test files / 12 tests |
+| Disposable PostgreSQL integrations | Pass — v5 HTTP/start/cancel compatibility, clarification cancellation, claim/checkpoint/tool/result/complete flow, durable observation visuals, limits, dynamic CUA permission waits, connector restart recovery, contextual-tool rejection, steering retry/conflict behavior, late-steering/completion serialization, and terminal-checkpoint rebind after lease rollover |
 | `npm run bazel:check` | Pass — 16 Bazel tests plus Rust clippy target |
 | `npm run package` | Pass — Electron Forge macOS arm64 package |
 | `git diff --check` | Pass |

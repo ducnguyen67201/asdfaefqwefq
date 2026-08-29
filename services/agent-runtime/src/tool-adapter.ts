@@ -11,7 +11,7 @@ import type {
   RunLease,
   ToolCheckpointControlPlane,
 } from './control-plane-client.js';
-import type { OrchestratorToolSpec } from './protocol.js';
+import type { OrchestratorToolSpec, ToolCallResult } from './protocol.js';
 import type { AgentRunContext } from './rust-session.js';
 import { digest } from './serialization.js';
 
@@ -110,11 +110,7 @@ export class ToolSurfaceFactory {
               continue;
             }
             if (result.status === 'unknown') throw new ToolOutcomeUnknownError(callId);
-            return JSON.stringify({
-              status: result.status,
-              summary: result.summary,
-              data: result.data,
-            });
+            return modelToolResult(result);
           }
         },
       }) as FunctionTool<AgentRunContext, never, unknown>;
@@ -164,6 +160,26 @@ export class ToolSurfaceFactory {
       },
     };
   }
+}
+
+export function modelToolResult(result: ToolCallResult): unknown {
+  const text = JSON.stringify({
+    status: result.status,
+    summary: result.summary,
+    data: result.data,
+  });
+  if (!result.visual) return text;
+  return [
+    { type: 'text', text },
+    {
+      type: 'image',
+      image: {
+        data: result.visual.dataBase64,
+        mediaType: result.visual.mimeType,
+      },
+      detail: 'high',
+    },
+  ];
 }
 
 function resolveOperation(

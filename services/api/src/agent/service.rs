@@ -609,7 +609,10 @@ impl AgentService {
             ));
         }
         let execution_in_progress: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM agent_tool_invocations WHERE run_id=$1 AND state='executing')",
+            "SELECT EXISTS(
+               SELECT 1 FROM agent_tool_invocations
+               WHERE run_id=$1 AND state='executing' AND tool_id<>'task.interaction'
+             )",
         )
         .bind(run)
         .fetch_one(&mut *tx)
@@ -625,7 +628,7 @@ impl AgentService {
         };
         sqlx::query("UPDATE agent_runs SET state=$3,run_version=run_version+1,cancellation_source=$4,last_client_command_id=$5,failure_stage=CASE WHEN $6 THEN'tool_execution'ELSE NULL END,failure_code=CASE WHEN $6 THEN'tool_outcome_unknown'ELSE NULL END,failure_retryable=CASE WHEN $6 THEN FALSE ELSE NULL END,permission_interaction_id=NULL,permission_invocation_id=NULL,permission_requirements=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=NOW(),public_summary=$7 WHERE id=$1 AND user_id=$2 AND run_version=$8").bind(run).bind(user).bind(state).bind(source).bind(command_id).bind(execution_in_progress).bind(summary).bind(i32::try_from(expected_version).unwrap_or_default()).execute(&mut*tx).await?;
         if execution_in_progress {
-            sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='executing'THEN'unknown'ELSE'cancelled'END,terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','awaiting_permission','executing')")
+            sqlx::query("UPDATE agent_tool_invocations SET state=CASE WHEN state='executing'AND tool_id<>'task.interaction'THEN'unknown'ELSE'cancelled'END,terminal_at=NOW()WHERE run_id=$1 AND state IN('requested','delivered','awaiting_permission','executing')")
                 .bind(run)
                 .execute(&mut *tx)
                 .await?;
@@ -1076,7 +1079,8 @@ impl AgentService {
             "invocationId": id,
             "status": status,
             "summary": summary,
-            "data": input.get("data").cloned().unwrap_or(Value::Null)
+            "data": input.get("data").cloned().unwrap_or(Value::Null),
+            "visual": input.get("visual").cloned().unwrap_or(Value::Null)
         });
         let mut tx = self.pool.begin().await?;
         let row = sqlx::query(

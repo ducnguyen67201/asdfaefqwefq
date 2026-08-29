@@ -213,24 +213,14 @@ export class DesktopToolWorker {
       if (outcome.observation) {
         this.latestObservations.set(envelope.runId, outcome.observation);
       }
+      const data = resultData(outcome);
+      const visual = resultVisual(outcome);
       return DesktopResultV5Schema.parse({
         invocationId: envelope.invocationId,
         status: outcome.status,
         summary: outcome.summary,
-        ...(outcome.data ? { data: outcome.data } : {}),
-        ...(outcome.imageDataUrl
-          ? {
-              visual: {
-                dataBase64: outcome.imageDataUrl.split(',', 2)[1],
-                detail: 'original',
-                mimeType: outcome.imageDataUrl.startsWith('data:image/png')
-                  ? 'image/png'
-                  : 'image/jpeg',
-                observationId:
-                  String((outcome.data?.crop as { observationId?: string } | undefined)?.observationId),
-              },
-            }
-          : {}),
+        ...(data ? { data } : {}),
+        ...(visual ? { visual } : {}),
       });
     } catch {
       return this.result(
@@ -261,4 +251,45 @@ export class DesktopToolWorker {
       this.recent.delete(oldest);
     }
   }
+}
+
+function resultData(outcome: ToolExecutionResult): Record<string, unknown> | undefined {
+  if (!outcome.observation) return outcome.data;
+  const observation: Partial<DesktopObservation> = { ...outcome.observation };
+  delete observation.screenshot;
+  return { ...outcome.data, observation };
+}
+
+function resultVisual(outcome: ToolExecutionResult): DesktopResultV5['visual'] | undefined {
+  if (outcome.imageDataUrl) {
+    const [header, dataBase64] = outcome.imageDataUrl.split(',', 2);
+    const observationId =
+      (outcome.data?.crop as { observationId?: unknown } | undefined)?.observationId ??
+      outcome.observation?.observationId;
+    if (
+      dataBase64 &&
+      typeof observationId === 'string' &&
+      (header === 'data:image/png;base64' || header === 'data:image/jpeg;base64')
+    ) {
+      return {
+        dataBase64,
+        detail: 'original',
+        mimeType: header === 'data:image/png;base64' ? 'image/png' : 'image/jpeg',
+        observationId,
+      };
+    }
+  }
+  const screenshot = outcome.observation?.screenshot;
+  if (
+    screenshot &&
+    (screenshot.mimeType === 'image/png' || screenshot.mimeType === 'image/jpeg')
+  ) {
+    return {
+      dataBase64: screenshot.dataBase64,
+      detail: 'original',
+      mimeType: screenshot.mimeType,
+      observationId: outcome.observation!.observationId,
+    };
+  }
+  return undefined;
 }

@@ -7,7 +7,7 @@ use trocode_api::{
     config::{AgentRuntimeConfig, CostGuardMode},
     db,
     postgres::PgPoolOptions,
-    query,
+    query, query_scalar,
 };
 use url::Url;
 use uuid::Uuid;
@@ -46,7 +46,7 @@ fn runtime_config() -> AgentRuntimeConfig {
     }
 }
 
-async fn setup() -> (trocode_api::PgPool, AgentService, AgentOrchestrator) {
+async fn setup() -> (trocode_api::PgPool, AgentService, AgentOrchestrator, Uuid) {
     let pool = PgPoolOptions::new()
         .max_connections(8)
         .acquire_timeout(Duration::from_secs(5))
@@ -78,7 +78,7 @@ async fn setup() -> (trocode_api::PgPool, AgentService, AgentOrchestrator) {
         CostGuardMode::Enforce,
     );
     let orchestrator = AgentOrchestrator::new(pool.clone(), crypto, config, None);
-    orchestrator
+    let (sdk_worker, _) = orchestrator
         .register_worker(
             Uuid::new_v4(),
             1,
@@ -89,7 +89,7 @@ async fn setup() -> (trocode_api::PgPool, AgentService, AgentOrchestrator) {
         )
         .await
         .expect("register compatible SDK worker");
-    (pool, agent, orchestrator)
+    (pool, agent, orchestrator, sdk_worker)
 }
 
 fn task_input(request: &str, client: Uuid, task: Uuid) -> Value {
@@ -138,7 +138,7 @@ async fn seed_device(pool: &trocode_api::PgPool) -> Uuid {
 #[tokio::test]
 #[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
 async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
-    let (pool, agent, _orchestrator) = setup().await;
+    let (pool, agent, orchestrator, sdk_worker) = setup().await;
     assert!(agent.enabled_for(USER));
     assert!(!agent.enabled_for("not-in-canary"));
 
@@ -212,5 +212,68 @@ async fn v5_is_the_only_start_path_and_remains_idempotent_and_cancellable() {
     assert_eq!(cancelled["projection"]["state"], "cancelled");
     assert!(agent.get_v5(USER, run_id).await.unwrap().is_some());
     assert!(agent.get_v4(USER, run_id).await.unwrap().is_none());
+
+    let clarification = agent
+        .submit_v5(
+            USER,
+            "basic",
+            &task_input("Ask which window I mean.", Uuid::new_v4(), Uuid::new_v4()),
+        )
+        .await
+        .expect("submit clarification task");
+    let clarification_run: Uuid = clarification["id"].as_str().unwrap().parse().unwrap();
+    let claim = orchestrator
+        .claim(sdk_worker, "0.17.0", GRAPH_VERSION)
+        .await
+        .expect("claim clarification task")
+        .expect("clarification task is claimable");
+    assert_eq!(claim.run_id, clarification_run);
+    let desktop_worker: Uuid = worker["id"].as_str().unwrap().parse().unwrap();
+    let invocation_id = Uuid::new_v4();
+    query(
+        "INSERT INTO agent_tool_invocations(
+           id,run_id,call_id,tool_id,operation,state,idempotency_key,
+           worker_session_id,public_summary,expires_at
+         ) VALUES($1,$2,'clarification-call','task.interaction','clarify','delivered',
+           'clarification-idempotency',$3,'Waiting for the user.',NOW()+INTERVAL'5 minutes')",
+    )
+    .bind(invocation_id)
+    .bind(clarification_run)
+    .bind(desktop_worker)
+    .execute(&pool)
+    .await
+    .expect("seed delivered clarification");
+    agent
+        .begin_execution(
+            USER,
+            desktop_worker,
+            &json!({
+                "invocationId":invocation_id,
+                "expectedRunVersion":claim.run_version
+            }),
+        )
+        .await
+        .expect("begin clarification wait");
+    let clarification_cancelled = agent
+        .cancel_versioned(
+            USER,
+            clarification_run,
+            &json!({
+                "clientCommandId":Uuid::new_v4(),
+                "expectedRunVersion":claim.run_version,
+                "source":"stop_button"
+            }),
+        )
+        .await
+        .expect("cancel clarification wait")
+        .expect("clarification task exists");
+    assert_eq!(clarification_cancelled["projection"]["state"], "cancelled");
+    let invocation_state: String =
+        query_scalar("SELECT state FROM agent_tool_invocations WHERE id=$1")
+            .bind(invocation_id)
+            .fetch_one(&pool)
+            .await
+            .expect("read cancelled clarification");
+    assert_eq!(invocation_state, "cancelled");
     pool.close().await;
 }

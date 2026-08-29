@@ -49,6 +49,7 @@ pub struct ToolCallResult {
     pub data: Option<Value>,
     pub status: String,
     pub summary: String,
+    pub visual: Option<Value>,
 }
 
 enum ValidatedRoute {
@@ -291,6 +292,7 @@ impl ToolBroker {
                 data: None,
                 status: "pending".to_owned(),
                 summary,
+                visual: None,
             });
         }
         let result = row_envelope(&row, "result")?
@@ -302,9 +304,10 @@ impl ToolBroker {
             })
             .transpose()?;
         Ok(ToolCallResult {
-            data: result.and_then(|value| value.get("data").cloned()),
+            data: result.as_ref().and_then(|value| value.get("data").cloned()),
             status: state,
             summary,
+            visual: result.and_then(|value| value.get("visual").cloned()),
         })
     }
 

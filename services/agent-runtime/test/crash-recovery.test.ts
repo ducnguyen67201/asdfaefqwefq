@@ -5,6 +5,7 @@ import type { ToolCheckpointControlPlane } from '../src/control-plane-client.js'
 import { RunLease } from '../src/control-plane-client.js';
 import {
   ToolExecutionCheckpoint,
+  modelToolResult,
   type PendingToolCall,
 } from '../src/tool-adapter.js';
 
@@ -37,6 +38,45 @@ function config(): RuntimeConfig {
 }
 
 describe('remote tool crash boundary', () => {
+  it('returns desktop visual evidence as SDK structured tool output', () => {
+    const observationId = '4e49660f-47b2-4e1c-a7f5-b9ea93e4e720';
+    expect(modelToolResult({
+      data: {
+        observation: {
+          observationId,
+          text: 'Chrome is visible.',
+        },
+      },
+      status: 'confirmed',
+      summary: 'Captured a fresh desktop observation.',
+      visual: {
+        dataBase64: 'aW1hZ2U=',
+        detail: 'original',
+        mimeType: 'image/png',
+        observationId,
+      },
+    })).toEqual([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          status: 'confirmed',
+          summary: 'Captured a fresh desktop observation.',
+          data: {
+            observation: {
+              observationId,
+              text: 'Chrome is visible.',
+            },
+          },
+        }),
+      },
+      {
+        type: 'image',
+        image: { data: 'aW1hZ2U=', mediaType: 'image/png' },
+        detail: 'high',
+      },
+    ]);
+  });
+
   it('always persists SDK state before queueing the external call', async () => {
     const calls: string[] = [];
     const port: ToolCheckpointControlPlane = {

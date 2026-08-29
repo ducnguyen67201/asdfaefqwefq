@@ -651,7 +651,19 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
                 "invocationId":pending[0]["invocationId"],
                 "status":"confirmed",
                 "summary":"Chrome opened.",
-                "data":{"application":"chrome"}
+                "data":{
+                    "application":"chrome",
+                    "observation":{
+                        "observationId":"11111111-1111-4111-8111-111111111111",
+                        "text":"Chrome is visible."
+                    }
+                },
+                "visual":{
+                    "dataBase64":"aW1hZ2U=",
+                    "detail":"original",
+                    "mimeType":"image/png",
+                    "observationId":"11111111-1111-4111-8111-111111111111"
+                }
             }),
         )
         .await
@@ -661,6 +673,11 @@ async fn sdk_checkpoint_session_steering_and_tool_dispatch_are_durable() {
         .await
         .expect("read durable result");
     assert_eq!(result.status, "confirmed");
+    assert_eq!(
+        result.data.as_ref().unwrap()["observation"]["text"],
+        "Chrome is visible."
+    );
+    assert_eq!(result.visual.as_ref().unwrap()["mimeType"], "image/png");
     let missing_terminal_checkpoint = orchestrator
         .complete(
             run_id,

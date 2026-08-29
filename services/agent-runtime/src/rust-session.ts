@@ -67,11 +67,15 @@ export class RustSession
 
   async applyHistoryTransaction(args: SessionHistoryTransactionArgs): Promise<void> {
     const operationDigest = digest(args.transaction);
+    const expectedSessionRevision = this.revision;
     const result = await this.client.applySessionTransaction(
       this.lease,
       {
-        expectedSessionRevision: this.revision,
-        operationId: args.operationId,
+        expectedSessionRevision,
+        operationId: `sdk:${expectedSessionRevision}:${digest({
+          operationDigest,
+          operationId: args.operationId,
+        })}`,
         operationDigest,
         transaction: args.transaction,
       },
@@ -82,11 +86,12 @@ export class RustSession
 
   private async commit(transaction: SessionTransaction): Promise<void> {
     const operationDigest = digest(transaction);
+    const expectedSessionRevision = this.revision;
     const result = await this.client.applySessionTransaction(
       this.lease,
       {
-        expectedSessionRevision: this.revision,
-        operationId: `session:${operationDigest}`,
+        expectedSessionRevision,
+        operationId: `session:${expectedSessionRevision}:${operationDigest}`,
         operationDigest,
         transaction,
       },
