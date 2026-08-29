@@ -99,8 +99,12 @@ authentication.
 The desktop pet's hover reaction uses a bounded local main-process hit test
 only while the pet is visible and idle. Electron compares the current DIP
 cursor point with the pet rectangle and sends the sandboxed renderer only a
-boolean. Cursor coordinates are never placed in IPC, PostHog, logs, task
-history, classroom evidence, local persistence, or network requests. Pet-nudge
+boolean. Raw hover coordinates are never placed in IPC. The separate action
+cursor buddy follows the real pointer in a click-through window; on Windows,
+Electron sends its parsed overlay-local buddy position to that sandboxed
+renderer. Pointer coordinates and buddy positions are never placed in PostHog,
+logs, task history, classroom evidence, local persistence, or network requests.
+Pet-nudge
 text crosses only the bounded parsed outbound renderer projection and is never
 placed in analytics, logs, task history, classroom evidence, persistence, or
 network requests. The tracker stops while the pet is busy, hidden, disabled,
