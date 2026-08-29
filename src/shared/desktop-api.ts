@@ -14,6 +14,7 @@ import type {
   CompanionCustomizationStatus,
   CompanionGuidance,
   CompanionGuidanceVisual,
+  CompanionHover,
   CompanionInteraction,
   CompanionPetNudge,
   CompanionPosition,
@@ -135,6 +136,7 @@ export const IPC_CHANNELS = {
   companionUseDefault: 'companion-customization:use-default',
   companionGuidanceChanged: 'companion:guidance-changed',
   companionGuidanceVisualChanged: 'companion:guidance-visual-changed',
+  companionHoverChanged: 'companion:hover-changed',
   companionInteractionChanged: 'companion:interaction-changed',
   companionPetNudgeChanged: 'companion:pet-nudge-changed',
   companionResponseAction: 'companion:response-action',
@@ -439,6 +441,7 @@ export interface CompanionApi {
   onInteractionChange(
     listener: (interaction: CompanionInteraction | null) => void,
   ): () => void;
+  onHoverChange(listener: (hovered: CompanionHover) => void): () => void;
   onPositionChange(listener: (position: CompanionPosition) => void): () => void;
   onPetNudgeChange(
     listener: (nudge: CompanionPetNudge | null) => void,

@@ -62,6 +62,9 @@ describe('CompanionCustomizationCard', () => {
     const markup = renderCard(availableStatus());
 
     expect(markup).toContain('Custom companion');
+    expect(markup).toContain('Pick a pet');
+    expect(markup).toContain('Animated default pet');
+    expect(markup).toContain('Create your own pet');
     expect(markup).toContain('Drop, paste, or click to choose');
     expect(markup).toContain('Describe the vibe');
     expect(markup).toContain('2 of 5 previews used');
@@ -109,12 +112,14 @@ describe('CompanionCustomizationCard', () => {
       }),
     );
 
-    expect(markup).toContain('Your companions');
-    expect(markup).toContain('Switching does not use a preview.');
-    expect(markup).toContain('2 saved');
-    expect(markup).toContain('Saved companion 2');
+    expect(markup).toContain('Pick a pet');
+    expect(markup).toContain(
+      'Choose Tro or a pet you generated. Switching does not use a preview.',
+    );
+    expect(markup).toContain('2 custom pets');
+    expect(markup).toContain('Generated pet 2');
     expect(markup).toContain('aria-pressed="true"');
-    expect(markup).toContain('Saved companions stay encrypted on this device.');
+    expect(markup).toContain('Generated pets stay encrypted on this device.');
   });
 
   it('disables generation after the monthly limit is exhausted', () => {
@@ -177,6 +182,8 @@ describe('CompanionCustomizationCard', () => {
     const markup = renderCard(availableStatus(), { appLanguage: 'vi' });
 
     expect(markup).toContain('Chọn một bức ảnh');
+    expect(markup).toContain('Chọn thú cưng');
+    expect(markup).toContain('Tạo thú cưng riêng');
     expect(markup).toContain('Mô tả phong cách');
     expect(markup).toContain('Thêm ảnh để tiếp tục');
     expect(markup).not.toContain('Drop, paste, or click to choose');

@@ -11,46 +11,52 @@ const MOOD_LABELS: Readonly<
     encouraging: 'Keep going',
     waiting: 'While you wait',
     celebrating: 'Nice work',
+    thinking: 'Thinking',
+    working: 'On it',
+    verifying: 'Checking',
   },
   vi: {
     encouraging: 'Tiếp tục nhé',
     waiting: 'Trong lúc chờ',
     celebrating: 'Làm tốt lắm',
+    thinking: 'Đang suy nghĩ',
+    working: 'Đang làm',
+    verifying: 'Đang kiểm tra',
   },
 };
 
-export function classroomPetMoodLabel(
+export function companionPetMoodLabel(
   language: AppLanguage,
   mood: CompanionPetMood,
 ): string {
   return MOOD_LABELS[language][mood];
 }
 
-export function ClassroomPetNudge({
+export function CompanionPetNudge({
   nudge,
 }: {
   nudge: CompanionPetNudgeProjection;
 }) {
   return (
     <aside
-      aria-labelledby="classroom-pet-nudge-title classroom-pet-nudge-mood"
+      aria-labelledby="companion-pet-nudge-title companion-pet-nudge-mood"
       aria-live="polite"
-      className={`guidance-callout classroom-pet-nudge classroom-pet-nudge--${nudge.mood} guidance-callout--${nudge.side}`}
+      className={`guidance-callout companion-pet-nudge companion-pet-nudge--${nudge.mood} guidance-callout--${nudge.side}`}
       role="status"
     >
       <span
-        className="classroom-pet-nudge__identity"
-        id="classroom-pet-nudge-title"
+        className="companion-pet-nudge__identity"
+        id="companion-pet-nudge-title"
       >
         Tro pet
       </span>
       <span
-        className="classroom-pet-nudge__mood"
-        id="classroom-pet-nudge-mood"
+        className="companion-pet-nudge__mood"
+        id="companion-pet-nudge-mood"
       >
-        {classroomPetMoodLabel(nudge.language, nudge.mood)}
+        {companionPetMoodLabel(nudge.language, nudge.mood)}
       </span>
-      <p className="classroom-pet-nudge__message">{nudge.message}</p>
+      <p className="companion-pet-nudge__message">{nudge.message}</p>
     </aside>
   );
 }

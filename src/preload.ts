@@ -17,6 +17,7 @@ import {
   CancelTaskRequestSchema,
   CompanionGuidanceSchema,
   CompanionGuidanceVisualSchema,
+  CompanionHoverSchema,
   CompanionInteractionSchema,
   CompanionPetNudgeSchema,
   CompanionResponseActionRequestSchema,
@@ -1022,6 +1023,22 @@ const companionApi: CompanionApi = {
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.companionInteractionChanged,
+        eventHandler,
+      );
+  },
+
+  onHoverChange(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(CompanionHoverSchema.parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.companionHoverChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.companionHoverChanged,
         eventHandler,
       );
   },

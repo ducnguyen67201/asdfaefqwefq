@@ -80,11 +80,13 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Kết nối các công cụ Tro có thể dùng thay bạn.',
   'Desktop pet': 'Thú cưng trên màn hình',
   'Show desktop pet': 'Hiển thị thú cưng trên màn hình',
-  'Show a small animated companion on your desktop. Drag it anywhere you like; it moves independently and can offer occasional local encouragement during live classes. It never watches apps, websites, cursor activity, or typing.':
-    'Hiển thị một bạn đồng hành nhỏ có chuyển động trên màn hình. Bạn có thể kéo thú cưng đến bất cứ đâu; thú cưng di chuyển độc lập và có thể động viên bạn ngay trên thiết bị trong lớp học trực tiếp. Thú cưng không theo dõi ứng dụng, trang web, hoạt động con trỏ hay thao tác gõ phím.',
+  'Show a stateful animated companion on your desktop. Drag it anywhere you like; it reacts to task progress, pointer hover, and occasional local task or classroom messages. Hover checks only whether the pointer is over the pet on this device; coordinates are never recorded, stored, or sent. It does not inspect apps, websites, or typing.':
+    'Hiển thị một bạn đồng hành có trạng thái và chuyển động trên màn hình. Bạn có thể kéo thú cưng đến bất cứ đâu; thú cưng phản ứng với tiến độ tác vụ, thao tác rê chuột và đôi khi hiển thị thông báo tác vụ hoặc lớp học ngay trên thiết bị. Phản ứng rê chuột chỉ kiểm tra con trỏ có ở trên thú cưng hay không; tọa độ không bao giờ được ghi lại, lưu trữ hay gửi đi. Thú cưng không đọc ứng dụng, trang web hay thao tác gõ phím.',
   'Keep going': 'Tiếp tục nhé',
   'While you wait': 'Trong lúc chờ',
   'Nice work': 'Làm tốt lắm',
+  Thinking: 'Đang suy nghĩ',
+  'On it': 'Đang làm',
   'Choose how you talk with Tro': 'Chọn cách bạn trò chuyện với Tro',
   'Choose your spoken language, then give Tro the macOS permissions it needs to hear your request, use the computer, and confirm the result. You stay in control and can revoke permissions in System Settings at any time.':
     'Chọn ngôn ngữ nói, sau đó cấp cho Tro các quyền macOS cần thiết để nghe yêu cầu, sử dụng máy tính và xác nhận kết quả. Bạn luôn nắm quyền kiểm soát và có thể thu hồi quyền trong Cài đặt hệ thống bất cứ lúc nào.',
@@ -712,18 +714,26 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro’s default companion is active.':
     'Bạn đồng hành mặc định của Tro đang hoạt động.',
   'Use default companion': 'Dùng bạn đồng hành mặc định',
-  'Your companions': 'Bạn đồng hành của bạn',
-  'Choose any companion you created before. Switching does not use a preview.':
-    'Chọn bất kỳ bạn đồng hành nào bạn đã tạo. Việc chuyển đổi không tốn lượt xem trước.',
-  '{count} saved': 'Đã lưu {count}',
-  'Saved companion {number}': 'Bạn đồng hành đã lưu {number}',
+  'Pick a pet': 'Chọn thú cưng',
+  'Choose Tro or a pet you generated. Switching does not use a preview.':
+    'Chọn Tro hoặc thú cưng bạn đã tạo. Việc chuyển đổi không tốn lượt xem trước.',
+  '{count} custom pets': '{count} thú cưng tùy chỉnh',
+  'Tro, active': 'Tro, đang dùng',
+  'Use Tro': 'Dùng Tro',
+  'Animated default pet': 'Thú cưng mặc định có hoạt ảnh',
+  'Generated pet {number}': 'Thú cưng đã tạo {number}',
   '{name}, active': '{name}, đang dùng',
   'Use {name}': 'Dùng {name}',
   'Created {date}': 'Đã tạo {date}',
   'Switching…': 'Đang chuyển…',
   Use: 'Dùng',
-  'Saved companions stay encrypted on this device.':
-    'Các bạn đồng hành đã lưu được mã hóa trên thiết bị này.',
+  'Generated pets stay encrypted on this device.':
+    'Các thú cưng đã tạo được mã hóa trên thiết bị này.',
+  'Create your own pet': 'Tạo thú cưng riêng',
+  'Start with a picture, then describe how your pet should look.':
+    'Bắt đầu bằng một bức ảnh, rồi mô tả diện mạo bạn muốn cho thú cưng.',
+  'Generated pets keep Tro’s state badges and motion reactions.':
+    'Thú cưng đã tạo vẫn dùng huy hiệu trạng thái và phản ứng chuyển động của Tro.',
   'Restoring…': 'Đang khôi phục…',
   'Generation unavailable': 'Không thể tạo hình',
   'Add a source image': 'Thêm ảnh nguồn',

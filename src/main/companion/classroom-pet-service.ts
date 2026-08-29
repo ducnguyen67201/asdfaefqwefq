@@ -19,8 +19,13 @@ export const CLASSROOM_PET_INTERVAL_MS = 480_000;
 export const CLASSROOM_PET_VISIBLE_MS = 7_000;
 export const CLASSROOM_PET_BUSY_RETRY_MS = 60_000;
 
+export type ClassroomPetMood = Extract<
+  CompanionPetMood,
+  'encouraging' | 'waiting' | 'celebrating'
+>;
+
 const CLASSROOM_PET_MESSAGES: Readonly<
-  Record<AppLanguage, Record<CompanionPetMood, readonly string[]>>
+  Record<AppLanguage, Record<ClassroomPetMood, readonly string[]>>
 > = {
   en: {
     encouraging: [
@@ -71,7 +76,7 @@ interface ClassroomPetDependencies {
 
 export function classroomPetMood(
   session: ClassroomSessionProjection | null,
-): CompanionPetMood | null {
+): ClassroomPetMood | null {
   if (
     !session ||
     session.leftAt ||
@@ -115,7 +120,7 @@ export class ClassroomPetService {
 
   private attemptId: string | null = null;
 
-  private mood: CompanionPetMood | null = null;
+  private mood: ClassroomPetMood | null = null;
 
   private activeNudgeId: string | null = null;
 
@@ -222,7 +227,7 @@ export class ClassroomPetService {
     }
   }
 
-  private initialDelay(mood: CompanionPetMood | null): number {
+  private initialDelay(mood: ClassroomPetMood | null): number {
     return mood === 'encouraging'
       ? CLASSROOM_PET_FIRST_WORKING_DELAY_MS
       : CLASSROOM_PET_TRANSITION_DELAY_MS;
@@ -307,7 +312,7 @@ export class ClassroomPetService {
 
   private nextMessage(
     language: AppLanguage,
-    mood: CompanionPetMood,
+    mood: ClassroomPetMood,
   ): string {
     const catalogue = CLASSROOM_PET_MESSAGES[language][mood];
     const fallback = catalogue[0];

@@ -80,7 +80,16 @@ Implemented:
 - A custom cursor companion generator in Settings: any signed-in user with an
   active membership can edit one PNG/JPEG through the hosted OpenAI Images API,
   preview it in memory, and activate an account-scoped, operating-system-
-  encrypted local PNG. Every plan receives five generations per UTC month.
+  encrypted local PNG. A Codex-style picker switches between the animated Tro
+  default and previously generated pets without spending another preview.
+  Every plan receives five generations per UTC month.
+- A stateful animated desktop pet with distinct idle, guidance, voice,
+  thinking, sending, working, completion, and error poses. Long-running tasks
+  may show sparse curated local status messages, and idle pointer hover triggers
+  a click-through reaction without recording or transmitting coordinates.
+  Reduced-motion mode freezes a representative pose. Wayland keeps lifecycle
+  animation but disables hover because Electron does not expose cursor position
+  there.
 - PostHog product analytics for count-only app, model, and tool activity; task
   text, voice transcripts, screenshots, and tool arguments are excluded.
 - Account-scoped PostgreSQL task history that saves the latest validated task
