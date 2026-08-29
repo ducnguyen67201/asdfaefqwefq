@@ -36,6 +36,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Accessibility: 'Trợ năng',
   act: 'thực hiện',
   'Activate membership': 'Kích hoạt tư cách thành viên',
+  'Adds your words without sending.': 'Thêm lời nói của bạn mà không gửi đi.',
   'Activate your Tro membership': 'Kích hoạt tư cách thành viên Tro',
   Activating: 'Đang kích hoạt',
   'Activating…': 'Đang kích hoạt…',
@@ -56,6 +57,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Answer: 'Trả lời',
   answer: 'trả lời',
   'Answer Tro to continue this task': 'Trả lời Tro để tiếp tục tác vụ',
+  'Ask Tro': 'Hỏi Tro',
   'App controls will use {appLanguage}; new voice turns will use {spokenLanguage}.':
     'Giao diện ứng dụng sẽ dùng {appLanguage}; lượt nói mới sẽ dùng {spokenLanguage}.',
   'Assistant only': 'Chỉ dùng trợ lý',
@@ -97,6 +99,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Connecting…': 'Đang kết nối…',
   'Finishing your request…': 'Đang hoàn tất yêu cầu của bạn…',
   'Getting voice ready…': 'Đang chuẩn bị giọng nói…',
+  Hold: 'Giữ',
   'Connecting to OpenAI voice…': 'Đang kết nối với giọng nói OpenAI…',
   Conversation: 'Cuộc trò chuyện',
   completed: 'đã hoàn tất',
@@ -123,8 +126,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Dictation complete': 'Chính tả hoàn tất',
   'Dictation inserted.': 'Đã chèn nội dung chính tả.',
   'Dictation needs attention': 'Chính tả cần chú ý',
-  'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.':
-    'Chính tả thêm văn bản mà không gửi. Tác vụ chuyển yêu cầu bằng giọng nói cho Tro sau khoảng một giây để nhấn Escape hủy.',
   'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.':
     'Mô tả đích đến. Tro sẽ xác định phạm vi giới hạn, chọn công cụ và xác minh kết quả.',
   'Desktop agent': 'Trợ lý máy tính',
@@ -334,7 +335,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Voice input could not be completed.':
     'Không thể hoàn tất đầu vào giọng nói.',
   'Voice shortcuts': 'Phím tắt giọng nói',
-  'Add Shift to either Dictation shortcut': 'Thêm Shift vào phím tắt Chính tả',
   'macOS: Command + Control · Windows: left Control + left Alt':
     'macOS: Command + Control · Windows: Control trái + Alt trái',
   'No speech was detected. The draft was left unchanged.':
@@ -348,6 +348,7 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tác vụ văn bản đã sẵn sàng. Chỉ kết nối khi bạn muốn trợ lý sử dụng các ứng dụng hiển thị trên màn hình.',
   'Text tasks work without microphone or computer permissions. Choose your spoken language now; voice and computer use remain optional and can be connected only when you need them.':
     'Tác vụ văn bản hoạt động mà không cần quyền micrô hoặc máy tính. Hãy chọn ngôn ngữ nói; giọng nói và điều khiển máy tính vẫn là tùy chọn và chỉ cần kết nối khi bạn sử dụng.',
+  Talk: 'Nói',
   'The task finished. Its conversation and activity are available in History.':
     'Tác vụ đã kết thúc. Cuộc trò chuyện và hoạt động có trong Lịch sử.',
   'The trail is clear': 'Chưa có dấu vết',
@@ -375,6 +376,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tro needs your input': 'Tro cần phản hồi của bạn',
   'Tro sends this as a transcription hint so short or noisy speech is less likely to be interpreted as an unexpected language or script.':
     'Tro gửi lựa chọn này làm gợi ý phiên âm để lời nói ngắn hoặc có tạp âm ít bị nhận diện nhầm thành ngôn ngữ hay hệ chữ khác.',
+  'Sends your request to Tro.': 'Gửi yêu cầu của bạn cho Tro.',
+  Switch: 'Chuyển',
+  'Switch mode': 'Chuyển chế độ',
   'Tro registers itself with macOS for Screen Recording. If System Settings opens, switch on the Tro row—you should not need the + button. Then return here and we’ll connect automatically. Screen Recording may require restarting Tro once.':
     'Tro tự đăng ký với macOS để ghi màn hình. Nếu Cài đặt hệ thống mở ra, hãy bật Tro trong danh sách—bạn không cần dùng nút +. Sau đó quay lại đây và chúng tôi sẽ tự động kết nối. Quyền ghi màn hình có thể yêu cầu khởi động lại Tro một lần.',
   'Updates unavailable': 'Không thể cập nhật',
@@ -387,15 +391,21 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Voice and language': 'Giọng nói và ngôn ngữ',
   Voice: 'Giọng nói',
   'Voice input': 'Đầu vào giọng nói',
-  'Voice ready. Hold {shortcut} to talk.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói.',
-  'Voice ready. Hold {shortcut} to talk from any app.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói từ bất kỳ ứng dụng nào.',
-  'Voice ready. Hold {shortcut} to talk, or hold {globalShortcut} globally.':
-    'Giọng nói đã sẵn sàng. Giữ {shortcut} để nói hoặc giữ {globalShortcut} trên toàn hệ thống.',
+  'Voice mode': 'Chế độ giọng nói',
+  'Voice ready.': 'Giọng nói đã sẵn sàng.',
   'Voice recognition is unavailable. Type your request instead.':
     'Nhận dạng giọng nói không khả dụng. Hãy nhập yêu cầu bằng bàn phím.',
   'Waiting for microphone access…': 'Đang chờ quyền truy cập micrô…',
+  'Write my words': 'Viết lời của tôi',
+  'Write my words adds text without sending. Ask Tro sends the spoken request after a one-second Escape window.':
+    'Viết lời của tôi sẽ thêm văn bản mà không gửi. Hỏi Tro sẽ gửi yêu cầu bằng giọng nói sau khoảng một giây để nhấn Escape hủy.',
+  'macOS: Command + Backslash · Windows: Control + Backslash':
+    'macOS: Command + dấu gạch chéo ngược · Windows: Control + dấu gạch chéo ngược',
+  'to talk': 'để nói',
+  'Type, dictate, or use Ask Tro to answer…':
+    'Nhập, đọc chính tả hoặc dùng Hỏi Tro để trả lời…',
+  'Type a task, or use Write my words to add text without sending…':
+    'Nhập một tác vụ hoặc dùng Viết lời của tôi để thêm văn bản mà không gửi…',
   Transcribing: 'Đang phiên âm',
   Workspace: 'Không gian làm việc',
   'Version, updates, and product details.':
@@ -879,12 +889,8 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tác vụ văn bản không cần quyền micrô hay máy tính. Chính tả và Tác vụ giọng nói dùng micrô; chèn Chính tả vào ứng dụng khác còn dùng quyền Trợ năng.',
   'Tro composer': 'Trình soạn thảo Tro',
   'Tro task': 'Tác vụ Tro',
-  'Type, dictate, or hold Shift with the voice shortcut to answer…':
-    'Nhập, đọc chính tả hoặc giữ thêm Shift cùng phím tắt giọng nói để trả lời…',
   'Type, dictate, or give Tro a voice task…':
     'Nhập, đọc chính tả hoặc giao việc cho Tro bằng giọng nói…',
-  'Type a task, or hold Dictation to add text without sending…':
-    'Nhập tác vụ, hoặc giữ Chính tả để thêm văn bản mà không gửi…',
 };
 
 const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {

@@ -37,7 +37,6 @@ import type {
   VoiceMode,
 } from '../shared/contracts';
 import { VOICE_TRANSCRIPTION_MODEL } from '../shared/contracts';
-import { voiceShortcutDescriptor } from '../shared/voice-mode';
 
 import { acceptAgentActivity } from './agent-activity-projection';
 import { appLanguageLabel, translate } from './app-language';
@@ -70,11 +69,6 @@ import {
   type PermissionState,
 } from './permission-onboarding';
 import { PermissionOnboarding } from './PermissionOnboarding';
-import {
-  globalPushToTalkShortcutName,
-  pushToTalkShortcutName,
-  type PushToTalkPlatform,
-} from './push-to-talk';
 import { SettingsPage } from './SettingsPage';
 import { SidebarClassWorkspaceSwitcher } from './SidebarClassWorkspaceSwitcher';
 import type { SpaceDetailTab } from './SpaceDetailPage';
@@ -109,6 +103,11 @@ import {
   type VoiceDraftSnapshot,
 } from './voice-draft';
 import { voiceTurnRoute } from './voice-route';
+import {
+  isVoiceModeToggleShortcut,
+  nextVoiceMode,
+  VoiceModeControl,
+} from './VoiceModeControl';
 
 const EXAMPLE_TASKS = [
   'Open YouTube for me',
@@ -253,7 +252,6 @@ function formatLabel(value: string, appLanguage: AppLanguage = 'en'): string {
 
 function voiceStatusMessage(
   status: VoiceInputStatus,
-  platform: PushToTalkPlatform,
   appLanguage: AppLanguage,
   mode: VoiceMode | null,
 ): string {
@@ -280,27 +278,7 @@ function voiceStatusMessage(
         'Voice recognition is unavailable. Type your request instead.',
       );
     case 'idle': {
-      const globalShortcut = globalPushToTalkShortcutName(platform);
-      if (globalShortcut) {
-        if (platform === 'macos') {
-          return translate(
-            appLanguage,
-            'Voice ready. Hold {shortcut} to talk from any app.',
-            { shortcut: globalShortcut },
-          );
-        }
-        return translate(
-          appLanguage,
-          'Voice ready. Hold {shortcut} to talk, or hold {globalShortcut} globally.',
-          {
-            globalShortcut,
-            shortcut: pushToTalkShortcutName(platform),
-          },
-        );
-      }
-      return translate(appLanguage, 'Voice ready. Hold {shortcut} to talk.', {
-        shortcut: pushToTalkShortcutName(platform),
-      });
+      return translate(appLanguage, 'Voice ready.');
     }
   }
 }
@@ -353,45 +331,6 @@ function ComputerConnection({
       )}
       {status.state === 'error' && <p className="metadata">{status.summary}</p>}
     </section>
-  );
-}
-
-function VoiceShortcuts({
-  appLanguage,
-  platform,
-}: {
-  appLanguage: AppLanguage;
-  platform: PushToTalkPlatform;
-}) {
-  if (platform === 'unsupported') return null;
-
-  const shortcuts = (['dictation', 'task'] as const).map((mode) => ({
-    descriptor: voiceShortcutDescriptor(platform, mode),
-    label: translate(appLanguage, mode === 'dictation' ? 'Dictation' : 'Task'),
-    mode,
-  }));
-
-  return (
-    <span
-      className="voice-shortcuts"
-      aria-label={translate(appLanguage, 'Voice shortcuts')}
-    >
-      {shortcuts.map(({ descriptor, label, mode }) => (
-        <span
-          className={`voice-shortcut voice-shortcut--${mode}`}
-          aria-label={`${label}: ${descriptor.accessibleName}`}
-          key={mode}
-        >
-          <span className="voice-shortcut__label">{label}</span>
-          {descriptor.keys.map((key, index) => (
-            <span className="voice-shortcut__key" key={key}>
-              {index > 0 && <span aria-hidden="true">+</span>}
-              <kbd>{key}</kbd>
-            </span>
-          ))}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -931,6 +870,8 @@ export function App({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [selectedVoiceMode, setSelectedVoiceMode] =
+    useState<VoiceMode>('dictation');
   const [voiceDestination, setVoiceDestination] = useState<
     CompanionVoiceActivity['destination']
   >({ kind: 'tro_composer', label: 'Tro composer' });
@@ -1041,6 +982,7 @@ export function App({
   const voiceActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const voiceModeSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const autoStartAttemptedTaskIdsRef = useRef(new Set<string>());
   const isSendingRef = useRef(false);
   const isStoppingTaskRef = useRef(false);
@@ -1327,6 +1269,7 @@ export function App({
         setMuteSystemAudioWhileSpeakingDraft(
           preferences.muteSystemAudioWhileSpeaking,
         );
+        setSelectedVoiceMode(preferences.voiceMode);
         if (preferences.primaryLanguage) {
           setLanguageDraft(preferences.primaryLanguage);
         }
@@ -1807,6 +1750,7 @@ export function App({
         classroomPetEnabled: classroomPetEnabledDraft,
         muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
         primaryLanguage: languageDraft,
+        voiceMode: selectedVoiceMode,
       });
       setAppPreferences(preferences);
       setSettingsSaveMessage(
@@ -1837,6 +1781,7 @@ export function App({
     classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
+    selectedVoiceMode,
   ]);
 
   const chooseWorkspace = useCallback(async () => {
@@ -2447,6 +2392,43 @@ export function App({
     [appLanguageDraft, showVoiceTerminalActivity, t],
   );
 
+  const selectVoiceMode = useCallback(
+    (nextMode: VoiceMode): void => {
+      if (nextMode === selectedVoiceMode) return;
+
+      setSelectedVoiceMode(nextMode);
+      if (!appPreferences) return;
+
+      const nextPreferences: AppPreferences = {
+        ...appPreferences,
+        voiceMode: nextMode,
+      };
+      setAppPreferences(nextPreferences);
+      if (!nextPreferences.primaryLanguage) return;
+
+      const request = {
+        ...nextPreferences,
+        primaryLanguage: nextPreferences.primaryLanguage,
+      };
+      voiceModeSaveQueueRef.current = voiceModeSaveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const saved = await window.tro.updateAppPreferences(request);
+          setAppPreferences((current) =>
+            current?.voiceMode === nextMode ? saved : current,
+          );
+        })
+        .catch((saveError: unknown) => {
+          reportError(
+            saveError instanceof Error
+              ? saveError.message
+              : 'Tro could not save the voice mode.',
+          );
+        });
+    },
+    [appPreferences, reportError, selectedVoiceMode],
+  );
+
   const {
     isHolding: isVoiceShortcutHeld,
     mode: voiceMode,
@@ -2464,7 +2446,27 @@ export function App({
     onTranscriptChange: handleVoiceTranscriptChange,
     onTranscriptReady: handleVoiceTranscriptReady,
     onTurnEnd: handleVoiceTurnEnd,
+    selectedMode: selectedVoiceMode,
   });
+  const voiceModeLocked =
+    voiceStatus !== 'idle' && voiceStatus !== 'unavailable';
+
+  useEffect(() => {
+    const handleVoiceModeToggle = (event: KeyboardEvent): void => {
+      if (
+        event.repeat ||
+        voiceModeLocked ||
+        !isVoiceModeToggleShortcut(event, voicePlatform)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      selectVoiceMode(nextVoiceMode(selectedVoiceMode));
+    };
+
+    window.addEventListener('keydown', handleVoiceModeToggle);
+    return () => window.removeEventListener('keydown', handleVoiceModeToggle);
+  }, [selectVoiceMode, selectedVoiceMode, voiceModeLocked, voicePlatform]);
   const shouldMuteSystemAudio = shouldMuteSystemAudioForVoice(
     appPreferences?.muteSystemAudioWhileSpeaking ?? false,
     isVoiceShortcutHeld,
@@ -2544,6 +2546,7 @@ export function App({
           classroomPetEnabled: classroomPetEnabledDraft,
           muteSystemAudioWhileSpeaking: muteSystemAudioWhileSpeakingDraft,
           primaryLanguage: languageDraft,
+          voiceMode: selectedVoiceMode,
         });
         setAppPreferences(preferences);
         setPreferencesLoadError(null);
@@ -2564,6 +2567,7 @@ export function App({
     classroomPetEnabledDraft,
     languageDraft,
     muteSystemAudioWhileSpeakingDraft,
+    selectedVoiceMode,
   ]);
 
   const openScreenRecordingSettings = useCallback(async () => {
@@ -3163,20 +3167,23 @@ export function App({
                       : t('Describe the outcome')}
                 </label>
                 <div
-                  aria-live="polite"
-                  className={`voice-status voice-status--${voiceStatus}${voiceMode ? ` voice-status--${voiceMode}` : ''}`}
+                  className={`voice-status voice-status--${voiceStatus} voice-status--${voiceMode ?? selectedVoiceMode}`}
                 >
-                  <span className="voice-indicator" aria-hidden="true" />
-                  <span>
-                    {voiceStatusMessage(
-                      voiceStatus,
-                      voicePlatform,
-                      appLanguageDraft,
-                      voiceMode,
-                    )}
+                  <span aria-live="polite" className="voice-status__message">
+                    <span className="voice-indicator" aria-hidden="true" />
+                    <span>
+                      {voiceStatusMessage(
+                        voiceStatus,
+                        appLanguageDraft,
+                        voiceMode,
+                      )}
+                    </span>
                   </span>
-                  <VoiceShortcuts
+                  <VoiceModeControl
                     appLanguage={appLanguageDraft}
+                    disabled={voiceModeLocked}
+                    mode={selectedVoiceMode}
+                    onChange={selectVoiceMode}
                     platform={voicePlatform}
                   />
                 </div>
@@ -3187,12 +3194,12 @@ export function App({
                   placeholder={
                     pendingClarification
                       ? t(
-                          'Type, dictate, or hold Shift with the voice shortcut to answer…',
+                          'Type, dictate, or use Ask Tro to answer…',
                         )
                       : isSteering
                         ? t('Type, dictate, or give Tro a voice task…')
                         : t(
-                            'Type a task, or hold Dictation to add text without sending…',
+                            'Type a task, or use Write my words to add text without sending…',
                           )
                   }
                   rows={hasLiveTask || pendingInteraction ? 2 : 4}

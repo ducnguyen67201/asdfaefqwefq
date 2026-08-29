@@ -66,30 +66,11 @@ function modifierState(
   return { anyBase: false, base: false };
 }
 
-function shiftPressed(
-  platform: PushToTalkPlatform,
-  pressedCodes: ReadonlySet<string>,
-): boolean {
-  return platform === 'windows'
-    ? pressedCodes.has('ShiftLeft')
-    : pressedCodes.has('ShiftLeft') || pressedCodes.has('ShiftRight');
-}
-
 export function isPushToTalkChord(
   platform: PushToTalkPlatform,
   pressedCodes: ReadonlySet<string>,
 ): boolean {
   return modifierState(platform, pressedCodes).base;
-}
-
-export function isVoiceTaskChord(
-  platform: PushToTalkPlatform,
-  pressedCodes: ReadonlySet<string>,
-): boolean {
-  return (
-    isPushToTalkChord(platform, pressedCodes) &&
-    shiftPressed(platform, pressedCodes)
-  );
 }
 
 export function isVoiceShortcutModifierCode(code: string): boolean {
@@ -101,23 +82,17 @@ export function transitionVoiceShortcutArbiter(
   platform: PushToTalkPlatform,
   pressedCodes: ReadonlySet<string>,
   nowMs: number,
+  mode: VoiceMode = 'dictation',
 ): VoiceShortcutArbiterTransition {
   if (platform === 'unsupported') {
     return { events: [], state: INITIAL_VOICE_SHORTCUT_ARBITER_STATE };
   }
 
   const { anyBase, base } = modifierState(platform, pressedCodes);
-  const shift = shiftPressed(platform, pressedCodes);
 
   switch (state.phase) {
     case 'idle':
       if (!base) return { events: [], state };
-      if (shift) {
-        return {
-          events: [{ action: 'pressed', mode: 'task' }],
-          state: { deadlineMs: null, phase: 'active_task' },
-        };
-      }
       return {
         events: [],
         state: {
@@ -134,14 +109,11 @@ export function transitionVoiceShortcutArbiter(
       }
       if (state.deadlineMs !== null && nowMs >= state.deadlineMs) {
         return {
-          events: [{ action: 'pressed', mode: 'dictation' }],
-          state: { deadlineMs: null, phase: 'active_dictation' },
-        };
-      }
-      if (shift) {
-        return {
-          events: [{ action: 'pressed', mode: 'task' }],
-          state: { deadlineMs: null, phase: 'active_task' },
+          events: [{ action: 'pressed', mode }],
+          state: {
+            deadlineMs: null,
+            phase: mode === 'task' ? 'active_task' : 'active_dictation',
+          },
         };
       }
       return { events: [], state };
@@ -152,7 +124,7 @@ export function transitionVoiceShortcutArbiter(
         state: { deadlineMs: null, phase: 'await_all_released' },
       };
     case 'active_task':
-      if (base && shift) return { events: [], state };
+      if (base) return { events: [], state };
       return {
         events: [{ action: 'released', mode: 'task' }],
         state: { deadlineMs: null, phase: 'await_all_released' },
@@ -166,22 +138,19 @@ export function transitionVoiceShortcutArbiter(
 
 export function voiceShortcutName(
   platform: PushToTalkPlatform,
-  mode: VoiceMode,
 ): string {
   if (platform === 'unsupported') return 'voice shortcut';
-  return voiceShortcutDescriptor(platform, mode).accessibleName;
+  return voiceShortcutDescriptor(platform).accessibleName;
 }
 
 export function pushToTalkShortcutName(
   platform: PushToTalkPlatform,
-  mode: VoiceMode = 'dictation',
 ): string {
-  return voiceShortcutName(platform, mode);
+  return voiceShortcutName(platform);
 }
 
 export function globalPushToTalkShortcutName(
   platform: PushToTalkPlatform,
-  mode: VoiceMode = 'dictation',
 ): string | null {
-  return platform === 'unsupported' ? null : voiceShortcutName(platform, mode);
+  return platform === 'unsupported' ? null : voiceShortcutName(platform);
 }

@@ -71,6 +71,7 @@ export interface UsePushToTalkOptions {
     transcript: string,
   ): Promise<void>;
   onTurnEnd(context: VoiceTurnContext, reason: VoiceTurnEndReason): void;
+  selectedMode: VoiceMode;
 }
 
 interface PushToTalkState {
@@ -110,8 +111,9 @@ interface PushToTalkAttemptReadiness {
 
 interface VoiceShortcutEventHandlers {
   beginListening(mode: VoiceMode): unknown;
-  finishListening(mode: VoiceMode): void;
+  finishListening(): void;
   isListening: boolean;
+  selectedMode: VoiceMode;
 }
 
 interface LocalVoiceReleaseState {
@@ -145,13 +147,18 @@ export function beginPushToTalkAttemptIfValid(
 
 export function handleVoiceShortcutEvent(
   event: VoiceShortcutEvent,
-  { beginListening, finishListening, isListening }: VoiceShortcutEventHandlers,
+  {
+    beginListening,
+    finishListening,
+    isListening,
+    selectedMode,
+  }: VoiceShortcutEventHandlers,
 ): void {
   if (event.action === 'pressed') {
-    if (!isListening) beginListening(event.mode);
+    if (!isListening) beginListening(selectedMode);
     return;
   }
-  if (event.action === 'released' && isListening) finishListening(event.mode);
+  if (event.action === 'released' && isListening) finishListening();
 }
 
 export function shouldFinishVoiceOnLocalRelease({
@@ -231,6 +238,7 @@ export function usePushToTalk({
   onTranscriptChange,
   onTranscriptReady,
   onTurnEnd,
+  selectedMode,
 }: UsePushToTalkOptions): PushToTalkState {
   const [platform] = useState<PushToTalkPlatform>(getPushToTalkPlatform);
   const [status, setStatus] = useState<VoiceInputStatus>(() =>
@@ -254,6 +262,7 @@ export function usePushToTalk({
   const onTranscriptChangeRef = useRef(onTranscriptChange);
   const onTranscriptReadyRef = useRef(onTranscriptReady);
   const onTurnEndRef = useRef(onTurnEnd);
+  const selectedModeRef = useRef(selectedMode);
   const finishListeningRef = useRef<(mode?: VoiceMode) => void>(
     () => undefined,
   );
@@ -266,6 +275,7 @@ export function usePushToTalk({
     onTranscriptChangeRef.current = onTranscriptChange;
     onTranscriptReadyRef.current = onTranscriptReady;
     onTurnEndRef.current = onTurnEnd;
+    selectedModeRef.current = selectedMode;
   }, [
     disabled,
     enabled,
@@ -274,6 +284,7 @@ export function usePushToTalk({
     onTranscriptChange,
     onTranscriptReady,
     onTurnEnd,
+    selectedMode,
   ]);
 
   const notifyTurnEnd = useCallback(
@@ -396,7 +407,7 @@ export function usePushToTalk({
           segmentCount: turn.expectedSegmentCount,
         });
         onErrorRef.current(
-          `No speech was detected. Hold ${pushToTalkShortcutName(platform, turn.context.mode)} and try again.`,
+          `No speech was detected. Hold ${pushToTalkShortcutName(platform)} and try again.`,
         );
         return;
       }
@@ -429,7 +440,7 @@ export function usePushToTalk({
           segmentCount: turn.expectedSegmentCount,
         });
         onErrorRef.current(
-          `No speech was detected. Hold ${pushToTalkShortcutName(platform, turn.context.mode)} and try again.`,
+          `No speech was detected. Hold ${pushToTalkShortcutName(platform)} and try again.`,
         );
         return;
       }
@@ -789,6 +800,7 @@ export function usePushToTalk({
         platform,
         pressedCodesRef.current,
         nowMs,
+        selectedModeRef.current,
       );
       localArbiterRef.current = transition.state;
       for (const shortcutEvent of transition.events) {
@@ -859,9 +871,9 @@ export function usePushToTalk({
         handleVoiceShortcutEvent(event, {
           beginListening: (eventMode) =>
             beginListening('global_hold', eventMode),
-          finishListening: (eventMode) =>
-            finishListeningRef.current(eventMode),
+          finishListening: () => finishListeningRef.current(),
           isListening: Boolean(activeTurnRef.current),
+          selectedMode: selectedModeRef.current,
         });
       }),
     [beginListening],

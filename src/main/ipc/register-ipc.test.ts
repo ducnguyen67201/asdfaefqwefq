@@ -994,13 +994,18 @@ describe('registerIpcHandlers auth boundary', () => {
     await expect(
       electronMock.handlers
         .get(IPC_CHANNELS.updateAppPreferences)
-        ?.(event, { classroomPetEnabled: false, primaryLanguage: 'vi' }),
+        ?.(event, {
+          classroomPetEnabled: false,
+          primaryLanguage: 'vi',
+          voiceMode: 'task',
+        }),
     ).resolves.toEqual({
       appLanguage: 'en',
       autonomyMode: 'balanced',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
+      voiceMode: 'task',
     });
 
     expect(getAppPreferences).toHaveBeenCalledOnce();
@@ -1010,6 +1015,7 @@ describe('registerIpcHandlers auth boundary', () => {
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
+      voiceMode: 'task',
     });
     unregister();
   });

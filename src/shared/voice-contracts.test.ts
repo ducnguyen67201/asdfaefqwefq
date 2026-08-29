@@ -12,17 +12,17 @@ import {
 } from './contracts';
 
 describe('voice mode contracts', () => {
-  it('requires an explicit known mode and rejects extra shortcut keys', () => {
+  it('accepts content-free shortcut edges and rejects mode payloads', () => {
     expect(
       VoiceShortcutEventSchema.safeParse({
         action: 'pressed',
         source: 'global',
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       VoiceShortcutEventSchema.safeParse({
         action: 'pressed',
-        mode: 'assistant',
+        mode: 'task',
         source: 'global',
       }).success,
     ).toBe(false);
@@ -30,7 +30,6 @@ describe('voice mode contracts', () => {
       VoiceShortcutEventSchema.safeParse({
         action: 'pressed',
         extra: true,
-        mode: 'dictation',
         source: 'global',
       }).success,
     ).toBe(false);
