@@ -10,6 +10,24 @@ const attempt = {
 } as const;
 
 describe('ConnectorClient', () => {
+  it('treats an unavailable connector list endpoint as a disabled feature', async () => {
+    const client = new ConnectorClient(
+      'https://api.tro.test',
+      async () => 'token',
+      vi.fn(async () => undefined),
+      vi.fn(async () => new Response(JSON.stringify({
+        code: 'not_found',
+        error: 'Endpoint not found.',
+      }), { status: 404 })) as typeof fetch,
+    );
+
+    await expect(client.list()).resolves.toEqual({
+      catalog: [],
+      connections: [],
+      enabled: false,
+    });
+  });
+
   it('keeps the OAuth URL in main and opens only the pinned Google host', async () => {
     const openExternal = vi.fn(async () => undefined);
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
