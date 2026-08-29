@@ -204,10 +204,10 @@ const config: ForgeConfig = {
   },
   hooks: {
     generateAssets: async (_forgeConfig, platform, arch) => {
-      await Promise.all([
-        compileMacOSNativeHelpers(platform, arch),
-        compileRustDesktopEngine(platform, arch),
-      ]);
+      await compileMacOSNativeHelpers(platform, arch);
+    },
+    prePackage: async (_forgeConfig, platform, arch) => {
+      await compileRustDesktopEngine(platform, arch);
     },
     packageAfterCopy: async (_forgeConfig, buildPath, _version, platform, arch) => {
       await stageCuaRuntime(buildPath, platform, arch);
