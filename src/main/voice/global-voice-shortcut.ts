@@ -56,7 +56,6 @@ interface VoiceShortcutTarget {
 
 interface VoiceModeToggleTarget {
   isDestroyed(): boolean;
-  isFocused(): boolean;
   webContents: {
     send(channel: string, value: VoiceModeToggleEvent): void;
   };
@@ -103,7 +102,7 @@ export function registerGlobalVoiceModeToggleShortcut({
   let lastDeliveredAt = Number.NEGATIVE_INFINITY;
   const registered = registry.register(accelerator, () => {
     const target = getTarget();
-    if (!target || target.isDestroyed() || target.isFocused()) return;
+    if (!target || target.isDestroyed()) return;
 
     const triggeredAt = now();
     if (triggeredAt - lastDeliveredAt < VOICE_MODE_TOGGLE_REPEAT_GUARD_MS) {
