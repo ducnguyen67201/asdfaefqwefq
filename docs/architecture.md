@@ -49,6 +49,13 @@ request or consume generation quota.
 
 ## Desktop companion presentation
 
+The cursor buddy and desktop pet are separate auxiliary windows. The fixed,
+click-through cursor buddy follows the real operating-system pointer and
+therefore follows CUA-performed pointer movement. The desktop pet rests,
+wanders, can be dragged, and may move near task-guidance targets. The desktop-
+pet preference and customization flow affect only the pet; disabling the pet
+does not disable the cursor buddy.
+
 Electron main remains authoritative for the companion's lifecycle state,
 absolute desktop position, and window behavior. The sandboxed companion
 renderer receives only parsed state, appearance, nudge, position, and hover
@@ -64,6 +71,13 @@ compares it with the companion rectangle, and publishes only a boolean. The
 point never crosses IPC and is not logged, persisted, analyzed, or sent over
 the network. Wayland disables hover because Electron does not expose the
 required cursor API there; lifecycle animation remains available.
+
+The cursor buddy uses a bounded main-process tracker with full-rate updates
+only while the pointer is moving and low-frequency polling while stationary.
+macOS and Linux move the small native buddy window directly. Windows uses a
+click-through full-desktop overlay and sends only the parsed overlay-local buddy
+position to its sandboxed renderer. Neither pointer coordinates nor buddy
+positions enter logs, persistence, analytics, task history, or network calls.
 
 Long-running task encouragement is a separate deterministic timer service. It
 parses `TaskUpdate`, maps only explicit thinking/working/verifying phases to

@@ -835,6 +835,9 @@ body {
   }
 }
 
+html.cursor-buddy-mode,
+html.cursor-buddy-mode body,
+html.cursor-buddy-mode #root,
 html.companion-mode,
 html.companion-mode body,
 html.companion-mode #root,
@@ -864,6 +867,33 @@ html.voice-island-mode #root {
   height: 100%;
   overflow: hidden;
   pointer-events: none;
+}
+
+.cursor-buddy {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cursor-buddy--overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  will-change: transform;
+}
+
+.cursor-buddy__image {
+  display: block;
+  width: 32px;
+  height: auto;
+  max-height: 38px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(16, 28, 64, 0.32));
 }
 
 .desktop-control-indicator__border {

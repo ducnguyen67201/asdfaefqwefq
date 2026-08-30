@@ -73,6 +73,7 @@ import {
   CompanionResponseController,
   selectCompanionOverlayMode,
 } from './main/companion/companion-response-controller';
+import { nextCursorBuddyFollowSchedule } from './main/companion/cursor-buddy-follow-policy';
 import {
   registerGlobalNumberedChoiceShortcuts,
   type GlobalNumberedChoiceShortcuts,
@@ -147,6 +148,7 @@ import {
   CompanionGuidanceSchema,
   CompanionGuidanceVisualSchema,
   CompanionHoverSchema,
+  CompanionPositionSchema,
   CompanionPetNudgeSchema,
   CompanionResponseCardSchema,
   TaskUpdateSchema,
@@ -214,6 +216,7 @@ const hasSingleInstanceLock = initializeSingleInstance(app, () => {
   if (app.isReady()) {
     createWindow();
     createCompanionWindow();
+    createCursorBuddyWindow();
   }
 });
 
@@ -507,6 +510,8 @@ const COMPANION_GLIDE_DURATION_MS = 360;
 const COMPANION_WANDER_DURATION_MS = 3_200;
 const COMPANION_WANDER_MIN_PAUSE_MS = 9_000;
 const COMPANION_WANDER_PAUSE_RANGE_MS = 7_000;
+const CURSOR_BUDDY_SIZE = { height: 44, width: 44 } as const;
+const CURSOR_BUDDY_GAP = 8;
 const GUIDANCE_CALLOUT_SIZE = { height: 176, width: 380 } as const;
 const PET_NUDGE_CALLOUT_SIZE = { height: 92, width: 300 } as const;
 const GUIDANCE_TARGET_MARKER_SIZE = { height: 76, width: 76 } as const;
@@ -556,6 +561,7 @@ interface GuidancePresentationHandle {
 
 let mainWindow: BrowserWindow | null = null;
 let companionWindow: BrowserWindow | null = null;
+let cursorBuddyWindow: BrowserWindow | null = null;
 let desktopControlIndicatorWindow: BrowserWindow | null = null;
 let guidanceWindow: BrowserWindow | null = null;
 let guidanceTargetWindow: BrowserWindow | null = null;
@@ -566,10 +572,13 @@ const activeDesktopControlTasks = new Set<string>();
 const desktopControlStartedAt = new Map<string, number>();
 let companionMovementTimer: ReturnType<typeof setTimeout> | null = null;
 let companionWanderTimer: ReturnType<typeof setTimeout> | null = null;
+let cursorBuddyFollowTimer: ReturnType<typeof setTimeout> | null = null;
 let companionGlide: CompanionGlide | null = null;
 let companionWander: CompanionWander | null = null;
 let companionPinnedPosition: Point | null = null;
 let companionUserPosition: Point | null = null;
+let cursorBuddyFollowActiveUntil = 0;
+let lastObservedCursor: Point | null = null;
 let activeGuidanceTargetBounds: Rectangle | null = null;
 let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
@@ -580,6 +589,7 @@ let activeCompanionSpeech: CompanionSpeech | null = null;
 let activeCompanionAppearance: CompanionAppearance = { kind: 'default' };
 let companionGuidancePreviousState: CompanionState | null = null;
 let lastCompanionPosition: Point | null = null;
+let lastCursorBuddyPosition: Point | null = null;
 let forcedExitTimer: ReturnType<typeof setTimeout> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let unregisterAppPreferencesChange: (() => void) | null = null;
@@ -639,6 +649,14 @@ function stopCompanionMovement(): void {
   companionWander = null;
   companionPinnedPosition = null;
   lastCompanionPosition = null;
+}
+
+function stopCursorBuddyFollowing(): void {
+  if (cursorBuddyFollowTimer) clearTimeout(cursorBuddyFollowTimer);
+  cursorBuddyFollowTimer = null;
+  cursorBuddyFollowActiveUntil = 0;
+  lastObservedCursor = null;
+  lastCursorBuddyPosition = null;
 }
 
 function sendCompanionState(): void {
@@ -1561,6 +1579,7 @@ function enableAuthenticatedAuxiliaryWindows(): void {
   auxiliaryWindowsEnabled = true;
   taskPetService.start();
   createCompanionWindow();
+  createCursorBuddyWindow();
   companionHoverTracker.synchronizeEligibility();
   ensureGlobalVoiceShortcut();
 }
@@ -1597,6 +1616,7 @@ function disableAuthenticatedAuxiliaryWindows(): void {
   clearCompanionResponse();
   stopGuidanceSpeech();
   stopCompanionMovement();
+  stopCursorBuddyFollowing();
   unregisterGlobalVoiceModeToggleShortcut?.();
   unregisterGlobalVoiceModeToggleShortcut = null;
   unregisterGlobalVoiceShortcut?.();
@@ -1607,6 +1627,9 @@ function disableAuthenticatedAuxiliaryWindows(): void {
 
   if (companionWindow && !companionWindow.isDestroyed()) {
     companionWindow.destroy();
+  }
+  if (cursorBuddyWindow && !cursorBuddyWindow.isDestroyed()) {
+    cursorBuddyWindow.destroy();
   }
   if (
     desktopControlIndicatorWindow &&
@@ -1638,6 +1661,7 @@ function prepareApplicationShutdown(): Promise<void> {
   auxiliaryWindowsEnabled = false;
   cancelBackgroundCompletionPresentation();
   stopCompanionMovement();
+  stopCursorBuddyFollowing();
   unregisterAppPreferencesChange?.();
   unregisterAppPreferencesChange = null;
   unregisterGlobalVoiceModeToggleShortcut?.();
@@ -1669,6 +1693,9 @@ function prepareApplicationShutdown(): Promise<void> {
 
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   if (companionWindow && !companionWindow.isDestroyed()) companionWindow.hide();
+  if (cursorBuddyWindow && !cursorBuddyWindow.isDestroyed()) {
+    cursorBuddyWindow.hide();
+  }
   activeDesktopControlTasks.clear();
   desktopControlStartedAt.clear();
   if (
@@ -2275,6 +2302,8 @@ const createWindow = (): void => {
     computerPermissionCoordinator,
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,
+    getCursorBuddyPosition: getCurrentCursorBuddyPosition,
+    getCursorBuddyWindow: () => cursorBuddyWindow,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
@@ -2367,6 +2396,100 @@ const createWindow = (): void => {
 
   if (!app.isPackaged) nextMainWindow.webContents.openDevTools({ mode: 'detach' });
 };
+
+function sendCursorBuddyPosition(position: Point): void {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return;
+  if (pointEqual(lastCursorBuddyPosition, position)) return;
+
+  const parsedPosition = CompanionPositionSchema.parse(position);
+  lastCursorBuddyPosition = parsedPosition;
+  cursorBuddyWindow.webContents.send(
+    IPC_CHANNELS.cursorBuddyPositionChanged,
+    parsedPosition,
+  );
+}
+
+function applyCursorBuddyScreenPosition(position: Point): void {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return;
+
+  if (!shouldUseCompanionOverlay(process.platform)) {
+    const [currentX, currentY] = cursorBuddyWindow.getPosition();
+    if (currentX !== position.x || currentY !== position.y) {
+      cursorBuddyWindow.setPosition(position.x, position.y, false);
+    }
+    return;
+  }
+
+  const overlayBounds = getCompanionOverlayBounds();
+  if (overlayBounds.width <= 0 || overlayBounds.height <= 0) return;
+
+  if (!boundsEqual(cursorBuddyWindow.getBounds(), overlayBounds)) {
+    cursorBuddyWindow.setBounds(overlayBounds, false);
+    lastCursorBuddyPosition = null;
+  }
+  sendCursorBuddyPosition({
+    x: position.x - overlayBounds.x,
+    y: position.y - overlayBounds.y,
+  });
+}
+
+function positionCursorBuddy(): boolean {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return false;
+
+  const cursor = screen.getCursorScreenPoint();
+  const cursorMoved = !pointEqual(lastObservedCursor, cursor);
+  lastObservedCursor = cursor;
+  const display = screen.getDisplayNearestPoint(cursor);
+  applyCursorBuddyScreenPosition(
+    placeCompanionNearCursor(
+      cursor,
+      display.bounds,
+      CURSOR_BUDDY_SIZE,
+      CURSOR_BUDDY_GAP,
+    ),
+  );
+  return cursorMoved;
+}
+
+function getCurrentCursorBuddyPosition(): Point {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) {
+    throw new Error('Cursor buddy position is unavailable.');
+  }
+
+  positionCursorBuddy();
+  if (shouldUseCompanionOverlay(process.platform)) {
+    if (!lastCursorBuddyPosition) {
+      throw new Error('Cursor buddy overlay position is unavailable.');
+    }
+    return lastCursorBuddyPosition;
+  }
+
+  const [x = 0, y = 0] = cursorBuddyWindow.getPosition();
+  return { x, y };
+}
+
+function scheduleCursorBuddyFollow(delayMs: number): void {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return;
+  cursorBuddyFollowTimer = setTimeout(runCursorBuddyFollowLoop, delayMs);
+}
+
+function runCursorBuddyFollowLoop(): void {
+  cursorBuddyFollowTimer = null;
+  const now = Date.now();
+  const schedule = nextCursorBuddyFollowSchedule({
+    activeUntil: cursorBuddyFollowActiveUntil,
+    cursorMoved: positionCursorBuddy(),
+    now,
+  });
+  cursorBuddyFollowActiveUntil = schedule.activeUntil;
+  scheduleCursorBuddyFollow(schedule.delayMs);
+}
+
+function wakeCursorBuddyFollowing(): void {
+  if (cursorBuddyFollowTimer) clearTimeout(cursorBuddyFollowTimer);
+  cursorBuddyFollowTimer = null;
+  scheduleCursorBuddyFollow(0);
+}
 
 function getCurrentCompanionScreenPosition(): Point {
   if (!companionWindow || companionWindow.isDestroyed()) {
@@ -2640,6 +2763,77 @@ function createDesktopControlIndicatorWindow(): void {
   indicatorUrl.searchParams.set('mode', 'control-indicator');
   void desktopControlIndicatorWindow.loadURL(indicatorUrl.toString());
 }
+
+const createCursorBuddyWindow = (): void => {
+  if (!auxiliaryWindowsEnabled) return;
+  if (cursorBuddyWindow && !cursorBuddyWindow.isDestroyed()) return;
+
+  const useOverlayTracking = shouldUseCompanionOverlay(process.platform);
+  const cursorBuddyBounds = useOverlayTracking
+    ? getCompanionOverlayBounds()
+    : { ...CURSOR_BUDDY_SIZE, x: 0, y: 0 };
+
+  cursorBuddyWindow = new BrowserWindow({
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    focusable: false,
+    frame: false,
+    hasShadow: false,
+    height: cursorBuddyBounds.height,
+    movable: false,
+    resizable: false,
+    show: false,
+    skipTaskbar: true,
+    transparent: true,
+    width: cursorBuddyBounds.width,
+    ...(useOverlayTracking
+      ? { x: cursorBuddyBounds.x, y: cursorBuddyBounds.y }
+      : {}),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+
+  cursorBuddyWindow.setAlwaysOnTop(true, 'screen-saver');
+  cursorBuddyWindow.setIgnoreMouseEvents(true, { forward: true });
+  cursorBuddyWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+  });
+  cursorBuddyWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  cursorBuddyWindow.webContents.on('did-finish-load', () => {
+    lastCursorBuddyPosition = null;
+    positionCursorBuddy();
+    wakeCursorBuddyFollowing();
+  });
+  cursorBuddyWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+
+  const cursorBuddyUrl = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
+  cursorBuddyUrl.searchParams.set('mode', 'cursor-buddy');
+  cursorBuddyUrl.searchParams.set(
+    'tracking',
+    useOverlayTracking ? 'overlay' : 'native',
+  );
+
+  cursorBuddyWindow.once('ready-to-show', () => {
+    if (!auxiliaryWindowsEnabled) return;
+    positionCursorBuddy();
+    cursorBuddyWindow?.showInactive();
+    wakeCursorBuddyFollowing();
+  });
+  cursorBuddyWindow.on('closed', () => {
+    cursorBuddyWindow = null;
+    stopCursorBuddyFollowing();
+  });
+
+  void cursorBuddyWindow.loadURL(cursorBuddyUrl.toString());
+  positionCursorBuddy();
+};
 
 const createCompanionWindow = (): void => {
   if (!auxiliaryWindowsEnabled || !companionPetEnabled) return;
@@ -2984,6 +3178,7 @@ if (hasSingleInstanceLock) {
     // dock icon is clicked and there are no other windows open.
     createWindow();
     createCompanionWindow();
+    createCursorBuddyWindow();
   });
 
   const exitDevelopmentProcess = (): void => {

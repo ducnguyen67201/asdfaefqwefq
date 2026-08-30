@@ -948,6 +948,13 @@ const desktopApi: DesktopApi = {
 };
 
 const companionApi: CompanionApi = {
+  async getCursorBuddyPosition() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getCursorBuddyPosition,
+    );
+    return CompanionPositionSchema.parse(response);
+  },
+
   async reportSpeechPlayback(input) {
     const report = CompanionSpeechPlaybackReportSchema.parse(input);
     await ipcRenderer.invoke(
@@ -1037,6 +1044,22 @@ const companionApi: CompanionApi = {
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.companionHoverChanged,
+        eventHandler,
+      );
+  },
+
+  onCursorBuddyPositionChange(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(CompanionPositionSchema.parse(value));
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.cursorBuddyPositionChanged, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.cursorBuddyPositionChanged,
         eventHandler,
       );
   },

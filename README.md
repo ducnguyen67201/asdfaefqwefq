@@ -79,7 +79,11 @@ Implemented:
 - Railway-hosted Responses, GPT Transcribe, and optional ElevenLabs
   access; provider keys are never compiled into or stored by the customer
   application.
-- A custom cursor companion generator in Settings: any signed-in user with an
+- A fixed, click-through action cursor buddy that follows the real operating-
+  system pointer independently from the desktop pet. When local computer use
+  moves the pointer, the buddy follows the performed action; it does not replace
+  or recolor the operating-system cursor.
+- A custom desktop pet generator in Settings: any signed-in user with an
   active membership can edit one PNG/JPEG through the hosted OpenAI Images API,
   preview it in memory, and activate an account-scoped, operating-system-
   encrypted local PNG. A Codex-style picker switches between the animated Tro
@@ -465,9 +469,9 @@ added to analytics events.
 
 Closing the Tro window hides it while Tro stays available from the menu
 bar or system tray for background voice input. Choose **Quit Tro** there, or
-press **Command+Q** on macOS, to stop the cursor companion, shut down CUA, and
-exit. If native shutdown does not respond, Tro forces a process exit after
-a short grace period.
+press **Command+Q** on macOS, to stop the cursor buddy and desktop pet, shut
+down CUA, and exit. If native shutdown does not respond, Tro forces a process
+exit after a short grace period.
 
 Choose **Write my words** or **Ask Tro** in the composer voice bar, then use
 one shared hold gesture. The selected mode persists across launches and can

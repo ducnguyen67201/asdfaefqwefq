@@ -38,6 +38,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     signOut: ReturnType<typeof vi.fn>;
   };
   event: unknown;
+  cursorBuddyEvent: unknown;
   interactionEvent: unknown;
   cancelActiveTasks: ReturnType<typeof vi.fn>;
   executionCoordinator: {
@@ -65,6 +66,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   };
   transcribeVoiceSegment: ReturnType<typeof vi.fn>;
   getAppPreferences: ReturnType<typeof vi.fn>;
+  getCursorBuddyPosition: ReturnType<typeof vi.fn>;
   getTaskHistory: ReturnType<typeof vi.fn>;
   membershipService: {
     activate: ReturnType<typeof vi.fn>;
@@ -131,6 +133,19 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   const interactionEvent = {
     sender: { id: 84 },
     senderFrame: interactionFrame,
+  };
+  const cursorBuddyFrame = {};
+  const cursorBuddyWebContents = {
+    id: 126,
+    mainFrame: cursorBuddyFrame,
+  };
+  const cursorBuddyWindow = {
+    isDestroyed: () => false,
+    webContents: cursorBuddyWebContents,
+  };
+  const cursorBuddyEvent = {
+    sender: { id: 126 },
+    senderFrame: cursorBuddyFrame,
   };
   const submit = vi.fn((input: unknown) => {
     void input;
@@ -263,6 +278,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     })),
   };
   const getAppPreferences = vi.fn(async () => ({ primaryLanguage: null }));
+  const getCursorBuddyPosition = vi.fn(() => ({ x: 31, y: 47 }));
   const getTaskHistory = vi.fn(async () => ({
     events: [],
     persistence: {
@@ -442,6 +458,8 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     connectorClient,
     cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
+    getCursorBuddyPosition,
+    getCursorBuddyWindow: () => cursorBuddyWindow,
     handleCompanionResponseAction,
     membershipService,
     knowledgeSpaceClient: {
@@ -503,10 +521,12 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     cuaGetStatus,
     dictationService,
     createClassroomDirective,
+    cursorBuddyEvent,
     event,
     interactionEvent,
     executionCoordinator,
     getAppPreferences,
+    getCursorBuddyPosition,
     getTaskHistory,
     handleCompanionResponseAction,
     membershipService,
@@ -823,6 +843,24 @@ describe('registerIpcHandlers auth boundary', () => {
     ).rejects.toThrow('untrusted renderer');
     expect(taskRuntime.respondToInteraction).not.toHaveBeenCalled();
     expect(revealMainWindow).not.toHaveBeenCalled();
+    unregister();
+  });
+
+  it('returns the current position only to the cursor-buddy renderer', async () => {
+    const {
+      cursorBuddyEvent,
+      getCursorBuddyPosition,
+      unregister,
+    } = setup(true);
+    const handler = electronMock.handlers.get(
+      IPC_CHANNELS.getCursorBuddyPosition,
+    );
+
+    await expect(handler?.(cursorBuddyEvent)).resolves.toEqual({ x: 31, y: 47 });
+    await expect(
+      handler?.({ sender: { id: 99 }, senderFrame: {} }),
+    ).rejects.toThrow('untrusted renderer');
+    expect(getCursorBuddyPosition).toHaveBeenCalledOnce();
     unregister();
   });
 
