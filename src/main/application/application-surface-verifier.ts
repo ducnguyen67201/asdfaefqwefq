@@ -1,6 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
-import type { OutcomeEvidence } from '../../shared/contracts';
 import type {
   VisibleApplicationSurface,
 } from '../cua/cua-semantic-contracts';
@@ -10,7 +7,10 @@ import type { ApplicationLaunchReceipt } from './desktop-application-launcher';
 export interface ApplicationSurfaceVerification {
   status: 'confirmed' | 'unknown';
   summary: string;
-  evidence?: OutcomeEvidence;
+  observation?: {
+    observationFingerprint: string;
+    observationId: string;
+  };
 }
 
 export interface ApplicationSurfaceVerifierOptions {
@@ -61,8 +61,6 @@ export class ApplicationSurfaceVerifier {
   }
 
   async verify(
-    taskId: string,
-    criterionId: string,
     receipt: ApplicationLaunchReceipt,
     signal: AbortSignal,
   ): Promise<ApplicationSurfaceVerification> {
@@ -88,16 +86,9 @@ export class ApplicationSurfaceVerifier {
         return {
           status: 'confirmed',
           summary: 'A fresh trusted observation confirmed one visible Chrome surface.',
-          evidence: {
-            id: randomUUID(),
-            runId: taskId,
-            criterionId,
-            source: 'fresh_observation',
-            status: 'supports',
+          observation: {
             observationId: surface.observationId,
             observationFingerprint: surface.observationFingerprint,
-            summary: 'Trusted CUA application identity matched one visible Chrome surface.',
-            createdAt: surface.observedAt,
           },
         };
       }

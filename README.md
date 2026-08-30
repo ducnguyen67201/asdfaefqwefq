@@ -11,7 +11,7 @@ Read the [privacy policy](PRIVACY.md), [code signing policy](CODE_SIGNING_POLICY
 the [security model](docs/security.md), and the
 [Knowledge Spaces guide](docs/knowledge-spaces.md).
 
-The desktop application uses Electron, React, TypeScript, and [CUA Driver](https://github.com/trycua/cua). It is domain-agnostic: requests are not placed into a Gold domain/capability grant before execution. The host still enforces concrete tool availability, public HTTPS targets, fresh observations, exact consequential-action approvals, cancellation, and task limits.
+The desktop application uses Electron, React, TypeScript, and [CUA Driver](https://github.com/trycua/cua). It is domain-agnostic and goal-driven. Registered tools run automatically after protocol, schema, technical-prerequisite, and execution-ownership checks. Tro does not add a per-action approval gate.
 
 ## Current status
 
@@ -34,15 +34,16 @@ Implemented:
 - One durable Rust model/tool loop for multilingual reasoning, writing,
   desktop work, and installed tools, with replayable lifecycle events.
 - An explicit Workspace mode backed by a canonical user-selected root and
-  trusted local shell and patch adapters. Commands and file mutations require
-  exact, one-use Tro approval; provider credentials remain backend-only.
-- A trusted model-visible tool registry with desktop observation/control,
-  public HTTPS navigation, grounded guidance, and user-input adapters.
+  trusted local shell and patch adapters. Bounded shell commands run with the
+  host user's capabilities; provider credentials remain backend-only.
+- A trusted model-visible Tro tool registry plus CUA's live, schema-validated
+  driver catalog; compatible new CUA tools require no Tro allowlist change.
 - Typed task lifecycle with guarded transitions.
 - Task-scoped clarification replies that continue the same goal conversation.
-- Structured pending interactions and exact, single-use approval decisions.
+- Structured clarification interactions when a material choice is missing.
 - Task steering applied by Rust at the next safe model boundary.
-- Rust-owned concrete tool/operation, target, and approval policy evaluation.
+- Rust-owned concrete Tro tool/operation and target validation, plus exact
+  per-worker CUA catalog-digest binding.
 - Native Google OAuth sign-in with Authorization Code + PKCE, Rust-side code
   exchange, server-verified identity claims, and an operating-system-encrypted,
   revocable hosted session.
@@ -50,10 +51,11 @@ Implemented:
   optional and requested only when their feature is used.
 - Hosted production access for signed-in users, with membership and plans
   authorized by the Rust API.
-- Lazy CUA initialization after a model desktop-observation request or an
-  explicit user-clicked Connect computer action.
-- Task-scoped CUA sessions with bounded screenshots, typed clicks, text entry,
-  keypresses, scrolling, dragging, and session cleanup.
+- Permission-free CUA catalog discovery when the worker connects, with native
+  CUA execution initialized only when a computer tool actually runs or the user
+  explicitly chooses Connect computer.
+- Host-owned, task-scoped CUA sessions. Tro injects the task session and forwards
+  every compatible driver tool except session start/end through `callTool`.
 - One configured GPT-5.6 model through the Responses API (Luna by default),
   with no classifier or fallback request after a failure.
 - API-owned Free, Basic, Pro, and Max entitlements with atomic agent-message and
@@ -63,8 +65,8 @@ Implemented:
 - Rust-owned model → tool → result continuation with host-owned
   tool/time limits, cancellation, safe steering, post-action screenshots, and
   no repeat after unknown results.
-- Direct public HTTPS navigation and exact, revalidated approval
-  before consequential CUA actions such as Send.
+- Direct public HTTPS navigation and fresh-observation validation for visual
+  CUA actions.
 - Explicit Dictation and Task push-to-talk modes with local VAD, bounded PCM
   WAV segments, and upload-based `gpt-transcribe` transcription. Dictation
   inserts text without sending; the Shift-modified Task gesture submits through
@@ -96,8 +98,8 @@ Implemented:
   snapshot and immutable lifecycle events, then restores History and Insights
   after restart.
 - Streamed draft text, bounded live activity and optional plan history, explicit
-  Everyday/Workspace selection, Balanced/Strict autonomy, automatic execution,
-  and always-available Stop/Escape cancellation.
+  Everyday/Workspace selection, goal-driven execution, and always-available
+  Stop/Escape cancellation.
 - Unit tests and cross-platform CI definition.
 
 Current computer-context support and limits:
@@ -106,10 +108,11 @@ Current computer-context support and limits:
   before screenshots, with opaque observation-local element references. Canvas
   editors, ambiguous windows, unsupported apps, and incomplete accessibility
   trees fall back to window or full-desktop vision.
-- Existing logged-in browser-profile attachment remains a separate exact
-  permission action. Tro does not ship a browser or VS Code extension, so
-  unsaved editor buffers and diagnostics are available only when the browser or
-  operating-system accessibility surface exposes them.
+- CUA runs in its unrestricted trusted-host mode without a Tro action-approval
+  gate. The driver still rejects capabilities that its own contract does not
+  expose. Tro does not ship a browser or VS Code extension, so unsaved editor
+  buffers and diagnostics are available only when the browser or operating-
+  system accessibility surface exposes them.
 
 Not implemented yet:
 
@@ -133,9 +136,9 @@ runtime. CUA remains stopped unless the agent requests a desktop tool.
 The visible **Stop task** control and
 **Escape while Tro is focused** can cancel a server-cancellable task. Escape is
 suppressed for editors, modals, and permission waits, and is never registered
-system-wide. The loop observes after every
-admitted action, and consequential actions still pause on an exact approval
-card before anything is dispatched.
+system-wide. The loop observes after every state-changing visual action. OS
+permission or provider OAuth setup can pause execution, but registered actions
+do not pause for a Tro approval card.
 
 ## Requirements
 
@@ -278,6 +281,9 @@ The API requires these production variables:
 - `OPENAI_API_KEY`
 - `TROCODE_SESSION_TOKEN_HMAC_KEY`
 - `TROCODE_AGENT_MODEL`
+- `TROCODE_AGENT_SDK_MODEL` (the pinned Agents SDK model)
+- `TROCODE_AGENT_SDK_VERSION`
+- `TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN` (shared only with the private SDK worker)
 - `TROCODE_COST_GUARD_MODE` (`enforce` by default; `observe` is available for
   reconciliation)
 - optional server-owned budget overrides documented in `.env.example`
@@ -293,9 +299,10 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-Computer-use policy is evaluated by Rust; Electron owns schema validation,
-trusted workspace binding, approval presentation, and exactly-once native
-dispatch.
+The Agents SDK selects only the tools Rust advertises for the leased run. Rust
+binds catalogs, identities, spend, and durable dispatch; Electron revalidates
+local schemas, workspace scope, technical prerequisites, and exactly-once native
+execution.
 
 #### Custom companion availability
 
@@ -420,8 +427,8 @@ answer, or a steering message. The desktop sends its message UUID to
 `POST /v1/agent-turns`; the API atomically and idempotently reserves the weekly
 allowance and returns the server turn token required by `/v1/openai/responses`.
 Internal model/tool continuations reuse that token and do not consume more agent
-messages. Approval decisions, speech, and transcription do not consume agent
-messages. A turn whose only provider request is explicitly rejected before
+messages. Speech and transcription do not consume agent messages. A turn whose
+only provider request is explicitly rejected before
 inference is released; an ambiguous dispatched turn remains counted. Whichever
 weekly message or monthly provider-cost limit is reached first blocks more inference.
 Environment budget values are emergency ceilings and may only lower a tier's
@@ -453,7 +460,7 @@ authenticated identity is associated with the same installation and its
 content-free voice events.
 
 Typed task text, messages, voice transcript content, screenshots, URLs,
-document contents, file paths, credentials, and approval descriptions are not
+document contents, file paths, credentials, and tool arguments are not
 added to analytics events.
 
 Closing the Tro window hides it while Tro stays available from the menu
@@ -498,14 +505,14 @@ authenticated and proxied by Railway.
 2. Sign in to Gmail yourself. Tro will not type passwords.
 3. Enter a complete bounded request, for example: `Open Gmail, compose an
 email from my work account to me@example.com with subject "Tro test"
-and body "The desktop loop works", then send it after I approve.`
+and body "The desktop loop works".`
 4. Review the compiled goal as Tro starts it automatically. Press
    **Escape** or choose **Stop task** to cancel at any time.
 5. If Tro needs a material detail, answer in the same task from the main
    window or by selecting **Ask Tro** and using the shared voice shortcut.
-6. Before Send, confirm the approval card's account, recipients, subject, body,
-   target, and exact command. Send is dispatched once only after the button is
-   approved and the latest observation produces the same payload.
+6. Watch the live task and use Stop/Escape if needed. A registered Send action
+   is dispatched at most once after a fresh observation and the durable
+   requested-to-executing transition.
 
 ## Quality checks
 
@@ -615,9 +622,10 @@ React renderer
   -> typed preload API
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
-      -> bundled trocode-api desktop engine (Rust policy + voice transport)
-      -> Rust durable agent runtime through the Tro backend
-        -> trusted local CUA/Workspace adapters when explicitly selected
+      -> bundled trocode-api desktop engine (model + voice transport)
+      -> Rust task/provider/tool control plane through the Tro backend
+        <-> private OpenAI Agents SDK worker (sole reasoning loop)
+        -> trusted local CUA/Workspace adapters when selected by the SDK
       -> PostHog analytics service (allowlisted metadata only)
       -> local PCM/VAD voice capture
         -> bundled Rust engine -> bounded GPT Transcribe API
@@ -660,7 +668,9 @@ MODULE.bazel          Bazel module and Rust toolchain graph
 
 ## Design rule
 
-GPT chooses between assistant text and host-advertised tools, but it never gains
-host authority. The main process owns tool registration, parsing, public-target
-checks, exact approval, execution, cancellation, and limits. CUA is only one
-lazy execution adapter behind that boundary.
+GPT chooses between assistant text and host-advertised tools, but it cannot add
+tools or bypass their schemas. Tro base tools are registered explicitly; CUA
+tools come from the driver's canonical catalog and are bound to a per-worker
+digest. The main process owns session lifecycle, parsing, public-target checks,
+technical prerequisites, exactly-once execution, cancellation, and limits. CUA
+is one lazy execution adapter behind that boundary.

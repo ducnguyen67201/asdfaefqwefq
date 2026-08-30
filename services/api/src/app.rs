@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::AgentService,
+    agent::{AgentOrchestrator, AgentService},
     auth::{
         AccessCodeRepository, AgentStateCrypto, ConnectorTokenCrypto, GoogleVerifier,
         OrganizationRepository, SessionRepository,
@@ -37,6 +37,7 @@ pub struct AppState {
     pub classroom: ClassroomService,
     pub connectors: Option<ConnectorService>,
     pub agent: Option<AgentService>,
+    pub orchestrator: Option<AgentOrchestrator>,
     pub shutdown: CancellationToken,
 }
 
@@ -72,19 +73,31 @@ impl AppState {
             )?),
             None => None,
         };
-        let agent = match &config.agent_runtime.encryption_keys {
-            Some(keys) => Some(AgentService::new(
+        let agent_crypto = match &config.agent_runtime.encryption_keys {
+            Some(keys) => Some(AgentStateCrypto::parse(
+                keys,
+                config.agent_runtime.current_encryption_key_version,
+            )?),
+            None => None,
+        };
+        let agent = match &agent_crypto {
+            Some(crypto) => Some(AgentService::new(
                 pool.clone(),
-                AgentStateCrypto::parse(keys, config.agent_runtime.current_encryption_key_version)?,
-                responses.clone(),
+                crypto.clone(),
                 config.agent_runtime.clone(),
                 &config.session_token_hmac_key,
-                &config.openai_models,
                 config.cost_guard.mode,
-                connectors.clone(),
             )),
             None => None,
         };
+        let orchestrator = agent_crypto.map(|crypto| {
+            AgentOrchestrator::new(
+                pool.clone(),
+                crypto,
+                config.agent_runtime.clone(),
+                connectors.clone(),
+            )
+        });
         Ok(Self {
             sessions: SessionRepository::new(
                 pool.clone(),
@@ -109,6 +122,7 @@ impl AppState {
             classroom,
             connectors,
             agent,
+            orchestrator,
             shutdown: CancellationToken::new(),
         })
     }
@@ -118,15 +132,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
     let state = AppState::compose(config).await?;
     let cancel = state.shutdown.clone();
     if let Some(agent) = state.agent.clone() {
-        let token = cancel.clone();
-        let worker = agent.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(250));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=worker.run_once().await{tracing::error!(event="agent.worker.failed",error=%error);}}}
-            }
-        });
+        let orchestrator = state.orchestrator.clone();
         let token = cancel.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval_at(
@@ -135,7 +141,12 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             );
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}}}
+                tokio::select! {()=token.cancelled()=>break,_=interval.tick()=>{
+                    if let Err(error)=agent.maintain().await{tracing::error!(event="agent.maintenance.failed",error=%error);}
+                    if let Some(orchestrator)=&orchestrator
+                        && let Err(error)=orchestrator.maintain().await
+                    {tracing::error!(event="agent.orchestrator_maintenance.failed",error=%error);}
+                }}
             }
         });
     }

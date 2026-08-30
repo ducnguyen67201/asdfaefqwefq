@@ -40,7 +40,7 @@ function renderResponse(
 }
 
 describe('companion response card view', () => {
-  it('keeps approval or clarification above guidance and responses', () => {
+  it('keeps clarification above guidance and responses', () => {
     expect(
       getCompanionCalloutKind({
         hasGuidance: true,

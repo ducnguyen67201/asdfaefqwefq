@@ -35,7 +35,6 @@ describe('AppPreferencesService', () => {
 
     await expect(service.get()).resolves.toEqual({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: null,
@@ -59,7 +58,6 @@ describe('AppPreferencesService', () => {
     await expect(
       service.update({
         appLanguage: 'vi',
-        autonomyMode: 'strict',
         classroomPetEnabled: false,
         muteSystemAudioWhileSpeaking: true,
         primaryLanguage: 'vi',
@@ -67,7 +65,6 @@ describe('AppPreferencesService', () => {
       }),
     ).resolves.toEqual({
       appLanguage: 'vi',
-      autonomyMode: 'strict',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
@@ -76,7 +73,6 @@ describe('AppPreferencesService', () => {
     await expect(service.getPrimaryLanguage()).resolves.toBe('vi');
     expect(store.write).toHaveBeenCalledWith({
       appLanguage: 'vi',
-      autonomyMode: 'strict',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
@@ -85,7 +81,6 @@ describe('AppPreferencesService', () => {
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledWith({
       appLanguage: 'vi',
-      autonomyMode: 'strict',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'vi',
@@ -144,7 +139,6 @@ describe('FileAppPreferencesStore', () => {
     await expect(store.read()).resolves.toBeNull();
     await store.write({
       appLanguage: 'vi',
-      autonomyMode: 'strict',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
@@ -153,7 +147,6 @@ describe('FileAppPreferencesStore', () => {
 
     await expect(store.read()).resolves.toEqual({
       appLanguage: 'vi',
-      autonomyMode: 'strict',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: true,
       primaryLanguage: 'en',
@@ -162,9 +155,7 @@ describe('FileAppPreferencesStore', () => {
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"appLanguage": "vi"',
     );
-    await expect(readFile(filePath, 'utf8')).resolves.toContain(
-      '"autonomyMode": "strict"',
-    );
+    await expect(readFile(filePath, 'utf8')).resolves.not.toContain('autonomyMode');
     await expect(readFile(filePath, 'utf8')).resolves.toContain(
       '"classroomPetEnabled": false',
     );
@@ -182,19 +173,21 @@ describe('FileAppPreferencesStore', () => {
     }
   });
 
-  it('loads preferences saved before app language was introduced', async () => {
+  it('loads old preferences and strips the removed autonomy field on save', async () => {
+    const write = vi.fn();
     const service = new AppPreferencesService({
-      read: vi.fn(async () => ({ primaryLanguage: 'vi' })),
-      write: vi.fn(),
+      read: vi.fn(async () => ({ autonomyMode: 'strict', primaryLanguage: 'vi' })),
+      write,
     });
 
     await expect(service.get()).resolves.toEqual({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: true,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'vi',
       voiceMode: 'dictation',
     });
+    await service.update({ primaryLanguage: 'vi' });
+    expect(write).toHaveBeenCalledWith(expect.not.objectContaining({ autonomyMode: expect.anything() }));
   });
 });

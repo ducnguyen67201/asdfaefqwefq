@@ -1,8 +1,10 @@
-import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 import {
-  AGENT_RUNTIME_PROTOCOL_VERSION,
-  DesktopWorkerCapabilitiesV3Schema,
-  type DesktopWorkerCapabilitiesV3,
+  AGENT_RUNTIME_PROTOCOL_VERSION_V5,
+  DesktopWorkerCapabilitiesV5Schema,
+  MAX_DESKTOP_RESULT_V5_BYTES,
+  type CuaDriverCatalogV5,
+  type DesktopWorkerCapabilitiesV5,
 } from '../../shared/agent-runtime-protocol';
 import {
   HOSTED_TOOL_CONTRACTS,
@@ -15,10 +17,6 @@ import type { RuntimeToolRegistry } from '../agent/runtime-tool-registry';
 export const HOSTED_AGENT_PROTOCOL_DIGEST = manifest.protocolDigest;
 export const HOSTED_AGENT_TOOL_CATALOG_DIGEST = manifest.toolCatalogDigest;
 
-/** @deprecated Use HOSTED_AGENT_TOOL_CATALOG_DIGEST. */
-export const HOSTED_AGENT_TOOL_SCHEMA_DIGEST =
-  HOSTED_AGENT_TOOL_CATALOG_DIGEST;
-
 export function hostedToolMetadata(
   toolId: RuntimeToolId,
   operation: string,
@@ -28,18 +26,21 @@ export function hostedToolMetadata(
 }
 
 export function desktopWorkerCapabilities(
-  registry: Pick<RuntimeToolRegistry, 'list'>,
-): DesktopWorkerCapabilitiesV3 {
+  registry: Pick<RuntimeToolRegistry, 'listRegistered'>,
+  cua: CuaDriverCatalogV5 | null = null,
+): DesktopWorkerCapabilitiesV5 {
   const local = new Map(
-    registry.list().map((definition) => [
+    registry.listRegistered().map((definition) => [
       definition.id,
       new Set(definition.operations),
     ]),
   );
-  return DesktopWorkerCapabilitiesV3Schema.parse({
-    protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION,
+  return DesktopWorkerCapabilitiesV5Schema.parse({
+    protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION_V5,
     protocolDigest: HOSTED_AGENT_PROTOCOL_DIGEST,
     toolCatalogDigest: HOSTED_AGENT_TOOL_CATALOG_DIGEST,
+    maxResultBytes: MAX_DESKTOP_RESULT_V5_BYTES,
+    cua,
     tools: HOSTED_TOOL_CONTRACTS.flatMap((contract) => {
       const supported = local.get(contract.toolId);
       const operations = contract.operations.filter((operation) =>

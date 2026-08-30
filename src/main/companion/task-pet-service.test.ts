@@ -33,7 +33,6 @@ function snapshot(
   taskId = TASK_ID,
 ): TaskSnapshot {
   return {
-    approvalGrant: null,
     createdAt: '2026-08-29T00:00:00.000Z',
     goal: null,
     lastEvent: null,
@@ -67,7 +66,6 @@ function update(phase: TaskPhase, taskId = TASK_ID): TaskUpdate {
 
 function preferences(initial: AppPreferences = {
   appLanguage: 'en',
-  autonomyMode: 'balanced',
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: 'en',
@@ -103,7 +101,6 @@ describe('taskPetMood', () => {
     clarifying: 'thinking',
     ready: null,
     awaiting_input: null,
-    awaiting_approval: null,
     planning: 'thinking',
     observing: 'working',
     acting: 'working',
@@ -238,7 +235,7 @@ describe('TaskPetService', () => {
     service.stop();
   });
 
-  it.each(['ready', 'awaiting_input', 'awaiting_approval', 'awaiting_permission', 'blocked', 'completed', 'failed', 'cancelled'] as const)(
+  it.each(['ready', 'awaiting_input', 'awaiting_permission', 'blocked', 'completed', 'failed', 'cancelled'] as const)(
     'clears a running nudge when the task becomes %s',
     async (phase) => {
       const { dismiss, present, service } = setup();
@@ -260,7 +257,6 @@ describe('TaskPetService', () => {
     await vi.advanceTimersByTimeAsync(TASK_PET_FIRST_DELAY_MS);
     preferencesService.publish({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'en',
@@ -276,7 +272,6 @@ describe('TaskPetService', () => {
     const { present, service } = setup({
       initialPreferences: {
         appLanguage: 'vi',
-        autonomyMode: 'balanced',
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'vi',

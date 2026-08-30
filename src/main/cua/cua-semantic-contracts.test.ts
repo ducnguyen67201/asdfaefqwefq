@@ -3,11 +3,67 @@ import { describe, expect, it } from 'vitest';
 import {
   CuaBrowserStateSchema,
   CuaWindowStateSchema,
+  createCuaDriverCatalog,
   deriveCuaSemanticCapabilities,
   parseCuaStructuredResult,
 } from './cua-semantic-contracts';
 
 describe('CUA semantic contracts', () => {
+  it('projects future driver tools without a Tro allowlist', () => {
+    const metadata = {
+      driverVersion: '0.20.0',
+      contractVersion: '0.7.0',
+      toolsListSchemaVersion: '1',
+      capabilityVersion: '2',
+    };
+    const inventory = {
+      capability_version: '2',
+      schema_version: '1',
+      tools: [
+        {
+          name: 'future_cua_action',
+          description: 'A tool added by a future compatible CUA driver.',
+          capabilities: ['future.action'],
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              session: { type: 'string' },
+              value: { type: 'string' },
+            },
+            required: ['session', 'value'],
+          },
+        },
+        {
+          name: 'end_session',
+          description: 'Driver session cleanup.',
+          capabilities: ['session.lifecycle.end'],
+          inputSchema: {
+            type: 'object',
+            properties: { session: { type: 'string' } },
+            required: ['session'],
+          },
+        },
+      ],
+    };
+
+    const catalog = createCuaDriverCatalog(metadata, inventory);
+
+    expect(catalog.driverVersion).toBe('0.20.0');
+    expect(catalog.tools).toHaveLength(1);
+    expect(catalog.tools[0]).toMatchObject({
+      name: 'future_cua_action',
+      modelName: 'future_cua_action',
+      injectSession: true,
+      inputSchema: {
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+    });
+    expect(catalog.driverCatalogDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(createCuaDriverCatalog(metadata, inventory)).toEqual(catalog);
+  });
+
   it('derives independent window and browser capability groups', () => {
     expect(
       deriveCuaSemanticCapabilities({

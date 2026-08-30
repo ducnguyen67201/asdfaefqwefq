@@ -37,7 +37,6 @@ import {
   ConnectorAttemptStatusSchema,
   ConnectorListSchema,
   DisconnectConnectorRequestSchema,
-  DecideApprovalRequestSchema,
   MembershipStatusSchema,
   AddOrganizationMemberRequestSchema,
   AddOrganizationMemberResponseSchema,
@@ -756,15 +755,6 @@ const desktopApi: DesktopApi = {
     return TaskSnapshotSchema.parse(response);
   },
 
-  async decideApproval(input) {
-    const request = DecideApprovalRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(
-      IPC_CHANNELS.decideApproval,
-      request,
-    );
-    return TaskSnapshotSchema.parse(response);
-  },
-
   async steerTask(input) {
     const request = SteerTaskRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(
@@ -958,15 +948,6 @@ const desktopApi: DesktopApi = {
 };
 
 const companionApi: CompanionApi = {
-  async decideApproval(input) {
-    const request = DecideApprovalRequestSchema.parse(input);
-    const response: unknown = await ipcRenderer.invoke(
-      IPC_CHANNELS.decideApproval,
-      request,
-    );
-    return TaskSnapshotSchema.parse(response);
-  },
-
   async reportSpeechPlayback(input) {
     const report = CompanionSpeechPlaybackReportSchema.parse(input);
     await ipcRenderer.invoke(

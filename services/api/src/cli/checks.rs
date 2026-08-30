@@ -10,9 +10,14 @@ use sqlx_core::row::Row;
 
 use crate::{agent::protocol, postgres::PgPoolOptions};
 
-const EXPECTED_AGENT_RUNTIME_VERSIONS: [(&str, &str); 3] = [
+const EXPECTED_DESKTOP_RUNTIME_VERSIONS: [(&str, &str); 3] = [
     ("@trycua/cua-driver", "0.19.3"),
     ("playwright-core", "1.62.1"),
+    ("zod", "4.4.3"),
+];
+const EXPECTED_SDK_RUNTIME_VERSIONS: [(&str, &str); 3] = [
+    ("@openai/agents", "0.17.0"),
+    ("openai", "7.8.0"),
     ("zod", "4.4.3"),
 ];
 
@@ -37,8 +42,21 @@ struct LockedPackage {
 }
 
 pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()> {
-    let manifest_path = repository_root.join("package.json");
-    let lock_path = repository_root.join("package-lock.json");
+    check_package_versions(repository_root, &EXPECTED_DESKTOP_RUNTIME_VERSIONS)?;
+    check_package_versions(
+        &repository_root.join("services/agent-runtime"),
+        &EXPECTED_SDK_RUNTIME_VERSIONS,
+    )?;
+    println!("Agent runtime versions match the supported compatibility baseline.");
+    Ok(())
+}
+
+fn check_package_versions(
+    package_root: &Path,
+    expected_versions: &[(&str, &str)],
+) -> anyhow::Result<()> {
+    let manifest_path = package_root.join("package.json");
+    let lock_path = package_root.join("package-lock.json");
     let manifest: PackageManifest = serde_json::from_str(
         &fs::read_to_string(&manifest_path)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?,
@@ -50,7 +68,7 @@ pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()
     )
     .with_context(|| format!("failed to parse {}", lock_path.display()))?;
 
-    for (name, expected) in EXPECTED_AGENT_RUNTIME_VERSIONS {
+    for &(name, expected) in expected_versions {
         let declared = manifest
             .dependencies
             .get(name)
@@ -67,28 +85,26 @@ pub fn check_agent_runtime_versions(repository_root: &Path) -> anyhow::Result<()
             locked.unwrap_or("undefined")
         );
     }
-    println!("Agent runtime versions match the supported compatibility baseline.");
     Ok(())
 }
 
 pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
     check_agent_runtime_versions(repository_root)?;
-    let mode = std::env::var("AGENT_RUNTIME_V3_MODE")
-        .unwrap_or_else(|_| "observe".to_owned())
-        .to_lowercase();
-    anyhow::ensure!(
-        matches!(mode.as_str(), "observe" | "dual" | "enforce"),
-        "AGENT_RUNTIME_V3_MODE must be one of: observe, dual, enforce."
-    );
 
-    println!("Canonical agent protocol: v{}", protocol::PROTOCOL_VERSION);
-    println!("Protocol digest: {}", protocol::protocol_digest());
-    println!("Tool catalog digest: {}", protocol::tool_catalog_digest());
-    println!("Rollout mode: {mode}");
+    println!(
+        "Canonical agent protocol: v{}",
+        protocol::v5::PROTOCOL_VERSION
+    );
+    println!("Protocol digest: {}", protocol::v5::protocol_digest());
+    println!(
+        "Tool catalog digest: {}",
+        protocol::v5::tool_catalog_digest()
+    );
+    println!("Start mode: v5 only (OpenAI Agents SDK)");
 
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        println!("Active v2/v3 runs: unavailable (DATABASE_URL is not configured)");
-        println!("Enforcement readiness: unknown until the active-run drain query is available");
+        println!("Active legacy v2-v4 runs: unavailable (DATABASE_URL is not configured)");
+        println!("Cutover readiness: unknown until the legacy-run drain query is available");
         return Ok(());
     };
     let pool = PgPoolOptions::new()
@@ -99,7 +115,8 @@ pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Re
     let counts = sqlx::query(
         "SELECT \
            COUNT(*) FILTER (WHERE protocol_version = 2) AS active_v2, \
-           COUNT(*) FILTER (WHERE protocol_version = 3) AS active_v3 \
+           COUNT(*) FILTER (WHERE protocol_version = 3) AS active_v3, \
+           COUNT(*) FILTER (WHERE protocol_version = 4) AS active_v4 \
          FROM agent_runs \
          WHERE state NOT IN ('completed','blocked','failed','cancelled','expired')",
     )
@@ -108,13 +125,14 @@ pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Re
     .context("failed to count active agent runtime rows")?;
     let active_v2 = counts.get::<i64, _>("active_v2");
     let active_v3 = counts.get::<i64, _>("active_v3");
-    println!("Active runs: v2={active_v2}, v3={active_v3}");
+    let active_v4 = counts.get::<i64, _>("active_v4");
+    println!("Active legacy runs: v2={active_v2}, v3={active_v3}, v4={active_v4}");
     println!(
-        "Enforcement readiness: {}",
-        if active_v2 == 0 {
-            "ready (no active v2 runs)"
+        "Cutover readiness: {}",
+        if active_v2 == 0 && active_v3 == 0 && active_v4 == 0 {
+            "ready (no active legacy runs)"
         } else {
-            "not ready (drain active v2 runs before enforce)"
+            "not ready (drain active v2-v4 runs before migration 031)"
         }
     );
     Ok(())
@@ -133,7 +151,9 @@ pub fn check_rust_only_script_layout(repository_root: &Path) -> anyhow::Result<(
             .collect::<Vec<_>>()
             .join("\n")
     );
-    println!("Rust is the sole hosted engine; no repository-owned .mjs tooling remains.");
+    println!(
+        "The legacy script runtime is absent; Rust is the control plane and the pinned Agents SDK worker is the sole reasoning loop."
+    );
     Ok(())
 }
 
@@ -175,11 +195,11 @@ mod tests {
     #[test]
     fn runtime_version_check_requires_declared_and_locked_exact_versions() {
         let directory = tempfile::tempdir().expect("temporary directory");
-        let dependencies = EXPECTED_AGENT_RUNTIME_VERSIONS
+        let dependencies = EXPECTED_DESKTOP_RUNTIME_VERSIONS
             .iter()
             .map(|(name, version)| ((*name).to_owned(), serde_json::json!(version)))
             .collect::<serde_json::Map<_, _>>();
-        let packages = EXPECTED_AGENT_RUNTIME_VERSIONS
+        let packages = EXPECTED_DESKTOP_RUNTIME_VERSIONS
             .iter()
             .map(|(name, version)| {
                 (
@@ -199,6 +219,32 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({"packages": packages})).expect("lock"),
         )
         .expect("lock write");
+        let sdk_root = directory.path().join("services/agent-runtime");
+        fs::create_dir_all(&sdk_root).expect("SDK package directory");
+        let sdk_dependencies = EXPECTED_SDK_RUNTIME_VERSIONS
+            .iter()
+            .map(|(name, version)| ((*name).to_owned(), serde_json::json!(version)))
+            .collect::<serde_json::Map<_, _>>();
+        let sdk_packages = EXPECTED_SDK_RUNTIME_VERSIONS
+            .iter()
+            .map(|(name, version)| {
+                (
+                    format!("node_modules/{name}"),
+                    serde_json::json!({"version": version}),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        fs::write(
+            sdk_root.join("package.json"),
+            serde_json::to_vec(&serde_json::json!({"dependencies": sdk_dependencies}))
+                .expect("SDK manifest"),
+        )
+        .expect("SDK manifest write");
+        fs::write(
+            sdk_root.join("package-lock.json"),
+            serde_json::to_vec(&serde_json::json!({"packages": sdk_packages})).expect("SDK lock"),
+        )
+        .expect("SDK lock write");
         check_agent_runtime_versions(directory.path()).expect("valid versions");
 
         let manifest_path = directory.path().join("package.json");

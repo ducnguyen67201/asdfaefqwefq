@@ -1,129 +1,43 @@
-# Architecture
+# Tro agent architecture
 
-## Decision
+Tro has one reasoning loop: the pinned OpenAI Agents SDK worker. The user sends
+an intent directly to that worker; there is no separate Tro planner, outcome
+compiler, approval policy, or Rust Responses loop. Rust is the trusted control
+plane. It authenticates callers, owns leases and encrypted state, proxies OpenAI
+with server-side credentials and budgets, and brokers every remote tool call.
+Electron is a narrow device executor for CUA, workspace, terminal, application,
+and browser capabilities.
 
-Tro uses one Rust backend engine. The `trocode-api` workspace owns the model
-loop, task lifecycle, intent compilation, outcome contracts, policy decisions,
-provider calls, persistence, membership, organizations, budgets, and durable
-events. There is no TypeScript model loop or local database backend.
-
-Electron and React are client/device layers:
-
-- React renders validated projections and sends narrow requests through
-  `DesktopApi`.
-- Preload exposes fixed IPC functions; it never exposes Electron or raw IPC.
-- Electron main validates IPC, stores device credentials with `safeStorage`,
-  runs the OAuth loopback listener, presents approvals, and owns OS handles.
-- The bundled Rust desktop-engine process performs local policy and provider
-  transport that must remain beside the device, over a private JSON-lines stdio
-  protocol.
-- The hosted Rust API owns canonical tasks and sends signed, expiring tool
-  invocations to a reconnectable Electron worker.
-- The web admin is a separate static React client embedded in the hosted Rust
-  binary. It calls only authenticated `/v1/admin/*` HTTP contracts and does not
-  introduce another backend runtime.
-
-```mermaid
-flowchart LR
-    UI["Sandboxed React renderer"] --> PRELOAD["Typed preload API"]
-    PRELOAD --> MAIN["Electron UI + device adapter"]
-    MAIN --> SIDECAR["Bundled Rust desktop engine"]
-    MAIN --> API["Hosted Rust API"]
-    API --> PG["PostgreSQL"]
-    API --> PROVIDERS["Responses / Transcription / TTS"]
-    API -->|"signed tool invocation"| MAIN
-    MAIN -->|"one-time execution request"| API
-    MAIN --> CUA["CUA / browser / OS adapters"]
-    MAIN --> WORKSPACE["root-confined file + shell adapters"]
-    MAIN -->|"bounded result + evidence"| API
-    ADMIN["Static React admin"] -->|"authenticated HTTPS"| API
-```
-
-## Task authority
-
-The Rust API creates the complete v8 authority contract: original request,
-runtime kind, execution profile, autonomy mode, intent grants, outcome criteria,
-hard-confirm effects, and limits. Electron rejects responses without that exact
-contract and projects it into renderer state. It never fills missing authority
-with locally compiled defaults.
-
-Protocol v3 is the executable boundary shared by Rust, Electron, preload, and
-React. Its Zod source and exact hosted-tool catalog live in
-`src/shared/agent-runtime-protocol.ts` and
-`src/shared/agent-tool-contracts.ts`. Generation commits a closed JSON Schema,
-the tool catalog, separate SHA-256 digests, a manifest, and shared fixtures.
-Rust DTOs are compiled from that schema with Typify. New v3 work begins only
-when protocol version, protocol digest, and tool-catalog digest all match.
-
-The Rust projection owns state, phase, terminality, waiting reason, failure,
-cancellation source, and available actions. Electron and React may format this
-projection but cannot infer lifecycle semantics from event names or local phase
-lists. Protocol v2 remains a read-only history adapter after enforcement.
-
-The selected Workspace root is intentionally device-local. The API binds the
-contract to an opaque selection ID; Electron resolves that ID to the previously
-trusted canonical path and rejects a mismatch. File paths remain confined to
-that root, while shell commands receive only an allowlisted environment.
-
-## Tool execution
-
-The Rust supervisor chooses tools and persists the lifecycle. A durable tool
-envelope includes both contract digests, expiration, effect, intent revision,
-authorization source, approval requirement, and verification obligations.
-Electron parses and normalizes the envelope, asks the bundled Rust policy
-engine to independently validate it, obtains the API's one-time executing
-transition, and dispatches the native adapter once.
-
-Every model tool is emitted directly from the generated exact catalog. Nested
-objects are closed and required according to their individual schema; the
-backend does not wrap tools in a generic `{ input: ... }` object. Direct tools
-such as browser navigation therefore do not acquire computer-use permissions.
-
-If a consequential operation begins and connectivity is lost, the result is
-unknown and is never retried. Exact approval is bound to the full normalized
-action digest and is consumed once. Clarification cards and desktop-action
-approval cards are local presentation state. Connector approval waits are
-durable Rust projections so they survive an Electron reconnect; all answers
-return to the same Rust run.
-
-User connectors are a second executor beside the desktop worker. The Rust API
-owns the verified catalog, separate OAuth credentials, encrypted user tokens,
-remote Streamable HTTP MCP client, immutable schema snapshots, exact approval,
-and one-call execution receipt. Responses receives only small deferred
-namespaces plus `tool_search`; it never receives the MCP authorization token.
-The renderer sees safe connection status through a narrow main-process client,
-and personal connector namespaces are omitted from every classroom
-Activity/Attempt run. See `docs/connectors.md`.
-
-## Provider and persistence ownership
-
-Production provider credentials and PostgreSQL credentials exist only in the
-Rust API environment. Voice and Google code exchange use the Rust sidecar so
-Electron does not implement provider protocols. TypeScript HTTP/WebSocket/SSE
-classes are typed clients, not alternative services.
-
-Task history is read from the Rust task API. Knowledge Spaces, organizations,
-membership, budgets, encrypted agent state, evidence, and billing ledgers are
-all PostgreSQL-backed Rust services. Screenshots and original-resolution crops
-remain bounded device memory and are not written to task history.
-
-## Custom companion image path
-
-Custom companion generation is an explicit Settings workflow, separate from
-the task agent and CUA capabilities:
+## Execution path
 
 ```text
-Settings card
-  -> schema-validated narrow preload/IPC request
-  -> Electron main MIME, signature, dimensions, decode, and <=1024px PNG normalization
-  -> authenticated hosted Rust API
-  -> atomic image-lane cost + five-per-UTC-month reservation
-  -> one fixed OpenAI Images edit request
-  -> provider modality-usage settlement
-  -> 10-minute main-memory candidate
-  -> explicit activation to 128px safeStorage-encrypted account asset
-  -> private trocode-companion URL + live overlay appearance event
+renderer -> public runtime v5 -> Rust control plane -> Agents SDK worker
+                                      ^                    |
+                                      | model/tool broker  |
+                                      +--------------------+
+                                      |
+                           Electron CUA/local adapters
+                           or Rust connector adapters
 ```
+
+For each task, Rust freezes the exact currently available tool catalog on the
+first compatible claim, stores it encrypted, and supplies that same catalog on
+every recovery claim. The SDK decides how to fulfill the intent, chooses tools,
+consumes their results, and decides when the task is finished. SDK Session
+history and serialized `RunState` checkpoints are encrypted in PostgreSQL.
+Context compaction uses the SDK's input-mode Responses compaction session through
+the Rust model proxy.
+The proxy records only a request digest and dispatch state before contacting
+OpenAI. If the worker loses a response before its next durable SDK checkpoint,
+the same model request is blocked as ambiguous instead of being sent again.
+
+There is no action-policy or Tro approval branch. SDK approval interruptions are
+used only to serialize state before dispatch and are resumed automatically.
+A registered, schema-valid tool call runs when its executor is available.
+macOS/Windows permissions and provider OAuth remain external technical consent
+boundaries.
+
+## Private companion assets
 
 The renderer owns only the unsubmitted `File`, object URL, and prompt. Source
 bytes and prompts never enter global renderer state, local storage, PostgreSQL,
@@ -155,12 +69,51 @@ Long-running task encouragement is a separate deterministic timer service. It
 parses `TaskUpdate`, maps only explicit thinking/working/verifying phases to
 curated bilingual copy, and uses the existing low-priority pet-nudge slot. It
 does not inspect request text, model output, tools, screen contents, or desktop
-activity. Clarifications, approvals, guidance, and responses keep their
-existing priority over all pet nudges.
+activity. Clarifications, guidance, and responses keep their existing priority
+over all pet nudges.
 
-## Failure behavior
+## Boundaries that remain
 
-Missing API configuration, an incompatible Rust contract, a failed sidecar
-handshake, or a disabled hosted runtime blocks new work. Tro never falls back to
-JavaScript inference, local PostgreSQL, offline membership verification, or a
-direct provider call from Electron.
+- Runtime v5 requires exact public protocol and Tro base-tool catalog digests;
+  the private worker also requires its exact SDK and agent-graph versions. CUA
+  calls additionally require the exact live driver-catalog digest advertised by
+  the worker that accepted the task.
+- A run's encrypted tool snapshot is immutable. Recovery reconstructs the same
+  SDK graph even if Electron or a connector disconnects; a new call still needs
+  a currently valid executor route, while the same durably queued call can be
+  resumed by call ID without dispatching it twice.
+- Authority contract v10 binds the intent, execution profile, trusted workspace,
+  Activity context, and technical limits without prescribing a plan.
+- The registry rejects unknown Tro tools, operations, and malformed inputs.
+  CUA tools are discovered from the driver's canonical `listToolsJson` contract;
+  the backend and desktop both reject names or schemas outside that snapshot.
+- Browser navigation accepts credential-free public HTTPS targets only.
+- Workspace filesystem operations remain root-confined. Workspace shell input
+  is structurally bounded but intentionally has the host user's shell powers.
+- A one-time compare-and-swap owns execution before an adapter is called.
+- Tool invocations with an unknown outcome are blocked and never replayed
+  automatically.
+- Model and compaction request digests are also one-shot per run; provider
+  responses are not cached or persisted.
+- Stop/Escape, deadline, cost, model-sample, tool-call, and payload limits remain.
+
+## CUA
+
+CUA is an execution capability, not the planner and not an authority source.
+Tro reads CUA's canonical tool inventory, removes only driver session start/end
+because the host owns task cleanup, injects the current task session into tools
+that declare a `session` property, and forwards every other compatible tool
+through the driver's generic `callTool` adapter. New tools using tool-list schema
+version 1 therefore need no Tro allowlist or backend contract edit.
+
+Tro selects CUA's unrestricted host mode, so there is no Tro action-approval
+decision in the CUA path. The driver still validates its own schemas and may
+refuse capabilities its contract marks as unavailable in every mode. Operating-
+system Accessibility and Screen Recording grants remain real prerequisites.
+
+## Compatibility
+
+New work starts only on runtime v5 with authority v10 and
+`orchestrator_kind = 'openai_agents_sdk'`. Runtime v4 endpoints are read-only.
+Terminal v2-v4/v6-v9 rows remain readable as legacy history but cannot be
+started or resumed.

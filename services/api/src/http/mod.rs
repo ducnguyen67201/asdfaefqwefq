@@ -1,4 +1,5 @@
 mod admin;
+mod agent_orchestrator;
 mod agent_runtime;
 mod classroom;
 mod connectors;
@@ -21,7 +22,9 @@ use crate::{app::AppState, error::ApiResult};
 pub fn router(state: AppState) -> Router {
     Router::new()
         .fallback(dispatch)
-        .layer(DefaultBodyLimit::max(25_000_000))
+        .layer(DefaultBodyLimit::max(
+            agent_runtime::MAX_DESKTOP_RESULT_BODY_BYTES,
+        ))
         .layer(CatchPanicLayer::new())
         .layer(axum::middleware::from_fn(middleware::security_and_logs))
         .with_state(state)
@@ -47,6 +50,11 @@ async fn dispatch(
             http::StatusCode::FORBIDDEN,
             "Browser-origin requests are not allowed.",
         ));
+    }
+    if let Some(response) =
+        agent_orchestrator::handle(&state, &method, &uri, &headers, &body).await?
+    {
+        return Ok(response);
     }
     if let Some(response) =
         connectors::handle_authenticated(&state, &method, &uri, &headers, &body).await?

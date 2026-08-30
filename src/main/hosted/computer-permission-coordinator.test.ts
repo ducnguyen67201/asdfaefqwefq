@@ -2,38 +2,25 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 
 import { ComputerPermissionCoordinator } from './computer-permission-coordinator';
 
 function invocation() {
   return {
-    protocolVersion: 3 as const,
+    protocolVersion: 5 as const,
     protocolDigest: manifest.protocolDigest,
     toolCatalogDigest: manifest.toolCatalogDigest,
+    driverCatalogDigest: null,
     invocationId: randomUUID(),
     runId: randomUUID(),
     runVersion: 4,
     callId: 'call-1',
     toolId: 'computer.observe',
     operation: 'observe',
-    effect: {
-      kind: 'none' as const,
-      resourceKind: null,
-      reversibility: 'none' as const,
-      externality: 'local' as const,
-      communication: 'none' as const,
-      overwrite: 'none' as const,
-      sensitiveDataTransfer: false as const,
-    },
-    intentRevision: 1,
-    approvalRequired: false,
-    authorizationSource: 'routine' as const,
-    consequential: false,
     permissionInteractionId: null,
     permissionRequirements: [],
     input: { reason: 'Observe the current app.' },
-    obligations: [],
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
 }
@@ -81,7 +68,10 @@ describe('ComputerPermissionCoordinator', () => {
     ready = true;
     await coordinator.refresh();
 
-    await expect(pending).resolves.toBe('granted');
+    await expect(pending).resolves.toEqual({
+      outcome: 'granted',
+      runVersion: 6,
+    });
     expect(decidePermission).toHaveBeenCalledOnce();
     await coordinator.refresh();
     expect(decidePermission).toHaveBeenCalledOnce();

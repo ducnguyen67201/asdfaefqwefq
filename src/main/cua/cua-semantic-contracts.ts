@@ -1,12 +1,19 @@
+import { createHash } from 'node:crypto';
+
 import { z } from 'zod';
+
+import {
+  CuaDriverCatalogV5Schema,
+  type CuaDriverCatalogV5,
+} from '../../shared/agent-runtime-protocol';
 
 const NullableIntegerSchema = z.number().int().nullable();
 
 export const CuaDriverMetadataSchema = z.object({
-  driverVersion: z.string().min(1).max(100),
-  contractVersion: z.string().min(1).max(100),
-  toolsListSchemaVersion: z.string().min(1).max(100),
-  capabilityVersion: z.string().min(1).max(100),
+  driverVersion: z.string().trim().min(1).max(100),
+  contractVersion: z.string().trim().min(1).max(100),
+  toolsListSchemaVersion: z.string().trim().min(1).max(100),
+  capabilityVersion: z.string().trim().min(1).max(100),
 }).passthrough();
 
 export const CuaToolInventorySchema = z.object({
@@ -14,10 +21,118 @@ export const CuaToolInventorySchema = z.object({
   schema_version: z.string().min(1).max(100),
   tools: z.array(
     z.object({
+      capabilities: z.array(z.string().min(1).max(200)).max(100).default([]),
+      description: z.string().min(1).max(100_000),
+      inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+      name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
+    }).passthrough(),
+  ).max(128),
+}).passthrough();
+
+const CuaSemanticToolInventorySchema = z.object({
+  capability_version: z.string().min(1).max(100),
+  tools: z.array(
+    z.object({
       name: z.string().min(1).max(200),
     }).passthrough(),
-  ).max(500),
+  ).max(128),
 }).passthrough();
+
+const HOST_OWNED_CAPABILITY_PREFIXES = ['session.lifecycle.'] as const;
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function modelNameForCuaTool(name: string): string {
+  if (name.length <= 64) return name;
+  const suffix = createHash('sha256').update(name).digest('hex').slice(0, 8);
+  return `${name.slice(0, 55)}_${suffix}`;
+}
+
+function projectedInputSchema(
+  value: Record<string, unknown>,
+): { injectSession: boolean; schema: Record<string, unknown> } {
+  if (value.type !== 'object' || !value.properties || Array.isArray(value.properties)) {
+    throw new Error('CUA tool input schemas must be JSON object schemas.');
+  }
+  const schema = structuredClone(value);
+  const properties = schema.properties as Record<string, unknown>;
+  const injectSession = Object.hasOwn(properties, 'session');
+  if (injectSession) {
+    delete properties.session;
+    if (Array.isArray(schema.required)) {
+      schema.required = schema.required.filter((name) => name !== 'session');
+    }
+  }
+  if (Buffer.byteLength(stableJson(schema), 'utf8') > 100_000) {
+    throw new Error('CUA tool input schema exceeds the runtime catalog limit.');
+  }
+  return { injectSession, schema };
+}
+
+export function createCuaDriverCatalog(
+  metadataValue: unknown,
+  inventoryValue: unknown,
+): CuaDriverCatalogV5 {
+  const metadata = CuaDriverMetadataSchema.parse(metadataValue);
+  const inventory = CuaToolInventorySchema.parse(inventoryValue);
+  if (
+    metadata.toolsListSchemaVersion !== '1' ||
+    inventory.schema_version !== metadata.toolsListSchemaVersion ||
+    inventory.capability_version !== metadata.capabilityVersion
+  ) {
+    throw new Error('CUA tool inventory metadata does not match the driver contract.');
+  }
+  const tools = inventory.tools
+    .filter(
+      (tool) =>
+        !tool.capabilities.some((capability) =>
+          HOST_OWNED_CAPABILITY_PREFIXES.some((prefix) =>
+            capability.startsWith(prefix),
+          ),
+        ),
+    )
+    .map((tool) => {
+      const projected = projectedInputSchema(tool.inputSchema);
+      return {
+        name: tool.name,
+        modelName: modelNameForCuaTool(tool.name),
+        description: tool.description.trim().slice(0, 20_000),
+        inputSchema: projected.schema,
+        injectSession: projected.injectSession,
+      };
+    });
+  if (new Set(tools.map((tool) => tool.name)).size !== tools.length) {
+    throw new Error('CUA tool inventory contains duplicate tool names.');
+  }
+  if (new Set(tools.map((tool) => tool.modelName)).size !== tools.length) {
+    throw new Error('CUA tool inventory contains duplicate model tool names.');
+  }
+  const digestPayload = {
+    driverVersion: metadata.driverVersion,
+    contractVersion: metadata.contractVersion,
+    toolsListSchemaVersion: metadata.toolsListSchemaVersion,
+    capabilityVersion: metadata.capabilityVersion,
+    tools,
+  };
+  return CuaDriverCatalogV5Schema.parse({
+    ...digestPayload,
+    driverCatalogDigest: createHash('sha256')
+      .update(stableJson(digestPayload))
+      .digest('hex'),
+  });
+}
 
 const WINDOW_DISCOVERY_TOOLS = ['list_windows', 'get_window_state'] as const;
 const WINDOW_ACTION_TOOLS = ['click', 'type_text', 'press_key', 'scroll'] as const;
@@ -45,7 +160,7 @@ export type CuaSemanticCapabilities = z.infer<
 export function deriveCuaSemanticCapabilities(
   inventoryValue: unknown,
 ): CuaSemanticCapabilities {
-  const inventory = CuaToolInventorySchema.parse(inventoryValue);
+  const inventory = CuaSemanticToolInventorySchema.parse(inventoryValue);
   const names = new Set(inventory.tools.map((tool) => tool.name));
   const hasAll = (required: readonly string[]): boolean =>
     required.every((name) => names.has(name));

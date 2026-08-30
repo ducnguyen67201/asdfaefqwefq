@@ -9,7 +9,7 @@ import type {
   BeginDictationRequest,
   BeginDictationResult,
   CancelDictationRequest,
-  CancelAgentTaskRequestV3,
+  CancelAgentTaskRequestV4,
   CompanionAppearance,
   CompanionCustomizationStatus,
   CompanionGuidance,
@@ -35,7 +35,6 @@ import type {
   DisconnectConnectorRequest,
   TranscribeVoiceSegmentRequest,
   CuaStatus,
-  DecideApprovalRequest,
   MembershipStatus,
   AddOrganizationMemberRequest,
   AddOrganizationMemberResponse,
@@ -155,7 +154,6 @@ export const IPC_CHANNELS = {
   connectConnector: 'connectors:connect',
   disconnectConnector: 'connectors:disconnect',
   transcribeVoiceSegment: 'voice:transcribe-segment',
-  decideApproval: 'task:decide-approval',
   getAppPreferences: 'preferences:get',
   getAppUpdateStatus: 'update:status',
   getComputerStatus: 'cua:status',
@@ -244,7 +242,7 @@ export interface DesktopApi {
   continueWithFree(): Promise<MembershipStatus>;
   cancelTask(
     taskId: string,
-    source?: CancelAgentTaskRequestV3['source'],
+    source?: CancelAgentTaskRequestV4['source'],
   ): Promise<TaskSnapshot>;
   checkForAppUpdates(): Promise<AppUpdateStatus>;
   configureVoice(request: ConfigureVoiceRequest): Promise<VoiceStatus>;
@@ -258,7 +256,6 @@ export interface DesktopApi {
   transcribeVoiceSegment(
     request: TranscribeVoiceSegmentRequest,
   ): Promise<VoiceSegmentTranscription>;
-  decideApproval(request: DecideApprovalRequest): Promise<TaskSnapshot>;
   activateCompanionCandidate(
     request: ActivateCompanionCandidateRequest,
   ): Promise<CompanionCustomizationStatus>;
@@ -433,7 +430,6 @@ export interface DesktopApi {
 }
 
 export interface CompanionApi {
-  decideApproval(request: DecideApprovalRequest): Promise<TaskSnapshot>;
   onAppearanceChange(
     listener: (appearance: CompanionAppearance) => void,
   ): () => void;

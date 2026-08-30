@@ -1,4 +1,4 @@
-use super::protocol::{AgentRunActionV3, AgentRunPhaseV3, AgentRunStateV3};
+use super::protocol::{AgentRunActionV4, AgentRunPhaseV4, AgentRunStateV4};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransitionCommand {
@@ -8,51 +8,44 @@ pub enum TransitionCommand {
     WaitForPermission,
     ExecuteTool,
     WaitForInput,
-    WaitForApproval,
     Verify,
     Recover,
     Complete,
     Block,
     Fail,
-    Cancel { consequential_execution: bool },
+    Cancel,
     Expire,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LifecycleProjection {
-    pub actions: Vec<AgentRunActionV3>,
-    pub phase: AgentRunPhaseV3,
+    pub actions: Vec<AgentRunActionV4>,
+    pub phase: AgentRunPhaseV4,
     pub terminal: bool,
 }
 
 pub fn transition(
-    from: &AgentRunStateV3,
+    from: &AgentRunStateV4,
     command: TransitionCommand,
-) -> Result<AgentRunStateV3, &'static str> {
-    use AgentRunStateV3::{
-        AwaitingApproval, AwaitingInput, AwaitingPermission, AwaitingWorker, Blocked, Cancelled,
-        CompilingOutcomes, Completed, ExecutingTool, Expired, Failed, Planning, Queued, Recovering,
-        Verifying,
+) -> Result<AgentRunStateV4, &'static str> {
+    use AgentRunStateV4::{
+        AwaitingInput, AwaitingPermission, AwaitingWorker, Blocked, Cancelled, CompilingOutcomes,
+        Completed, ExecutingTool, Expired, Failed, Planning, Queued, Recovering, Verifying,
     };
     use TransitionCommand::{
         Block, Cancel, CompileOutcomes as Compile, Complete, ExecuteTool, Expire, Fail, Plan,
-        Recover, Verify, WaitForApproval, WaitForInput, WaitForPermission, WaitForWorker,
+        Recover, Verify, WaitForInput, WaitForPermission, WaitForWorker,
     };
 
     if matches!(from, Completed | Blocked | Failed | Cancelled | Expired) {
         return Err("terminal agent runs cannot transition");
     }
-    if let Cancel {
-        consequential_execution,
-    } = command
-    {
-        return Ok(
-            if matches!(from, ExecutingTool) && consequential_execution {
-                Blocked
-            } else {
-                Cancelled
-            },
-        );
+    if matches!(command, Cancel) {
+        return Ok(if matches!(from, ExecutingTool) {
+            Blocked
+        } else {
+            Cancelled
+        });
     }
     if matches!(command, Fail) {
         return Ok(Failed);
@@ -68,11 +61,10 @@ pub fn transition(
         (Planning | AwaitingWorker | Recovering, WaitForPermission) => AwaitingPermission,
         (Planning | AwaitingWorker | AwaitingPermission | Recovering, ExecuteTool) => ExecutingTool,
         (CompilingOutcomes | Planning | Recovering, WaitForInput) => AwaitingInput,
-        (Planning | Recovering, WaitForApproval) => AwaitingApproval,
         (Planning | ExecutingTool | Recovering, Verify) => Verifying,
         (
-            Planning | AwaitingWorker | AwaitingPermission | AwaitingInput | AwaitingApproval
-            | ExecutingTool | Verifying,
+            Planning | AwaitingWorker | AwaitingPermission | AwaitingInput | ExecutingTool
+            | Verifying,
             Recover,
         ) => Recovering,
         (Planning | Verifying, Complete) => Completed,
@@ -83,20 +75,17 @@ pub fn transition(
 }
 
 #[must_use]
-pub fn project(state: &AgentRunStateV3) -> LifecycleProjection {
-    use AgentRunActionV3::{
-        Approve, Cancel, ContinueWithoutComputer, Deny, OpenSystemSettings, Respond, Steer,
+pub fn project(state: &AgentRunStateV4) -> LifecycleProjection {
+    use AgentRunActionV4::{Cancel, ContinueWithoutComputer, OpenSystemSettings, Respond, Steer};
+    use AgentRunPhaseV4::{
+        Acting, AwaitingInput as InputPhase, AwaitingPermission as PermissionPhase,
+        Blocked as BlockedPhase, Cancelled as CancelledPhase, Completed as CompletedPhase,
+        Failed as FailedPhase, Paused, Planning as PlanningPhase, Ready,
+        Verifying as VerifyingPhase,
     };
-    use AgentRunPhaseV3::{
-        Acting, AwaitingApproval as ApprovalPhase, AwaitingInput as InputPhase,
-        AwaitingPermission as PermissionPhase, Blocked as BlockedPhase,
-        Cancelled as CancelledPhase, Completed as CompletedPhase, Failed as FailedPhase, Paused,
-        Planning as PlanningPhase, Ready, Verifying as VerifyingPhase,
-    };
-    use AgentRunStateV3::{
-        AwaitingApproval, AwaitingInput, AwaitingPermission, AwaitingWorker, Blocked, Cancelled,
-        CompilingOutcomes, Completed, ExecutingTool, Expired, Failed, Planning, Queued, Recovering,
-        Verifying,
+    use AgentRunStateV4::{
+        AwaitingInput, AwaitingPermission, AwaitingWorker, Blocked, Cancelled, CompilingOutcomes,
+        Completed, ExecutingTool, Expired, Failed, Planning, Queued, Recovering, Verifying,
     };
 
     let (phase, terminal, actions) = match state {
@@ -109,7 +98,6 @@ pub fn project(state: &AgentRunStateV3) -> LifecycleProjection {
             vec![OpenSystemSettings, ContinueWithoutComputer, Cancel],
         ),
         AwaitingInput => (InputPhase, false, vec![Respond, Cancel]),
-        AwaitingApproval => (ApprovalPhase, false, vec![Approve, Deny, Cancel]),
         ExecutingTool => (Acting, false, vec![Cancel]),
         Verifying => (VerifyingPhase, false, vec![Cancel]),
         Completed => (CompletedPhase, true, Vec::new()),
@@ -127,20 +115,15 @@ pub fn project(state: &AgentRunStateV3) -> LifecycleProjection {
 #[cfg(test)]
 mod tests {
     use super::{TransitionCommand, project, transition};
-    use crate::agent::protocol::AgentRunStateV3;
+    use crate::agent::protocol::AgentRunStateV4;
 
     #[test]
     fn blocked_is_terminal_and_never_cancellable() {
-        let projection = project(&AgentRunStateV3::Blocked);
+        let projection = project(&AgentRunStateV4::Blocked);
         assert!(projection.terminal);
         assert!(projection.actions.is_empty());
         assert_eq!(
-            transition(
-                &AgentRunStateV3::Blocked,
-                TransitionCommand::Cancel {
-                    consequential_execution: false,
-                },
-            ),
+            transition(&AgentRunStateV4::Blocked, TransitionCommand::Cancel,),
             Err("terminal agent runs cannot transition")
         );
     }
@@ -148,7 +131,7 @@ mod tests {
     #[test]
     fn permission_is_a_durable_nonterminal_wait() {
         let next = transition(
-            &AgentRunStateV3::AwaitingWorker,
+            &AgentRunStateV4::AwaitingWorker,
             TransitionCommand::WaitForPermission,
         )
         .expect("permission wait is allowed");
@@ -158,15 +141,10 @@ mod tests {
     }
 
     #[test]
-    fn consequential_cancel_preserves_unknown_outcome() {
+    fn cancelling_after_tool_dispatch_preserves_unknown_outcome() {
         assert_eq!(
-            transition(
-                &AgentRunStateV3::ExecutingTool,
-                TransitionCommand::Cancel {
-                    consequential_execution: true,
-                },
-            ),
-            Ok(AgentRunStateV3::Blocked)
+            transition(&AgentRunStateV4::ExecutingTool, TransitionCommand::Cancel,),
+            Ok(AgentRunStateV4::Blocked)
         );
     }
 }

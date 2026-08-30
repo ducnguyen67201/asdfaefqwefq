@@ -2,13 +2,13 @@
 
 ## Source Plan
 
-No external plan file was used. The behavior came from the approved request to match the OpenClicky-style companion chat card: stream the latest answer beside the companion, persist the completed answer, provide fixed actions, keep guidance and approval precedence, and avoid broad IPC.
+No external plan file was used. The behavior came from the request to match the OpenClicky-style companion chat card: stream the latest answer beside the companion, persist the completed answer, provide fixed actions, keep clarification and guidance precedence, and avoid broad IPC.
 
 ## User Journeys
 
 - As a desktop user, I want the latest assistant answer to appear beside the companion while work is happening, so I do not have to open the main window to see the result.
 - As a desktop user, I want completed answers to expose only fixed actions, so I can dismiss, open the task, ask a follow-up, or read the answer aloud without granting extra authority.
-- As a user relying on walkthrough guidance, I want approval and guidance cards to stay above response cards, so the companion does not hide required next-step instructions.
+- As a user relying on walkthrough guidance, I want clarification and guidance cards to stay above response cards, so the companion does not hide required next-step instructions.
 
 ## Task Report
 

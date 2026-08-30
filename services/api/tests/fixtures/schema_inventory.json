@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 28,
+  "migrationCount": 33,
   "tables": [
     "users",
     "device_sessions",
@@ -55,7 +55,12 @@
     "connector_tool_snapshots",
     "connector_audit_events",
     "knowledge_class_sessions",
-    "knowledge_class_session_activities"
+    "knowledge_class_session_activities",
+    "knowledge_class_session_materials",
+    "agent_session_mutations",
+    "agent_orchestrator_workers",
+    "agent_model_dispatches",
+    "agent_run_tool_snapshots"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],
@@ -63,10 +68,11 @@
       "queued",
       "compiling_outcomes",
       "planning",
+      "awaiting_orchestrator",
+      "running",
       "awaiting_worker",
       "awaiting_permission",
       "awaiting_input",
-      "awaiting_approval",
       "executing_tool",
       "recovering",
       "verifying",

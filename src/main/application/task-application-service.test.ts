@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
-  type HostedTaskAuthorityContract,
-  type HostedTaskRecord,
+import type {
+  HostedTaskAuthorityContractV10,
+  HostedTaskRecord,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
@@ -15,35 +14,14 @@ function hostedRecord(
   overrides: Partial<HostedTaskRecord> = {},
 ): HostedTaskRecord {
   const request = overrides.request ?? 'Create a calendar event.';
-  const contract: HostedTaskAuthorityContract = {
-    schemaVersion: 8,
+  const contract: HostedTaskAuthorityContractV10 = {
+    schemaVersion: 10,
     id: '55555555-5555-4555-8555-555555555555',
     originalRequest: request,
-    runtimeKind: 'rust_hosted',
+    runtimeKind: 'openai_agents_sdk',
     executionProfile: 'everyday',
-    autonomyMode: 'balanced',
     workspaceSelectionId: null,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: {
-      alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS],
-    },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -54,18 +32,14 @@ function hostedRecord(
   };
   return {
     activity: null,
-    autonomyMode: 'balanced',
     clientTaskId: '44444444-4444-4444-8444-444444444444',
-    contractSchemaVersion: 8,
+    contractSchemaVersion: 10,
     createdAt: '2026-08-25T00:00:00.000Z',
     executionProfile: 'everyday',
     id: '33333333-3333-4333-8333-333333333333',
     contract,
-    intentAuthorization: contract.intentAuthorization,
-    outcomeContract: contract.outcomeContract,
-    outcomeRevision: 1,
-    protocolVersion: 2,
-    publicSummary: 'Planning.',
+    protocolVersion: 5,
+    publicSummary: 'Waiting for the OpenAI Agents SDK worker.',
     request,
     runVersion: 1,
     state: 'planning',
@@ -88,7 +62,7 @@ describe('TaskApplicationService', () => {
       .toThrow();
   });
 
-  it('uses the backend v8 projection as the only local task authority', async () => {
+  it('uses the backend v10 projection as the only local execution context', async () => {
     const runtime = new TaskRuntime();
     const submit = vi.fn(async (input: { taskId: string }) =>
       hostedRecord(input.taskId));
@@ -105,11 +79,10 @@ describe('TaskApplicationService', () => {
 
     expect(submit).toHaveBeenCalledOnce();
     expect(snapshot.goal).toMatchObject({
-      autonomyMode: 'balanced',
-      intentAuthorization: { schemaVersion: 1 },
-      outcomeContract: { schemaVersion: 1 },
-      schemaVersion: 8,
+      runtimeKind: 'openai_agents_sdk',
+      schemaVersion: 10,
     });
+    expect(snapshot.outcomes).toBeNull();
     expect(service.start({ taskId: snapshot.taskId })).toEqual(snapshot);
   });
 
@@ -147,26 +120,7 @@ describe('TaskApplicationService', () => {
     const runtime = new TaskRuntime();
     const taskId = '11111111-1111-4111-8111-111111111111';
     let record = hostedRecord(taskId);
-    const get = vi.fn(async () => {
-      const contract = {
-        ...record.contract!,
-        intentAuthorization: {
-          ...record.contract!.intentAuthorization,
-          revision: 2,
-        },
-        outcomeContract: {
-          ...record.contract!.outcomeContract,
-          revision: 2,
-        },
-      };
-      return {
-        ...record,
-        contract,
-        intentAuthorization: contract.intentAuthorization,
-        outcomeContract: contract.outcomeContract,
-        outcomeRevision: 2,
-      };
-    });
+    const get = vi.fn(async () => record);
     const service = new TaskApplicationService(runtime, {
       hostedTaskClient: {
         get,
@@ -185,8 +139,9 @@ describe('TaskApplicationService', () => {
 
     expect(get).toHaveBeenCalledWith(record.id);
     expect(revised.goal).toMatchObject({
-      intentAuthorization: { revision: 2 },
-      outcomeContract: { revision: 2 },
+      runtimeKind: 'openai_agents_sdk',
+      schemaVersion: 10,
     });
+    expect(revised.outcomes).toBeNull();
   });
 });

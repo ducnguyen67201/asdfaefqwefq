@@ -164,7 +164,6 @@ import {
   type CompanionState,
   type CompanionVoiceActivity,
   type PendingInteraction,
-  type ProposedAction,
   type TaskSnapshot,
   type VoiceMode,
 } from './shared/contracts';
@@ -409,7 +408,6 @@ const executionCoordinator = new TaskExecutionCoordinator({
       cuaService.queryVisibleApplicationSurfaces(application, signal),
   }),
   cua: cuaService,
-  runtime: taskRuntime,
   openApplication: (application) =>
     desktopApplicationLauncher.launch(application),
   onDesktopControlChange: updateDesktopControlIndicator,
@@ -439,7 +437,6 @@ const taskApplicationService = new TaskApplicationService(
     activityContextService,
     activityProgressReporter,
     classroomSessionService,
-    appPreferencesService,
     hostedTaskClient,
     onHostedTerminal: (taskId) => executionCoordinator.endHostedTask(taskId),
     workspaceSelectionService,
@@ -459,20 +456,19 @@ const computerPermissionCoordinator = new ComputerPermissionCoordinator({
     }),
 });
 const desktopToolWorker = new DesktopToolWorker({
-  approvalProvider: requestHostedApproval,
   commitResult: (result) => desktopWorkerClient.commitResult(result),
+  cua: cuaService,
   dispatcher: {
     dispatch: (invocation, context) =>
       executionCoordinator.dispatchHostedTool(invocation, context),
   },
-  evaluatePolicy: (input) => rustDesktopEngine.evaluateAction(input),
-  goalProvider: (runId) => taskApplicationService.hostedGoal(runId),
+  executionContextProvider: (runId) =>
+    taskApplicationService.hostedExecutionContext(runId),
   interactionProvider: requestHostedInteraction,
   permissionCoordinator: computerPermissionCoordinator,
   registry: runtimeToolRegistry,
-  requestExecuting: (invocationId, consequential) =>
-    desktopWorkerClient.requestExecuting(invocationId, consequential),
-  taskIdProvider: (runId) => taskApplicationService.taskIdForHostedRun(runId),
+  requestExecuting: (invocationId, expectedRunVersion) =>
+    desktopWorkerClient.requestExecuting(invocationId, expectedRunVersion),
 });
 desktopWorkerClient.on('invocation', (invocation) => {
   void desktopToolWorker.handle(invocation).catch((error: unknown) => {
@@ -516,7 +512,6 @@ const PET_NUDGE_CALLOUT_SIZE = { height: 92, width: 300 } as const;
 const GUIDANCE_TARGET_MARKER_SIZE = { height: 76, width: 76 } as const;
 const RESPONSE_CALLOUT_SIZE = { height: 360, width: 420 } as const;
 const CLARIFICATION_CALLOUT_SIZE = { height: 286, width: 396 } as const;
-const APPROVAL_CALLOUT_SIZE = { height: 448, width: 432 } as const;
 const VOICE_ISLAND_SIZE = { height: 76, width: 420 } as const;
 const VOICE_ISLAND_TOP_GAP = 10;
 const CONTROL_INDICATOR_MIN_VISIBLE_MS = 400;
@@ -1260,10 +1255,7 @@ function showCompanionInteraction(interaction: PendingInteraction): void {
 
   const target = getCurrentCompanionScreenPosition();
   const display = screen.getDisplayNearestPoint(target);
-  const size =
-    interaction.kind === 'approval'
-      ? APPROVAL_CALLOUT_SIZE
-      : CLARIFICATION_CALLOUT_SIZE;
+  const size = CLARIFICATION_CALLOUT_SIZE;
   const position = placeGuidanceCallout(
     target,
     display.workArea,
@@ -1510,59 +1502,22 @@ async function startHostedDesktopWorker(): Promise<void> {
     console.error('[desktop-worker] active task restoration failed.', error);
     return 0;
   });
+  const cuaCatalog = await cuaService.discoverToolCatalog().catch((error: unknown) => {
+    console.error('[desktop-worker] CUA tool discovery failed.', error);
+    return null;
+  });
   await desktopWorkerClient
-    .start(desktopWorkerCapabilities(runtimeToolRegistry))
+    .start(desktopWorkerCapabilities(runtimeToolRegistry, cuaCatalog))
     .catch((error: unknown) => {
       console.error('[desktop-worker] could not connect.', error);
     });
-}
-
-async function requestHostedApproval(
-  runId: string,
-  action: ProposedAction,
-): Promise<boolean> {
-  const taskId = taskApplicationService.taskIdForHostedRun(runId);
-  if (!taskId) return false;
-  const waiting = taskRuntime.requestApproval({
-    action,
-    consequence: action.description,
-    prompt: action.description,
-    taskId,
-  });
-  const interactionId = waiting.pendingInteraction?.id;
-  if (!interactionId) return false;
-
-  return new Promise<boolean>((resolve) => {
-    const finish = (approved: boolean): void => {
-      clearTimeout(timer);
-      taskRuntime.off('task-update', onUpdate);
-      if (approved) {
-        try {
-          taskRuntime.consumeApprovalGrant({ action, taskId });
-        } catch {
-          resolve(false);
-          return;
-        }
-      }
-      resolve(approved);
-    };
-    const onUpdate = (value: unknown): void => {
-      const parsed = TaskUpdateSchema.safeParse(value);
-      if (!parsed.success || parsed.data.snapshot.taskId !== taskId) return;
-      const snapshot = parsed.data.snapshot;
-      if (snapshot.pendingInteraction?.id === interactionId) return;
-      finish(Boolean(snapshot.approvalGrant));
-    };
-    const timer = setTimeout(() => finish(false), 5 * 60_000);
-    taskRuntime.on('task-update', onUpdate);
-  });
 }
 
 async function requestHostedInteraction(
   runId: string,
   input: { choices?: string[]; prompt: string },
 ): Promise<string> {
-  const taskId = taskApplicationService.taskIdForHostedRun(runId);
+  const taskId = taskApplicationService.hostedExecutionContext(runId)?.taskId;
   if (!taskId) throw new Error('Hosted run is not mapped to a local task.');
   const waiting = taskRuntime.requestInput({
     choices: input.choices?.map((label, index) => ({

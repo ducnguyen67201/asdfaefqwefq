@@ -70,7 +70,7 @@ export const SurfaceDescriptorSchema = z.object({
   title: z.string().max(500).optional(),
   url: z.string().max(8_000).optional(),
   bounds: SurfaceBoundsSchema.optional(),
-  deepAccess: z.enum(['ready', 'available_requires_approval', 'unavailable']).optional(),
+  deepAccess: z.enum(['ready', 'ready_to_prepare', 'unavailable']).optional(),
 });
 
 export const SurfaceElementSchema = z.object({

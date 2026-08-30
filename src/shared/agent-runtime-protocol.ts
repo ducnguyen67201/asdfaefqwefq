@@ -1,16 +1,17 @@
 import { z } from 'zod';
 
-export const AGENT_RUNTIME_PROTOCOL_VERSION = 3 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION = 4 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION_V5 = 5 as const;
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const UuidSchema = z.string().uuid();
 const TimestampSchema = z.string().datetime({ offset: true });
 
-export const AgentRuntimeRolloutModeV3Schema = z
-  .enum(['observe', 'dual', 'enforce'])
-  .meta({ id: 'AgentRuntimeRolloutModeV3' });
+export const AgentRuntimeRolloutModeV4Schema = z
+  .literal('enforce')
+  .meta({ id: 'AgentRuntimeRolloutModeV4' });
 
-export const AgentRunStateV3Schema = z
+export const AgentRunStateV4Schema = z
   .enum([
     'queued',
     'compiling_outcomes',
@@ -19,7 +20,6 @@ export const AgentRunStateV3Schema = z
     'awaiting_permission',
     'executing_tool',
     'awaiting_input',
-    'awaiting_approval',
     'verifying',
     'recovering',
     'completed',
@@ -28,16 +28,15 @@ export const AgentRunStateV3Schema = z
     'cancelled',
     'expired',
   ])
-  .meta({ id: 'AgentRunStateV3' });
+  .meta({ id: 'AgentRunStateV4' });
 
-export const AgentRunPhaseV3Schema = z
+export const AgentRunPhaseV4Schema = z
   .enum([
     'ready',
     'planning',
     'paused',
     'awaiting_permission',
     'awaiting_input',
-    'awaiting_approval',
     'acting',
     'verifying',
     'completed',
@@ -45,22 +44,20 @@ export const AgentRunPhaseV3Schema = z
     'failed',
     'cancelled',
   ])
-  .meta({ id: 'AgentRunPhaseV3' });
+  .meta({ id: 'AgentRunPhaseV4' });
 
-export const AgentRunActionV3Schema = z
+export const AgentRunActionV4Schema = z
   .enum([
     'steer',
     'cancel',
     'respond',
-    'approve',
-    'deny',
     'open_system_settings',
     'continue_without_computer',
     'retry_as_new_task',
   ])
-  .meta({ id: 'AgentRunActionV3' });
+  .meta({ id: 'AgentRunActionV4' });
 
-export const CancellationSourceV3Schema = z
+export const CancellationSourceV4Schema = z
   .enum([
     'stop_button',
     'focused_escape',
@@ -68,13 +65,13 @@ export const CancellationSourceV3Schema = z
     'sign_out',
     'shutdown',
   ])
-  .meta({ id: 'CancellationSourceV3' });
+  .meta({ id: 'CancellationSourceV4' });
 
-export const ComputerPermissionV3Schema = z
+export const ComputerPermissionV4Schema = z
   .enum(['accessibility', 'screen_recording'])
-  .meta({ id: 'ComputerPermissionV3' });
+  .meta({ id: 'ComputerPermissionV4' });
 
-export const AgentRunFailureStageV3Schema = z
+export const AgentRunFailureStageV4Schema = z
   .enum([
     'negotiation',
     'provider_request',
@@ -83,22 +80,22 @@ export const AgentRunFailureStageV3Schema = z
     'verification',
     'runtime',
   ])
-  .meta({ id: 'AgentRunFailureStageV3' });
+  .meta({ id: 'AgentRunFailureStageV4' });
 
-export const AgentRunFailureCodeV3Schema = z
+export const AgentRunFailureCodeV4Schema = z
   .enum([
     'provider_request_rejected',
     'provider_unavailable',
     'provider_outcome_unknown',
-    'effect_outcome_unknown',
+    'tool_outcome_unknown',
     'required_outcome_unverified',
     'internal_runtime_error',
     'permission_unavailable',
     'run_expired',
   ])
-  .meta({ id: 'AgentRunFailureCodeV3' });
+  .meta({ id: 'AgentRunFailureCodeV4' });
 
-export const AgentRuntimeErrorCodeV3Schema = z
+export const AgentRuntimeErrorCodeV4Schema = z
   .enum([
     'desktop_upgrade_required',
     'backend_upgrade_required',
@@ -111,104 +108,9 @@ export const AgentRuntimeErrorCodeV3Schema = z
     'invalid_agent_runtime_request',
     'agent_runtime_unavailable',
   ])
-  .meta({ id: 'AgentRuntimeErrorCodeV3' });
+  .meta({ id: 'AgentRuntimeErrorCodeV4' });
 
-export const ActionEffectKindV3Schema = z
-  .enum([
-    'none',
-    'create_resource',
-    'update_resource',
-    'rename_resource',
-    'move_resource',
-    'add_comment',
-    'workspace_write',
-    'workspace_command',
-    'send_communication',
-    'delete_or_archive',
-    'unexpected_overwrite',
-    'publish',
-    'deploy',
-    'merge',
-    'financial_or_trade',
-    'authentication_or_credential',
-    'system_permission',
-    'install',
-    'sensitive_transfer',
-    'unknown',
-  ])
-  .meta({ id: 'ActionEffectKindV3' });
-
-export const ResourceKindV3Schema = z
-  .enum([
-    'calendar_event',
-    'document',
-    'spreadsheet',
-    'spreadsheet_row',
-    'workspace_file',
-    'workspace_repository',
-    'comment',
-    'issue',
-    'pull_request',
-    'email',
-    'message',
-    'form_submission',
-    'download',
-    'application',
-    'generic_private_resource',
-    'generic_public_resource',
-  ])
-  .meta({ id: 'ResourceKindV3' });
-
-export const ActionEffectV3Schema = z
-  .object({
-    kind: ActionEffectKindV3Schema,
-    resourceKind: ResourceKindV3Schema.nullable(),
-    reversibility: z.enum(['none', 'reversible', 'destructive', 'unknown']),
-    externality: z.enum([
-      'local',
-      'cloud_private',
-      'external',
-      'public',
-      'unknown',
-    ]),
-    communication: z.enum([
-      'none',
-      'draft',
-      'send',
-      'invite',
-      'notify',
-      'unknown',
-    ]),
-    overwrite: z.enum(['none', 'requested', 'unexpected', 'unknown']),
-    sensitiveDataTransfer: z.union([z.boolean(), z.literal('unknown')]),
-  })
-  .strict()
-  .meta({ id: 'ActionEffectV3' });
-
-export const ProposedActionV3Schema = z
-  .object({
-    action: z.enum([
-      'login', 'send', 'submit', 'upload', 'download', 'delete', 'purchase',
-      'install', 'run_command', 'write_file', 'system_permission', 'answer',
-      'guide', 'observe_screen', 'open_application', 'open_url', 'click_element',
-      'type_text', 'press_key', 'scroll', 'drag', 'read_file',
-      'record_activity_signal',
-    ]),
-    toolId: z.string().trim().min(3).max(100)
-      .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u).optional(),
-    operation: z.string().trim().min(1).max(100).optional(),
-    effect: ActionEffectV3Schema.optional(),
-    description: z.string().min(1).max(2_000),
-    target: z.string().max(2_000).optional(),
-    parameters: z.record(
-      z.string().min(1).max(100),
-      z.union([z.string().max(100_000), z.array(z.string().max(8_000)).max(100)]),
-    ).refine((parameters) => Object.keys(parameters).length <= 64),
-  })
-  .strict()
-  .meta({ id: 'ProposedActionV3' });
-
-export const WaitingOnV3Schema = z
+export const WaitingOnV4Schema = z
   .discriminatedUnion('kind', [
     z
       .object({
@@ -221,7 +123,7 @@ export const WaitingOnV3Schema = z
         kind: z.literal('permission'),
         interactionId: UuidSchema,
         invocationId: UuidSchema,
-        requiredPermissions: z.array(ComputerPermissionV3Schema).min(1).max(2),
+        requiredPermissions: z.array(ComputerPermissionV4Schema).min(1).max(2),
         since: TimestampSchema,
       })
       .strict(),
@@ -234,81 +136,71 @@ export const WaitingOnV3Schema = z
         since: TimestampSchema,
       })
       .strict(),
-    z
-      .object({
-        kind: z.literal('approval'),
-        interactionId: UuidSchema,
-        actionDigest: DigestSchema,
-        action: ProposedActionV3Schema,
-        consequence: z.string().min(1).max(2_000),
-        expiresAt: TimestampSchema,
-        since: TimestampSchema,
-      })
-      .strict(),
   ])
-  .meta({ id: 'WaitingOnV3' });
+  .meta({ id: 'WaitingOnV4' });
 
-export const AgentRunFailureV3Schema = z
+export const AgentRunFailureV4Schema = z
   .object({
-    stage: AgentRunFailureStageV3Schema,
-    code: AgentRunFailureCodeV3Schema,
+    stage: AgentRunFailureStageV4Schema,
+    code: AgentRunFailureCodeV4Schema,
     message: z.string().min(1).max(1_000),
     retryable: z.boolean(),
   })
   .strict()
-  .meta({ id: 'AgentRunFailureV3' });
+  .meta({ id: 'AgentRunFailureV4' });
 
-export const AgentRunProjectionV3Schema = z
+export const AgentRunProjectionV4Schema = z
   .object({
-    state: AgentRunStateV3Schema,
+    state: AgentRunStateV4Schema,
     runVersion: z.number().int().positive(),
-    phase: AgentRunPhaseV3Schema,
+    phase: AgentRunPhaseV4Schema,
     terminal: z.boolean(),
-    availableActions: z.array(AgentRunActionV3Schema).max(4),
-    waitingOn: WaitingOnV3Schema.nullable(),
-    failure: AgentRunFailureV3Schema.nullable(),
-    cancellationSource: CancellationSourceV3Schema.nullable(),
+    availableActions: z.array(AgentRunActionV4Schema).max(4),
+    waitingOn: WaitingOnV4Schema.nullable(),
+    failure: AgentRunFailureV4Schema.nullable(),
+    cancellationSource: CancellationSourceV4Schema.nullable(),
   })
   .strict()
-  .meta({ id: 'AgentRunProjectionV3' });
+  .meta({ id: 'AgentRunProjectionV4' });
 
-export const AgentRuntimeStatusV3Schema = z
+export const AgentRuntimeStatusV4Schema = z
   .object({
     protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION),
     protocolDigest: DigestSchema,
     toolCatalogDigest: DigestSchema,
-    supportedReadVersions: z.array(z.union([z.literal(2), z.literal(3)])),
-    supportedStartVersions: z.array(z.union([z.literal(2), z.literal(3)])),
-    rolloutMode: AgentRuntimeRolloutModeV3Schema,
+    supportedReadVersions: z.array(
+      z.union([z.literal(2), z.literal(3), z.literal(4)]),
+    ),
+    supportedStartVersions: z.array(z.literal(4)),
+    rolloutMode: AgentRuntimeRolloutModeV4Schema,
     workerRequired: z.boolean(),
     enabled: z.boolean(),
   })
   .strict()
-  .meta({ id: 'AgentRuntimeStatusV3' });
+  .meta({ id: 'AgentRuntimeStatusV4' });
 
-export const AgentRuntimeNegotiationV3Schema = z
+export const AgentRuntimeNegotiationV4Schema = z
   .object({
     protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION),
     protocolDigest: DigestSchema,
     toolCatalogDigest: DigestSchema,
   })
   .strict()
-  .meta({ id: 'AgentRuntimeNegotiationV3' });
+  .meta({ id: 'AgentRuntimeNegotiationV4' });
 
-export const SubmitAgentTaskRequestV3Schema = AgentRuntimeNegotiationV3Schema.extend({
+export const SubmitAgentTaskRequestV4Schema = AgentRuntimeNegotiationV4Schema.extend({
   clientTaskId: UuidSchema,
   taskId: UuidSchema,
   request: z.string().trim().min(2).max(8_000),
-  autonomyMode: z.enum(['balanced', 'strict']),
   executionProfile: z.enum(['everyday', 'workspace']),
   workspaceSelectionId: UuidSchema.nullable(),
   activityAttemptId: UuidSchema.nullable(),
   activityIntent: z.enum(['work', 'help', 'check']),
 })
   .strict()
-  .meta({ id: 'SubmitAgentTaskRequestV3' });
+  .meta({ id: 'SubmitAgentTaskRequestV4' });
 
-export const OutcomeProjectionV3Schema = z
+export const OutcomeProjectionV4Schema = z
   .object({
     criterionId: z.string().min(1).max(80),
     required: z.boolean(),
@@ -317,15 +209,15 @@ export const OutcomeProjectionV3Schema = z
       'assistant_output',
       'application_surface',
       'browser_semantic',
-      'filesystem_effect',
-      'tool_effect',
+      'filesystem_result',
+      'tool_result',
       'semantic_judge',
     ]),
   })
   .strict()
-  .meta({ id: 'OutcomeProjectionV3' });
+  .meta({ id: 'OutcomeProjectionV4' });
 
-export const AgentTaskRecordV3Schema = z
+export const AgentTaskRecordV4Schema = z
   .object({
     id: UuidSchema,
     taskId: UuidSchema,
@@ -339,22 +231,22 @@ export const AgentTaskRecordV3Schema = z
     outcomeRevision: z.number().int().positive(),
     publicSummary: z.string().max(1_000),
     authorityContract: z.record(z.string(), z.unknown()),
-    projection: AgentRunProjectionV3Schema,
+    projection: AgentRunProjectionV4Schema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
     newlyCreated: z.boolean(),
   })
   .strict()
-  .meta({ id: 'AgentTaskRecordV3' });
+  .meta({ id: 'AgentTaskRecordV4' });
 
-export const AgentTaskListV3Schema = z
+export const AgentTaskListV4Schema = z
   .object({
-    items: z.array(AgentTaskRecordV3Schema).max(100),
+    items: z.array(AgentTaskRecordV4Schema).max(100),
   })
   .strict()
-  .meta({ id: 'AgentTaskListV3' });
+  .meta({ id: 'AgentTaskListV4' });
 
-export const AgentTaskEventV3Schema = z
+export const AgentTaskEventV4Schema = z
   .object({
     id: UuidSchema,
     runId: UuidSchema,
@@ -363,22 +255,46 @@ export const AgentTaskEventV3Schema = z
     summary: z.string().trim().min(1).max(1_000),
     finalOutput: z.string().trim().min(1).max(8_000).nullable(),
     outcomeRevision: z.number().int().positive().nullable(),
-    outcomes: z.array(OutcomeProjectionV3Schema).max(20),
-    projection: AgentRunProjectionV3Schema,
+    outcomes: z.array(OutcomeProjectionV4Schema).max(20),
+    projection: AgentRunProjectionV4Schema,
     createdAt: TimestampSchema,
   })
   .strict()
-  .meta({ id: 'AgentTaskEventV3' });
+  .meta({ id: 'AgentTaskEventV4' });
 
-export const CancelAgentTaskRequestV3Schema = AgentRuntimeNegotiationV3Schema.extend({
+export const CancelAgentTaskRequestV4Schema = AgentRuntimeNegotiationV4Schema.extend({
   clientCommandId: UuidSchema,
   expectedRunVersion: z.number().int().positive(),
-  source: CancellationSourceV3Schema,
+  source: CancellationSourceV4Schema,
 })
   .strict()
-  .meta({ id: 'CancelAgentTaskRequestV3' });
+  .meta({ id: 'CancelAgentTaskRequestV4' });
 
-export const DesktopWorkerCapabilitiesV3Schema = AgentRuntimeNegotiationV3Schema.extend({
+export const CuaDriverToolV4Schema = z
+  .object({
+    name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
+    modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
+    description: z.string().trim().min(1).max(20_000),
+    inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+    injectSession: z.boolean(),
+  })
+  .strict()
+  .meta({ id: 'CuaDriverToolV4' });
+
+export const CuaDriverCatalogV4Schema = z
+  .object({
+    driverVersion: z.string().trim().min(1).max(100),
+    contractVersion: z.string().trim().min(1).max(100),
+    toolsListSchemaVersion: z.literal('1'),
+    capabilityVersion: z.string().trim().min(1).max(100),
+    driverCatalogDigest: DigestSchema,
+    tools: z.array(CuaDriverToolV4Schema).max(128),
+  })
+  .strict()
+  .meta({ id: 'CuaDriverCatalogV4' });
+
+export const DesktopWorkerCapabilitiesV4Schema = AgentRuntimeNegotiationV4Schema.extend({
+  cua: CuaDriverCatalogV4Schema.nullable(),
   tools: z
     .array(
       z
@@ -391,9 +307,9 @@ export const DesktopWorkerCapabilitiesV3Schema = AgentRuntimeNegotiationV3Schema
     .max(32),
 })
   .strict()
-  .meta({ id: 'DesktopWorkerCapabilitiesV3' });
+  .meta({ id: 'DesktopWorkerCapabilitiesV4' });
 
-export const DesktopWorkerSessionV3Schema = z
+export const DesktopWorkerSessionV4Schema = z
   .object({
     id: UuidSchema,
     protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION),
@@ -403,31 +319,22 @@ export const DesktopWorkerSessionV3Schema = z
     expiresAt: TimestampSchema,
   })
   .strict()
-  .meta({ id: 'DesktopWorkerSessionV3' });
+  .meta({ id: 'DesktopWorkerSessionV4' });
 
-export const DesktopInvocationV3Schema = z
+export const DesktopInvocationV4Schema = z
   .object({
     protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION),
     protocolDigest: DigestSchema,
     toolCatalogDigest: DigestSchema,
+    driverCatalogDigest: DigestSchema.nullable(),
     invocationId: UuidSchema,
     runId: UuidSchema,
     runVersion: z.number().int().positive(),
     callId: z.string().trim().min(1).max(255),
     toolId: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u),
     operation: z.string().trim().min(1).max(100),
-    effect: ActionEffectV3Schema,
-    intentRevision: z.number().int().positive().max(10_000),
-    approvalRequired: z.boolean(),
-    authorizationSource: z.enum([
-      'routine',
-      'user_instruction',
-      'exact_approval',
-      'none',
-    ]),
-    consequential: z.boolean(),
     permissionInteractionId: UuidSchema.nullable(),
-    permissionRequirements: z.array(ComputerPermissionV3Schema).max(2),
+    permissionRequirements: z.array(ComputerPermissionV4Schema).max(2),
     input: z.record(z.string().min(1).max(100), z.unknown()),
     obligations: z
       .array(
@@ -437,8 +344,8 @@ export const DesktopInvocationV3Schema = z
             verifierKind: z.enum([
               'application_surface',
               'browser_semantic',
-              'filesystem_effect',
-              'tool_effect',
+              'filesystem_result',
+              'tool_result',
             ]),
           })
           .strict(),
@@ -447,9 +354,9 @@ export const DesktopInvocationV3Schema = z
     expiresAt: TimestampSchema,
   })
   .strict()
-  .meta({ id: 'DesktopInvocationV3' });
+  .meta({ id: 'DesktopInvocationV4' });
 
-export const DesktopResultV3Schema = z
+export const DesktopResultV4Schema = z
   .object({
     invocationId: UuidSchema,
     status: z.enum([
@@ -493,19 +400,19 @@ export const DesktopResultV3Schema = z
       .max(20),
   })
   .strict()
-  .meta({ id: 'DesktopResultV3' });
+  .meta({ id: 'DesktopResultV4' });
 
-export const PermissionWaitRequestV3Schema = z
+export const PermissionWaitRequestV4Schema = z
   .object({
     invocationId: UuidSchema,
     interactionId: UuidSchema,
     expectedRunVersion: z.number().int().positive(),
-    requiredPermissions: z.array(ComputerPermissionV3Schema).min(1).max(2),
+    requiredPermissions: z.array(ComputerPermissionV4Schema).min(1).max(2),
   })
   .strict()
-  .meta({ id: 'PermissionWaitRequestV3' });
+  .meta({ id: 'PermissionWaitRequestV4' });
 
-export const PermissionDecisionRequestV3Schema = z
+export const PermissionDecisionRequestV4Schema = z
   .object({
     invocationId: UuidSchema,
     interactionId: UuidSchema,
@@ -513,66 +420,67 @@ export const PermissionDecisionRequestV3Schema = z
     decision: z.enum(['granted', 'continue_without_computer']),
   })
   .strict()
-  .meta({ id: 'PermissionDecisionRequestV3' });
+  .meta({ id: 'PermissionDecisionRequestV4' });
 
-export const ApprovalDecisionRequestV3Schema = z
+export const BeginDesktopExecutionRequestV4Schema = z
   .object({
-    interactionId: UuidSchema,
-    actionDigest: DigestSchema,
+    invocationId: UuidSchema,
     expectedRunVersion: z.number().int().positive(),
-    clientCommandId: UuidSchema,
-    decision: z.enum(['approve', 'deny']),
   })
   .strict()
-  .meta({ id: 'ApprovalDecisionRequestV3' });
+  .meta({ id: 'BeginDesktopExecutionRequestV4' });
 
-export const AgentRuntimeErrorV3Schema = z
+export const AgentRuntimeErrorV4Schema = z
   .object({
-    code: AgentRuntimeErrorCodeV3Schema,
+    code: AgentRuntimeErrorCodeV4Schema,
     error: z.string().min(1).max(1_000).optional(),
     message: z.string().min(1).max(1_000),
     retryable: z.boolean(),
-    currentProjection: AgentRunProjectionV3Schema.nullable(),
+    currentProjection: AgentRunProjectionV4Schema.nullable(),
   })
   .strict()
-  .meta({ id: 'AgentRuntimeErrorV3' });
+  .meta({ id: 'AgentRuntimeErrorV4' });
 
-export const AgentRuntimeProtocolDocumentV3Schema = z
+export const AgentRuntimeProtocolDocumentV4Schema = z
   .object({
-    status: AgentRuntimeStatusV3Schema,
-    negotiation: AgentRuntimeNegotiationV3Schema,
-    submitRequest: SubmitAgentTaskRequestV3Schema,
-    taskRecord: AgentTaskRecordV3Schema,
-    taskList: AgentTaskListV3Schema,
-    taskEvent: AgentTaskEventV3Schema,
-    cancelRequest: CancelAgentTaskRequestV3Schema,
-    workerCapabilities: DesktopWorkerCapabilitiesV3Schema,
-    workerSession: DesktopWorkerSessionV3Schema,
-    desktopInvocation: DesktopInvocationV3Schema,
-    desktopResult: DesktopResultV3Schema,
-    permissionWaitRequest: PermissionWaitRequestV3Schema,
-    permissionDecisionRequest: PermissionDecisionRequestV3Schema,
-    approvalDecisionRequest: ApprovalDecisionRequestV3Schema,
-    error: AgentRuntimeErrorV3Schema,
+    status: AgentRuntimeStatusV4Schema,
+    negotiation: AgentRuntimeNegotiationV4Schema,
+    submitRequest: SubmitAgentTaskRequestV4Schema,
+    taskRecord: AgentTaskRecordV4Schema,
+    taskList: AgentTaskListV4Schema,
+    taskEvent: AgentTaskEventV4Schema,
+    cancelRequest: CancelAgentTaskRequestV4Schema,
+    workerCapabilities: DesktopWorkerCapabilitiesV4Schema,
+    workerSession: DesktopWorkerSessionV4Schema,
+    desktopInvocation: DesktopInvocationV4Schema,
+    desktopResult: DesktopResultV4Schema,
+    permissionWaitRequest: PermissionWaitRequestV4Schema,
+    permissionDecisionRequest: PermissionDecisionRequestV4Schema,
+    beginDesktopExecutionRequest: BeginDesktopExecutionRequestV4Schema,
+    error: AgentRuntimeErrorV4Schema,
   })
   .strict()
-  .meta({ id: 'AgentRuntimeProtocolDocumentV3' });
+  .meta({ id: 'AgentRuntimeProtocolDocumentV4' });
 
-export type AgentRuntimeStatusV3 = z.infer<typeof AgentRuntimeStatusV3Schema>;
-export type ComputerPermissionV3 = z.infer<typeof ComputerPermissionV3Schema>;
-export type AgentRunActionV3 = z.infer<typeof AgentRunActionV3Schema>;
-export type AgentRunProjectionV3 = z.infer<typeof AgentRunProjectionV3Schema>;
-export type AgentTaskRecordV3 = z.infer<typeof AgentTaskRecordV3Schema>;
-export type AgentTaskEventV3 = z.infer<typeof AgentTaskEventV3Schema>;
-export type CancelAgentTaskRequestV3 = z.infer<typeof CancelAgentTaskRequestV3Schema>;
-export type DesktopWorkerCapabilitiesV3 = z.infer<typeof DesktopWorkerCapabilitiesV3Schema>;
-export type DesktopInvocationV3 = z.infer<typeof DesktopInvocationV3Schema>;
-export type DesktopResultV3 = z.infer<typeof DesktopResultV3Schema>;
-export type PermissionWaitRequestV3 = z.infer<typeof PermissionWaitRequestV3Schema>;
-export type PermissionDecisionRequestV3 = z.infer<typeof PermissionDecisionRequestV3Schema>;
-export type ApprovalDecisionRequestV3 = z.infer<typeof ApprovalDecisionRequestV3Schema>;
+export type AgentRuntimeStatusV4 = z.infer<typeof AgentRuntimeStatusV4Schema>;
+export type ComputerPermissionV4 = z.infer<typeof ComputerPermissionV4Schema>;
+export type AgentRunActionV4 = z.infer<typeof AgentRunActionV4Schema>;
+export type AgentRunProjectionV4 = z.infer<typeof AgentRunProjectionV4Schema>;
+export type AgentTaskRecordV4 = z.infer<typeof AgentTaskRecordV4Schema>;
+export type AgentTaskEventV4 = z.infer<typeof AgentTaskEventV4Schema>;
+export type CancelAgentTaskRequestV4 = z.infer<typeof CancelAgentTaskRequestV4Schema>;
+export type DesktopWorkerCapabilitiesV4 = z.infer<typeof DesktopWorkerCapabilitiesV4Schema>;
+export type DesktopInvocationV4 = z.infer<typeof DesktopInvocationV4Schema>;
+export type CuaDriverCatalogV4 = z.infer<typeof CuaDriverCatalogV4Schema>;
+export type CuaDriverToolV4 = z.infer<typeof CuaDriverToolV4Schema>;
+export type DesktopResultV4 = z.infer<typeof DesktopResultV4Schema>;
+export type PermissionWaitRequestV4 = z.infer<typeof PermissionWaitRequestV4Schema>;
+export type PermissionDecisionRequestV4 = z.infer<typeof PermissionDecisionRequestV4Schema>;
+export type BeginDesktopExecutionRequestV4 = z.infer<
+  typeof BeginDesktopExecutionRequestV4Schema
+>;
 
-const terminalStates = new Set<AgentRunProjectionV3['state']>([
+const terminalStates = new Set<AgentRunProjectionV4['state']>([
   'completed',
   'blocked',
   'failed',
@@ -580,10 +488,10 @@ const terminalStates = new Set<AgentRunProjectionV3['state']>([
   'expired',
 ]);
 
-export function validateAgentRunProjectionV3(
-  projection: AgentRunProjectionV3,
-): AgentRunProjectionV3 {
-  const parsed = AgentRunProjectionV3Schema.parse(projection);
+export function validateAgentRunProjectionV4(
+  projection: AgentRunProjectionV4,
+): AgentRunProjectionV4 {
+  const parsed = AgentRunProjectionV4Schema.parse(projection);
   if (parsed.terminal !== terminalStates.has(parsed.state)) {
     throw new Error('Agent runtime terminal projection does not match state.');
   }
@@ -596,11 +504,439 @@ export function validateAgentRunProjectionV3(
   ) {
     throw new Error('Permission wait metadata does not match run state.');
   }
+  return parsed;
+}
+
+export const AgentRunStateV5Schema = z
+  .enum([
+    'queued',
+    'awaiting_orchestrator',
+    'running',
+    'awaiting_worker',
+    'awaiting_permission',
+    'executing_tool',
+    'awaiting_input',
+    'recovering',
+    'completed',
+    'blocked',
+    'failed',
+    'cancelled',
+    'expired',
+  ])
+  .meta({ id: 'AgentRunStateV5' });
+
+export const AgentRunPhaseV5Schema = z
+  .enum([
+    'ready',
+    'running',
+    'paused',
+    'awaiting_permission',
+    'awaiting_input',
+    'acting',
+    'completed',
+    'blocked',
+    'failed',
+    'cancelled',
+  ])
+  .meta({ id: 'AgentRunPhaseV5' });
+
+export const AgentRunActionV5Schema = z
+  .enum([
+    'steer',
+    'cancel',
+    'respond',
+    'open_system_settings',
+    'continue_without_computer',
+    'retry_as_new_task',
+  ])
+  .meta({ id: 'AgentRunActionV5' });
+
+export const CancellationSourceV5Schema = CancellationSourceV4Schema.meta({
+  id: 'CancellationSourceV5',
+});
+
+export const ComputerPermissionV5Schema = ComputerPermissionV4Schema.meta({
+  id: 'ComputerPermissionV5',
+});
+
+export const AgentRunFailureStageV5Schema = z
+  .enum([
+    'negotiation',
+    'provider_request',
+    'provider_dispatch',
+    'tool_execution',
+    'session',
+    'runtime',
+  ])
+  .meta({ id: 'AgentRunFailureStageV5' });
+
+export const AgentRunFailureCodeV5Schema = z
+  .enum([
+    'provider_request_rejected',
+    'provider_unavailable',
+    'provider_outcome_unknown',
+    'tool_outcome_unknown',
+    'internal_runtime_error',
+    'permission_unavailable',
+    'orchestrator_unavailable',
+    'session_conflict',
+    'graph_version_mismatch',
+    'run_expired',
+  ])
+  .meta({ id: 'AgentRunFailureCodeV5' });
+
+export const AgentRuntimeErrorCodeV5Schema = z
+  .enum([
+    'desktop_upgrade_required',
+    'backend_upgrade_required',
+    'protocol_upgrade_required',
+    'tool_catalog_upgrade_required',
+    'stale_run_version',
+    'transition_rejected',
+    'run_not_cancellable',
+    'permission_interaction_stale',
+    'invalid_agent_runtime_request',
+    'agent_runtime_unavailable',
+  ])
+  .meta({ id: 'AgentRuntimeErrorCodeV5' });
+
+export const WaitingOnV5Schema = z
+  .discriminatedUnion('kind', [
+    z.object({ kind: z.literal('orchestrator'), since: TimestampSchema }).strict(),
+    z.object({ kind: z.literal('worker'), since: TimestampSchema }).strict(),
+    z
+      .object({
+        kind: z.literal('permission'),
+        interactionId: UuidSchema,
+        invocationId: UuidSchema,
+        requiredPermissions: z.array(ComputerPermissionV5Schema).min(1).max(2),
+        since: TimestampSchema,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('input'),
+        interactionId: UuidSchema,
+        prompt: z.string().min(1).max(2_000),
+        choices: z.array(z.string().min(1).max(500)).max(12),
+        since: TimestampSchema,
+      })
+      .strict(),
+  ])
+  .meta({ id: 'WaitingOnV5' });
+
+export const AgentRunFailureV5Schema = z
+  .object({
+    stage: AgentRunFailureStageV5Schema,
+    code: AgentRunFailureCodeV5Schema,
+    message: z.string().min(1).max(1_000),
+    retryable: z.boolean(),
+  })
+  .strict()
+  .meta({ id: 'AgentRunFailureV5' });
+
+export const AgentRunProjectionV5Schema = z
+  .object({
+    state: AgentRunStateV5Schema,
+    runVersion: z.number().int().positive(),
+    phase: AgentRunPhaseV5Schema,
+    terminal: z.boolean(),
+    availableActions: z.array(AgentRunActionV5Schema).max(4),
+    waitingOn: WaitingOnV5Schema.nullable(),
+    failure: AgentRunFailureV5Schema.nullable(),
+    cancellationSource: CancellationSourceV5Schema.nullable(),
+  })
+  .strict()
+  .meta({ id: 'AgentRunProjectionV5' });
+
+export const AgentRuntimeStatusV5Schema = z
+  .object({
+    protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION_V5),
+    protocolDigest: DigestSchema,
+    toolCatalogDigest: DigestSchema,
+    supportedReadVersions: z.array(
+      z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+    ),
+    supportedStartVersions: z.array(z.literal(5)),
+    rolloutMode: z.literal('enforce'),
+    workerRequired: z.boolean(),
+    enabled: z.boolean(),
+  })
+  .strict()
+  .meta({ id: 'AgentRuntimeStatusV5' });
+
+export const AgentRuntimeNegotiationV5Schema = z
+  .object({
+    protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION_V5),
+    protocolDigest: DigestSchema,
+    toolCatalogDigest: DigestSchema,
+  })
+  .strict()
+  .meta({ id: 'AgentRuntimeNegotiationV5' });
+
+export const SubmitAgentTaskRequestV5Schema = AgentRuntimeNegotiationV5Schema.extend({
+  clientTaskId: UuidSchema,
+  taskId: UuidSchema,
+  request: z.string().trim().min(2).max(8_000),
+  executionProfile: z.enum(['everyday', 'workspace']),
+  workspaceSelectionId: UuidSchema.nullable(),
+  activityAttemptId: UuidSchema.nullable(),
+  activityIntent: z.enum(['work', 'help', 'check']),
+})
+  .strict()
+  .meta({ id: 'SubmitAgentTaskRequestV5' });
+
+export const AgentTaskRecordV5Schema = z
+  .object({
+    id: UuidSchema,
+    taskId: UuidSchema,
+    clientTaskId: UuidSchema,
+    request: z.string().min(2).max(8_000),
+    executionProfile: z.enum(['everyday', 'workspace']),
+    workspaceSelectionId: UuidSchema.nullable(),
+    protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION_V5),
+    protocolDigest: DigestSchema,
+    toolCatalogDigest: DigestSchema,
+    publicSummary: z.string().max(1_000),
+    authorityContract: z.record(z.string(), z.unknown()),
+    projection: AgentRunProjectionV5Schema,
+    createdAt: TimestampSchema,
+    updatedAt: TimestampSchema,
+    newlyCreated: z.boolean(),
+  })
+  .strict()
+  .meta({ id: 'AgentTaskRecordV5' });
+
+export const AgentTaskListV5Schema = z
+  .object({ items: z.array(AgentTaskRecordV5Schema).max(100) })
+  .strict()
+  .meta({ id: 'AgentTaskListV5' });
+
+export const AgentTaskEventV5Schema = z
+  .object({
+    id: UuidSchema,
+    runId: UuidSchema,
+    sequence: z.number().int().positive(),
+    eventType: z.string().trim().min(1).max(80),
+    summary: z.string().trim().min(1).max(1_000),
+    finalOutput: z.string().trim().min(1).max(8_000).nullable(),
+    projection: AgentRunProjectionV5Schema,
+    createdAt: TimestampSchema,
+  })
+  .strict()
+  .meta({ id: 'AgentTaskEventV5' });
+
+export const CancelAgentTaskRequestV5Schema = AgentRuntimeNegotiationV5Schema.extend({
+  clientCommandId: UuidSchema,
+  expectedRunVersion: z.number().int().positive(),
+  source: CancellationSourceV5Schema,
+})
+  .strict()
+  .meta({ id: 'CancelAgentTaskRequestV5' });
+
+export const CuaDriverToolV5Schema = CuaDriverToolV4Schema.meta({
+  id: 'CuaDriverToolV5',
+});
+
+export const CuaDriverCatalogV5Schema = z
+  .object({
+    driverVersion: z.string().trim().min(1).max(100),
+    contractVersion: z.string().trim().min(1).max(100),
+    toolsListSchemaVersion: z.literal('1'),
+    capabilityVersion: z.string().trim().min(1).max(100),
+    driverCatalogDigest: DigestSchema,
+    tools: z.array(CuaDriverToolV5Schema).max(128),
+  })
+  .strict()
+  .meta({ id: 'CuaDriverCatalogV5' });
+
+export const MAX_DESKTOP_RESULT_V5_BYTES = 48_000_000;
+
+export const DesktopWorkerCapabilitiesV5Schema = AgentRuntimeNegotiationV5Schema.extend({
+  maxResultBytes: z.literal(MAX_DESKTOP_RESULT_V5_BYTES),
+  cua: CuaDriverCatalogV5Schema.nullable(),
+  tools: z
+    .array(
+      z
+        .object({
+          toolId: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u),
+          operations: z.array(z.string().min(1).max(100)).min(1),
+        })
+        .strict(),
+    )
+    .max(32),
+})
+  .strict()
+  .meta({ id: 'DesktopWorkerCapabilitiesV5' });
+
+export const DesktopWorkerSessionV5Schema = z
+  .object({
+    id: UuidSchema,
+    protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION_V5),
+    protocolDigest: DigestSchema,
+    toolCatalogDigest: DigestSchema,
+    connectedAt: TimestampSchema,
+    expiresAt: TimestampSchema,
+  })
+  .strict()
+  .meta({ id: 'DesktopWorkerSessionV5' });
+
+export const DesktopInvocationV5Schema = z
+  .object({
+    protocolVersion: z.literal(AGENT_RUNTIME_PROTOCOL_VERSION_V5),
+    protocolDigest: DigestSchema,
+    toolCatalogDigest: DigestSchema,
+    driverCatalogDigest: DigestSchema.nullable(),
+    invocationId: UuidSchema,
+    runId: UuidSchema,
+    runVersion: z.number().int().positive(),
+    callId: z.string().trim().min(1).max(255),
+    toolId: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u),
+    operation: z.string().trim().min(1).max(100),
+    permissionInteractionId: UuidSchema.nullable(),
+    permissionRequirements: z.array(ComputerPermissionV5Schema).max(2),
+    input: z.record(z.string().min(1).max(100), z.unknown()),
+    expiresAt: TimestampSchema,
+  })
+  .strict()
+  .meta({ id: 'DesktopInvocationV5' });
+
+export const DesktopResultV5Schema = z
+  .object({
+    invocationId: UuidSchema,
+    status: z.enum([
+      'confirmed',
+      'failed',
+      'denied',
+      'not_executed',
+      'unknown',
+      'cancelled',
+    ]),
+    summary: z.string().trim().min(1).max(1_000),
+    data: z.record(z.string().min(1).max(100), z.unknown()).nullable().optional(),
+    visual: z
+      .object({
+        dataBase64: z.string().min(1).max(40_000_000),
+        detail: z.literal('original'),
+        mimeType: z.enum(['image/jpeg', 'image/png']),
+        observationId: UuidSchema,
+      })
+      .strict()
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .meta({ id: 'DesktopResultV5' });
+
+export const PermissionWaitRequestV5Schema = z
+  .object({
+    invocationId: UuidSchema,
+    interactionId: UuidSchema,
+    expectedRunVersion: z.number().int().positive(),
+    requiredPermissions: z.array(ComputerPermissionV5Schema).min(1).max(2),
+  })
+  .strict()
+  .meta({ id: 'PermissionWaitRequestV5' });
+
+export const PermissionDecisionRequestV5Schema = z
+  .object({
+    invocationId: UuidSchema,
+    interactionId: UuidSchema,
+    expectedRunVersion: z.number().int().positive(),
+    decision: z.enum(['granted', 'continue_without_computer']),
+  })
+  .strict()
+  .meta({ id: 'PermissionDecisionRequestV5' });
+
+export const BeginDesktopExecutionRequestV5Schema = z
+  .object({
+    invocationId: UuidSchema,
+    expectedRunVersion: z.number().int().positive(),
+  })
+  .strict()
+  .meta({ id: 'BeginDesktopExecutionRequestV5' });
+
+export const AgentRuntimeErrorV5Schema = z
+  .object({
+    code: AgentRuntimeErrorCodeV5Schema,
+    error: z.string().min(1).max(1_000).optional(),
+    message: z.string().min(1).max(1_000),
+    retryable: z.boolean(),
+    currentProjection: AgentRunProjectionV5Schema.nullable(),
+  })
+  .strict()
+  .meta({ id: 'AgentRuntimeErrorV5' });
+
+export const AgentRuntimeProtocolDocumentV5Schema = z
+  .object({
+    status: AgentRuntimeStatusV5Schema,
+    negotiation: AgentRuntimeNegotiationV5Schema,
+    submitRequest: SubmitAgentTaskRequestV5Schema,
+    taskRecord: AgentTaskRecordV5Schema,
+    taskList: AgentTaskListV5Schema,
+    taskEvent: AgentTaskEventV5Schema,
+    cancelRequest: CancelAgentTaskRequestV5Schema,
+    workerCapabilities: DesktopWorkerCapabilitiesV5Schema,
+    workerSession: DesktopWorkerSessionV5Schema,
+    desktopInvocation: DesktopInvocationV5Schema,
+    desktopResult: DesktopResultV5Schema,
+    permissionWaitRequest: PermissionWaitRequestV5Schema,
+    permissionDecisionRequest: PermissionDecisionRequestV5Schema,
+    beginDesktopExecutionRequest: BeginDesktopExecutionRequestV5Schema,
+    error: AgentRuntimeErrorV5Schema,
+  })
+  .strict()
+  .meta({ id: 'AgentRuntimeProtocolDocumentV5' });
+
+export type AgentRunProjectionV5 = z.infer<typeof AgentRunProjectionV5Schema>;
+export type AgentRuntimeStatusV5 = z.infer<typeof AgentRuntimeStatusV5Schema>;
+export type ComputerPermissionV5 = z.infer<typeof ComputerPermissionV5Schema>;
+export type AgentTaskRecordV5 = z.infer<typeof AgentTaskRecordV5Schema>;
+export type AgentTaskEventV5 = z.infer<typeof AgentTaskEventV5Schema>;
+export type CancelAgentTaskRequestV5 = z.infer<typeof CancelAgentTaskRequestV5Schema>;
+export type DesktopWorkerCapabilitiesV5 = z.infer<
+  typeof DesktopWorkerCapabilitiesV5Schema
+>;
+export type DesktopInvocationV5 = z.infer<typeof DesktopInvocationV5Schema>;
+export type DesktopResultV5 = z.infer<typeof DesktopResultV5Schema>;
+export type CuaDriverCatalogV5 = z.infer<typeof CuaDriverCatalogV5Schema>;
+export type PermissionWaitRequestV5 = z.infer<typeof PermissionWaitRequestV5Schema>;
+export type PermissionDecisionRequestV5 = z.infer<
+  typeof PermissionDecisionRequestV5Schema
+>;
+export type BeginDesktopExecutionRequestV5 = z.infer<
+  typeof BeginDesktopExecutionRequestV5Schema
+>;
+
+const terminalStatesV5 = new Set<AgentRunProjectionV5['state']>([
+  'completed',
+  'blocked',
+  'failed',
+  'cancelled',
+  'expired',
+]);
+
+export function validateAgentRunProjectionV5(
+  projection: AgentRunProjectionV5,
+): AgentRunProjectionV5 {
+  const parsed = AgentRunProjectionV5Schema.parse(projection);
+  if (parsed.terminal !== terminalStatesV5.has(parsed.state)) {
+    throw new Error('Agent runtime terminal projection does not match state.');
+  }
+  if (parsed.terminal && parsed.availableActions.includes('cancel')) {
+    throw new Error('Terminal agent runs cannot advertise cancellation.');
+  }
   if (
-    (parsed.state === 'awaiting_approval') !==
-    (parsed.waitingOn?.kind === 'approval')
+    (parsed.state === 'awaiting_permission') !==
+    (parsed.waitingOn?.kind === 'permission')
   ) {
-    throw new Error('Approval wait metadata does not match run state.');
+    throw new Error('Permission wait metadata does not match run state.');
+  }
+  if (
+    (parsed.state === 'awaiting_orchestrator') !==
+    (parsed.waitingOn?.kind === 'orchestrator')
+  ) {
+    throw new Error('Orchestrator wait metadata does not match run state.');
   }
   return parsed;
 }

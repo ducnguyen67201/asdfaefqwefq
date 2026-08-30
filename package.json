@@ -8,6 +8,12 @@
   "scripts": {
     "agent:protocol:generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-runtime-contract.mts --write",
     "agent:protocol:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-runtime-contract.mts --check",
+    "agent:orchestrator:generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-orchestrator-contract.mts --write",
+    "agent:orchestrator:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-orchestrator-contract.mts --check",
+    "agent-sdk:install": "npm --prefix services/agent-runtime ci",
+    "agent-sdk:typecheck": "npm --prefix services/agent-runtime run typecheck",
+    "agent-sdk:test": "npm --prefix services/agent-runtime test",
+    "agent-sdk:check": "npm --prefix services/agent-runtime run check",
     "admin:build": "vite build --config apps/admin/vite.config.ts",
     "admin:dev": "vite --config apps/admin/vite.config.ts",
     "start": "npm run dev:stop-existing && npm run db:up && doppler run --project tro-app --config dev -- npm exec -- electron-forge start",
@@ -45,7 +51,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:rust-engine": "npm run engine -- rust-only-check",
-    "check": "npm run agent:protocol:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
+    "check": "npm run agent:protocol:check && npm run agent:orchestrator:check && npm run agent-sdk:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
   },
   "engines": {
     "node": ">=24.12.0"

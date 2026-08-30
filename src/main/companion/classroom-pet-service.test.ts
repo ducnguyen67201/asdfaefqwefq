@@ -64,7 +64,6 @@ function classroom(session: ClassroomSessionProjection = SESSION) {
 
 function preferences(initial: AppPreferences = {
   appLanguage: 'en',
-  autonomyMode: 'balanced',
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: 'en',
@@ -274,7 +273,6 @@ describe('ClassroomPetService', () => {
     await vi.advanceTimersByTimeAsync(CLASSROOM_PET_FIRST_WORKING_DELAY_MS);
     preferencesService.publish({
       appLanguage: 'en',
-      autonomyMode: 'balanced',
       classroomPetEnabled: false,
       muteSystemAudioWhileSpeaking: false,
       primaryLanguage: 'en',
@@ -291,7 +289,6 @@ describe('ClassroomPetService', () => {
     const { present, service } = setup({
       initialPreferences: {
         appLanguage: 'vi',
-        autonomyMode: 'balanced',
         classroomPetEnabled: true,
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'vi',

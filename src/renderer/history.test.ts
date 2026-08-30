@@ -14,7 +14,6 @@ function createSnapshot(
   updatedAt: string,
 ): TaskSnapshot {
   return {
-    approvalGrant: null,
     createdAt: '2026-08-16T01:00:00.000Z',
     goal: null,
     lastEvent: null,
@@ -57,7 +56,6 @@ function completedSnapshot(goal: unknown) {
     goal,
     messages: [],
     pendingInteraction: null,
-    approvalGrant: null,
     progress: { currentStep: 1, maxSteps: 12 },
     queuedSteering: [],
     createdAt: timestamp,

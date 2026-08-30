@@ -20,7 +20,6 @@ import {
   CompanionPetNudgeDraftSchema,
   CompanionPetNudgeSchema,
   GenerateCompanionImageRequestSchema,
-  HostedDesktopInvocationSchema,
   IntentAuthorizationContractSchema,
   CompanionResponseActionRequestSchema,
   CompanionResponseCardSchema,
@@ -51,6 +50,7 @@ import {
   VoiceStatusSchema,
   VOICE_TRANSCRIPTION_MODEL,
 } from './contracts';
+import { LegacyHostedDesktopInvocationV2Schema } from './legacy-agent-runtime-v2';
 
 describe('companion customization contracts', () => {
   const candidateId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -334,7 +334,7 @@ describe('intent-aware execution contracts', () => {
     ).toBe(false);
   });
 
-  it('requires the complete protocol-v2 policy envelope', () => {
+  it('parses the complete legacy protocol-v2 invocation envelope', () => {
     const envelope = {
       protocolVersion: 2,
       schemaDigest: 'a'.repeat(64),
@@ -360,9 +360,9 @@ describe('intent-aware execution contracts', () => {
       obligations: [],
       expiresAt: '2026-08-21T00:01:00.000Z',
     };
-    expect(HostedDesktopInvocationSchema.parse(envelope)).toEqual(envelope);
+    expect(LegacyHostedDesktopInvocationV2Schema.parse(envelope)).toEqual(envelope);
     expect(
-      HostedDesktopInvocationSchema.safeParse({
+      LegacyHostedDesktopInvocationV2Schema.safeParse({
         ...envelope,
         protocolVersion: 1,
       }).success,
@@ -380,7 +380,6 @@ function snapshot(goal: Record<string, unknown>, progress: unknown) {
     goal,
     messages: [],
     pendingInteraction: null,
-    approvalGrant: null,
     progress,
     queuedSteering: [],
     createdAt: timestamp,
@@ -786,7 +785,7 @@ describe('shared task contracts', () => {
     });
   });
 
-  it('parses v3 contract and tool-call progress', () => {
+  it('parses a legacy v3 contract and tool-call progress', () => {
     expect(
       AgentTaskContractV3Schema.parse({
         schemaVersion: 3,
@@ -887,18 +886,21 @@ describe('shared task contracts', () => {
     ).toThrow();
   });
 
-  it('defaults missing persisted autonomy preferences to balanced', () => {
+  it('defaults missing persisted companion preferences without restoring autonomy', () => {
     expect(
       AppPreferencesSchema.parse({
         appLanguage: 'en',
         muteSystemAudioWhileSpeaking: false,
         primaryLanguage: 'en',
       }),
-    ).toMatchObject({
-      autonomyMode: 'balanced',
-      classroomPetEnabled: true,
-      voiceMode: 'dictation',
-    });
+    ).toMatchObject({ classroomPetEnabled: true, voiceMode: 'dictation' });
+    expect(
+      AppPreferencesSchema.parse({
+        appLanguage: 'en',
+        muteSystemAudioWhileSpeaking: false,
+        primaryLanguage: 'en',
+      }),
+    ).not.toHaveProperty('autonomyMode');
   });
 
   it('loads mixed persisted v1 through v4 history', () => {

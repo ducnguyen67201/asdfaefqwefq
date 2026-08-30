@@ -48,9 +48,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'App interface': 'Giao diện ứng dụng',
   'App language': 'Ngôn ngữ ứng dụng',
   'Application update': 'Cập nhật ứng dụng',
-  'Approval gates enabled': 'Đã bật bước phê duyệt',
-  'Approve exact action': 'Phê duyệt đúng hành động này',
-  'Approval decisions': 'Quyết định phê duyệt',
   'Across sessions': 'Qua nhiều phiên',
   'Answer below by voice or text. Your response will continue this task.':
     'Trả lời bên dưới bằng giọng nói hoặc văn bản. Phản hồi của bạn sẽ tiếp tục tác vụ này.',
@@ -66,7 +63,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Tác vụ chỉ dùng trợ lý không cần công cụ. Hoạt động công cụ sẽ xuất hiện ở đây khi được sử dụng.',
   'Best {count}d': 'Tốt nhất {count} ngày',
   blocked: 'bị chặn',
-  'Bounded by default': 'Giới hạn theo mặc định',
   call: 'lần gọi',
   calls: 'lần gọi',
   cancelled: 'đã hủy',
@@ -129,8 +125,10 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Dictation complete': 'Chính tả hoàn tất',
   'Dictation inserted.': 'Đã chèn nội dung chính tả.',
   'Dictation needs attention': 'Chính tả cần chú ý',
-  'Describe the finish line. Tro will define a bounded scope, choose its tools, and verify the result.':
-    'Mô tả đích đến. Tro sẽ xác định phạm vi giới hạn, chọn công cụ và xác minh kết quả.',
+  'Dictation adds text without sending. Task gives the spoken request to Tro after a one-second Escape window.':
+    'Chính tả thêm văn bản mà không gửi. Tác vụ chuyển yêu cầu bằng giọng nói cho Tro sau khoảng một giây để nhấn Escape hủy.',
+  'Describe the finish line. Tro will choose the appropriate tools and verify the result.':
+    'Mô tả đích đến. Tro sẽ chọn công cụ phù hợp và xác minh kết quả.',
   'Desktop agent': 'Trợ lý máy tính',
   'Weekly usage · {percent}% left': 'Mức dùng tuần · còn {percent}%',
   'Plan & weekly usage': 'Gói và mức dùng tuần',
@@ -155,7 +153,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   events: 'sự kiện',
   'EVENTS OBSERVED': 'SỰ KIỆN ĐÃ GHI NHẬN',
   'Example tasks': 'Tác vụ ví dụ',
-  'Exact approval required': 'Cần phê duyệt chính xác',
   Execution: 'Thực thi',
   failed: 'thất bại',
   'Final setup step': 'Bước thiết lập cuối cùng',
@@ -363,14 +360,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Tool usage': 'Mức sử dụng công cụ',
   'Tools selected at runtime': 'Công cụ được chọn khi chạy',
   'Tools used': 'Công cụ đã dùng',
-  'Tro chooses from the tools currently available and asks before consequential actions.':
-    'Tro chọn trong số công cụ hiện có và sẽ hỏi trước các hành động có hệ quả.',
-  'Your instruction authorizes requested reversible work. Tro still asks before communications, deletion, publishing or deployment, money, credentials or permissions, installs, sensitive transfers, and scope expansion.':
-    'Chỉ dẫn của bạn cho phép Tro thực hiện công việc có thể hoàn tác đã yêu cầu. Tro vẫn hỏi trước khi liên lạc, xóa, xuất bản hoặc triển khai, xử lý tiền, thông tin đăng nhập hoặc quyền, cài đặt, chuyển dữ liệu nhạy cảm hay mở rộng phạm vi.',
-  'Your instruction authorizes requested reversible work; Tro still asks for high-impact or expanded-scope actions.':
-    'Chỉ dẫn của bạn cho phép công việc có thể hoàn tác đã yêu cầu; Tro vẫn hỏi với hành động có tác động lớn hoặc mở rộng phạm vi.',
-  'Strict mode asks before every mutation or side effect.':
-    'Chế độ Nghiêm ngặt hỏi trước mọi thay đổi hoặc tác động phụ.',
   'Tro could not start automatically. You can try again.':
     'Tro không thể tự động bắt đầu. Bạn có thể thử lại.',
   'Tro uses this to keep voice transcription in the language you expect. You can change it later in Settings.':
@@ -437,8 +426,9 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   Microphone: 'Micrô',
   Mode: 'Chế độ',
   'No execution steps': 'Không có bước thực thi',
-  'Nothing executes until scope and approvals are checked.':
-    'Không có gì được thực thi cho đến khi phạm vi và phê duyệt được kiểm tra.',
+  'Verified completions': 'Lần hoàn tất đã xác minh',
+  'Registered tools run automatically; OS permissions and Workspace bounds still apply':
+    'Công cụ đã đăng ký tự động chạy; quyền hệ điều hành và giới hạn Không gian làm việc vẫn áp dụng',
   Required: 'Bắt buộc',
   Blocked: 'Bị chặn',
   Checking: 'Đang kiểm tra',
@@ -482,8 +472,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Return to Agent to watch, steer, or stop it. Its final record will appear here.':
     'Quay lại Trợ lý để theo dõi, điều hướng hoặc dừng tác vụ. Bản ghi cuối cùng sẽ xuất hiện ở đây.',
   'Return to live task': 'Quay lại tác vụ đang chạy',
-  'Review the request below. Tro will hold position until you answer or approve the exact action.':
-    'Xem lại yêu cầu bên dưới. Tro sẽ chờ cho đến khi bạn trả lời hoặc phê duyệt chính xác hành động.',
   'Same task': 'Cùng tác vụ',
   'Knowledge Spaces': 'Không gian tri thức',
   'Assigned Activities': 'Hoạt động được giao',
@@ -663,8 +651,6 @@ const VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Your Teacher has not shared class resources yet.':
     'Giáo viên chưa chia sẻ tài nguyên lớp học.',
   'Previous work': 'Công việc trước đó',
-  'Spoken or typed “yes” cannot approve this action. Use the button below.':
-    'Nói hoặc nhập “có” không thể phê duyệt hành động này. Hãy dùng nút bên dưới.',
   verifying: 'đang xác minh',
   'View task trail': 'Xem dấu vết tác vụ',
   'Work through one smaller example step by step, explain why each operation is valid, then retry the assignment problem.':

@@ -2,12 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import {
   CancelTaskRequestSchema,
-  DecideApprovalRequestSchema,
   RespondToInteractionRequestSchema,
   StartTaskRequestSchema,
   SteerTaskRequestSchema,
   SubmitTaskRequestSchema,
-  type GoalSpec,
   type HostedTaskEvent,
   type HostedTaskRecord,
   type TaskSnapshot,
@@ -16,11 +14,11 @@ import {
   isLegacyHostedTaskTerminal,
   legacyHostedStateForEvent,
 } from '../../shared/legacy-agent-runtime-v2';
+import type { TrustedToolExecutionContext } from '../agent/runtime-tool-registry';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { ActivityContextService } from '../knowledge/activity-context-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
 import type { ClassroomSessionService } from '../knowledge/classroom-session-service';
-import type { AppPreferencesService } from '../preferences/app-preferences-service';
 import type { WorkspaceSelectionService } from '../workspace/workspace-selection-service';
 
 import {
@@ -33,11 +31,10 @@ interface TaskApplicationServiceOptions {
   activityContextService?: Pick<ActivityContextService, 'create' | 'inspect'>;
   activityProgressReporter?: Pick<ActivityProgressReporter, 'bind' | 'fail'>;
   classroomSessionService?: Pick<ClassroomSessionService, 'activeStudentAttemptId' | 'latestDirective'>;
-  appPreferencesService?: Pick<AppPreferencesService, 'get'>;
   workspaceSelectionService?: Pick<WorkspaceSelectionService, 'resolve'>;
   hostedTaskClient?: Pick<
     HostedTaskClient,
-    'cancel' | 'decideApproval' | 'get' | 'list' | 'steer' | 'submit' | 'subscribe'
+    'cancel' | 'get' | 'list' | 'steer' | 'submit' | 'subscribe'
   >;
   onHostedTerminal?: (taskId: string) => Promise<void> | void;
 }
@@ -56,7 +53,6 @@ export class TaskApplicationService {
 
   async submitAndStart(input: unknown): Promise<TaskSnapshot> {
     const request = SubmitTaskRequestSchema.parse(input);
-    const preferences = await this.options.appPreferencesService?.get();
     const joinedAttemptId = this.options.classroomSessionService?.activeStudentAttemptId() ?? null;
     const activityAttemptId = request.activityAttemptId ?? joinedAttemptId;
     if (!activityAttemptId && request.activityIntent !== 'work') {
@@ -100,7 +96,6 @@ export class TaskApplicationService {
       throw new Error('Could not create the Activity Work Session.');
     }
     if (activity) this.options.activityProgressReporter?.bind(taskId, activity.workSessionId);
-    const autonomyMode = preferences?.autonomyMode ?? 'balanced';
     try {
       if (!this.options.hostedTaskClient) {
         throw new Error('The Rust agent runtime is not configured.');
@@ -109,15 +104,14 @@ export class TaskApplicationService {
         clientTaskId: randomUUID(),
         taskId,
         request: request.text,
-        autonomyMode,
         executionProfile,
         workspaceSelectionId: request.workspaceSelectionId,
         activityAttemptId,
         activityIntent: request.activityIntent,
       });
       if (
-        record.contractSchemaVersion !== 8 ||
-        !record.contract
+        record.contractSchemaVersion !== 10 ||
+        record.contract?.schemaVersion !== 10
       ) {
         throw new Error('The hosted runtime did not return a compatible task authority contract.');
       }
@@ -205,30 +199,6 @@ export class TaskApplicationService {
     return this.runtime.respondToInteraction(request);
   }
 
-  async decideApproval(input: unknown): Promise<TaskSnapshot> {
-    const request = DecideApprovalRequestSchema.parse(input);
-    const hosted = this.hostedByTask.get(request.taskId);
-    if (!hosted) {
-      throw new Error('The task is not owned by the Rust runtime.');
-    }
-    if (!this.options.hostedTaskClient) {
-      return this.runtime.decideApproval(request);
-    }
-    await this.options.hostedTaskClient.decideApproval(
-      hosted.record.id,
-      {
-        interactionId: request.interactionId,
-        actionDigest: request.actionDigest,
-        decision: request.decision,
-      },
-      hosted.record.runVersion,
-    );
-    const record = await this.options.hostedTaskClient.get(hosted.record.id);
-    hosted.record = record;
-    hosted.snapshot = projectHostedTask(record, undefined, hosted.snapshot);
-    return hosted.snapshot;
-  }
-
   async steer(input: unknown): Promise<TaskSnapshot> {
     const request = SteerTaskRequestSchema.parse(input);
     const hosted = this.hostedByTask.get(request.taskId);
@@ -240,8 +210,8 @@ export class TaskApplicationService {
       );
       const record = await this.options.hostedTaskClient.get(hosted.record.id);
       if (
-        record.contractSchemaVersion !== 8 ||
-        !record.contract
+        record.contractSchemaVersion !== 10 ||
+        record.contract?.schemaVersion !== 10
       ) {
         throw new Error('The revised hosted authority contract is incompatible.');
       }
@@ -254,21 +224,23 @@ export class TaskApplicationService {
         ...hosted.snapshot,
         goal: synchronized.goal,
         outcomes: synchronized.outcomes,
-        approvalGrant: null,
       };
       return hosted.snapshot;
     }
     throw new Error('The task is not owned by the Rust runtime.');
   }
 
-  hostedGoal(runId: string): GoalSpec | undefined {
-    return [...this.hostedByTask.values()].find((entry) => entry.record.id === runId)
-      ?.snapshot.goal ?? undefined;
-  }
-
-  taskIdForHostedRun(runId: string): string | undefined {
+  hostedExecutionContext(runId: string): TrustedToolExecutionContext | undefined {
     for (const [taskId, entry] of this.hostedByTask) {
-      if (entry.record.id === runId) return taskId;
+      if (entry.record.id !== runId) continue;
+      const goal = entry.snapshot.goal;
+      if (goal?.schemaVersion !== 10) return undefined;
+      return {
+        activity: goal.activity,
+        executionProfile: goal.executionProfile,
+        taskId,
+        workspace: goal.workspace,
+      };
     }
     return undefined;
   }
@@ -288,7 +260,7 @@ export class TaskApplicationService {
         ? await this.options.workspaceSelectionService?.resolve(record.workspaceSelectionId)
         : null;
       if (record.executionProfile === 'workspace' && !workspace) continue;
-      if (record.contractSchemaVersion !== 8 || !record.contract) continue;
+      if (record.contractSchemaVersion !== 10 || record.contract?.schemaVersion !== 10) continue;
       this.runtime.submit(
         {
           activityAttemptId: record.activity?.attemptId ?? null,

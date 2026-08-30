@@ -2,9 +2,8 @@
 
 ## Source Plan
 
-Implementation follows the approved
-`.claude/PRPs/plans/classroom-codex-pet.plan.md`. The shipped scope is a quiet,
-local classroom companion: curated English and Vietnamese encouragement,
+The shipped scope is a quiet, local classroom companion: curated English and
+Vietnamese encouragement,
 explicit Attempt-state celebrations, operational-overlay precedence, and a
 student-controlled preference. It does not detect or block YouTube, inspect
 applications or websites, infer attention or completion, add chat, or report
@@ -20,8 +19,8 @@ pet activity to teachers or analytics.
   supportive copy that does not claim the teacher has responded.
 - As a student, I can disable Classroom pet messages in Settings and have a
   visible message disappear immediately.
-- As a user completing operational Tro work, approvals, clarifications,
-  guidance, responses, voice, and task activity always preempt pet content.
+- As a user completing operational Tro work, clarifications, guidance,
+  responses, voice, and task activity always preempt pet content.
 
 ## Acceptance Matrix
 
@@ -38,9 +37,8 @@ pet activity to teachers or analytics.
 
 ## RED / GREEN Record
 
-The approved PRP supplied the behavior matrix before production changes. Tests
-were added alongside each bounded layer before the consolidated run; per the
-PRP implementation workflow, tests were not executed piecemeal while coding.
+Tests were added alongside each bounded layer before the consolidated run and
+were not executed piecemeal while coding.
 The first focused run could not start because this worktree had no installed
 dependencies. After restoring the exact lockfile environment with `npm ci`, the
 focused suite was green. The first static-analysis pass then exposed import

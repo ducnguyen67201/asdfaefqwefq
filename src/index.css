@@ -2060,8 +2060,7 @@ html.voice-island-mode #root {
 }
 
 .guidance-callout__choices button,
-.guidance-callout__answer button,
-.guidance-callout__approval-actions button {
+.guidance-callout__answer button {
   min-height: 34px;
   border: 1px solid rgba(39, 39, 34, 0.18);
   border-radius: 9px;
@@ -2119,77 +2118,6 @@ html.voice-island-mode #root {
   padding: 0 13px;
   background: #20211e;
   color: #fffefa;
-}
-
-.guidance-callout__consequence {
-  margin: 0 0 9px !important;
-  color: #5d5e57;
-  font-size: 12px !important;
-  font-weight: 550 !important;
-  line-height: 1.45 !important;
-}
-
-.guidance-callout__approval-details {
-  max-height: 190px;
-  margin: 0;
-  overflow: auto;
-  border: 1px solid rgba(39, 39, 34, 0.13);
-  border-radius: 10px;
-  background: #f8f7f2;
-}
-
-.guidance-callout__approval-details div {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 8px;
-  padding: 7px 9px;
-  border-bottom: 1px solid rgba(39, 39, 34, 0.09);
-}
-
-.guidance-callout__approval-details div:last-child {
-  border-bottom: 0;
-}
-
-.guidance-callout__approval-details dt {
-  color: #7d7e76;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.guidance-callout__approval-details dd {
-  overflow-wrap: anywhere;
-  margin: 0;
-  color: #20211e;
-  font-size: 11px;
-  line-height: 1.35;
-  white-space: pre-wrap;
-}
-
-.guidance-callout__details-link {
-  margin: 8px 0 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #765600;
-  cursor: pointer;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.guidance-callout__approval-actions {
-  display: grid;
-  grid-template-columns: 0.7fr 1.3fr;
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.guidance-callout__approval-actions .guidance-callout__approve {
-  border-color: #d6aa21;
-  background: #f2c94c;
-  color: #2c2300;
 }
 
 .guidance-callout__hint {
@@ -4245,7 +4173,7 @@ h1 {
     var(--panel);
 }
 
-.interaction-card > p:not(.eyebrow, .approval-note) {
+.interaction-card > p:not(.eyebrow) {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 12px;
@@ -4271,67 +4199,6 @@ h1 {
 .interaction-choices button:hover:not(:disabled) {
   border-color: rgba(214, 170, 33, 0.46);
   background: rgba(242, 201, 76, 0.2);
-}
-
-.approval-details {
-  display: grid;
-  gap: 1px;
-  max-height: min(50vh, 440px);
-  margin: 16px 0;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--border);
-}
-
-.approval-details > div {
-  display: grid;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--panel);
-  grid-template-columns: 100px minmax(0, 1fr);
-}
-
-.approval-details dt {
-  color: var(--subtle);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.approval-details dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-size: 11px;
-}
-
-.approval-details dd.approval-details__payload {
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.approval-note {
-  margin: 0;
-  color: #7a5b16;
-  font-size: 11px;
-}
-
-.approval-actions {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-}
-
-.approval-actions .primary-button,
-.approval-actions .secondary-button {
-  justify-content: center;
 }
 
 .section-heading-row {
@@ -7408,7 +7275,6 @@ h1 {
   animation: live-signal 1.8s ease-in-out infinite;
 }
 
-.live-task-rail--awaiting_approval .live-task-rail__signal > span,
 .live-task-rail--awaiting_input .live-task-rail__signal > span,
 .live-task-rail--blocked .live-task-rail__signal > span {
   background: #b67b17;

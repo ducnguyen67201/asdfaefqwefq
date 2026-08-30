@@ -155,6 +155,26 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "class session materials",
             include_str!("../migrations/029_class_session_materials.sql"),
         ),
+        migration(
+            30,
+            "remove agent approval policy",
+            include_str!("../migrations/030_remove_agent_approval_policy.sql"),
+        ),
+        migration(
+            31,
+            "OpenAI Agents SDK orchestrator",
+            include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
+        ),
+        migration(
+            32,
+            "orchestrator public protocol digest",
+            include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
+        ),
+        migration(
+            33,
+            "agent run tool snapshots",
+            include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import manifest from '../../../protocol/agent-runtime.v3.manifest.json';
-import { HOST_ALWAYS_CONFIRM_EFFECTS } from '../../shared/contracts';
+import manifest from '../../../protocol/agent-runtime.v5.manifest.json';
 
 import { HostedTaskClient, HostedTaskOutcomeUnknownError } from './hosted-task-client';
 
@@ -9,7 +8,6 @@ const input = {
   clientTaskId: '00000000-0000-4000-8000-000000000001',
   taskId: '00000000-0000-4000-8000-000000000002',
   request: 'Help with this exercise.',
-  autonomyMode: 'balanced' as const,
   executionProfile: 'everyday' as const,
   workspaceSelectionId: null,
   activityAttemptId: '00000000-0000-4000-8000-000000000003',
@@ -23,40 +21,18 @@ const record = {
   request: input.request,
   executionProfile: input.executionProfile,
   workspaceSelectionId: null,
-  protocolVersion: 3,
+  protocolVersion: 5,
   protocolDigest: manifest.protocolDigest,
   toolCatalogDigest: manifest.toolCatalogDigest,
-  outcomeRevision: 1,
-  publicSummary: 'Queued.',
+  publicSummary: 'Waiting for the OpenAI Agents SDK worker.',
   authorityContract: {
-    schemaVersion: 8,
+    schemaVersion: 10,
     id: '00000000-0000-4000-8000-000000000005',
     originalRequest: input.request,
-    runtimeKind: 'rust_hosted',
+    runtimeKind: 'openai_agents_sdk',
     executionProfile: input.executionProfile,
-    autonomyMode: input.autonomyMode,
     workspaceSelectionId: null,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: {
-      alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS],
-    },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -66,11 +42,11 @@ const record = {
     },
   },
   projection: {
-    state: 'queued',
+    state: 'awaiting_orchestrator',
     runVersion: 1,
-    phase: 'ready',
+    phase: 'paused',
     terminal: false,
-    availableActions: ['cancel'],
+    availableActions: ['steer', 'cancel'],
     waitingOn: null,
     failure: null,
     cancellationSource: null,
@@ -166,7 +142,7 @@ describe('HostedTaskClient.list', () => {
     expect(runs[0]?.toolCatalogDigest).toBeUndefined();
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
-      'https://api.example.com/v1/agent-runtime/v3/tasks',
+      'https://api.example.com/v1/agent-runtime/v5/tasks',
       expect.any(Object),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
@@ -176,7 +152,7 @@ describe('HostedTaskClient.list', () => {
     );
   });
 
-  it('keeps canonical protocol-v3 digest validation strict', async () => {
+  it('keeps canonical protocol-v5 digest validation strict', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({
@@ -194,5 +170,68 @@ describe('HostedTaskClient.list', () => {
 
     await expect(client.list()).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});
+
+describe('HostedTaskClient.cancel', () => {
+  it('retries a stale v5 cancellation with one idempotency identity', async () => {
+    const advanced = {
+      ...record,
+      projection: { ...record.projection, runVersion: 2 },
+      updatedAt: '2026-08-25T00:00:01.000Z',
+    };
+    const cancelled = {
+      ...advanced,
+      publicSummary: 'Task cancelled.',
+      projection: {
+        ...advanced.projection,
+        state: 'cancelled',
+        runVersion: 3,
+        phase: 'cancelled',
+        terminal: true,
+        availableActions: [],
+        cancellationSource: 'stop_button',
+      },
+      updatedAt: '2026-08-25T00:00:02.000Z',
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(record))
+      .mockResolvedValueOnce(Response.json(record))
+      .mockResolvedValueOnce(Response.json({
+        code: 'stale_run_version',
+        message: 'The agent task changed before cancellation.',
+        retryable: false,
+        currentProjection: advanced.projection,
+      }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json(advanced))
+      .mockResolvedValueOnce(Response.json(cancelled));
+    const client = new HostedTaskClient({
+      accessTokenProvider: async () => 'token',
+      apiBaseUrl: 'https://api.example.com',
+      fetchImpl,
+    });
+
+    await client.submit(input);
+    await expect(client.cancel(record.id)).resolves.toMatchObject({
+      id: record.id,
+      state: 'cancelled',
+      runVersion: 3,
+    });
+
+    const firstBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body)) as {
+      clientCommandId: string;
+      expectedRunVersion: number;
+    };
+    const secondBody = JSON.parse(String(fetchImpl.mock.calls[4]?.[1]?.body)) as {
+      clientCommandId: string;
+      expectedRunVersion: number;
+    };
+    expect(firstBody.expectedRunVersion).toBe(1);
+    expect(secondBody.expectedRunVersion).toBe(2);
+    expect(secondBody.clientCommandId).toBe(firstBody.clientCommandId);
+    expect(fetchImpl.mock.calls[4]?.[0]).toBe(
+      `https://api.example.com/v1/agent-runtime/v5/tasks/${record.id}/cancel`,
+    );
   });
 });

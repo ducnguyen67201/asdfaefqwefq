@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { CuaAuthorizationBroker } from './cua-authorization-broker';
+import { CuaCapabilityBroker } from './cua-capability-broker';
 import type { CuaOpenToolResult } from './cua-semantic-contracts';
 import {
   CuaSurfaceRouter,
@@ -45,7 +45,7 @@ const windowRecord = {
 
 function router(callTool: CuaToolCaller) {
   return new CuaSurfaceRouter({
-    authorizationBroker: new CuaAuthorizationBroker({
+    authorizationBroker: new CuaCapabilityBroker({
       allow: 0 as never,
       deny: 1 as never,
       cancel: 2 as never,

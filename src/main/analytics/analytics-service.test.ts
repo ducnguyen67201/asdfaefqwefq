@@ -7,8 +7,7 @@ import type { EventMessage, IdentifyMessage } from 'posthog-node';
 import { describe, expect, it } from 'vitest';
 
 import {
-  HOST_ALWAYS_CONFIRM_EFFECTS,
-  type HostedTaskAuthorityContract,
+  type HostedTaskAuthorityContractV10,
   type WorkspaceIdentity,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
@@ -88,34 +87,15 @@ function createService(
 function authority(
   request: string,
   workspaceSelectionId: string | null = null,
-): HostedTaskAuthorityContract {
+): HostedTaskAuthorityContractV10 {
   return {
-    schemaVersion: 8,
+    schemaVersion: 10,
     id: randomUUID(),
     originalRequest: request,
-    runtimeKind: 'rust_hosted',
+    runtimeKind: 'openai_agents_sdk',
     executionProfile: workspaceSelectionId ? 'workspace' : 'everyday',
-    autonomyMode: 'balanced',
     workspaceSelectionId,
     activity: null,
-    outcomeContract: {
-      schemaVersion: 1,
-      revision: 1,
-      completionMode: 'all_required',
-      criteria: [{
-        id: 'assistant-output',
-        description: 'Return a user-facing answer.',
-        required: true,
-        verifier: { kind: 'assistant_output', constraints: [] },
-      }],
-    },
-    intentAuthorization: {
-      schemaVersion: 1,
-      revision: 1,
-      source: 'user_instruction',
-      grants: [],
-    },
-    approvalPolicy: { alwaysConfirmEffects: [...HOST_ALWAYS_CONFIRM_EFFECTS] },
     limits: {
       maxImages: 20,
       maxMicroUsd: 5_000_000,
@@ -276,10 +256,9 @@ describe('AnalyticsService', () => {
     expect(serializedEvents).not.toContain('private acquisition');
     expect(serializedEvents).not.toContain('/Users/example');
     expect(client.events.at(-1)?.properties).toMatchObject({
-      autonomy_mode: 'balanced',
-      contract_version: 8,
+      contract_version: 10,
       execution_profile: 'workspace',
-      runtime_kind: 'rust_hosted',
+      runtime_kind: 'openai_agents_sdk',
     });
     expect(client.events.at(-1)?.properties).not.toHaveProperty('behavior');
   });
@@ -324,7 +303,7 @@ describe('AnalyticsService', () => {
     expect(JSON.stringify(client.events)).not.toContain('Another private chunk');
   });
 
-  it('records only aggregate approval and tool counts at terminal status', async () => {
+  it('records bounded outcome and tool counts at terminal status', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -354,19 +333,15 @@ describe('AnalyticsService', () => {
     expect(client.events.at(-1)).toMatchObject({
       event: 'task ended',
       properties: {
-        approval_count: 0,
-        approvals_per_verified_success: 0,
         outcome: 'completed',
         tool_count: 2,
-        unnecessary_approval_count: 0,
-        unnecessary_approval_rate: 0,
-        user_intervention_count: 0,
-        user_intervention_rate: 0,
+        cancellation_source: 'none',
+        failure_code: 'none',
       },
     });
   });
 
-  it('records closed authorization metadata for completed tools without private intent', async () => {
+  it('records tool identity for completed tools without private intent', async () => {
     const client = new RecordingAnalyticsClient();
     const service = createService(
       client,
@@ -392,14 +367,9 @@ describe('AnalyticsService', () => {
         nextActions: [],
         artifacts: [],
         tool: {
-        toolId: 'workspace.apply_patch',
-        operation: 'apply_patch',
-        effectKind: 'workspace_write',
-        resourceKind: 'workspace_file',
-        authorizationSource: 'user_instruction',
-        approvalRequired: false,
-        consequential: true,
-      },
+          toolId: 'workspace.apply_patch',
+          operation: 'apply_patch',
+        },
       },
     };
 
@@ -411,12 +381,7 @@ describe('AnalyticsService', () => {
     expect(client.events.at(-1)).toMatchObject({
       event: 'tool call completed',
       properties: {
-        approval_required: false,
-        authorization_source: 'user_instruction',
-        consequential: true,
-        effect_kind: 'workspace_write',
         operation: 'apply_patch',
-        resource_kind: 'workspace_file',
         tool_id: 'workspace.apply_patch',
       },
     });

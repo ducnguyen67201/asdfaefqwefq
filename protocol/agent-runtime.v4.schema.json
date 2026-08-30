@@ -1,0 +1,1435 @@
+{
+  "$defs": {
+    "AgentRunActionV4": {
+      "enum": [
+        "steer",
+        "cancel",
+        "respond",
+        "open_system_settings",
+        "continue_without_computer",
+        "retry_as_new_task"
+      ],
+      "type": "string"
+    },
+    "AgentRunFailureCodeV4": {
+      "enum": [
+        "provider_request_rejected",
+        "provider_unavailable",
+        "provider_outcome_unknown",
+        "tool_outcome_unknown",
+        "required_outcome_unverified",
+        "internal_runtime_error",
+        "permission_unavailable",
+        "run_expired"
+      ],
+      "type": "string"
+    },
+    "AgentRunFailureStageV4": {
+      "enum": [
+        "negotiation",
+        "provider_request",
+        "provider_dispatch",
+        "tool_execution",
+        "verification",
+        "runtime"
+      ],
+      "type": "string"
+    },
+    "AgentRunFailureV4": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/AgentRunFailureCodeV4"
+        },
+        "message": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/AgentRunFailureStageV4"
+        }
+      },
+      "required": [
+        "stage",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "AgentRunPhaseV4": {
+      "enum": [
+        "ready",
+        "planning",
+        "paused",
+        "awaiting_permission",
+        "awaiting_input",
+        "acting",
+        "verifying",
+        "completed",
+        "blocked",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "AgentRunProjectionV4": {
+      "additionalProperties": false,
+      "properties": {
+        "availableActions": {
+          "items": {
+            "$ref": "#/$defs/AgentRunActionV4"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "cancellationSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CancellationSourceV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentRunFailureV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "$ref": "#/$defs/AgentRunPhaseV4"
+        },
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/AgentRunStateV4"
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "waitingOn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaitingOnV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "runVersion",
+        "phase",
+        "terminal",
+        "availableActions",
+        "waitingOn",
+        "failure",
+        "cancellationSource"
+      ],
+      "type": "object"
+    },
+    "AgentRunStateV4": {
+      "enum": [
+        "queued",
+        "compiling_outcomes",
+        "planning",
+        "awaiting_worker",
+        "awaiting_permission",
+        "executing_tool",
+        "awaiting_input",
+        "verifying",
+        "recovering",
+        "completed",
+        "blocked",
+        "failed",
+        "cancelled",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "AgentRuntimeErrorCodeV4": {
+      "enum": [
+        "desktop_upgrade_required",
+        "backend_upgrade_required",
+        "protocol_upgrade_required",
+        "tool_catalog_upgrade_required",
+        "stale_run_version",
+        "transition_rejected",
+        "run_not_cancellable",
+        "permission_interaction_stale",
+        "invalid_agent_runtime_request",
+        "agent_runtime_unavailable"
+      ],
+      "type": "string"
+    },
+    "AgentRuntimeErrorV4": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/AgentRuntimeErrorCodeV4"
+        },
+        "currentProjection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentRunProjectionV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "currentProjection"
+      ],
+      "type": "object"
+    },
+    "AgentRuntimeNegotiationV4": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest"
+      ],
+      "type": "object"
+    },
+    "AgentRuntimeRolloutModeV4": {
+      "const": "enforce",
+      "type": "string"
+    },
+    "AgentRuntimeStatusV4": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "rolloutMode": {
+          "$ref": "#/$defs/AgentRuntimeRolloutModeV4"
+        },
+        "supportedReadVersions": {
+          "items": {
+            "anyOf": [
+              {
+                "const": 2,
+                "type": "number"
+              },
+              {
+                "const": 3,
+                "type": "number"
+              },
+              {
+                "const": 4,
+                "type": "number"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "supportedStartVersions": {
+          "items": {
+            "const": 4,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "workerRequired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "supportedReadVersions",
+        "supportedStartVersions",
+        "rolloutMode",
+        "workerRequired",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "AgentTaskEventV4": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "eventType": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "finalOutput": {
+          "anyOf": [
+            {
+              "maxLength": 8000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "outcomeRevision": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/OutcomeProjectionV4"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "projection": {
+          "$ref": "#/$defs/AgentRunProjectionV4"
+        },
+        "runId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "sequence": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "runId",
+        "sequence",
+        "eventType",
+        "summary",
+        "finalOutput",
+        "outcomeRevision",
+        "outcomes",
+        "projection",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "AgentTaskListV4": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AgentTaskRecordV4"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "AgentTaskRecordV4": {
+      "additionalProperties": false,
+      "properties": {
+        "authorityContract": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "clientTaskId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "executionProfile": {
+          "enum": [
+            "everyday",
+            "workspace"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "newlyCreated": {
+          "type": "boolean"
+        },
+        "outcomeRevision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "projection": {
+          "$ref": "#/$defs/AgentRunProjectionV4"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "publicSummary": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "request": {
+          "maxLength": 8000,
+          "minLength": 2,
+          "type": "string"
+        },
+        "taskId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "workspaceSelectionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "clientTaskId",
+        "request",
+        "executionProfile",
+        "workspaceSelectionId",
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "outcomeRevision",
+        "publicSummary",
+        "authorityContract",
+        "projection",
+        "createdAt",
+        "updatedAt",
+        "newlyCreated"
+      ],
+      "type": "object"
+    },
+    "BeginDesktopExecutionRequestV4": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invocationId",
+        "expectedRunVersion"
+      ],
+      "type": "object"
+    },
+    "CancelAgentTaskRequestV4": {
+      "additionalProperties": false,
+      "properties": {
+        "clientCommandId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/$defs/CancellationSourceV4"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "clientCommandId",
+        "expectedRunVersion",
+        "source"
+      ],
+      "type": "object"
+    },
+    "CancellationSourceV4": {
+      "enum": [
+        "stop_button",
+        "focused_escape",
+        "replacement",
+        "sign_out",
+        "shutdown"
+      ],
+      "type": "string"
+    },
+    "ComputerPermissionV4": {
+      "enum": [
+        "accessibility",
+        "screen_recording"
+      ],
+      "type": "string"
+    },
+    "CuaDriverCatalogV4": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "contractVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "driverCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "driverVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/CuaDriverToolV4"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "toolsListSchemaVersion": {
+          "const": "1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "driverVersion",
+        "contractVersion",
+        "toolsListSchemaVersion",
+        "capabilityVersion",
+        "driverCatalogDigest",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "CuaDriverToolV4": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "injectSession": {
+          "type": "boolean"
+        },
+        "inputSchema": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "modelName": {
+          "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,99}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "modelName",
+        "description",
+        "inputSchema",
+        "injectSession"
+      ],
+      "type": "object"
+    },
+    "DesktopInvocationV4": {
+      "additionalProperties": false,
+      "properties": {
+        "callId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "driverCatalogDigest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "obligations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "criterionId": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "verifierKind": {
+                "enum": [
+                  "application_surface",
+                  "browser_semantic",
+                  "filesystem_result",
+                  "tool_result"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "criterionId",
+              "verifierKind"
+            ],
+            "type": "object"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "operation": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "permissionInteractionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "permissionRequirements": {
+          "items": {
+            "$ref": "#/$defs/ComputerPermissionV4"
+          },
+          "maxItems": 2,
+          "type": "array"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "runId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "toolId": {
+          "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "driverCatalogDigest",
+        "invocationId",
+        "runId",
+        "runVersion",
+        "callId",
+        "toolId",
+        "operation",
+        "permissionInteractionId",
+        "permissionRequirements",
+        "input",
+        "obligations",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "DesktopResultV4": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "propertyNames": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "criterionId": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "observationFingerprint": {
+                "anyOf": [
+                  {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observationId": {
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "enum": [
+                  "tool_result",
+                  "fresh_observation",
+                  "browser_dom",
+                  "filesystem"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "supports",
+                  "contradicts",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "criterionId",
+              "source",
+              "status",
+              "observationId",
+              "observationFingerprint",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "failed",
+            "denied",
+            "not_executed",
+            "unknown",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "visual": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "dataBase64": {
+                  "maxLength": 40000000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "detail": {
+                  "const": "original",
+                  "type": "string"
+                },
+                "mimeType": {
+                  "enum": [
+                    "image/jpeg",
+                    "image/png"
+                  ],
+                  "type": "string"
+                },
+                "observationId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dataBase64",
+                "detail",
+                "mimeType",
+                "observationId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "invocationId",
+        "status",
+        "summary",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "DesktopWorkerCapabilitiesV4": {
+      "additionalProperties": false,
+      "properties": {
+        "cua": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CuaDriverCatalogV4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "operations": {
+                "items": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "toolId": {
+                "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "toolId",
+              "operations"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "cua",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "DesktopWorkerSessionV4": {
+      "additionalProperties": false,
+      "properties": {
+        "connectedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "connectedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "OutcomeProjectionV4": {
+      "additionalProperties": false,
+      "properties": {
+        "criterionId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "verifierKind": {
+          "enum": [
+            "assistant_output",
+            "application_surface",
+            "browser_semantic",
+            "filesystem_result",
+            "tool_result",
+            "semantic_judge"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterionId",
+        "required",
+        "status",
+        "verifierKind"
+      ],
+      "type": "object"
+    },
+    "PermissionDecisionRequestV4": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "granted",
+            "continue_without_computer"
+          ],
+          "type": "string"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "interactionId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invocationId",
+        "interactionId",
+        "expectedRunVersion",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "PermissionWaitRequestV4": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "interactionId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "requiredPermissions": {
+          "items": {
+            "$ref": "#/$defs/ComputerPermissionV4"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "invocationId",
+        "interactionId",
+        "expectedRunVersion",
+        "requiredPermissions"
+      ],
+      "type": "object"
+    },
+    "SubmitAgentTaskRequestV4": {
+      "additionalProperties": false,
+      "properties": {
+        "activityAttemptId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activityIntent": {
+          "enum": [
+            "work",
+            "help",
+            "check"
+          ],
+          "type": "string"
+        },
+        "clientTaskId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "executionProfile": {
+          "enum": [
+            "everyday",
+            "workspace"
+          ],
+          "type": "string"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 4,
+          "type": "number"
+        },
+        "request": {
+          "maxLength": 8000,
+          "minLength": 2,
+          "type": "string"
+        },
+        "taskId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "toolCatalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "workspaceSelectionId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "protocolDigest",
+        "toolCatalogDigest",
+        "clientTaskId",
+        "taskId",
+        "request",
+        "executionProfile",
+        "workspaceSelectionId",
+        "activityAttemptId",
+        "activityIntent"
+      ],
+      "type": "object"
+    },
+    "WaitingOnV4": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "worker",
+              "type": "string"
+            },
+            "since": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "since"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "interactionId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "invocationId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "permission",
+              "type": "string"
+            },
+            "requiredPermissions": {
+              "items": {
+                "$ref": "#/$defs/ComputerPermissionV4"
+              },
+              "maxItems": 2,
+              "minItems": 1,
+              "type": "array"
+            },
+            "since": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "interactionId",
+            "invocationId",
+            "requiredPermissions",
+            "since"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "choices": {
+              "items": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 12,
+              "type": "array"
+            },
+            "interactionId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "input",
+              "type": "string"
+            },
+            "prompt": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "since": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "interactionId",
+            "prompt",
+            "choices",
+            "since"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://tro.app/protocol/agent-runtime.v4.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "beginDesktopExecutionRequest": {
+      "$ref": "#/$defs/BeginDesktopExecutionRequestV4"
+    },
+    "cancelRequest": {
+      "$ref": "#/$defs/CancelAgentTaskRequestV4"
+    },
+    "desktopInvocation": {
+      "$ref": "#/$defs/DesktopInvocationV4"
+    },
+    "desktopResult": {
+      "$ref": "#/$defs/DesktopResultV4"
+    },
+    "error": {
+      "$ref": "#/$defs/AgentRuntimeErrorV4"
+    },
+    "negotiation": {
+      "$ref": "#/$defs/AgentRuntimeNegotiationV4"
+    },
+    "permissionDecisionRequest": {
+      "$ref": "#/$defs/PermissionDecisionRequestV4"
+    },
+    "permissionWaitRequest": {
+      "$ref": "#/$defs/PermissionWaitRequestV4"
+    },
+    "status": {
+      "$ref": "#/$defs/AgentRuntimeStatusV4"
+    },
+    "submitRequest": {
+      "$ref": "#/$defs/SubmitAgentTaskRequestV4"
+    },
+    "taskEvent": {
+      "$ref": "#/$defs/AgentTaskEventV4"
+    },
+    "taskList": {
+      "$ref": "#/$defs/AgentTaskListV4"
+    },
+    "taskRecord": {
+      "$ref": "#/$defs/AgentTaskRecordV4"
+    },
+    "workerCapabilities": {
+      "$ref": "#/$defs/DesktopWorkerCapabilitiesV4"
+    },
+    "workerSession": {
+      "$ref": "#/$defs/DesktopWorkerSessionV4"
+    }
+  },
+  "required": [
+    "status",
+    "negotiation",
+    "submitRequest",
+    "taskRecord",
+    "taskList",
+    "taskEvent",
+    "cancelRequest",
+    "workerCapabilities",
+    "workerSession",
+    "desktopInvocation",
+    "desktopResult",
+    "permissionWaitRequest",
+    "permissionDecisionRequest",
+    "beginDesktopExecutionRequest",
+    "error"
+  ],
+  "title": "Tro canonical agent runtime protocol v4",
+  "type": "object"
+}

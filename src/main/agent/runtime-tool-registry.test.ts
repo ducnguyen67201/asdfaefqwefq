@@ -10,12 +10,11 @@ import {
 
 function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_candidates') {
   return {
-    schemaVersion: 6 as const,
+    schemaVersion: 10 as const,
     id: randomUUID(),
     originalRequest: 'Help with the Activity',
-    runtimeKind: 'rust_hosted' as const,
+    runtimeKind: 'openai_agents_sdk' as const,
     executionProfile: 'everyday' as const,
-    autonomyMode: 'balanced' as const,
     workspace: null,
     activity: {
       attemptId: randomUUID(), workSessionId: randomUUID(), activityVersionId: randomUUID(), runId: randomUUID(),
@@ -34,7 +33,6 @@ function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_cand
       sourceCatalog: [{ title: 'Runbook', role: 'reference' as const }],
       priorProgress: { completedCriterionIds: [], sessionCount: 0, summary: 'No prior Work Sessions.' },
     },
-    approvalPolicy: { alwaysConfirm: [] },
     limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
   };
 }
@@ -56,9 +54,21 @@ describe('RuntimeToolRegistry', () => {
 
   it('exposes knowledge and evidence tools only for the trusted Activity policy', () => {
     const registry = new RuntimeToolRegistry();
+    const explicitGoal = activityGoal('explicit_and_operational');
+    const evidenceGoal = activityGoal('evidence_candidates');
     const normal = registry.modelVisibleSpecs({ taskId: randomUUID() }).map((tool) => tool.name);
-    const explicit = registry.modelVisibleSpecs({ goal: activityGoal('explicit_and_operational'), taskId: randomUUID() }).map((tool) => tool.name);
-    const evidence = registry.modelVisibleSpecs({ goal: activityGoal('evidence_candidates'), taskId: randomUUID() }).map((tool) => tool.name);
+    const explicit = registry.modelVisibleSpecs({
+      activity: explicitGoal.activity,
+      executionProfile: explicitGoal.executionProfile,
+      taskId: randomUUID(),
+      workspace: explicitGoal.workspace,
+    }).map((tool) => tool.name);
+    const evidence = registry.modelVisibleSpecs({
+      activity: evidenceGoal.activity,
+      executionProfile: evidenceGoal.executionProfile,
+      taskId: randomUUID(),
+      workspace: evidenceGoal.workspace,
+    }).map((tool) => tool.name);
     expect(normal).not.toContain('search_activity_knowledge');
     expect(normal).not.toContain('record_activity_signal');
     expect(explicit).toContain('search_activity_knowledge');
@@ -77,7 +87,7 @@ describe('RuntimeToolRegistry', () => {
 
     expect(properties?.description?.maxLength).toBe(240);
     expect(guidance?.description).toContain('exactly one visible target');
-    expect(guidance?.description).toContain('bounded narration result');
+    expect(guidance?.description).toContain('narration result');
     expect(guidance?.description).toContain('highlight');
   });
 
@@ -148,7 +158,7 @@ describe('RuntimeToolRegistry', () => {
     }
   });
 
-  it('publishes provider-compatible strict command variants that correlate consequences', () => {
+  it('publishes strict physical command variants without policy metadata', () => {
     const controlTool = new RuntimeToolRegistry()
       .modelVisibleSpecs()
       .find((tool) => tool.name === 'control_desktop');
@@ -171,98 +181,30 @@ describe('RuntimeToolRegistry', () => {
         | { const?: string; type?: string }
         | undefined;
 
-    expect(variants).toHaveLength(9);
+    expect(variants).toHaveLength(6);
     expect(
       (controlTool?.parameters as unknown as { anyOf?: unknown[] }).anyOf,
     ).toBeUndefined();
-    expect(controlTool?.parameters.required).toEqual(
-      expect.arrayContaining(['effect', 'attendees']),
-    );
+    expect(controlTool?.parameters.required).toEqual([
+      'observationId',
+      'description',
+      'target',
+      'command',
+    ]);
     expect(variants?.map(kindFor)).toEqual([
-      { type: 'string', const: 'click' },
       { type: 'string', const: 'click' },
       { type: 'string', const: 'drag' },
       { type: 'string', const: 'type_text' },
-      { type: 'string', const: 'type_text' },
       { type: 'string', const: 'paste_table' },
-      { type: 'string', const: 'keypress' },
       { type: 'string', const: 'keypress' },
       { type: 'string', const: 'scroll' },
     ]);
-
-    const consequencesFor = (kind: string) =>
-      variants
-        ?.filter((variant) => kindFor(variant)?.const === kind)
-        .flatMap((variant) => {
-          const consequence = variant.properties?.consequence;
-          return consequence?.const
-            ? [consequence.const]
-            : (consequence?.enum ?? []);
-        });
-    const clickConsequences = consequencesFor('click');
-    expect(clickConsequences).toEqual(
-      expect.arrayContaining([
-        'click_element',
-        'login',
-        'send',
-        'submit',
-        'upload',
-        'download',
-        'delete',
-        'purchase',
-        'install',
-        'run_command',
-        'write_file',
-      ]),
-    );
-    expect(clickConsequences).not.toContain('guide');
-    expect(consequencesFor('type_text')).toEqual(
-      expect.arrayContaining(['type_text', 'login', 'send', 'submit', 'upload']),
-    );
-    expect(consequencesFor('paste_table')).toEqual(['type_text']);
-    expect(consequencesFor('keypress')).toEqual(
-      expect.arrayContaining(['press_key', 'login', 'send', 'submit', 'delete']),
-    );
-    expect(consequencesFor('drag')).toEqual(['drag']);
-    expect(consequencesFor('scroll')).toEqual(['scroll']);
     for (const variant of variants ?? []) {
-      if (variant.properties?.consequence?.const === 'send') continue;
-      expect(variant.properties?.sendPayload).toEqual({ type: 'null' });
+      expect(variant.properties).not.toHaveProperty('consequence');
+      expect(variant.properties).not.toHaveProperty('sendPayload');
     }
-  });
-
-  it('requires exact send payload fields in every structural send variant', () => {
-    const controlTool = new RuntimeToolRegistry()
-      .modelVisibleSpecs()
-      .find((tool) => tool.name === 'control_desktop');
-    const variants = (
-      controlTool?.parameters.properties.command as {
-        anyOf?: Array<{
-          properties?: Record<string, Record<string, unknown>>;
-          required?: string[];
-        }>;
-      }
-    ).anyOf;
-    const sendVariants = variants?.filter(
-      (variant) => variant.properties?.consequence?.const === 'send',
-    );
-
-    expect(sendVariants).toHaveLength(3);
-    for (const variant of sendVariants ?? []) {
-      expect(variant.required).toContain('sendPayload');
-      expect(variant.properties?.sendPayload).toMatchObject({
-        type: 'object',
-        additionalProperties: false,
-        required: [
-          'account',
-          'recipients',
-          'subject',
-          'body',
-          'threadId',
-          'attachments',
-        ],
-      });
-    }
+    expect(controlTool?.parameters.properties).not.toHaveProperty('effect');
+    expect(controlTool?.parameters.properties).not.toHaveProperty('attendees');
   });
 
   it('keeps show_guidance separate from desktop control variants', () => {
@@ -361,53 +303,6 @@ describe('RuntimeToolRegistry', () => {
     ).toThrow('contain the guidance point');
   });
 
-  it('retains the trusted parser defense for invalid command/consequence pairs', () => {
-    const registry = new RuntimeToolRegistry();
-    const taskId = randomUUID();
-    const observationId = randomUUID();
-
-    expect(() =>
-      registry.preview(
-        {
-          callId: 'call-invalid-guide-click',
-          name: 'control_desktop',
-          arguments: JSON.stringify({
-            observationId,
-            consequence: 'guide',
-            description: 'Invalidly mix guidance with a click.',
-            target: null,
-            sendPayload: null,
-            command: {
-              kind: 'click',
-              x: 500,
-              y: 250,
-              button: 'left',
-              count: 1,
-            },
-          }),
-        },
-        {
-          taskId,
-          latestObservation: {
-            observationId,
-            taskId,
-            capturedAt: '2026-08-17T00:00:00.000Z',
-            route: 'desktop_vision',
-            text: 'A button is visible.',
-            degraded: false,
-            fingerprint: 'a'.repeat(64),
-            coordinateSpace: {
-              screenHeight: 500,
-              screenWidth: 1000,
-              screenshotHeight: 1000,
-              screenshotWidth: 2000,
-            },
-          },
-        },
-      ),
-    ).toThrow('desktop command and declared consequence do not agree');
-  });
-
   it('normalizes the nested model command shape to the existing trusted input', () => {
     const registry = new RuntimeToolRegistry();
     const taskId = randomUUID();
@@ -426,8 +321,6 @@ describe('RuntimeToolRegistry', () => {
             y: 250,
             button: 'left',
             count: 1,
-            consequence: 'click_element',
-            sendPayload: null,
           },
         }),
       },
@@ -452,71 +345,11 @@ describe('RuntimeToolRegistry', () => {
     );
 
     expect(invocation.input).toMatchObject({
-      consequence: 'click_element',
       command: { kind: 'click' },
     });
     expect(invocation.action).toMatchObject({
       action: 'click_element',
       operation: 'click',
-    });
-  });
-
-  it('retains an explicit coordinate-lane effect for consequence and retry policy', () => {
-    const registry = new RuntimeToolRegistry();
-    const taskId = randomUUID();
-    const observationId = randomUUID();
-    const invocation = registry.resolve(
-      {
-        callId: 'call-calendar-save',
-        name: 'control_desktop',
-        arguments: JSON.stringify({
-          observationId,
-          description: 'Save the private calendar event.',
-          target: 'Save',
-          effect: {
-            kind: 'create_resource',
-            resourceKind: 'calendar_event',
-            reversibility: 'reversible',
-            externality: 'cloud_private',
-            communication: 'none',
-            overwrite: 'none',
-            sensitiveDataTransfer: false,
-          },
-          attendees: null,
-          command: {
-            kind: 'click',
-            x: 500,
-            y: 250,
-            button: 'left',
-            count: 1,
-            consequence: 'click_element',
-            sendPayload: null,
-          },
-        }),
-      },
-      {
-        taskId,
-        latestObservation: {
-          observationId,
-          taskId,
-          capturedAt: '2026-08-21T00:00:00.000Z',
-          route: 'desktop_vision',
-          text: 'A calendar Save button is visible.',
-          degraded: false,
-          fingerprint: 'a'.repeat(64),
-          coordinateSpace: {
-            screenHeight: 500,
-            screenWidth: 1000,
-            screenshotHeight: 1000,
-            screenshotWidth: 2000,
-          },
-        },
-      },
-    );
-
-    expect(invocation.action?.effect).toMatchObject({
-      kind: 'create_resource',
-      resourceKind: 'calendar_event',
     });
   });
 
@@ -538,8 +371,6 @@ describe('RuntimeToolRegistry', () => {
               ['Ngày', 'Danh mục', 'Số tiền (VND)'],
               ['18/08/2026', 'Ăn uống', '50000'],
             ],
-            consequence: 'type_text',
-            sendPayload: null,
           },
         }),
       },
@@ -649,6 +480,28 @@ describe('RuntimeToolRegistry', () => {
     ).toThrow('already resolved');
   });
 
+  it('rejects non-public and non-HTTPS browser targets before execution', () => {
+    for (const url of [
+      'http://example.com/',
+      'https://localhost/',
+      'https://127.0.0.1/',
+      'https://192.168.1.10/',
+      'https://user:password@example.com/',
+    ]) {
+      const registry = new RuntimeToolRegistry();
+      expect(() =>
+        registry.resolve(
+          {
+            callId: `call-${url}`,
+            name: 'open_url',
+            arguments: JSON.stringify({ url, reason: 'Open a page.' }),
+          },
+          { taskId: randomUUID() },
+        ),
+      ).toThrow();
+    }
+  });
+
   it('normalizes Chrome launch as a narrow direct host action', () => {
     const registry = new RuntimeToolRegistry();
     const invocation = registry.resolve(
@@ -688,8 +541,8 @@ describe('RuntimeToolRegistry', () => {
           name: 'control_desktop',
           arguments: JSON.stringify({
             observationId: randomUUID(),
-            consequence: 'click_element',
             description: 'Open the newest email.',
+            target: null,
             command: {
               kind: 'click',
               x: 500,
@@ -704,7 +557,7 @@ describe('RuntimeToolRegistry', () => {
     ).toThrow('Observe the desktop');
   });
 
-  it('derives desktop action identity from the trusted command', () => {
+  it('derives desktop action identity from the physical command, not visible labels', () => {
     const registry = new RuntimeToolRegistry();
     const taskId = randomUUID();
     const observationId = randomUUID();
@@ -714,7 +567,6 @@ describe('RuntimeToolRegistry', () => {
         name: 'control_desktop',
         arguments: JSON.stringify({
           observationId,
-          consequence: 'delete',
           description: 'Click the visible delete button.',
           target: 'Delete button',
           command: {
@@ -750,7 +602,6 @@ describe('RuntimeToolRegistry', () => {
       action: 'click_element',
       toolId: 'desktop.control',
       operation: 'click',
-      parameters: { declaredConsequence: 'delete' },
     });
   });
 

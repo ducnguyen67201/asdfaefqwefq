@@ -10,7 +10,7 @@ function update(phase: TaskUpdate['snapshot']['phase']): TaskUpdate {
   return {
     snapshot: {
       taskId, request: 'Help with loops.', phase, goal: null, messages: [],
-      pendingInteraction: null, approvalGrant: null, progress: null, outcomes: null,
+      pendingInteraction: null, progress: null, outcomes: null,
       queuedSteering: [], runtimeResume: null, createdAt: timestamp, updatedAt: timestamp, lastEvent: null,
     },
     event: {

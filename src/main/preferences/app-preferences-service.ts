@@ -11,7 +11,6 @@ import {
 
 const EMPTY_PREFERENCES: AppPreferences = {
   appLanguage: 'en',
-  autonomyMode: 'balanced',
   classroomPetEnabled: true,
   muteSystemAudioWhileSpeaking: false,
   primaryLanguage: null,

@@ -33,8 +33,8 @@ Run this fixed order:
 3. VS Code saved file: observe the active editor and focus one named control.
 4. Native application form: observe, type reversible text, and verify it.
 5. Canvas-only or ambiguous surface: confirm deterministic vision fallback.
-6. Consequential browser action: approve once, revalidate, and execute once.
-7. Changed target after approval: confirm `not_executed` and no retry.
+6. Browser action: validate the registered tool and fresh observation, then execute once.
+7. Changed target before dispatch: confirm `not_executed` and no retry.
 
 Capture the baseline from the last desktop-only build and the candidate from
 the current build on the same machine. Capture only `[cua] performance` log

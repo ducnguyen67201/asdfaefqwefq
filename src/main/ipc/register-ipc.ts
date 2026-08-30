@@ -15,7 +15,6 @@ import {
   CommitDictationRequestSchema,
   DictationCommitResultSchema,
   GenerateCompanionImageRequestSchema,
-  DecideApprovalRequestSchema,
   ConnectConnectorRequestSchema,
   ConnectorAttemptRequestSchema,
   DisconnectConnectorRequestSchema,
@@ -281,7 +280,6 @@ export function registerIpcHandlers(
     IPC_CHANNELS.companionRevealMainWindow,
     IPC_CHANNELS.companionUseDefault,
     IPC_CHANNELS.transcribeVoiceSegment,
-    IPC_CHANNELS.decideApproval,
     IPC_CHANNELS.getAppPreferences,
     IPC_CHANNELS.getAppUpdateStatus,
     IPC_CHANNELS.getComputerStatus,
@@ -1005,16 +1003,6 @@ export function registerIpcHandlers(
       return services.taskApplicationService.respond(request);
     },
   );
-
-  ipcMain.handle(IPC_CHANNELS.decideApproval, async (event, input: unknown) => {
-    await assertMembershipAuthorizedInteractionSender(
-      event,
-      mainWindow,
-      services,
-    );
-    const request = DecideApprovalRequestSchema.parse(input);
-    return services.taskApplicationService.decideApproval(request);
-  });
 
   ipcMain.handle(IPC_CHANNELS.companionRevealMainWindow, async (event) => {
     assertTrustedCompanionSender(event, services);

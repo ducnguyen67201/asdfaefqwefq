@@ -39,5 +39,12 @@
       }
     ]
   },
-  "ignorePatterns": [".webpack", "out", "coverage", "node_modules"]
+  "ignorePatterns": [
+    ".webpack",
+    "bazel-*",
+    "coverage",
+    "node_modules",
+    "out",
+    "services/agent-runtime/dist"
+  ]
 }

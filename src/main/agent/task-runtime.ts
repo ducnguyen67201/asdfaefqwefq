@@ -2,17 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
 import {
-  AgentTaskContractV8Schema,
-  ConsumeApprovalGrantRequestSchema,
-  DecideApprovalRequestSchema,
-  RequestApprovalSchema,
+  AgentTaskContractV10Schema,
   RequestTaskInputSchema,
   RespondToInteractionRequestSchema,
   StartTaskRequestSchema,
   SubmitTaskRequestSchema,
   TaskSnapshotSchema,
   TaskUpdateSchema,
-  type HostedTaskAuthorityContract,
+  type HostedTaskAuthorityContractV10,
   type PendingInteraction,
   type TaskEvent,
   type TaskMessage,
@@ -20,13 +17,10 @@ import {
   type WorkspaceIdentity,
 } from '../../shared/contracts';
 
-import { createActionDigest } from './action-approval';
-
-const APPROVAL_TTL_MS = 5 * 60 * 1_000;
 const MAX_TASK_MESSAGES = 200;
 
 export interface HostedTaskProjectionOptions {
-  authority: HostedTaskAuthorityContract;
+  authority: HostedTaskAuthorityContractV10;
   taskId: string;
   workspace: WorkspaceIdentity | null;
 }
@@ -42,19 +36,19 @@ interface LocalEvent {
 }
 
 function projectAuthority(
-  authority: HostedTaskAuthorityContract,
+  authority: HostedTaskAuthorityContractV10,
   workspace: WorkspaceIdentity | null,
 ) {
   const projected: Record<string, unknown> = { ...authority };
   delete projected.workspaceSelectionId;
-  return AgentTaskContractV8Schema.parse({ ...projected, workspace });
+  return AgentTaskContractV10Schema.parse({ ...projected, workspace });
 }
 
 /**
  * Desktop projection of a Rust-owned task.
  *
- * This class owns only renderer-facing state and short-lived native approval /
- * clarification UI. It cannot compile goals, plan, sample a model, evaluate
+ * This class owns only renderer-facing state and short-lived clarification UI.
+ * It cannot compile goals, plan, sample a model, evaluate
  * policy, verify completion, or transition the canonical backend run.
  */
 export class TaskRuntime extends EventEmitter {
@@ -96,21 +90,12 @@ export class TaskRuntime extends EventEmitter {
         },
       ],
       pendingInteraction: null,
-      approvalGrant: null,
       progress: {
         kind: 'tool_calls',
         completed: 0,
         limit: goal.limits.maxToolCalls,
       },
-      outcomes: {
-        contractRevision: goal.outcomeContract.revision,
-        criterionResults: goal.outcomeContract.criteria.map((criterion) => ({
-          criterionId: criterion.id,
-          status: 'pending',
-          evidenceIds: [],
-        })),
-        evidence: [],
-      },
+      outcomes: null,
       queuedSteering: [],
       runtimeResume: null,
       createdAt: timestamp,
@@ -153,43 +138,19 @@ export class TaskRuntime extends EventEmitter {
 
   synchronizeHostedAuthority(
     taskId: string,
-    authority: HostedTaskAuthorityContract,
+    authority: HostedTaskAuthorityContractV10,
   ): TaskSnapshot {
     const snapshot = this.getTask(taskId);
     const workspace =
-      snapshot.goal?.schemaVersion === 8 ? snapshot.goal.workspace : null;
+      snapshot.goal?.schemaVersion === 10 ? snapshot.goal.workspace : null;
     if (authority.workspaceSelectionId !== (workspace?.selectionId ?? null)) {
       throw new Error('The revised Rust authority changed the trusted workspace.');
     }
     const goal = projectAuthority(authority, workspace);
-    const previousResults = new Map(
-      snapshot.outcomes?.criterionResults.map((result) => [
-        result.criterionId,
-        result,
-      ]) ?? [],
-    );
-    const criterionIds = new Set(
-      goal.outcomeContract.criteria.map((criterion) => criterion.id),
-    );
     const next = TaskSnapshotSchema.parse({
       ...snapshot,
       goal,
-      approvalGrant: null,
-      outcomes: {
-        contractRevision: goal.outcomeContract.revision,
-        criterionResults: goal.outcomeContract.criteria.map(
-          (criterion) =>
-            previousResults.get(criterion.id) ?? {
-              criterionId: criterion.id,
-              status: 'pending',
-              evidenceIds: [],
-            },
-        ),
-        evidence:
-          snapshot.outcomes?.evidence.filter((evidence) =>
-            criterionIds.has(evidence.criterionId),
-          ) ?? [],
-      },
+      outcomes: null,
     });
     this.tasks.set(taskId, next);
     return next;
@@ -224,10 +185,7 @@ export class TaskRuntime extends EventEmitter {
   respondToInteraction(input: unknown): TaskSnapshot {
     const request = RespondToInteractionRequestSchema.parse(input);
     const snapshot = this.getTask(request.taskId);
-    const pending = this.matchPending(snapshot, request.interactionId);
-    if (pending.kind !== 'clarification') {
-      throw new Error('The pending interaction requires an approval decision.');
-    }
+    this.matchPending(snapshot, request.interactionId);
     const timestamp = this.timestamp();
     return this.commit(
       this.appendMessage(
@@ -238,138 +196,6 @@ export class TaskRuntime extends EventEmitter {
       {
         summary: 'The clarification answer was returned to the Rust runtime.',
         nextActions: ['Wait for hosted task events.'],
-      },
-    );
-  }
-
-  requestApproval(input: unknown): TaskSnapshot {
-    const request = RequestApprovalSchema.parse(input);
-    const snapshot = this.assertInteractionAvailable(request.taskId);
-    const createdAt = this.timestamp();
-    const expiresAt = new Date(
-      this.now().getTime() + APPROVAL_TTL_MS,
-    ).toISOString();
-    const interaction: PendingInteraction = {
-      id: randomUUID(),
-      taskId: snapshot.taskId,
-      kind: 'approval',
-      prompt: request.prompt,
-      createdAt,
-      expiresAt,
-      actionDigest: createActionDigest(
-        request.action,
-        snapshot.goal?.schemaVersion === 8
-          ? snapshot.goal.intentAuthorization.revision
-          : null,
-      ),
-      action: request.action,
-      consequence: request.consequence,
-    };
-    return this.commit(
-      this.appendMessage(
-        {
-          ...snapshot,
-          approvalGrant: null,
-          pendingInteraction: interaction,
-          phase: 'awaiting_approval',
-        },
-        { kind: 'approval_request', role: 'assistant', text: request.prompt },
-        createdAt,
-      ),
-      {
-        status: 'warning',
-        summary: request.prompt,
-        nextActions: ['Approve or deny this exact Rust-authorized action.'],
-      },
-    );
-  }
-
-  decideApproval(input: unknown): TaskSnapshot {
-    const request = DecideApprovalRequestSchema.parse(input);
-    const snapshot = this.getTask(request.taskId);
-    const pending = this.matchPending(snapshot, request.interactionId);
-    if (pending.kind !== 'approval') {
-      throw new Error('The pending interaction requires a clarification answer.');
-    }
-    if (
-      pending.actionDigest !== request.actionDigest ||
-      createActionDigest(
-        pending.action,
-        snapshot.goal?.schemaVersion === 8
-          ? snapshot.goal.intentAuthorization.revision
-          : null,
-      ) !== request.actionDigest
-    ) {
-      throw new Error('The approval action digest does not match.');
-    }
-    if (Date.parse(pending.expiresAt) <= this.now().getTime()) {
-      throw new Error('The pending approval has expired.');
-    }
-    const approved = request.decision === 'approve';
-    const timestamp = this.timestamp();
-    return this.commit(
-      this.appendMessage(
-        {
-          ...snapshot,
-          pendingInteraction: null,
-          phase: 'planning',
-          approvalGrant: approved
-            ? {
-                interactionId: pending.id,
-                actionDigest: pending.actionDigest,
-                action: pending.action,
-                approvedAt: timestamp,
-                expiresAt: pending.expiresAt,
-              }
-            : null,
-        },
-        {
-          kind: 'approval_decision',
-          role: 'user',
-          text: approved
-            ? 'Approved the exact proposed action.'
-            : 'Denied the proposed action.',
-        },
-        timestamp,
-      ),
-      {
-        status: approved ? 'success' : 'warning',
-        summary: approved ? 'Exact action approved.' : 'Action denied.',
-        nextActions: ['Return the decision to the Rust runtime.'],
-      },
-    );
-  }
-
-  consumeApprovalGrant(input: unknown): TaskSnapshot {
-    const request = ConsumeApprovalGrantRequestSchema.parse(input);
-    const snapshot = this.getTask(request.taskId);
-    const grant = snapshot.approvalGrant;
-    if (!grant) throw new Error(`Task ${request.taskId} has no approved action grant.`);
-    const digest = createActionDigest(
-      request.action,
-      snapshot.goal?.schemaVersion === 8
-        ? snapshot.goal.intentAuthorization.revision
-        : null,
-    );
-    if (
-      grant.actionDigest !== digest ||
-      createActionDigest(
-        grant.action,
-        snapshot.goal?.schemaVersion === 8
-          ? snapshot.goal.intentAuthorization.revision
-          : null,
-      ) !== digest
-    ) {
-      throw new Error('The approved action grant does not match this action.');
-    }
-    if (Date.parse(grant.expiresAt) <= this.now().getTime()) {
-      throw new Error('The approved action grant has expired.');
-    }
-    return this.commit(
-      { ...snapshot, approvalGrant: null, phase: 'acting' },
-      {
-        summary: `Dispatching the exact approved action: ${grant.action.description}`,
-        nextActions: ['Wait for the Rust runtime to record the result.'],
       },
     );
   }

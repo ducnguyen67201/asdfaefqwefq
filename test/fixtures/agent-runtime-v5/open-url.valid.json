@@ -1,0 +1,13 @@
+{
+  "arguments": {
+    "reason": "Open YouTube.",
+    "url": "https://www.youtube.com/"
+  },
+  "expected": {
+    "operation": "open_url",
+    "prerequisites": [],
+    "protocolVersion": 5,
+    "toolId": "browser.navigate"
+  },
+  "name": "open_url"
+}

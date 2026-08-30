@@ -16,19 +16,10 @@ export type ToolOperationSelector =
       presentValue?: string;
     };
 
-export type ToolEffectSelector =
-  | { kind: 'none' }
-  | { kind: 'json_pointer'; pointer: string }
-  | { kind: 'workspace_filesystem' }
-  | { kind: 'workspace_terminal' }
-  | { kind: 'system_permission'; resourceKind: 'application' };
-
 export type ToolPrerequisite = 'accessibility' | 'screen_recording';
 
 export interface HostedToolContract {
-  defaultEffectKind: 'none' | 'operation_specific';
   description: string;
-  effectSelector: ToolEffectSelector;
   modelName: string;
   operationSelector: ToolOperationSelector;
   operations: readonly string[];
@@ -99,116 +90,6 @@ export function assertStrictFunctionSchema(
     assertStrictFunctionSchema(node.items, `${path}.items`);
   }
 }
-
-const EFFECT_KIND_VALUES = [
-  'none',
-  'create_resource',
-  'update_resource',
-  'rename_resource',
-  'move_resource',
-  'add_comment',
-  'workspace_write',
-  'workspace_command',
-  'send_communication',
-  'delete_or_archive',
-  'unexpected_overwrite',
-  'publish',
-  'deploy',
-  'merge',
-  'financial_or_trade',
-  'authentication_or_credential',
-  'system_permission',
-  'install',
-  'sensitive_transfer',
-  'unknown',
-] as const;
-
-const RESOURCE_KIND_VALUES = [
-  'calendar_event',
-  'document',
-  'spreadsheet',
-  'spreadsheet_row',
-  'workspace_file',
-  'workspace_repository',
-  'comment',
-  'issue',
-  'pull_request',
-  'email',
-  'message',
-  'form_submission',
-  'download',
-  'application',
-  'generic_private_resource',
-  'generic_public_resource',
-] as const;
-
-const actionEffectSchema = objectSchema(
-  {
-    kind: { type: 'string', enum: EFFECT_KIND_VALUES },
-    resourceKind: {
-      anyOf: [
-        { type: 'string', enum: RESOURCE_KIND_VALUES },
-        { type: 'null' },
-      ],
-    },
-    reversibility: {
-      type: 'string',
-      enum: ['none', 'reversible', 'destructive', 'unknown'],
-    },
-    externality: {
-      type: 'string',
-      enum: ['local', 'cloud_private', 'external', 'public', 'unknown'],
-    },
-    communication: {
-      type: 'string',
-      enum: ['none', 'draft', 'send', 'invite', 'notify', 'unknown'],
-    },
-    overwrite: {
-      type: 'string',
-      enum: ['none', 'requested', 'unexpected', 'unknown'],
-    },
-    sensitiveDataTransfer: {
-      anyOf: [{ type: 'boolean' }, { type: 'string', const: 'unknown' }],
-    },
-  },
-  [
-    'kind',
-    'resourceKind',
-    'reversibility',
-    'externality',
-    'communication',
-    'overwrite',
-    'sensitiveDataTransfer',
-  ],
-);
-
-const sendPayloadSchema = objectSchema(
-  {
-    account: { type: 'string', maxLength: 500 },
-    recipients: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 50,
-      items: { type: 'string', maxLength: 500 },
-    },
-    subject: { type: 'string', maxLength: 2_000 },
-    body: { type: 'string', minLength: 1, maxLength: 100_000 },
-    threadId: {
-      anyOf: [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
-    },
-    attachments: {
-      anyOf: [
-        {
-          type: 'array',
-          maxItems: 50,
-          items: { type: 'string', maxLength: 2_000 },
-        },
-        { type: 'null' },
-      ],
-    },
-  },
-  ['account', 'recipients', 'subject', 'body', 'threadId', 'attachments'],
-);
 
 const normalizedCoordinate = {
   type: 'integer',
@@ -292,24 +173,6 @@ const desktopScrollSchema = objectSchema(
   ['kind', 'x', 'y', 'direction', 'amount'],
 );
 
-function commandVariant(
-  command: StrictJsonObjectSchema,
-  consequences: readonly string[],
-  send = false,
-): StrictJsonObjectSchema {
-  return objectSchema(
-    {
-      ...command.properties,
-      consequence:
-        consequences.length === 1
-          ? { type: 'string', const: consequences[0] }
-          : { type: 'string', enum: consequences },
-      sendPayload: send ? sendPayloadSchema : { type: 'null' },
-    },
-    [...command.required, 'consequence', 'sendPayload'],
-  );
-}
-
 const desktopControlParameters = objectSchema(
   {
     observationId: { type: 'string' },
@@ -317,53 +180,18 @@ const desktopControlParameters = objectSchema(
     target: {
       anyOf: [{ type: 'string', maxLength: 8_000 }, { type: 'null' }],
     },
-    effect: actionEffectSchema,
-    attendees: {
-      anyOf: [
-        {
-          type: 'array',
-          maxItems: 50,
-          items: { type: 'string', minLength: 1, maxLength: 500 },
-        },
-        { type: 'null' },
-      ],
-    },
     command: {
       anyOf: [
-        commandVariant(desktopClickSchema, [
-          'click_element',
-          'login',
-          'submit',
-          'upload',
-          'download',
-          'delete',
-          'purchase',
-          'install',
-          'run_command',
-          'write_file',
-        ]),
-        commandVariant(desktopClickSchema, ['send'], true),
-        commandVariant(desktopDragSchema, ['drag']),
-        commandVariant(desktopTypeSchema, [
-          'type_text',
-          'login',
-          'submit',
-          'upload',
-        ]),
-        commandVariant(desktopTypeSchema, ['send'], true),
-        commandVariant(desktopPasteTableSchema, ['type_text']),
-        commandVariant(desktopKeySchema, [
-          'press_key',
-          'login',
-          'submit',
-          'delete',
-        ]),
-        commandVariant(desktopKeySchema, ['send'], true),
-        commandVariant(desktopScrollSchema, ['scroll']),
+        desktopClickSchema,
+        desktopDragSchema,
+        desktopTypeSchema,
+        desktopPasteTableSchema,
+        desktopKeySchema,
+        desktopScrollSchema,
       ],
     },
   },
-  ['observationId', 'description', 'target', 'effect', 'attendees', 'command'],
+  ['observationId', 'description', 'target', 'command'],
 );
 
 const semanticRef = { type: 'string', pattern: '^e[1-9][0-9]{0,3}$' };
@@ -420,51 +248,16 @@ const semanticControlParameters = objectSchema(
     target: {
       anyOf: [{ type: 'string', maxLength: 8_000 }, { type: 'null' }],
     },
-    effect: actionEffectSchema,
-    attendees: {
-      anyOf: [
-        {
-          type: 'array',
-          maxItems: 50,
-          items: { type: 'string', maxLength: 500 },
-        },
-        { type: 'null' },
-      ],
-    },
     command: {
       anyOf: [
-        commandVariant(semanticClickSchema, [
-          'click_element',
-          'login',
-          'submit',
-          'upload',
-          'download',
-          'delete',
-          'purchase',
-          'install',
-          'run_command',
-          'write_file',
-        ]),
-        commandVariant(semanticClickSchema, ['send'], true),
-        commandVariant(semanticTypeSchema, [
-          'type_text',
-          'login',
-          'submit',
-          'upload',
-        ]),
-        commandVariant(semanticTypeSchema, ['send'], true),
-        commandVariant(semanticKeySchema, [
-          'press_key',
-          'login',
-          'submit',
-          'delete',
-        ]),
-        commandVariant(semanticKeySchema, ['send'], true),
-        commandVariant(semanticScrollSchema, ['scroll']),
+        semanticClickSchema,
+        semanticTypeSchema,
+        semanticKeySchema,
+        semanticScrollSchema,
       ],
     },
   },
-  ['observationId', 'description', 'target', 'effect', 'attendees', 'command'],
+  ['observationId', 'description', 'target', 'command'],
 );
 
 const CUA_PREREQUISITES = [
@@ -477,7 +270,7 @@ export const HOSTED_TOOL_CONTRACTS = [
     toolId: 'activity.signal',
     modelName: 'record_activity_signal',
     description:
-      'Record one bounded hypothesis for an allowlisted Activity criterion and tag. This is evidence for review, never a grade, diagnosis, or Attempt-state change.',
+      'Record one review hypothesis for an allowlisted Activity criterion and tag. This is evidence for review, never a grade, diagnosis, or Attempt-state change.',
     operations: ['record'],
     parameters: objectSchema(
       {
@@ -491,9 +284,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['criterionId', 'tag', 'resultCode'],
     ),
     operationSelector: { kind: 'constant', value: 'record' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'application.launch',
@@ -509,9 +300,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['application', 'reason'],
     ),
     operationSelector: { kind: 'constant', value: 'launch' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'browser.navigate',
@@ -527,15 +316,13 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['url', 'reason'],
     ),
     operationSelector: { kind: 'constant', value: 'open_url' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'browser.prepare',
     modelName: 'prepare_browser_access',
     description:
-      'Request explicit permission to attach CUA to the exact current logged-in Chromium profile when observe_surface says deeper browser access requires approval.',
+      'Prepare CUA access to the exact current logged-in Chromium profile when observe_surface reports that deeper browser access is ready to prepare.',
     operations: ['attach_existing_profile'],
     parameters: objectSchema(
       {
@@ -545,9 +332,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['observationId', 'reason'],
     ),
     operationSelector: { kind: 'constant', value: 'attach_existing_profile' },
-    effectSelector: { kind: 'system_permission', resourceKind: 'application' },
     prerequisites: [],
-    defaultEffectKind: 'operation_specific',
   },
   {
     toolId: 'computer.control',
@@ -557,9 +342,7 @@ export const HOSTED_TOOL_CONTRACTS = [
     operations: ['click_element', 'type_text', 'press_key', 'scroll'],
     parameters: semanticControlParameters,
     operationSelector: { kind: 'json_pointer', pointer: '/command/kind' },
-    effectSelector: { kind: 'json_pointer', pointer: '/effect' },
     prerequisites: CUA_PREREQUISITES,
-    defaultEffectKind: 'operation_specific',
   },
   {
     toolId: 'computer.observe',
@@ -599,21 +382,17 @@ export const HOSTED_TOOL_CONTRACTS = [
       nullValue: 'observe',
       presentValue: 'inspect_surface_region',
     },
-    effectSelector: { kind: 'none' },
     prerequisites: CUA_PREREQUISITES,
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'desktop.control',
     modelName: 'control_desktop',
     description:
-      'Execute one atomic action grounded in the latest desktop observation. Declare the exact semantic effect separately from the physical click, type, key, drag, or scroll. All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use paste_table for rectangular spreadsheet data so rows and columns fill separate cells.',
+      'Execute one atomic click, type, key, drag, or scroll action grounded in the latest desktop observation. All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use paste_table for rectangular spreadsheet data so rows and columns fill separate cells.',
     operations: ['click', 'drag', 'type_text', 'paste_table', 'keypress', 'scroll'],
     parameters: desktopControlParameters,
     operationSelector: { kind: 'json_pointer', pointer: '/command/kind' },
-    effectSelector: { kind: 'json_pointer', pointer: '/effect' },
     prerequisites: CUA_PREREQUISITES,
-    defaultEffectKind: 'operation_specific',
   },
   {
     toolId: 'desktop.observe',
@@ -632,9 +411,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['reason'],
     ),
     operationSelector: { kind: 'constant', value: 'observe' },
-    effectSelector: { kind: 'none' },
     prerequisites: CUA_PREREQUISITES,
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'knowledge.search',
@@ -650,15 +427,13 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['query', 'limit'],
     ),
     operationSelector: { kind: 'constant', value: 'search' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'task.guidance',
     modelName: 'show_guidance',
     description:
-      'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the bounded narration result before continuing.',
+      'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the narration result before continuing.',
     operations: ['show'],
     parameters: objectSchema(
       {
@@ -687,9 +462,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['observationId', 'description', 'target', 'region', 'x', 'y'],
     ),
     operationSelector: { kind: 'constant', value: 'show' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'task.interaction',
@@ -708,9 +481,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['prompt', 'choices'],
     ),
     operationSelector: { kind: 'constant', value: 'request' },
-    effectSelector: { kind: 'none' },
     prerequisites: [],
-    defaultEffectKind: 'none',
   },
   {
     toolId: 'workspace.filesystem',
@@ -736,15 +507,13 @@ export const HOSTED_TOOL_CONTRACTS = [
       nullValue: 'read_file',
       presentValue: 'write_file',
     },
-    effectSelector: { kind: 'workspace_filesystem' },
     prerequisites: [],
-    defaultEffectKind: 'operation_specific',
   },
   {
     toolId: 'workspace.terminal',
     modelName: 'workspace_terminal',
     description:
-      'Run one bounded command in the trusted Workspace selection using a scrubbed environment.',
+      'Run one command in the trusted Workspace selection using a scrubbed environment.',
     operations: ['run_command'],
     parameters: objectSchema(
       {
@@ -754,9 +523,7 @@ export const HOSTED_TOOL_CONTRACTS = [
       ['command', 'timeoutMs'],
     ),
     operationSelector: { kind: 'constant', value: 'run_command' },
-    effectSelector: { kind: 'workspace_terminal' },
     prerequisites: [],
-    defaultEffectKind: 'operation_specific',
   },
 ] as const satisfies readonly HostedToolContract[];
 

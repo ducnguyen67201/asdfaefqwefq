@@ -35,13 +35,11 @@
     }
   },
   "digests": {
-    "toolSchema": "2f21290b5c0fb2b5c450cec2019e9c8622a39d56de82519fa7018ae5086d335a",
     "sessionToken": "tro_live_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "sessionDigestHex": "f26a9df70c4ccf037dbb5810149228a8ca9a91d7f304b11fb2973903f037aadc",
     "rateScope": "responses.minute",
     "rateKey": "fixture-user",
     "rateDigestHex": "9c32e6e2d34b433080c58e962f167dc60ae75021b33569d62e1d87a5b6c302a3",
-    "intentDigest": "11f705701352168b6e7b0104dcea523bbf9454f0605a62139b5c30924a992298",
     "outcomeVerifierDigests": {
       "assistant-output": "35dc7a1954868a5a758fa8a85632c1ae984778b03f6c01aa9aa2ce085031a7f0",
       "workspace-mutated": "87878c61a5e80c7f1c96e58dda67a17b60792124bba32e5a30f75e562e14af04"

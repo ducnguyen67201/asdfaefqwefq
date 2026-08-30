@@ -9,7 +9,6 @@ function createSnapshot(
 ): TaskSnapshot {
   const now = '2026-08-15T08:00:00.000Z';
   return {
-    approvalGrant: null,
     createdAt: now,
     goal: null,
     lastEvent: null,

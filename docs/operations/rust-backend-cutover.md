@@ -29,9 +29,10 @@ provider; do not remove it while the Electron `package.json` remains at root.
 - Pass crypto/route fixtures, companion image provider/quota parity, Rust fmt/clippy/test/audit/release build, desktop `npm run check`, and supported-platform packaging.
 - Run migrations twice against an empty PostgreSQL 17 database and a scrubbed production-shaped clone. The second run must be a no-op and preserve existing rows.
 - Pass disposable PostgreSQL/S3 integration tests and the PDF corpus.
-- Rehearse deploy, previous-deployment rollback, and roll-forward in staging.
+- Rehearse deploy, roll-forward, and a coordinated PostgreSQL/object-store restore to a pre-migration-030 snapshot in staging.
 - Inventory Railway variable names only. Never copy secret values into logs or reports.
-- Set backend-agent and intent-authorization rollout to zero and disable Knowledge Spaces until its worker smoke passes.
+- Set `TROCODE_BACKEND_AGENT_ENABLED=false` and disable Knowledge Spaces until
+  its worker smoke test passes.
 
 ## Active-work drain gate
 
@@ -65,7 +66,7 @@ Every count must be zero. Do not edit rows to make the gate pass. A nonzero coun
 4. Run non-mutating checks, followed by synthetic auth/session/access/budget/provider/admin flows.
 5. Change the existing ingestion worker command to `./bin/trocode-api ingestion-worker` from the same commit. Do not overlap old and new agent workers.
 6. Smoke upload, HEAD verification, ingestion, search, Activity/Run/Attempt/submission/evidence/dashboard before enabling Knowledge Spaces.
-7. Enable backend-agent only for explicit canaries. Verify task SSE replay, worker connect/request/executing/result/completion, and disconnect-during-consequential-action becoming unknown/blocked without replay.
+7. Enable backend-agent only for explicit canaries. Verify task SSE replay, worker connect/request/executing/result/completion, and disconnect-during-tool-execution becoming unknown/blocked without replay.
 8. Expand the existing percentage gradually under separate operator approval.
 
 Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservations, PostgreSQL pool saturation, stale leases, unknown outcomes, ingestion retries, and RSS for the approved window.
@@ -76,20 +77,36 @@ Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservati
 - Any auth, session, cookie, digest, or encrypted-row incompatibility.
 - Double charge, missing settlement, or a material increase in uncertain reservations.
 - SSE buffering, truncation, or replay breakage affecting installed clients.
-- Stale-lease commit, duplicate consequential dispatch, or weaker approval/effect enforcement.
+- Stale-lease commit, duplicate tool dispatch, or weaker result/outcome enforcement.
 - Object checksum/key/parser corruption or an unapproved latency/RSS regression.
 
 ## Rollback
 
-1. Set backend-agent and intent rollout to zero; disable Knowledge Spaces if implicated.
-2. Stop the Rust ingestion worker after its current lease.
-3. Require zero nonterminal runs before a full rollback. Never ask an older deployment to interpret a newer checkpoint version.
-4. Redeploy the recorded previous deployment to the same service.
-5. Check health/readiness and synthetic auth/session/access/budget/admin/provider paths.
-6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or consequential action because local completion is missing.
-7. Preserve logs, diagnostic rows, and backups. Do not delete or manually roll back domain data.
+Migration 030 is destructive and is not backward-compatible with the previous
+backend. After it has been applied, never redeploy the previous application
+against the migrated database and never reconstruct dropped columns manually.
 
-The Rust backend owns all 24 domain migrations and SQLx bookkeeping. A temporary
-rollback to a pre-Rust deployment is permitted only during the first monitored
-cutover window and must be proven against a scrubbed clone in staging; current
-source contains no legacy backend implementation.
+1. Set `TROCODE_BACKEND_AGENT_ENABLED=false` to reject new starts; set
+   `TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT=0` and clear
+   `TROCODE_BACKEND_AGENT_CANARY_USERS` before re-enabling the runtime later.
+   Disable Knowledge Spaces if implicated.
+2. Stop the Rust ingestion worker after its current lease. Preserve current
+   workers until every executing or unknown-outcome action is reconciled; never
+   replay a tool invocation with an unknown outcome.
+3. Prefer a roll-forward from the current v4 backend. Deploy the corrected
+   commit against the migrated database, then check health/readiness and
+   synthetic auth/session/access/budget/admin/provider paths.
+4. If roll-forward is impossible, declare disaster recovery and stop all
+   writers. Restore PostgreSQL and the private object store together from the
+   verified pre-migration-030 backup, then deploy only the application version
+   matched to that restored schema.
+5. Confirm the restore point does not discard accepted work. If newer work
+   exists, keep the service disabled and reconcile it through the approved
+   incident/data-recovery process before reopening.
+6. Reconcile reserved/uncertain entries through existing safe operator logic. Never retry a provider or tool invocation because local completion is missing.
+7. Preserve logs, diagnostic rows, and backups. Do not perform an
+   application-only rollback or manually roll back domain data.
+
+The Rust backend owns all 30 domain migrations and SQLx bookkeeping. A previous
+deployment is permitted only with the coordinated pre-migration restore rehearsed
+in staging; current source contains no legacy backend implementation.

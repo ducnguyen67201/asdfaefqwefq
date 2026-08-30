@@ -14,7 +14,6 @@ function task(phase: TaskSnapshot['phase']): TaskSnapshot {
   const taskId = randomUUID();
   const timestamp = '2026-08-17T00:00:00.000Z';
   return {
-    approvalGrant: null,
     createdAt: timestamp,
     goal: null,
     lastEvent: null,

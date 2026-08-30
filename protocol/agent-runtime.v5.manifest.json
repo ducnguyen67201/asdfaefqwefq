@@ -1,0 +1,108 @@
+{
+  "generatorVersion": 1,
+  "inventories": {
+    "actions": [
+      "steer",
+      "cancel",
+      "respond",
+      "open_system_settings",
+      "continue_without_computer",
+      "retry_as_new_task"
+    ],
+    "cancellationSources": [
+      "stop_button",
+      "focused_escape",
+      "replacement",
+      "sign_out",
+      "shutdown"
+    ],
+    "errorCodes": [
+      "desktop_upgrade_required",
+      "backend_upgrade_required",
+      "protocol_upgrade_required",
+      "tool_catalog_upgrade_required",
+      "stale_run_version",
+      "transition_rejected",
+      "run_not_cancellable",
+      "permission_interaction_stale",
+      "invalid_agent_runtime_request",
+      "agent_runtime_unavailable"
+    ],
+    "failureCodes": [
+      "provider_request_rejected",
+      "provider_unavailable",
+      "provider_outcome_unknown",
+      "tool_outcome_unknown",
+      "internal_runtime_error",
+      "permission_unavailable",
+      "orchestrator_unavailable",
+      "session_conflict",
+      "graph_version_mismatch",
+      "run_expired"
+    ],
+    "failureStages": [
+      "negotiation",
+      "provider_request",
+      "provider_dispatch",
+      "tool_execution",
+      "session",
+      "runtime"
+    ],
+    "permissions": [
+      "accessibility",
+      "screen_recording"
+    ],
+    "phases": [
+      "ready",
+      "running",
+      "paused",
+      "awaiting_permission",
+      "awaiting_input",
+      "acting",
+      "completed",
+      "blocked",
+      "failed",
+      "cancelled"
+    ],
+    "rolloutModes": [
+      "enforce"
+    ],
+    "states": [
+      "queued",
+      "awaiting_orchestrator",
+      "running",
+      "awaiting_worker",
+      "awaiting_permission",
+      "executing_tool",
+      "awaiting_input",
+      "recovering",
+      "completed",
+      "blocked",
+      "failed",
+      "cancelled",
+      "expired"
+    ],
+    "toolIds": [
+      "activity.signal",
+      "application.launch",
+      "browser.navigate",
+      "browser.prepare",
+      "computer.control",
+      "computer.observe",
+      "desktop.control",
+      "desktop.observe",
+      "knowledge.search",
+      "task.guidance",
+      "task.interaction",
+      "workspace.filesystem",
+      "workspace.terminal"
+    ]
+  },
+  "protocolDigest": "081c1d07cf45b6f2248a7dead502d07e14cdbae434017ed184e37d659d815ec7",
+  "schemaVersion": 5,
+  "sourceFiles": [
+    "src/shared/agent-runtime-protocol.ts",
+    "src/shared/agent-tool-contracts.ts"
+  ],
+  "toolCatalogDigest": "2eb97dbaa3b4e55a3dfd8909a680444edc41aa2a95eb224970a7b18e8fb28fee"
+}

@@ -1,0 +1,1129 @@
+{
+  "$id": "https://tro.app/protocol/agent-orchestrator.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activityRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "run_started",
+            "status",
+            "tool_started",
+            "tool_completed"
+          ],
+          "type": "string"
+        },
+        "sequence": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "sequence",
+        "kind",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "applySessionTransactionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "expectedSessionRevision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operationDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "operationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "transaction": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "items": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 2000,
+                  "type": "array"
+                },
+                "type": {
+                  "const": "append_items",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "items"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expectedSuffix": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 10000,
+                  "type": "array"
+                },
+                "replacement": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 10000,
+                  "type": "array"
+                },
+                "type": {
+                  "const": "replace_suffix",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "expectedSuffix",
+                "replacement"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expectedItems": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 10000,
+                  "type": "array"
+                },
+                "type": {
+                  "const": "clear",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "expectedItems"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "expectedSessionRevision",
+        "operationId",
+        "operationDigest",
+        "transaction"
+      ],
+      "type": "object"
+    },
+    "applySessionTransactionResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "replayed": {
+          "type": "boolean"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision",
+        "replayed"
+      ],
+      "type": "object"
+    },
+    "claimRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "graphVersion": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "sdkVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "sdkVersion",
+        "graphVersion"
+      ],
+      "type": "object"
+    },
+    "claimRunResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "run": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "checkpoint": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "graphVersion": {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        "pendingCallId": {
+                          "anyOf": [
+                            {
+                              "maxLength": 255,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "revision": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "sdkVersion": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "state": {
+                          "maxLength": 10000000,
+                          "minLength": 2,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "revision",
+                        "state",
+                        "sdkVersion",
+                        "graphVersion",
+                        "pendingCallId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "graphVersion": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "lastControlSequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "limits": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "deadlineAt": {
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                      "type": "string"
+                    },
+                    "maxModelSamples": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 100,
+                      "type": "integer"
+                    },
+                    "maxOutputCharacters": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 100000,
+                      "type": "integer"
+                    },
+                    "maxSessionItems": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 10000,
+                      "type": "integer"
+                    },
+                    "maxToolCalls": {
+                      "maximum": 100,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "deadlineAt",
+                    "maxModelSamples",
+                    "maxToolCalls",
+                    "maxOutputCharacters",
+                    "maxSessionItems"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "protocolDigest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "request": {
+                  "maxLength": 8000,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                "runId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "runVersion": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "sdkVersion": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "sessionRevision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "toolCatalogDigest": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "tools": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "deferred": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "maxLength": 20000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "driverCatalogDigest": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[a-f0-9]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "executor": {
+                        "enum": [
+                          "desktop",
+                          "connector"
+                        ],
+                        "type": "string"
+                      },
+                      "inputSchema": {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "modelName": {
+                        "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+                        "type": "string"
+                      },
+                      "operation": {
+                        "anyOf": [
+                          {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "operationSelector": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": {},
+                            "propertyNames": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "toolId": {
+                        "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "toolId",
+                      "operation",
+                      "operationSelector",
+                      "modelName",
+                      "namespace",
+                      "description",
+                      "inputSchema",
+                      "deferred",
+                      "executor",
+                      "driverCatalogDigest"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 512,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "runId",
+                "runVersion",
+                "request",
+                "model",
+                "sdkVersion",
+                "graphVersion",
+                "protocolDigest",
+                "toolCatalogDigest",
+                "sessionRevision",
+                "lastControlSequence",
+                "tools",
+                "limits",
+                "checkpoint"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "completeRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedControlSequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "finalOutput": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "appliedControlSequence",
+        "finalOutput"
+      ],
+      "type": "object"
+    },
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,99}$",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "failRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "provider_request_rejected",
+            "provider_unavailable",
+            "provider_outcome_unknown",
+            "tool_outcome_unknown",
+            "internal_runtime_error",
+            "session_conflict",
+            "graph_version_mismatch"
+          ],
+          "type": "string"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "message": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "stage": {
+          "enum": [
+            "provider_request",
+            "provider_dispatch",
+            "tool_execution",
+            "session",
+            "runtime"
+          ],
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "stage",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "putCheckpointRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedControlSequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expectedCheckpointRevision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "graphVersion": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "pendingCallId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sdkVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "maxLength": 10000000,
+          "minLength": 2,
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "expectedCheckpointRevision",
+        "appliedControlSequence",
+        "sdkVersion",
+        "graphVersion",
+        "pendingCallId",
+        "state"
+      ],
+      "type": "object"
+    },
+    "putCheckpointResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpointRevision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "checkpointRevision",
+        "runVersion"
+      ],
+      "type": "object"
+    },
+    "queueToolCallRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "callId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "catalogDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "driverCatalogDigest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "graphVersion": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "idempotencyDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "operation": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sdkVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "toolId": {
+          "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$",
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "callId",
+        "toolId",
+        "operation",
+        "arguments",
+        "catalogDigest",
+        "driverCatalogDigest",
+        "sdkVersion",
+        "graphVersion",
+        "idempotencyDigest"
+      ],
+      "type": "object"
+    },
+    "queueToolCallResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "invocationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "replayed": {
+          "type": "boolean"
+        },
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "invocationId",
+        "runVersion",
+        "replayed"
+      ],
+      "type": "object"
+    },
+    "runLeaseRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "renew",
+            "release"
+          ],
+          "type": "string"
+        },
+        "expectedRunVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expectedRunVersion",
+        "action"
+      ],
+      "type": "object"
+    },
+    "runLeaseResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "runVersion",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "runMutationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "runVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "runVersion"
+      ],
+      "type": "object"
+    },
+    "sessionItemsResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "type": "array"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision",
+        "items"
+      ],
+      "type": "object"
+    },
+    "steeringUpdatesResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "instruction": {
+                "maxLength": 8000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sequence",
+              "instruction"
+            ],
+            "type": "object"
+          },
+          "maxItems": 20,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "toolCallResult": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "propertyNames": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "confirmed",
+            "failed",
+            "denied",
+            "not_executed",
+            "unknown",
+            "cancelled",
+            "expired"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "visual": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "dataBase64": {
+                  "maxLength": 40000000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "detail": {
+                  "const": "original",
+                  "type": "string"
+                },
+                "mimeType": {
+                  "enum": [
+                    "image/jpeg",
+                    "image/png"
+                  ],
+                  "type": "string"
+                },
+                "observationId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dataBase64",
+                "detail",
+                "mimeType",
+                "observationId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "data"
+      ],
+      "type": "object"
+    },
+    "workerHeartbeatRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "releaseVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "releaseVersion"
+      ],
+      "type": "object"
+    },
+    "workerHeartbeatResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "workerRegistrationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "graphVersion": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "instanceId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "protocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "publicProtocolDigest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "releaseVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sdkVersion": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "instanceId",
+        "protocolVersion",
+        "protocolDigest",
+        "publicProtocolDigest",
+        "releaseVersion",
+        "sdkVersion",
+        "graphVersion"
+      ],
+      "type": "object"
+    },
+    "workerRegistrationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "workerId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerId",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "workerRegistrationRequest",
+    "workerRegistrationResponse",
+    "workerHeartbeatRequest",
+    "workerHeartbeatResponse",
+    "claimRunRequest",
+    "claimRunResponse",
+    "runLeaseRequest",
+    "runLeaseResponse",
+    "sessionItemsResponse",
+    "applySessionTransactionRequest",
+    "applySessionTransactionResponse",
+    "putCheckpointRequest",
+    "putCheckpointResponse",
+    "steeringUpdatesResponse",
+    "queueToolCallRequest",
+    "queueToolCallResponse",
+    "toolCallResult",
+    "activityRequest",
+    "completeRunRequest",
+    "failRunRequest",
+    "runMutationResponse",
+    "error"
+  ],
+  "title": "Tro private agent orchestrator protocol v1",
+  "type": "object"
+}

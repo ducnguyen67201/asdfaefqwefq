@@ -5,14 +5,7 @@ import path from 'node:path';
 import { z } from 'zod';
 
 import {
-  ActionEffectSchema,
-  AuthorizationSourceSchema,
-  IntentAuthorizationContractSchema,
-  type ActionEffect,
-  type GoalSpec,
-  type IntentAuthorizationContract,
   type PrimaryLanguage,
-  type ProposedAction,
 } from '../../shared/contracts';
 
 const ENGINE_PROTOCOL_VERSION = 1;
@@ -25,15 +18,11 @@ const EngineHealthSchema = z.object({
   engine: z.literal('rust'),
   protocolVersion: z.literal(ENGINE_PROTOCOL_VERSION),
   features: z.array(z.enum([
-    'intent_authorization',
-    'desktop_policy',
     'google_oauth',
     'voice',
   ])),
 }).strict().superRefine((value, context) => {
   for (const feature of [
-    'intent_authorization',
-    'desktop_policy',
     'google_oauth',
     'voice',
   ] as const) {
@@ -46,17 +35,6 @@ const EngineHealthSchema = z.object({
     }
   }
 });
-
-const PolicyDecisionSchema = z.object({
-  terminal: z.boolean().optional(),
-  status: z.enum(['allowed', 'needs_approval', 'denied']),
-  effect: ActionEffectSchema,
-  authorizationSource: AuthorizationSourceSchema,
-  approvalRequired: z.boolean(),
-  consequential: z.boolean(),
-  summary: z.string().trim().min(1).max(1_000),
-  nextActions: z.array(z.string().trim().min(1).max(1_000)).max(20),
-}).strict();
 
 const EngineResponseSchema = z.discriminatedUnion('ok', [
   z.object({
@@ -79,15 +57,6 @@ const RustVoiceResponseSchema = z.object({
 const GoogleOauthExchangeResponseSchema = z.object({
   idToken: z.string().min(1).max(16_384),
 }).strict();
-
-export type RustPolicyDecision = z.infer<typeof PolicyDecisionSchema>;
-
-export interface EvaluateRustPolicyInput {
-  action: ProposedAction;
-  goal: GoalSpec;
-  proposedEffect: ActionEffect;
-  supported: boolean;
-}
 
 export interface RustVoiceTranscriptionInput {
   apiBaseUrl: string;
@@ -150,28 +119,6 @@ export class RustDesktopEngineClient {
   async stop(): Promise<void> {
     await this.options.transport.stop();
     this.startPromise = null;
-  }
-
-  async evaluateAction(input: EvaluateRustPolicyInput): Promise<RustPolicyDecision> {
-    await this.start();
-    return PolicyDecisionSchema.parse(
-      await this.options.transport.request('policy.evaluate_action', input),
-    );
-  }
-
-  async compileIntentAuthorization(
-    request: string,
-    executionProfile: 'everyday' | 'workspace',
-    revision: number,
-  ): Promise<IntentAuthorizationContract> {
-    await this.start();
-    return IntentAuthorizationContractSchema.parse(
-      await this.options.transport.request('intent.compile', {
-        request,
-        executionProfile,
-        revision,
-      }),
-    );
   }
 
   async exchangeGoogleOauthCode(input: {

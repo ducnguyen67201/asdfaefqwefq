@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    catalog::{ConnectorDefinition, ToolPolicy},
+    catalog::{ConnectorDefinition, ReviewedToolContract},
     schema,
 };
 
@@ -43,7 +43,7 @@ impl McpClientFactory {
         &self,
         definition: &'static ConnectorDefinition,
         access_token: &str,
-        policy_digest: &str,
+        catalog_contract_digest: &str,
         cancellation: &CancellationToken,
     ) -> anyhow::Result<DiscoveredSnapshot> {
         let endpoint = verified_endpoint(definition)?;
@@ -62,7 +62,7 @@ impl McpClientFactory {
             result = tokio::time::timeout(self.timeout, future) => result.context("MCP request timed out")??,
         };
         let reviewed = reviewed_tools(definition, &tools, self.max_schema_bytes)?;
-        let digest = schema::snapshot_digest(&reviewed, policy_digest)?;
+        let digest = schema::snapshot_digest(&reviewed, catalog_contract_digest)?;
         Ok(DiscoveredSnapshot {
             digest,
             tools: reviewed,
@@ -72,15 +72,15 @@ impl McpClientFactory {
     pub async fn call_tool(
         &self,
         definition: &'static ConnectorDefinition,
-        policy: &'static ToolPolicy,
+        contract: &'static ReviewedToolContract,
         access_token: &str,
         arguments: Value,
         cancellation: &CancellationToken,
     ) -> anyhow::Result<Value> {
-        schema::validate_arguments(&policy.input_schema, &arguments)?;
+        schema::validate_arguments(&contract.input_schema, &arguments)?;
         let argument_object = schema::as_object(arguments)?;
         let endpoint = verified_endpoint(definition)?;
-        let name = policy.name.to_owned();
+        let name = contract.name.to_owned();
         let future = async {
             let mut service = self.connect(endpoint, access_token).await?;
             let result = service
@@ -192,7 +192,6 @@ fn reviewed_tools(
         schema::ensure_compatible(&policy.input_schema, &remote_schema)?;
         result.push(json!({
             "description":policy.description,
-            "effect":policy.effect,
             "inputSchema":policy.input_schema,
             "mcpName":policy.name,
             "namespace":policy.namespace

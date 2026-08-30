@@ -82,7 +82,6 @@ export function taskPetMood(snapshot: TaskSnapshot): TaskPetMood | null {
     case 'idle':
     case 'ready':
     case 'awaiting_input':
-    case 'awaiting_approval':
     case 'paused':
     case 'awaiting_permission':
     case 'blocked':

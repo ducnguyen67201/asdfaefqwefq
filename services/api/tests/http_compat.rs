@@ -13,12 +13,12 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt as _;
 use trocode_api::{
-    agent::TOOL_SCHEMA_DIGEST,
+    agent::{OrchestratorWorkerRegistration, orchestrator_protocol, protocol},
     app::AppState,
     auth::User,
     config::{
-        AdminConfig, AgentRuntimeConfig, AgentRuntimeV3Mode, Config, ConnectorConfig,
-        CostGuardConfig, CostGuardMode, KnowledgeConfig, ObjectStoreConfig, RolloutConfig,
+        AdminConfig, AgentRuntimeConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode,
+        KnowledgeConfig, ObjectStoreConfig,
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
@@ -94,24 +94,19 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
         },
         agent_runtime: AgentRuntimeConfig {
             canary_users: BTreeSet::from(["http-owner".to_owned()]),
-            compaction_item_threshold: 80,
             current_encryption_key_version: 1,
             enabled: true,
             encryption_keys: Some("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
             heartbeat_ttl_ms: 35_000,
-            intent_authorization: RolloutConfig {
-                canary_users: BTreeSet::new(),
-                enabled: false,
-                rollout_percent: 0,
-            },
             lease_ms: 30_000,
             max_active_runs_per_user: 10,
             max_queue_depth: 1_000,
+            orchestrator_model: "gpt-5.6-sol".to_owned(),
+            orchestrator_sdk_version: "0.17.0".to_owned(),
+            orchestrator_service_token: Some("o".repeat(32)),
             payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
-            playwright_cdp_enabled: false,
-            protocol_version: 2,
+            protocol_version: 5,
             rollout_percent: 0,
-            v3_mode: AgentRuntimeV3Mode::Observe,
         },
         connectors: ConnectorConfig {
             callback_url: None,
@@ -391,6 +386,21 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
+    state
+        .orchestrator
+        .as_ref()
+        .expect("Agents SDK orchestrator")
+        .register_worker(&OrchestratorWorkerRegistration {
+            graph_version: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            instance_id: Uuid::new_v4(),
+            protocol_digest: orchestrator_protocol::protocol_digest(),
+            protocol_version: 1,
+            public_protocol_digest: protocol::v5::protocol_digest(),
+            release_version: "http-compat",
+            sdk_version: "0.17.0",
+        })
+        .await
+        .expect("register Agents SDK worker");
     state.responses = ResponsesService::new_with_endpoint(
         state.budget.clone(),
         reqwest::Client::new(),
@@ -1730,7 +1740,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let status = send(
         &router,
         Method::GET,
-        "/v1/agent-runtime/status",
+        "/v1/agent-runtime/v5/status",
         Some(&owner_token),
         None,
     )
@@ -1740,14 +1750,19 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let durable_task = send(
         &router,
         Method::POST,
-        "/v1/tasks",
+        "/v1/agent-runtime/v5/tasks",
         Some(&owner_token),
         Some(&json!({
-            "autonomyMode":"balanced",
+            "protocolVersion":5,
+            "protocolDigest":protocol::v5::protocol_digest(),
+            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
             "clientTaskId":Uuid::new_v4(),
             "executionProfile":"everyday",
             "request":"Open the browser for the compatibility test.",
-            "taskId":Uuid::new_v4()
+            "taskId":Uuid::new_v4(),
+            "workspaceSelectionId":null,
+            "activityAttemptId":null,
+            "activityIntent":"work"
         })),
     )
     .await;
@@ -1756,15 +1771,14 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .as_str()
         .expect("durable task id")
         .to_owned();
-    assert_status(
-        &send(&router, Method::GET, "/v1/tasks", Some(&owner_token), None).await,
-        StatusCode::OK,
-    );
+    let durable_run_version = durable_task.json()["projection"]["runVersion"]
+        .as_i64()
+        .expect("durable task run version");
     assert_status(
         &send(
             &router,
             Method::GET,
-            &format!("/v1/tasks/{durable_task_id}"),
+            "/v1/agent-runtime/v5/tasks",
             Some(&owner_token),
             None,
         )
@@ -1775,7 +1789,18 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::GET,
-            &format!("/v1/tasks/{durable_task_id}/events?after=-1"),
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=-1"),
             Some(&owner_token),
             None,
         )
@@ -1784,7 +1809,7 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     );
     let (event_status, event_headers) = send_without_collecting(
         &router,
-        &format!("/v1/tasks/{durable_task_id}/events?after=0"),
+        &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=0"),
         &owner_token,
     )
     .await;
@@ -1815,8 +1840,11 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         "/v1/desktop-worker/connect",
         Some(&owner_token),
         Some(&json!({
-            "protocolVersion":2,
-            "schemaDigest":TOOL_SCHEMA_DIGEST.as_str(),
+            "protocolVersion":5,
+            "protocolDigest":protocol::v5::protocol_digest(),
+            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
+            "maxResultBytes":48_000_000,
+            "cua":null,
             "tools":[{"operations":["launch"],"toolId":"application.launch"}]
         })),
     )
@@ -1859,6 +1887,28 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::POST,
+            &format!("/v1/desktop-worker/{worker_id}/result"),
+            Some(&owner_token),
+            Some(&json!({
+                "invocationId":Uuid::new_v4(),
+                "status":"confirmed",
+                "summary":"Captured a detailed desktop observation.",
+                "data":null,
+                "visual":{
+                    "dataBase64":"a".repeat(1_100_000),
+                    "detail":"original",
+                    "mimeType":"image/png",
+                    "observationId":Uuid::new_v4()
+                }
+            })),
+        )
+        .await,
+        StatusCode::OK,
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::POST,
             &format!("/v1/desktop-worker/{worker_id}/heartbeat"),
             Some(&owner_token),
             None,
@@ -1881,7 +1931,41 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         &send(
             &router,
             Method::POST,
-            &format!("/v1/tasks/{durable_task_id}/cancel"),
+            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/cancel"),
+            Some(&owner_token),
+            Some(&json!({
+                "protocolVersion":5,
+                "protocolDigest":protocol::v5::protocol_digest(),
+                "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
+                "clientCommandId":Uuid::new_v4(),
+                "expectedRunVersion":durable_run_version,
+                "source":"stop_button"
+            })),
+        )
+        .await,
+        StatusCode::OK,
+    );
+    query("UPDATE agent_runs SET protocol_version=3 WHERE id=$1")
+        .bind(Uuid::parse_str(&durable_task_id).expect("durable task uuid"))
+        .execute(&state.pool)
+        .await
+        .expect("mark terminal task as retained legacy history");
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}"),
+            Some(&owner_token),
+            None,
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+    );
+    assert_status(
+        &send(
+            &router,
+            Method::GET,
+            &format!("/v1/tasks/{durable_task_id}"),
             Some(&owner_token),
             None,
         )

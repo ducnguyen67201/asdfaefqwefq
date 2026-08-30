@@ -208,7 +208,6 @@ describe('desktop companion state', () => {
   it('rests when the task needs attention instead of implying progress', () => {
     for (const taskPhase of [
       'awaiting_input',
-      'awaiting_approval',
       'paused',
       'blocked',
       'failed',

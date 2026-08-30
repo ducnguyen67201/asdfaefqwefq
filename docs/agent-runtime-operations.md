@@ -1,80 +1,106 @@
-# Durable Rust agent runtime operations
+# OpenAI Agents SDK runtime operations
 
-The Rust runtime is the only task backend. New tasks require a configured API,
-an authenticated opaque device session, a compatible v8 authority contract,
-and a healthy desktop-engine handshake. Canonical v3 work also requires exact
-protocol and hosted-tool digests. Failure at any gate is
-fail-closed; there is no TypeScript rollback loop.
+New tasks use public runtime v5 and authority v10. The separate
+`services/agent-runtime` process is the sole planner/executor loop. Rust remains
+the trusted control plane for authentication, leases, encrypted Session and
+`RunState` storage, spend, OpenAI proxying, connectors, and desktop work.
 
-## Canonical v3 rollout
+## Deployment order
 
-1. Generate and commit the contract with `npm run agent:protocol:generate`, then
-   require `npm run agent:protocol:check` in review and CI.
-2. Deploy migration 025 and a backend with `AGENT_RUNTIME_V3_MODE=observe`.
-   Observe records compatibility diagnostics but preserves v2 new-work paths.
-3. Deploy v3 desktops, verify both digests, then switch the backend to `dual`.
-   Dual accepts explicitly tagged, exactly matching v3 work while existing v2
-   runs drain.
-4. Run `npm run agent:runtime-versions`. With `DATABASE_URL` configured it
-   reports active v2/v3 counts and whether the v2 drain is complete.
-5. Switch to `enforce` only when active v2 is zero. Enforce rejects v2 task
-   creation and worker connections with an upgrade error; v2 GET/list/events
-   remain readable.
+1. Build and health-check the SDK worker with
+   `npm --prefix services/agent-runtime ci` and
+   `npm --prefix services/agent-runtime run check`.
+2. Give the Rust API `OPENAI_API_KEY`,
+   `TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN`, and database credentials.
+3. Give the SDK worker only `TROCODE_API_BASE_URL` and the same orchestrator
+   token. It must not receive an OpenAI key, database URL, connector credential,
+   or desktop session.
+4. Deploy the worker idle, then the Rust private endpoints, then the v5
+   API/desktop release together.
+5. Enable the backend-agent rollout only after the worker's `/healthz` is ready
+   and a staging task has completed through a real desktop worker.
 
-The drain query used by the report is:
+## v5 drain and migration 031
+
+Migration 031 intentionally refuses to run while any legacy task is nonterminal:
 
 ```sql
-SELECT protocol_version, COUNT(*)
+SELECT protocol_version, orchestrator_kind, state, COUNT(*)
 FROM agent_runs
 WHERE state NOT IN ('completed','blocked','failed','cancelled','expired')
-GROUP BY protocol_version;
+GROUP BY protocol_version, orchestrator_kind, state
+ORDER BY protocol_version, orchestrator_kind, state;
 ```
 
-For rollback, return to `dual` or `observe` before deploying an older backend.
-Do not let a v2 binary claim v3 rows. Existing v3 terminal/history records stay
-readable through the deployed v3 service while the cause is repaired.
+Stop v4 starts first, then let known in-flight actions finish or cancel them
+through the old release. Do not weaken the migration guard. Migration 029 is
+`class_session_materials`; never replace or renumber it on a database where
+SQLx already recorded version 29. Migration 030 remains the approval-policy
+cleanup. Terminal legacy records remain read-only history.
 
-Assignment uses an HMAC of the user ID, so cohorts remain stable. Disabling
-intent authorization creates new Rust contracts with no instruction grants;
-stored contracts are not rewritten.
+Before changing `@openai/agents`, instructions, protocol schemas, or tool shape,
+drain every nonterminal SDK graph:
+
+```sql
+SELECT sdk_version, orchestrator_graph_version, state, COUNT(*)
+FROM agent_runs
+WHERE orchestrator_kind='openai_agents_sdk'
+  AND state NOT IN ('completed','blocked','failed','cancelled','expired')
+GROUP BY sdk_version, orchestrator_graph_version, state;
+```
+
+A pending serialized `RunState` may resume only on the exact SDK and graph
+version that created it.
+
+Migration 033 also refuses to run while an Agents SDK task is nonterminal. It
+introduces the encrypted immutable per-run tool snapshot used to reconstruct the
+same agent graph after a crash. Drain the SDK graph with the query above before
+applying it; do not backfill a live run from whatever tools happen to be online
+later.
 
 ## Incident checks
 
-- Inspect nonterminal `agent_runs` by state, deadline, lease owner, and lease
-  expiry without selecting ciphertext columns.
-- `awaiting_worker` requires a current signed-in desktop heartbeat.
-- An expired lease in a runnable state may be reclaimed by Rust.
-- An invocation left in `executing` after worker loss is unknown. Never mark it
-  confirmed or replay it manually.
-- Disable the Rust runtime for provider, schema, encryption, or false-completion
-  incidents. Existing runs remain inspectable and cancellable.
-- Disable intent authorization for authorization incidents; do not modify stored
-  revisions or in-flight invocations.
-- Reject unknown versions and any v3 worker whose protocol or tool digest does
-  not exactly match the manifest.
-- `failed` means a definite technical failure; `blocked` is terminal and means
-  safe recovery or effect outcome is unknown. Never cancel or retry a blocked
-  consequential outcome.
+- Worker health: inspect `agent_orchestrator_workers` heartbeat, expiry, SDK,
+  graph, and release fields; do not select service tokens.
+- Lease recovery: an expired SDK lease is reclaimable. A live lease must never be
+  manually reassigned.
+- Session conflict: stop the run and inspect only revision/generation/mutation
+  metadata. Do not edit encrypted Session items.
+- Compaction failure: keep the previous generation. The atomic replace-suffix
+  transaction must either commit completely or not at all.
+- Provider ambiguity: `ambiguous_dispatch` or `ambiguous_response` is terminal
+  `provider_outcome_unknown`; do not repeat the request manually. Inspect only
+  state and timestamps in `agent_model_dispatches`. A repeated digest is also
+  blocked after a completed provider response because the SDK checkpoint may
+  have been lost; provider bodies are never stored for replay.
+- Tool ambiguity: an invocation that reached `executing` and lost its executor
+  becomes `unknown`; the SDK blocks and must not replan an equivalent action.
+- Tool-surface recovery: inspect only the snapshot digest and version columns in
+  `agent_run_tool_snapshots`. Do not replace or decrypt a run's frozen catalog.
+  An already-queued call may be rebound after an executor disconnects, but a new
+  call must pass the current route and schema checks.
+- OS permission wait: this is a macOS/Windows prerequisite for the same durable
+  invocation, not an approval decision.
+- Connector OAuth failure: repair authorization, then start a new user task. Do
+  not mutate a pending invocation into executable state.
 
-## Key rotation and retention
+## Service-token rotation
 
-Add the new encryption key alongside the previous key, increment
-`TROCODE_AGENT_STATE_KEY_VERSION`, and write only with the new version. Retain
-old read keys until older encrypted payloads have passed their TTL and cleanup
-has run. Never reuse the device-session HMAC key.
-
-Cleanup deletes expired checkpoints and sensitive session items while retaining
-sanitized lifecycle and billing rows. Screenshot bytes are device-memory-only.
+Deploy a coordinated API and worker release with the new random token. Keep the
+old pair running only long enough to drain their exact graph, then remove the old
+secret. Never log the token or place it in public protocol payloads.
 
 ## Release gates
 
-- `npm run agent:benchmark -- --baseline <json> --candidate <json>`
 - `npm run agent:protocol:check`
+- `npm run agent:orchestrator:check`
+- `npm --prefix services/agent-runtime run check`
 - `npm run agent:runtime-versions`
 - `npm run check`
 - `npm run bazel:check`
 - `npm run package`
-- packaged Rust engine handshake on macOS and Windows;
-- stale-worker rejection and restart recovery;
-- zero duplicate consequential actions and hard-confirm bypasses;
-- privacy documentation matching the deployed data flow.
+- zero nonterminal legacy rows before migration 031;
+- zero nonterminal Agents SDK rows before migration 033;
+- zero duplicate adapter dispatches or unknown-result retries;
+- packaged v5 handshake, cancellation, steering, direct navigation, and workspace
+  smoke tests.

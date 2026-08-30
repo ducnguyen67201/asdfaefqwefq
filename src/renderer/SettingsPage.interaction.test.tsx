@@ -27,7 +27,6 @@ const companionStatus: CompanionCustomizationStatus = {
 function settingsProps(onClose = vi.fn()) {
   return {
     appLanguage: 'en' as const,
-    autonomyMode: 'balanced' as const,
     appUpdateError: null,
     appUpdateStatus: {
       currentVersion: '0.1.8',
@@ -59,7 +58,6 @@ function settingsProps(onClose = vi.fn()) {
     onActivateMembership: vi.fn(),
     onActivateSavedCompanion: vi.fn(),
     onAppLanguageChange: vi.fn(),
-    onAutonomyModeChange: vi.fn(),
     onCheckForUpdates: vi.fn(),
     onClassroomPetEnabledChange: vi.fn(),
     onClose,

@@ -1,16 +1,17 @@
 import { EventEmitter } from 'node:events';
 
 import {
-  DesktopInvocationV3Schema,
-  DesktopResultV3Schema,
-  DesktopWorkerSessionV3Schema,
-  PermissionDecisionRequestV3Schema,
-  PermissionWaitRequestV3Schema,
-  type DesktopInvocationV3,
-  type DesktopResultV3,
-  type DesktopWorkerCapabilitiesV3,
-  type PermissionDecisionRequestV3,
-  type PermissionWaitRequestV3,
+  BeginDesktopExecutionRequestV5Schema,
+  DesktopInvocationV5Schema,
+  DesktopResultV5Schema,
+  DesktopWorkerSessionV5Schema,
+  PermissionDecisionRequestV5Schema,
+  PermissionWaitRequestV5Schema,
+  type DesktopInvocationV5,
+  type DesktopResultV5,
+  type DesktopWorkerCapabilitiesV5,
+  type PermissionDecisionRequestV5,
+  type PermissionWaitRequestV5,
 } from '../../shared/agent-runtime-protocol';
 
 export interface DesktopWorkerClientOptions {
@@ -55,7 +56,7 @@ export class DesktopWorkerClient extends EventEmitter {
     this.reconnectDelay = options.reconnectDelay ?? ((attempt) => Math.min(5_000, 250 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 250));
   }
 
-  async start(capabilities: DesktopWorkerCapabilitiesV3): Promise<void> {
+  async start(capabilities: DesktopWorkerCapabilitiesV5): Promise<void> {
     if (this.controller) return;
     this.controller = new AbortController();
     this.capabilities = capabilities;
@@ -88,21 +89,20 @@ export class DesktopWorkerClient extends EventEmitter {
 
   async requestExecuting(
     invocationId: string,
-    metadata: Pick<
-      DesktopInvocationV3,
-      | 'approvalRequired'
-      | 'authorizationSource'
-      | 'consequential'
-      | 'effect'
-      | 'intentRevision'
-    >,
+    expectedRunVersion: number,
   ): Promise<boolean> {
-    const response = await this.workerPost('executing', { invocationId, ...metadata });
-    return response?.granted === true;
+    const response = await this.workerPost(
+      'executing',
+      BeginDesktopExecutionRequestV5Schema.parse({
+        invocationId,
+        expectedRunVersion,
+      }),
+    );
+    return response?.kind === 'executing';
   }
 
-  async commitResult(input: DesktopResultV3): Promise<void> {
-    const result = DesktopResultV3Schema.parse(input);
+  async commitResult(input: DesktopResultV5): Promise<void> {
+    const result = DesktopResultV5Schema.parse(input);
     const response = await this.workerPost('result', result);
     if (response?.kind !== 'committed' && response?.kind !== 'stale') {
       throw new Error('Desktop result was not accepted by the backend.');
@@ -110,11 +110,11 @@ export class DesktopWorkerClient extends EventEmitter {
   }
 
   async requestPermissionWait(
-    input: PermissionWaitRequestV3,
+    input: PermissionWaitRequestV5,
   ): Promise<{ interactionId: string; kind: 'waiting'; runVersion: number }> {
     const response = await this.workerPost(
       'permission-wait',
-      PermissionWaitRequestV3Schema.parse(input),
+      PermissionWaitRequestV5Schema.parse(input),
     );
     if (
       response.kind !== 'waiting' ||
@@ -131,11 +131,11 @@ export class DesktopWorkerClient extends EventEmitter {
   }
 
   async decidePermission(
-    input: PermissionDecisionRequestV3,
+    input: PermissionDecisionRequestV5,
   ): Promise<{ kind: 'ready' | 'committed'; runVersion: number }> {
     const response = await this.workerPost(
       'permission-decision',
-      PermissionDecisionRequestV3Schema.parse(input),
+      PermissionDecisionRequestV5Schema.parse(input),
     );
     if (
       !['ready', 'committed'].includes(String(response.kind)) ||
@@ -186,8 +186,8 @@ export class DesktopWorkerClient extends EventEmitter {
       for (const block of parsed.blocks) {
         const data = dataFromBlock(block);
         if (!data) continue;
-        const invocation = DesktopInvocationV3Schema.parse(JSON.parse(data));
-        this.emit('invocation', invocation satisfies DesktopInvocationV3);
+        const invocation = DesktopInvocationV5Schema.parse(JSON.parse(data));
+        this.emit('invocation', invocation satisfies DesktopInvocationV5);
       }
     }
   }
@@ -229,7 +229,7 @@ export class DesktopWorkerClient extends EventEmitter {
     if (!response.ok) {
       throw new Error(`Desktop worker connection failed (${response.status}).`);
     }
-    const session = DesktopWorkerSessionV3Schema.parse(await response.json());
+    const session = DesktopWorkerSessionV5Schema.parse(await response.json());
     this.workerSessionId = session.id;
   }
 

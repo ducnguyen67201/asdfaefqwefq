@@ -5,12 +5,23 @@ package(default_visibility = ["//visibility:private"])
 exports_files([
     "Cargo.lock",
     "Cargo.toml",
-    "test/fixtures/intent-authorization-cases.json",
 ])
 
 filegroup(
-    name = "agent_runtime_v3_fixtures",
-    srcs = glob(["test/fixtures/agent-runtime-v3/*.json"]),
+    name = "agent_runtime_v4_fixtures",
+    srcs = glob(["test/fixtures/agent-runtime-v4/*.json"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "agent_runtime_v5_fixtures",
+    srcs = glob(["test/fixtures/agent-runtime-v5/*.json"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "agent_orchestrator_v1_fixtures",
+    srcs = glob(["test/fixtures/agent-orchestrator-v1/*.json"]),
     visibility = ["//visibility:public"],
 )
 

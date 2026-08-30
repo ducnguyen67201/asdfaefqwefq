@@ -7,7 +7,9 @@ import { pathToFileURL } from 'node:url';
 import type * as CuaDriverSdk from '@trycua/cua-driver';
 import { z } from 'zod';
 
+import type { CuaDriverCatalogV5 } from '../../shared/agent-runtime-protocol';
 import type { CuaStatus } from '../../shared/contracts';
+import type { ToolExecutionResult } from '../agent/agent-contracts';
 import {
   DesktopActionOutcomeSchema,
   DesktopCoordinateSpaceSchema,
@@ -22,11 +24,12 @@ import {
 } from '../agent/execution-contracts';
 import type { ImageEvidencePolicy } from '../inference/image-evidence-policy';
 
-import { CuaAuthorizationBroker } from './cua-authorization-broker';
+import { CuaCapabilityBroker } from './cua-capability-broker';
 import {
   CuaDriverMetadataSchema,
   CuaWindowListSchema,
   CuaSemanticCapabilitiesSchema,
+  createCuaDriverCatalog,
   deriveCuaSemanticCapabilities,
   normalizedCuaActionEffect,
   parseCuaStructuredResult,
@@ -282,12 +285,14 @@ export class CuaService {
   private driverInitialization: Promise<void> | null = null;
   private driverVersion: string | undefined;
 
+  private driverCatalog: CuaDriverCatalogV5 | null = null;
+
   private semanticCapabilityState: CuaSemanticCapabilities =
     NO_SEMANTIC_CAPABILITIES;
 
   private surfaceRouter: CuaSurfaceRouter | null = null;
 
-  private authorizationBroker: CuaAuthorizationBroker | null = null;
+  private authorizationBroker: CuaCapabilityBroker | null = null;
 
   private readonly activeSessions = new Set<string>();
 
@@ -331,6 +336,27 @@ export class CuaService {
 
   semanticCapabilities(): CuaSemanticCapabilities {
     return this.semanticCapabilityState;
+  }
+
+  cuaToolCatalog(): CuaDriverCatalogV5 | null {
+    return this.driverCatalog;
+  }
+
+  async discoverToolCatalog(): Promise<CuaDriverCatalogV5> {
+    if (this.driverCatalog) return this.driverCatalog;
+    const cua = await this.loadModule();
+    const driver = cua.CuaDriver.create(undefined) as Driver;
+    try {
+      const metadata = await driver.metadata();
+      this.driverCatalog = createCuaDriverCatalog(
+        metadata,
+        JSON.parse(await driver.listToolsJson()),
+      );
+      return this.driverCatalog;
+    } finally {
+      await driver.shutdown();
+      driver.uniffiDestroy();
+    }
   }
 
   supportsSemanticFastPath(): boolean {
@@ -400,7 +426,7 @@ export class CuaService {
         version: this.driverVersion,
         permissions,
         summary: 'CUA is connected to this desktop process.',
-        nextActions: ['Create a bounded task before granting actions.'],
+        nextActions: ['Give Tro a goal that requires computer use.'],
       };
     } catch (error) {
       return {
@@ -1024,6 +1050,72 @@ export class CuaService {
     return outcome;
   }
 
+  async executeCuaTool(
+    taskId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    driverCatalogDigest: string,
+    signal?: AbortSignal,
+  ): Promise<ToolExecutionResult> {
+    await this.startTaskSession(taskId, signal);
+    const catalog = this.driverCatalog;
+    if (!catalog || catalog.driverCatalogDigest !== driverCatalogDigest) {
+      return {
+        status: 'not_executed',
+        summary: 'The installed CUA tool catalog changed before execution.',
+      };
+    }
+    const tool = catalog.tools.find((candidate) => candidate.name === toolName);
+    if (!tool) {
+      return {
+        status: 'not_executed',
+        summary: 'The requested CUA tool is not in the installed driver catalog.',
+      };
+    }
+    const argumentsValue = {
+      ...input,
+      ...(tool.injectSession ? { session: taskId } : {}),
+    };
+    const result = await this.callOpenTool(tool.name, argumentsValue, signal);
+    const effect = normalizedCuaActionEffect(result);
+    const structured = (() => {
+      if (!result.structuredJson) return undefined;
+      try {
+        return JSON.parse(result.structuredJson) as unknown;
+      } catch {
+        return result.structuredJson.slice(0, 500_000);
+      }
+    })();
+    const image = result.images[0];
+    const summary = (
+      result.text.trim() ||
+      result.errorCode ||
+      (result.isError ? 'CUA tool execution failed.' : `CUA completed ${tool.name}.`)
+    ).slice(0, 1_000);
+    const imageObservationId = image ? randomUUID() : undefined;
+    const data = {
+      ...(structured === undefined ? {} : { result: structured }),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(imageObservationId ? { crop: { observationId: imageObservationId } } : {}),
+    };
+    if (result.isError || effect === 'refused') {
+      return {
+        status: effect === 'refused' ? 'denied' : 'failed',
+        summary,
+        ...(Object.keys(data).length > 0 ? { data } : {}),
+      };
+    }
+    const confirmed = effect === undefined || effect === 'confirmed';
+    return {
+      status: confirmed ? 'confirmed' : 'unknown',
+      summary,
+      ...(Object.keys(data).length > 0 ? { data } : {}),
+      ...(image && ['image/jpeg', 'image/png'].includes(image.mimeType)
+        ? { imageDataUrl: `data:${image.mimeType};base64,${image.dataBase64}` }
+        : {}),
+    };
+  }
+
   async endTaskSession(taskId: string, signal?: AbortSignal): Promise<void> {
     this.surfaceRouter?.clearTask(taskId);
     this.imageEvidencePolicy?.clear(taskId);
@@ -1150,7 +1242,7 @@ export class CuaService {
   }
 
   private async initializeDriverInstance(cua: CuaModule): Promise<void> {
-    const authorizationBroker = new CuaAuthorizationBroker({
+    const authorizationBroker = new CuaCapabilityBroker({
       allow: cua.DriverAuthorizationAction.Allow,
       cancel: cua.DriverAuthorizationAction.Cancel,
       deny: cua.DriverAuthorizationAction.Deny,
@@ -1158,9 +1250,9 @@ export class CuaService {
     const configuredOptions = cua.ConfiguredDriverOptions.new({
       claudeCodeCompatibility: false,
       authorization: cua.RuntimeAuthorizationOptions.new({
-        allowedModes: [cua.SessionPermissionMode.Standard],
-        compatibilityMode: cua.SessionPermissionMode.Standard,
-        unrestrictedAcknowledged: false,
+        allowedModes: [cua.SessionPermissionMode.Unrestricted],
+        compatibilityMode: cua.SessionPermissionMode.Unrestricted,
+        unrestrictedAcknowledged: true,
         maxSessionTtlSeconds: 7_200n,
         maxIdleTtlSeconds: 900n,
       }),
@@ -1185,23 +1277,15 @@ export class CuaService {
     this.driver = driver;
     try {
       const metadata = CuaDriverMetadataSchema.parse(await driver.metadata());
-      if (
-        metadata.driverVersion !== '0.19.3' ||
-        metadata.contractVersion !== '0.6.0' ||
-        metadata.toolsListSchemaVersion !== '1'
-      ) {
+      if (metadata.toolsListSchemaVersion !== '1') {
         throw new Error(
-          'CUA runtime does not match Tro supported contract 0.19.3/0.6.0.',
+          'CUA runtime uses an unsupported tool inventory schema.',
         );
       }
       this.driverVersion = metadata.driverVersion;
-      try {
-        this.semanticCapabilityState = deriveCuaSemanticCapabilities(
-          JSON.parse(await driver.listToolsJson()),
-        );
-      } catch {
-        this.semanticCapabilityState = NO_SEMANTIC_CAPABILITIES;
-      }
+      const inventory = JSON.parse(await driver.listToolsJson());
+      this.driverCatalog = createCuaDriverCatalog(metadata, inventory);
+      this.semanticCapabilityState = deriveCuaSemanticCapabilities(inventory);
       this.authorizationBroker = authorizationBroker;
       this.surfaceRouter = new CuaSurfaceRouter({
         authorizationBroker,
@@ -1226,6 +1310,7 @@ export class CuaService {
     const driver = this.driver;
     this.driver = null;
     this.driverVersion = undefined;
+    this.driverCatalog = null;
     this.semanticCapabilityState = NO_SEMANTIC_CAPABILITIES;
     this.activeSessions.clear();
     this.desktopScopeSessions.clear();

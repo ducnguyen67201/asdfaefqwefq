@@ -1,148 +1,74 @@
 # Security model
 
-TroCode has unusually powerful local permissions. The model is treated as an untrusted tool chooser operating inside a trusted host policy.
+Tro is an autonomous desktop agent. A model-selected registered tool can run
+without a Tro confirmation card. Users and operators should treat the enabled
+tool catalog and the host account's capabilities as the action boundary.
 
 ## Trust boundaries
 
-- The React renderer is sandboxed and unprivileged.
-- The preload exposes a fixed, typed API rather than raw Electron IPC.
-- The main process validates the sending renderer and parses all payloads.
-- Only trusted main-process code creates and destroys the CUA runtime.
-- The bundled Rust desktop engine independently normalizes effects and returns
-  the policy decision before a hosted native action can request its one-time
-  executing transition. Its private stdio protocol is not exposed to preload.
-- A model cannot register a tool, approve an action, alter host limits, or make
-  a private/local browser target admissible.
-- A model cannot select a runtime, choose or expand a workspace, change the
-  trusted root, grant itself an approval, or operate TroCode approval controls.
-- A renderer or model cannot grant a classroom role, broadcast a directive, or
-  invent Activity context. Room codes are HMAC-digested at the API; public HTTPS
-  teacher links are origin-checked server-side and revalidated in Electron main.
-  Automatic opening is off by default and claimed once only after student
-  consent. Classroom dashboards receive explicit lifecycle/evidence facts, not
-  cursor, typing, continuous screen, attention, or inferred-stuck telemetry.
+- The Electron renderer is sandboxed and has no Node integration.
+- Preload exposes narrow, schema-parsed functions; it does not expose raw IPC,
+  CUA, OAuth tokens, provider credentials, or a generic command channel.
+- The OpenAI Agents SDK worker owns planning, continuation, tool choice, and
+  final-output detection. It has no database or provider credential.
+- Rust owns authentication, task lifecycle, authority scope, budgets, encrypted
+  Session/checkpoint storage, durable invocations, leases, and provider proxying.
+- Electron owns local native handles and revalidates inputs immediately before
+  local execution.
+- Models and connector/browser content are untrusted. They cannot register a
+  tool, change a contract, widen workspace identity, or bypass schemas.
 
-## Default behavior
+## Retained controls
 
-- Google sign-in opens in the system browser and uses a random loopback port,
-  state, nonce, and PKCE. The bundled Rust engine exchanges the code and checks
-  the nonce; the hosted Rust API verifies the ID token signature, issuer,
-  audience, timestamps, nonce, and verified-email claim.
-- The renderer receives only an allowlisted user ID, email, display name, and
-  sign-in status. OAuth codes and tokens never cross the preload boundary. For
-  hosted builds, the Railway API independently verifies the Google ID token and
-  exchanges it for a random opaque device token. Electron `safeStorage`
-  encrypts that token locally; PostgreSQL stores only its HMAC digest. Sign-out
-  revokes the server session and deletes the local copy.
-- On macOS, launch checks Accessibility and Screen Recording state without
-  prompting. Text work does not require microphone or CUA permissions.
-  Push-to-talk requests microphone access when used; desktop work pauses until
-  the user clicks Connect computer. Model output cannot open System Settings.
-- Packaged builds require the hosted Rust API. Membership and plan checks use
-  the revocable Google-backed device session and fail closed when the service
-  is unavailable; Electron has no offline membership verifier.
-- Organization-managed access is authorized entirely by the hosted service.
-  Every member sees only the current organization's bounded summary (identity,
-  plan, role, and seat capacity) and receives organizer controls only when the
-  server returns `role: organizer`; every rename, list, add, and cancel request
-  repeats session, active-access, role, code-state, and capacity checks. The
-  preload exposes five fixed schema-parsed methods,
-  never a generic REST or IPC bridge, plaintext access code, platform admin
-  token, or arbitrary organization-ID authority.
-- An organizer reserves a seat by normalized email without looking up or
-  revealing whether an account already exists. Only the verified email from a
-  server-validated Google identity may claim that pending seat. Membership,
-  redemption, plan upgrade, audit event, and new device session commit in one
-  PostgreSQL transaction; an expected existing-entitlement conflict leaves the
-  reservation untouched while sign-in still succeeds. Access-code row locks
-  serialize capacity changes, and pending seats count toward the limit.
-- Organization audit details contain IDs and seat counts only. The
-  `organization.profile_updated` event records `{}` and never stores the old or
-  new organization name. Request logs do not contain email addresses, names,
-  request bodies, bearer tokens, or plaintext access codes. Active members
-  cannot be removed through the organizer API; only pending reservations can
-  be cancelled.
-- Assistant text and tool calls share one model session. A model tool call is a
-  proposal, not permission or proof that an effect occurred.
-- Approval requirement and consequence are separate. In Balanced mode,
-  authenticated user text compiles to closed grants for requested reversible
-  private create/update/rename/move/comment and safe Workspace effects. The pure
-  Rust host classifier still resolves the exact effect and can raise risk from
-  normalized payload facts, opaque/stale state, or visible cues. Send/invite,
-  delete/archive, unexpected overwrite, publish/deploy/merge, money/trade,
-  credentials, permissions, installs, sensitive transfer, and unknown effects
-  always require exact approval. Strict mode confirms every mutation or side
-  effect. Untrusted content can raise risk but can never create or satisfy a
-  grant.
-- Remote navigation and creation of unexpected Electron windows are denied.
-- Current actions are bounded by registered tool operations, public-target
-  checks, task budgets, fresh observations, and exact approvals. A task does
-  not gain authority from a keyword, domain label, or model-produced capability
-  string.
-- Semantic browser/accessibility data is parsed and bounded in Electron main.
-  The model receives only normalized surface facts and observation-local opaque
-  references; raw process/window/tab IDs, driver tokens, snapshots, and the
-  generic CUA call surface never cross into preload or renderer.
-- Browser-profile attachment is never implicit. A one-use authorization broker
-  defaults to deny and grants only an already-approved exact session,
-  operation, and resource digest. Semantic approval revalidation can only
-  rebind a uniquely matching target on the unchanged surface.
+- Exact runtime v5/public catalog, private orchestrator, SDK/graph, and per-worker
+  CUA catalog digest negotiation.
+- Strict Tro tool parsing plus schema-bound CUA tool discovery and dispatch.
+- Public credential-free HTTPS validation for direct browser navigation.
+- Canonical selected-workspace identity and filesystem path/symlink checks.
+- Shell count, length, NUL, timeout, output, environment, and cancellation
+  bounds. The shell is not a security sandbox.
+- Fresh observation binding and exclusion of Tro's own windows.
+- Operating-system Accessibility/Screen Recording readiness.
+- Provider OAuth consent, scope, endpoint, and schema-snapshot validation.
+- One-time requested-to-executing ownership and result replay handling.
+- Task time, tool-call, model-sample, image, and spend limits.
+- No automatic replay after an unknown tool result.
+- Privacy-safe lifecycle/audit metadata and encrypted sensitive persistence.
 
-Workspace mode uses the authenticated Rust backend. The trusted main-process
-picker canonicalizes one directory and returns only an opaque selection ID to
-the renderer. Native patch operations resolve paths against that canonical
-root, reject lexical and symlink escapes, and bound file and patch sizes. Native
-shell operations start in the root and receive only an allowlisted OS
-environment. Rust owns effect and approval policy; Electron revalidates root
-binding and consumes exact approvals. TroCode, provider, database, analytics,
-and release secrets are not inherited. The shell is not an OS
-sandbox: it starts in the selected directory, but an approved command can use
-absolute paths or the network. Patch operations, unlike shell commands, are
-structurally confined to the selected root.
+## Explicitly accepted risk
 
-## Sensitive data
+If the catalog exposes a send, delete, publish, install, trade, deployment, or
+similar tool, the model may select it and Tro will execute it automatically
+after the retained checks. Workspace terminal commands run with the host user's
+network, credentials, and executable access. Root confinement applies to the
+filesystem adapter, not arbitrary shell syntax.
 
-Screenshots, URLs, document text, file paths, typed input, voice transcripts,
-model reasoning, and raw tool arguments may contain private data. Do not write
-them to analytics logs. Task-history persistence is owned by the Rust API when
-its `DATABASE_URL` is configured. Electron never receives that credential. The
-API stores task requests, conversations, goal scope, and lifecycle outcomes
-under the verified Google user ID, but not raw screenshots, OAuth tokens, or
-model-provider credentials. Hosted connections must use TLS,
-a least-privilege database role, access controls, and an explicit retention
-policy. Rich screenshot or document trajectory storage remains out of scope and
-should be opt-in and encrypted.
+Stop/Escape and backend cancellation reduce exposure but cannot undo an action
+already accepted by an external application. Cancellation during an unknown
+tool execution produces a blocked run rather than a retry.
 
-Connected-application OAuth tokens are a separate secret class. The Rust API
-stores them in connector-specific, versioned AES-GCM envelopes whose
-authenticated metadata binds the user, connection, catalog entry, and schema
-version. Connector tokens, OAuth codes, client secrets, arguments, and results
-must never enter renderer IPC or logs. Private MCP results are treated as
-untrusted external content and require an exact approval before they are added
-to model context. See `docs/connectors.md` for the rollout and unknown-outcome
-policy.
+## Native CUA capability
 
-Knowledge Spaces are the intentional exception for user-uploaded reusable
-Source content and structured Activity/evidence data. Source bytes are stored in
-a private S3-compatible bucket and extracted bounded chunks in PostgreSQL.
-Signed object URLs, object keys, checksums, local canonical paths, and Source
-bytes stay in trusted main/API memory and never cross the renderer bridge.
-Folder imports reject symlinks and expose only reviewed relative paths. A
-participant's local Workspace, screen, unsaved editor state, and ordinary task
-conversation are never uploaded. Submission always requires a separate exact
-file preview and user action. Agent evidence is policy-acknowledged, allowlisted,
-bounded, provenance-labeled, and cannot grade or change state.
+Tro runs the CUA SDK in its trusted unrestricted host mode. The worker advertises
+the driver's canonical tool schemas under a digest, and every invocation must
+match that exact catalog before the generic adapter calls CUA. Tro owns session
+start/end and overwrites model-supplied session identifiers with the current
+task ID. CUA still enforces its native contract, including capabilities that are
+not exposed in any execution mode; Tro does not turn a native refusal into an
+approval prompt or retry it as a different action.
 
-Classroom authorization has two server-owned layers. An administrator assigns
-the account-level Teacher or Student eligibility; the Space membership still
-authorizes operations in one exact class. Students can only hold participant
-memberships and never receive roster, group, upload, authoring, Run-management,
-insight, or help-resolution operations. Teachers receive those operations only
-where they are an owner or facilitator. A Teacher role never grants computer
-control, student-screen access, task conversations, or local files. Teacher-only
-rosters expose the registered account identity needed for class management
-(name, email, user ID, role, and join time) but do not join progress, evidence,
-sessions, conversations, screens, or files.
+## Deployment
+
+New task execution is runtime v5/authority v10 only. Migration 031 first asserts
+that no legacy run is nonterminal, then adds SDK graph/session/worker metadata.
+It never converts historical work into SDK execution. Operators must drain or
+cancel active v2-v4 work under the old release before applying it.
+
+Only Rust receives `OPENAI_API_KEY`, database credentials, connector tokens, and
+user authentication. The SDK worker receives a private Rust URL and a dedicated
+orchestrator bearer token. Private routes reject browser origins, validate strict
+schemas, derive user/plan/task identity from the leased run, and never accept
+price or authority claims from the worker.
 
 Backend-agent canary runs are a separate, explicit privacy path: task text and
 bounded tool results are processed by Railway and short-lived operational state
@@ -161,7 +87,7 @@ PostHog runs only in the trusted Electron main process. Its event surface is an
 explicit allowlist of application lifecycle, task phase, contract/runtime/profile
 labels, first-delta latency, tool ID/operation, and count fields. Voice events
 contain only character count. Partial text, command text, arguments, paths, and
-approval descriptions are excluded.
+interaction descriptions are excluded.
 CUA performance events contain only the fixed route, operation name, bounded
 duration, screenshot-present boolean, fallback enum, and effect status. They do
 not include titles, URLs, code, visible text, typed text, filesystem paths,
@@ -192,7 +118,9 @@ Do not ship a shared model-provider API key inside the renderer, Electron main,
 or application bundle. Production OpenAI and optional ElevenLabs keys are
 injected into the Railway API only. Electron sends its opaque device session to
 fixed, HTTPS provider-proxy endpoints; provider credentials never reach the
-desktop. Responses streaming is SDK-driven behind the host broker. Voice audio
+desktop. Agents SDK model and compaction requests use bounded non-streaming
+Responses calls behind the host broker so each request digest can be committed
+to the no-replay ledger before any bytes return to the worker. Voice audio
 crosses the narrow preload boundary only as a schema-bounded base64 PCM WAV
 segment with UUIDs, sequence, and claimed duration. The hosted API parses mono,
 16 kHz, PCM16 WAV structure and authoritative duration before reserving spend;
@@ -240,26 +168,16 @@ capability.
 
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling
-does not widen authority or bypass exact-action approvals.
-
-Backend ownership does not move local authority to Railway. A protocol-v2
-durable tool call carries a typed effect proposal, intent revision, approval
-requirement, authorization source, and independent consequence bit. Only the
-exact signed-in desktop worker may transition it to executing, after Electron
-repeats schema/workspace binding and the bundled Rust engine performs effect
-normalization, policy, and intent matching. Electron presents and consumes any
-one-use approval before dispatch. A stale worker result is rejected. Loss after
-executing is recorded as unknown and blocks completion rather than replaying
-the effect.
+does not undo an action already accepted by an external system. A stale worker
+result is rejected. Loss after executing is recorded as unknown and blocks
+completion rather than replaying the action.
 
 ## Release requirements
 
 Before distributing the application:
 
 1. Define a strict Content Security Policy without development localhost exceptions.
-2. Generate per-skill CUA capability manifests.
-3. Add approval UI with exact target and consequence descriptions.
-4. Sign and notarize macOS builds.
-5. Sign Windows installers.
-6. Run dependency, secret, and packaged-application security checks.
-7. Test permission upgrades, revocation, and app restarts on clean machines.
+2. Sign and notarize macOS builds.
+3. Sign Windows installers.
+4. Run dependency, secret, and packaged-application security checks.
+5. Test permission upgrades, revocation, and app restarts on clean machines.
