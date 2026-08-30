@@ -2302,6 +2302,8 @@ const createWindow = (): void => {
     computerPermissionCoordinator,
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,
+    getCursorBuddyPosition: getCurrentCursorBuddyPosition,
+    getCursorBuddyWindow: () => cursorBuddyWindow,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
@@ -2447,6 +2449,23 @@ function positionCursorBuddy(): boolean {
     ),
   );
   return cursorMoved;
+}
+
+function getCurrentCursorBuddyPosition(): Point {
+  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) {
+    throw new Error('Cursor buddy position is unavailable.');
+  }
+
+  positionCursorBuddy();
+  if (shouldUseCompanionOverlay(process.platform)) {
+    if (!lastCursorBuddyPosition) {
+      throw new Error('Cursor buddy overlay position is unavailable.');
+    }
+    return lastCursorBuddyPosition;
+  }
+
+  const [x = 0, y = 0] = cursorBuddyWindow.getPosition();
+  return { x, y };
 }
 
 function scheduleCursorBuddyFollow(delayMs: number): void {

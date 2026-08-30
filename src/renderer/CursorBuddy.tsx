@@ -50,7 +50,21 @@ export function CursorBuddy({
 
   useEffect(() => {
     if (!overlayTracking) return undefined;
-    return window.troCompanion.onCursorBuddyPositionChange(setPosition);
+    let active = true;
+    const unsubscribe =
+      window.troCompanion.onCursorBuddyPositionChange(setPosition);
+    void window.troCompanion
+      .getCursorBuddyPosition()
+      .then((currentPosition) => {
+        if (active) setPosition(currentPosition);
+      })
+      .catch((error: unknown) => {
+        console.error('[cursor-buddy] Could not load initial position.', error);
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [overlayTracking]);
 
   return (

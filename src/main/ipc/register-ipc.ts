@@ -8,6 +8,7 @@ import {
   BeginDictationRequestSchema,
   BeginDictationResultSchema,
   CancelDictationRequestSchema,
+  CompanionPositionSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionStateSchema,
@@ -29,6 +30,7 @@ import {
   UpdateAppPreferencesRequestSchema,
   VoiceDiagnosticSchema,
   type AuthUser,
+  type CompanionPosition,
   type CompanionState,
   type CompanionResponseActionRequest,
   type CompanionVoiceActivity,
@@ -124,6 +126,8 @@ interface IpcServices {
     'continueWithout' | 'openSettings' | 'refresh'
   >;
   getCompanionInteractionWindow(): BrowserWindow | null;
+  getCursorBuddyPosition(): CompanionPosition;
+  getCursorBuddyWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
   ): Promise<void> | void;
@@ -232,6 +236,15 @@ function assertTrustedCompanionSender(
   }
 }
 
+function assertTrustedCursorBuddySender(
+  event: IpcMainInvokeEvent,
+  services: Pick<IpcServices, 'getCursorBuddyWindow'>,
+): void {
+  if (!isTrustedWindowSender(event, services.getCursorBuddyWindow())) {
+    throw new Error('Rejected IPC call from an untrusted renderer.');
+  }
+}
+
 async function assertMembershipAuthorizedInteractionSender(
   event: IpcMainInvokeEvent,
   mainWindow: BrowserWindow,
@@ -283,6 +296,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getAppPreferences,
     IPC_CHANNELS.getAppUpdateStatus,
     IPC_CHANNELS.getComputerStatus,
+    IPC_CHANNELS.getCursorBuddyPosition,
     IPC_CHANNELS.getConnectorAttempt,
     IPC_CHANNELS.listConnectors,
     IPC_CHANNELS.getAuthStatus,
@@ -1008,6 +1022,12 @@ export function registerIpcHandlers(
     assertTrustedCompanionSender(event, services);
     await services.authService.assertSignedIn();
     services.revealMainWindow();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getCursorBuddyPosition, async (event) => {
+    assertTrustedCursorBuddySender(event, services);
+    await services.authService.assertSignedIn();
+    return CompanionPositionSchema.parse(services.getCursorBuddyPosition());
   });
 
   ipcMain.handle(

@@ -57,7 +57,10 @@ describe('CursorBuddy', () => {
     });
     Object.defineProperty(window, 'troCompanion', {
       configurable: true,
-      value: { onCursorBuddyPositionChange } as unknown as CompanionApi,
+      value: {
+        getCursorBuddyPosition: vi.fn(async () => ({ x: 0, y: 0 })),
+        onCursorBuddyPositionChange,
+      } as unknown as CompanionApi,
     });
     let root: Root | null = null;
 
@@ -74,5 +77,36 @@ describe('CursorBuddy', () => {
 
     await act(async () => root?.unmount());
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('requests the current overlay position after subscribing', async () => {
+    const container = document.createElement('div');
+    const callOrder: string[] = [];
+    const getCursorBuddyPosition = vi.fn(async () => {
+      callOrder.push('request');
+      return { x: 31, y: 47 };
+    });
+    const onCursorBuddyPositionChange = vi.fn(() => {
+      callOrder.push('subscribe');
+      return vi.fn();
+    });
+    Object.defineProperty(window, 'troCompanion', {
+      configurable: true,
+      value: {
+        getCursorBuddyPosition,
+        onCursorBuddyPositionChange,
+      } as unknown as CompanionApi,
+    });
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(createElement(CursorBuddy, { overlayTracking: true }));
+    });
+
+    expect(callOrder).toEqual(['subscribe', 'request']);
+    expect(container.innerHTML).toContain('translate3d(31px, 47px, 0)');
+
+    await act(async () => root?.unmount());
   });
 });

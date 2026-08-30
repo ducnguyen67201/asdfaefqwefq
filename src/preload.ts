@@ -948,6 +948,13 @@ const desktopApi: DesktopApi = {
 };
 
 const companionApi: CompanionApi = {
+  async getCursorBuddyPosition() {
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.getCursorBuddyPosition,
+    );
+    return CompanionPositionSchema.parse(response);
+  },
+
   async reportSpeechPlayback(input) {
     const report = CompanionSpeechPlaybackReportSchema.parse(input);
     await ipcRenderer.invoke(
