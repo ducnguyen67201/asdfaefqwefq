@@ -43,6 +43,7 @@ export interface ToolExecutionResult {
 export interface ResolvedToolInvocation<TInput = unknown> {
   action?: ProposedAction;
   callId: string;
+  driverCatalogDigest?: string | null;
   input: TInput;
   kind:
     | 'observe'

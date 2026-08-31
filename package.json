@@ -6,17 +6,14 @@
   "main": ".webpack/main",
   "private": true,
   "scripts": {
-    "agent:protocol:generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-runtime-contract.mts --write",
-    "agent:protocol:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-runtime-contract.mts --check",
-    "agent:orchestrator:generate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-orchestrator-contract.mts --write",
-    "agent:orchestrator:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-agent-orchestrator-contract.mts --check",
     "agent-sdk:install": "npm --prefix services/agent-runtime ci",
+    "agent-sdk:build": "npm --prefix services/agent-runtime run build",
     "agent-sdk:typecheck": "npm --prefix services/agent-runtime run typecheck",
     "agent-sdk:test": "npm --prefix services/agent-runtime test",
     "agent-sdk:check": "npm --prefix services/agent-runtime run check",
     "admin:build": "vite build --config apps/admin/vite.config.ts",
     "admin:dev": "vite --config apps/admin/vite.config.ts",
-    "start": "npm run dev:stop-existing && npm run db:up && doppler run --project tro-app --config dev -- npm exec -- electron-forge start",
+    "start": "npm run agent-sdk:build && npm run dev:stop-existing && npm run db:up && doppler run --project tro-app --config dev -- npm exec -- electron-forge start",
     "dev:stop-existing": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stop-existing-dev.mts",
     "db:down": "doppler run --project tro-app --config dev -- docker compose down",
     "db:logs": "doppler run --project tro-app --config dev -- docker compose logs --tail=100 postgres",
@@ -26,10 +23,10 @@
     "cost:report": "npm run engine -- cost-report",
     "agent:runtime-versions": "npm run engine -- agent-runtime-versions",
     "agent:benchmark": "npm run engine -- agent-benchmark",
-    "bazel:build": "bazel build //services/api:trocode_api",
+    "bazel:build": "bazel build //services/api:trocode_api //services/agent-runtime:local_agent_runtime_sources",
     "bazel:start": "bazel run //services/api:trocode_api",
     "bazel:test": "bazel test //services/api/...",
-    "bazel:check": "bazel test --config=ci //:buildifier_test //services/api/... && bazel build --config=ci //services/api:clippy",
+    "bazel:check": "bazel test --config=ci //:buildifier_test //services/api/... && bazel build --config=ci //services/api:clippy //services/agent-runtime:local_agent_runtime_sources",
     "cua:report": "npm run engine -- cua-report",
     "package": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge package",
     "package:dev": "npm run admin:build && doppler run --project tro-app --config dev -- npm exec -- electron-forge package",
@@ -51,7 +48,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:rust-engine": "npm run engine -- rust-only-check",
-    "check": "npm run agent:protocol:check && npm run agent:orchestrator:check && npm run agent-sdk:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
+    "check": "npm run agent-sdk:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test"
   },
   "engines": {
     "node": ">=24.12.0"

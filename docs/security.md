@@ -9,19 +9,19 @@ tool catalog and the host account's capabilities as the action boundary.
 - The Electron renderer is sandboxed and has no Node integration.
 - Preload exposes narrow, schema-parsed functions; it does not expose raw IPC,
   CUA, OAuth tokens, provider credentials, or a generic command channel.
-- The OpenAI Agents SDK worker owns planning, continuation, tool choice, and
-  final-output detection. It has no database or provider credential.
-- Rust owns authentication, task lifecycle, authority scope, budgets, encrypted
-  Session/checkpoint storage, durable invocations, leases, and provider proxying.
-- Electron owns local native handles and revalidates inputs immediately before
-  local execution.
+- The bundled OpenAI Agents SDK utility process owns planning, continuation,
+  tool choice, and final-output detection. It has no database or provider key.
+- Electron main owns local task lifecycle, OS-encrypted SDK state, the durable
+  invocation journal, local native handles, and immediate pre-execution checks.
+- Rust owns authentication, budgets, accounting, connector secrets, and provider
+  proxying. It does not own local SDK state or tool leases.
 - Models and connector/browser content are untrusted. They cannot register a
   tool, change a contract, widen workspace identity, or bypass schemas.
 
 ## Retained controls
 
-- Exact runtime v5/public catalog, private orchestrator, SDK/graph, and per-worker
-  CUA catalog digest negotiation.
+- Exact local protocol, SDK, graph, frozen tool catalog, and CUA-driver catalog
+  digest negotiation.
 - Strict Tro tool parsing plus schema-bound CUA tool discovery and dispatch.
 - Public credential-free HTTPS validation for direct browser navigation.
 - Canonical selected-workspace identity and filesystem path/symlink checks.
@@ -43,13 +43,13 @@ after the retained checks. Workspace terminal commands run with the host user's
 network, credentials, and executable access. Root confinement applies to the
 filesystem adapter, not arbitrary shell syntax.
 
-Stop/Escape and backend cancellation reduce exposure but cannot undo an action
+Stop/Escape and local cancellation reduce exposure but cannot undo an action
 already accepted by an external application. Cancellation during an unknown
 tool execution produces a blocked run rather than a retry.
 
 ## Native CUA capability
 
-Tro runs the CUA SDK in its trusted unrestricted host mode. The worker advertises
+Tro runs the CUA SDK in its trusted unrestricted host mode. Electron freezes
 the driver's canonical tool schemas under a digest, and every invocation must
 match that exact catalog before the generic adapter calls CUA. Tro owns session
 start/end and overwrites model-supplied session identifiers with the current
@@ -59,23 +59,17 @@ approval prompt or retry it as a different action.
 
 ## Deployment
 
-New task execution is runtime v5/authority v10 only. Migration 031 first asserts
-that no legacy run is nonterminal, then adds SDK graph/session/worker metadata.
-It never converts historical work into SDK execution. Operators must drain or
-cancel active v2-v4 work under the old release before applying it.
+New task execution is local authority v10 only. Historical migrations remain
+immutable: migration 031 asserted the hosted cutover precondition and added the
+old graph/session/worker metadata. It never converts historical work into local
+SDK execution. Terminal legacy records are read-only.
 
-Only Rust receives `OPENAI_API_KEY`, database credentials, connector tokens, and
-user authentication. The SDK worker receives a private Rust URL and a dedicated
-orchestrator bearer token. Private routes reject browser origins, validate strict
-schemas, derive user/plan/task identity from the leased run, and never accept
-price or authority claims from the worker.
-
-Backend-agent canary runs are a separate, explicit privacy path: task text and
-bounded tool results are processed by Railway and short-lived operational state
-is stored under AES-256-GCM with authenticated run metadata and a dedicated
-versioned key. Sanitized events contain no task content. Screenshot and crop
-bytes live only in a bounded in-memory sidecar and are removed before any
-session item or tool result is written to PostgreSQL.
+Only Rust receives `OPENAI_API_KEY`, database credentials, and connector tokens.
+Electron main owns the opaque user session and forwards a short-lived copy to
+the utility process only after the version/capability handshake. The child keeps
+it in memory, rotates it on demand, clears it on sign-out, and calls only the
+authenticated public Responses boundary. Tokens, prompts, tool arguments,
+screenshots, and serialized RunState are excluded from logs and analytics.
 
 Local PostgreSQL binds only to `127.0.0.1:54320`, receives its generated
 password from Doppler at container startup, and persists data in a named Docker
@@ -123,8 +117,8 @@ or application bundle. Production OpenAI and optional ElevenLabs keys are
 injected into the Railway API only. Electron sends its opaque device session to
 fixed, HTTPS provider-proxy endpoints; provider credentials never reach the
 desktop. Agents SDK model and compaction requests use bounded non-streaming
-Responses calls behind the host broker so each request digest can be committed
-to the no-replay ledger before any bytes return to the worker. Voice audio
+Responses calls behind the authenticated Rust provider boundary. Local tool
+effects use Electron's checkpoint and no-replay journal. Voice audio
 crosses the narrow preload boundary only as a schema-bounded base64 PCM WAV
 segment with UUIDs, sequence, and claimed duration. The hosted API parses mono,
 16 kHz, PCM16 WAV structure and authoritative duration before reserving spend;
@@ -143,7 +137,7 @@ origins, validate content types and body sizes, apply rate limits, return
 generic errors, and emit logs without identity tokens, provider keys, task text,
 or model output.
 
-Every hosted paid request is bound to an authenticated user, request UUID, task
+Every paid provider request is bound to an authenticated user, request UUID, task
 UUID, server-owned price-catalog version, and transactional reservation before
 provider dispatch. The client cannot provide prices, usage, limits, or
 settlement state. Explicit pre-inference rejection may release a reservation;
@@ -172,7 +166,7 @@ capability.
 
 Every nonterminal task exposes a renderer **Stop task** control, and the trusted
 main process registers **Escape** system-wide while work is active. Cancelling
-does not undo an action already accepted by an external system. A stale worker
+does not undo an action already accepted by an external system. A stale utility-process
 result is rejected. Loss after executing is recorded as unknown and blocks
 completion rather than replaying the action.
 

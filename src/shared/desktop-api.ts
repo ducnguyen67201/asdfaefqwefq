@@ -9,7 +9,7 @@ import type {
   BeginDictationRequest,
   BeginDictationResult,
   CancelDictationRequest,
-  CancelAgentTaskRequestV4,
+  CancellationSource,
   CompanionAppearance,
   CompanionCustomizationStatus,
   CompanionGuidance,
@@ -244,7 +244,7 @@ export interface DesktopApi {
   continueWithFree(): Promise<MembershipStatus>;
   cancelTask(
     taskId: string,
-    source?: CancelAgentTaskRequestV4['source'],
+    source?: CancellationSource,
   ): Promise<TaskSnapshot>;
   checkForAppUpdates(): Promise<AppUpdateStatus>;
   configureVoice(request: ConfigureVoiceRequest): Promise<VoiceStatus>;

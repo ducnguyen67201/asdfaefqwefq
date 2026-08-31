@@ -285,9 +285,6 @@ The API requires these production variables:
 - `OPENAI_API_KEY`
 - `TROCODE_SESSION_TOKEN_HMAC_KEY`
 - `TROCODE_AGENT_MODEL`
-- `TROCODE_AGENT_SDK_MODEL` (the pinned Agents SDK model)
-- `TROCODE_AGENT_SDK_VERSION`
-- `TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN` (shared only with the private SDK worker)
 - `TROCODE_COST_GUARD_MODE` (`enforce` by default; `observe` is available for
   reconciliation)
 - optional server-owned budget overrides documented in `.env.example`
@@ -303,10 +300,10 @@ restrict Responses models to the configured allowlist, and keep `store: false`.
 Burst limits use shared PostgreSQL buckets, so adding API replicas does not
 multiply an allowance. The API stores sanitized usage counts and integer cost,
 but never task prompts, model responses, screenshots, or desktop actions.
-The Agents SDK selects only the tools Rust advertises for the leased run. Rust
-binds catalogs, identities, spend, and durable dispatch; Electron revalidates
-local schemas, workspace scope, technical prerequisites, and exactly-once native
-execution.
+The bundled local Agents SDK process selects only the tools Electron freezes for
+the turn. Electron binds the graph/catalog, encrypts SDK state, and journals
+exactly-once native execution; Rust binds authenticated provider requests to
+server-owned budgets and accounting.
 
 #### Custom companion availability
 
@@ -626,10 +623,10 @@ React renderer
   -> typed preload API
     -> trusted Electron IPC
       -> Google OAuth service / encrypted local session
-      -> bundled trocode-api desktop engine (model + voice transport)
-      -> Rust task/provider/tool control plane through the Tro backend
-        <-> private OpenAI Agents SDK worker (sole reasoning loop)
-        -> trusted local CUA/Workspace adapters when selected by the SDK
+      -> bundled OpenAI Agents SDK utility process (sole reasoning loop)
+        <-> encrypted local SDK state + trusted CUA/Workspace tool bridge
+        -> authenticated Rust model/budget/provider proxy
+      -> bundled trocode-api desktop engine (OAuth + voice transport)
       -> PostHog analytics service (allowlisted metadata only)
       -> local PCM/VAD voice capture
         -> bundled Rust engine -> bounded GPT Transcribe API
@@ -651,7 +648,8 @@ Read:
 ```text
 src/
 ├── main/
-│   ├── agent/       hosted-task projection and native tool adapters
+│   ├── agent/       local task lifecycle and native tool adapters
+│   ├── agent-runtime/ encrypted state and utility-process supervision
 │   ├── engine/      private Rust desktop-engine process bridge
 │   ├── analytics/   privacy-safe PostHog events and durable identity
 │   ├── workspace/   canonical folder selection and opaque root binding
@@ -665,7 +663,8 @@ src/
 bazel/
 └── rust/             shared first-party Rust lint and check macros
 services/
-└── api/              Rust API, worker, migrations, commands, and contract tests
+├── agent-runtime/    bundled OpenAI Agents SDK utility process
+└── api/              Rust auth/provider API, migrations, commands, and tests
 Cargo.toml            Rust workspace dependency source
 MODULE.bazel          Bazel module and Rust toolchain graph
 ```

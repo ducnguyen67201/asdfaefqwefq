@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-import {
-  hostedToolContractById,
-  objectSchema,
-} from '../../shared/agent-tool-contracts';
+import { objectSchema } from '../../shared/agent-tool-contracts';
 import {
   ProposedActionSchema,
   type ProposedAction,
@@ -452,17 +449,5 @@ export function createCuaSemanticToolDefinitions(
       },
     },
   ];
-  return definitions.map((definition) => {
-    const contract = hostedToolContractById(definition.id);
-    if (!contract) {
-      throw new Error(`Runtime tool ${definition.id} is missing from the hosted catalog.`);
-    }
-    return {
-      ...definition,
-      description: contract.description,
-      modelName: contract.modelName,
-      operations: contract.operations,
-      parameters: contract.parameters,
-    };
-  });
+  return definitions;
 }

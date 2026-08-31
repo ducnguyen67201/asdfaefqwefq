@@ -121,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
                 },
         } => cli::create_access_code(code, label, max_users, &plan, &distribution_mode).await,
         Command::AgentRuntimeVersions { repository_root } => {
-            cli::agent_runtime_versions_report(&repository_root).await
+            cli::agent_runtime_versions_report(&repository_root)
         }
         Command::RustOnlyCheck { repository_root } => {
             cli::check_rust_only_script_layout(&repository_root)

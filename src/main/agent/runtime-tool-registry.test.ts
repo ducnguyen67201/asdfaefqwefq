@@ -605,7 +605,7 @@ describe('RuntimeToolRegistry', () => {
     });
   });
 
-  it('requires optional providers to update the canonical tool catalog first', () => {
+  it('accepts host-installed tools without a remote catalog contract change', () => {
     const musicTool: RuntimeToolDefinition<{ prompt: string }> = {
       id: 'music.generate',
       modelName: 'generate_music',
@@ -633,9 +633,13 @@ describe('RuntimeToolRegistry', () => {
         toolId: 'music.generate',
       }),
     };
-    expect(() => new RuntimeToolRegistry([musicTool])).toThrow(
-      'missing from the hosted catalog',
-    );
+    const registry = new RuntimeToolRegistry([musicTool]);
+    const frozen = registry.freeze({ taskId: randomUUID() });
+
+    expect(frozen.tools).toEqual([
+      expect.objectContaining({ toolId: 'music.generate', modelName: 'generate_music' }),
+    ]);
+    expect(frozen.digest).toMatch(/^[a-f0-9]{64}$/u);
   });
 
   it('hides unavailable tools and rejects duplicate model names', () => {
@@ -661,9 +665,7 @@ describe('RuntimeToolRegistry', () => {
         toolId: 'music.generate',
       }),
     };
-    expect(() => new RuntimeToolRegistry([unavailable])).toThrow(
-      'missing from the hosted catalog',
-    );
+    expect(new RuntimeToolRegistry([unavailable]).freeze({ taskId: randomUUID() }).tools).toEqual([]);
     const duplicate = defaultRuntimeToolDefinitions()[0];
     expect(duplicate).toBeDefined();
     expect(

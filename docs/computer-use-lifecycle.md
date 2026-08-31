@@ -1,20 +1,20 @@
 # Computer-use lifecycle
 
-1. Rust supplies the model with Tro's base tools and the exact CUA catalog
-   advertised by the desktop worker.
-2. Rust validates model arguments against the selected tool schema and records
-   the exact tool and operation.
-3. Electron checks the protocol/base-catalog digest and, for CUA, the live
-   driver-catalog digest, then checks expiry and run/task/workspace mapping.
+1. Electron discovers the installed CUA driver's canonical tool inventory and
+   freezes it with Tro's local tools for the turn.
+2. The local Agents SDK harness registers those schemas as normal SDK tools and
+   checkpoints RunState before a callback may cross into Electron.
+3. Electron checks the local protocol/tool digest and, for CUA, the live
+   driver-catalog digest, then checks task/workspace mapping.
 4. If Accessibility or Screen Recording is unavailable, the run enters the
    durable `awaiting_permission` technical state. The user may open system
    settings, refresh, continue without computer use, or stop.
-5. Electron asks Rust to atomically move the invocation from `requested` to
-   `executing` using the expected run version.
-6. The selected adapter is called once. Results and bounded evidence are sent
-   back to Rust.
-7. Rust verifies required outcomes and either replans, completes, recovers from
-   a definite failure, or blocks an unknown result.
+5. Electron atomically moves the encrypted local journal record from
+   `checkpointed` to `executing`.
+6. The selected local adapter is called once and its bounded result is persisted
+   before it returns to the same SDK callback.
+7. The SDK continues, completes, or stops on a definite failure. An uncertain
+   external outcome becomes terminal `unknown` and is never replayed.
 
 Tro does not display an action approval card. OS permissions and account OAuth
 are technical/provider prerequisites, not per-action product policy.

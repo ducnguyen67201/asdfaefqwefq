@@ -7,7 +7,6 @@ import { pathToFileURL } from 'node:url';
 import type * as CuaDriverSdk from '@trycua/cua-driver';
 import { z } from 'zod';
 
-import type { CuaDriverCatalogV5 } from '../../shared/agent-runtime-protocol';
 import type { CuaStatus } from '../../shared/contracts';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
 import {
@@ -26,6 +25,7 @@ import type { ImageEvidencePolicy } from '../inference/image-evidence-policy';
 
 import { CuaCapabilityBroker } from './cua-capability-broker';
 import {
+  type CuaDriverCatalog,
   CuaDriverMetadataSchema,
   CuaWindowListSchema,
   CuaSemanticCapabilitiesSchema,
@@ -285,7 +285,7 @@ export class CuaService {
   private driverInitialization: Promise<void> | null = null;
   private driverVersion: string | undefined;
 
-  private driverCatalog: CuaDriverCatalogV5 | null = null;
+  private driverCatalog: CuaDriverCatalog | null = null;
 
   private semanticCapabilityState: CuaSemanticCapabilities =
     NO_SEMANTIC_CAPABILITIES;
@@ -338,11 +338,11 @@ export class CuaService {
     return this.semanticCapabilityState;
   }
 
-  cuaToolCatalog(): CuaDriverCatalogV5 | null {
+  cuaToolCatalog(): CuaDriverCatalog | null {
     return this.driverCatalog;
   }
 
-  async discoverToolCatalog(): Promise<CuaDriverCatalogV5> {
+  async discoverToolCatalog(): Promise<CuaDriverCatalog> {
     if (this.driverCatalog) return this.driverCatalog;
     const cua = await this.loadModule();
     const driver = cua.CuaDriver.create(undefined) as Driver;

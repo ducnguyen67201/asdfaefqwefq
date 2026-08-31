@@ -32,6 +32,7 @@ interface ExecutionCoordinatorOptions {
   cua: Pick<
     CuaService,
     | 'endTaskSession'
+    | 'executeCuaTool'
     | 'executeCommand'
     | 'executeSurfaceCommand'
     | 'inspectSurfaceRegion'
@@ -56,7 +57,7 @@ interface ExecutionCoordinatorOptions {
 }
 
 /**
- * Electron-only execution adapter for tool calls authorized by the Rust engine.
+ * Electron-only trusted execution adapter for local SDK tool calls.
  * It owns native handles and dispatches exactly once; it does not plan, route
  * models, compile intent, or make policy decisions.
  */
@@ -237,7 +238,7 @@ export class TaskExecutionCoordinator {
       ]);
   }
 
-  async dispatchHostedTool(
+  async dispatchTool(
     invocation: ResolvedToolInvocation,
     context: { signal: AbortSignal; taskId: string },
   ): Promise<ToolExecutionResult> {
@@ -246,7 +247,8 @@ export class TaskExecutionCoordinator {
       invocation.toolId === 'desktop.control' ||
       invocation.toolId === 'computer.observe' ||
       invocation.toolId === 'computer.control' ||
-      invocation.toolId === 'browser.prepare'
+      invocation.toolId === 'browser.prepare' ||
+      invocation.toolId.startsWith('cua.')
     ) {
       await this.cua.startTaskSession(context.taskId, context.signal);
       this.activeTaskIds.add(context.taskId);
@@ -258,6 +260,18 @@ export class TaskExecutionCoordinator {
       await this.onDesktopControlChange(context.taskId, true);
     }
     try {
+      if (invocation.toolId.startsWith('cua.')) {
+        if (!invocation.driverCatalogDigest) {
+          throw new Error('Dynamic CUA execution requires a frozen driver catalog digest.');
+        }
+        return await this.cua.executeCuaTool(
+          context.taskId,
+          invocation.operation,
+          invocation.input as Record<string, unknown>,
+          invocation.driverCatalogDigest,
+          context.signal,
+        );
+      }
       return await this.toolDispatcher.dispatch(invocation, context);
     } finally {
       if (controlsDesktop) {
@@ -266,7 +280,7 @@ export class TaskExecutionCoordinator {
     }
   }
 
-  async endHostedTask(taskId: string): Promise<void> {
+  async endTask(taskId: string): Promise<void> {
     this.activeTaskIds.delete(taskId);
     await this.cua.endTaskSession(taskId);
   }

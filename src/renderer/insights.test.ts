@@ -13,7 +13,6 @@ function createSnapshot(
     goal: null,
     lastEvent: null,
     messages: [],
-    outcomes: overrides.outcomes ?? null,
     pendingInteraction: null,
     progress: null,
     queuedSteering: [],
@@ -50,7 +49,6 @@ describe('createInsightsSummary', () => {
     expect(summary.eventCount).toBe(0);
     expect(summary.completionRate).toBe(0);
     expect(summary.toolUsage).toEqual([]);
-    expect(summary.legacyBehaviorUsage).toEqual([]);
     expect(summary.activityDays).toHaveLength(42);
   });
 
@@ -58,45 +56,11 @@ describe('createInsightsSummary', () => {
     const completedTask = createSnapshot({
       taskId: '11111111-1111-4111-8111-111111111111',
       phase: 'completed',
-      progress: { currentStep: 3, maxSteps: 12 },
-      goal: {
-        schemaVersion: 2,
-        behavior: 'act',
-        approvalPolicy: { alwaysConfirm: ['send'] },
-        approvals: { alwaysConfirm: ['send'] },
-        capabilities: ['browser', 'conversation'],
-        domain: 'research',
-        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        interactionMode: 'mixed',
-        limits: { maxMinutes: 15, maxSteps: 12 },
-        objective: 'Research the subject',
-        originalRequest: 'Research the subject for me',
-        scope: { allowedApps: [], allowedDomains: [], allowedPaths: [] },
-        successCriteria: [
-          { description: 'Return findings', verifier: 'Findings are present' },
-        ],
-      },
+      progress: { kind: 'tool_calls', completed: 3, limit: 12 },
     });
     const failedTask = createSnapshot({
       taskId: '22222222-2222-4222-8222-222222222222',
       phase: 'failed',
-      goal: {
-        schemaVersion: 2,
-        behavior: 'act',
-        approvalPolicy: { alwaysConfirm: [] },
-        approvals: { alwaysConfirm: [] },
-        capabilities: ['browser'],
-        domain: 'general',
-        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        interactionMode: 'act',
-        limits: { maxMinutes: 10, maxSteps: 6 },
-        objective: 'Open a page',
-        originalRequest: 'Open a page for me',
-        scope: { allowedApps: [], allowedDomains: [], allowedPaths: [] },
-        successCriteria: [
-          { description: 'Page is open', verifier: 'Observe the page' },
-        ],
-      },
     });
     const event = createEvent({
       eventId: '33333333-3333-4333-8333-333333333333',
@@ -115,9 +79,6 @@ describe('createInsightsSummary', () => {
     expect(summary.completionRate).toBe(50);
     expect(summary.eventCount).toBe(1);
     expect(summary.stepsObserved).toBe(3);
-    expect(summary.legacyBehaviorUsage).toEqual([
-      { behavior: 'act', count: 2, percentage: 100 },
-    ]);
     expect(summary.toolUsage).toEqual([]);
     expect(summary.currentStreak).toBe(1);
   });
@@ -127,13 +88,6 @@ describe('createInsightsSummary', () => {
       taskId: '11111111-1111-4111-8111-111111111111',
       phase: 'completed',
       progress: { kind: 'tool_calls', completed: 2, limit: 30 },
-      goal: {
-        schemaVersion: 3,
-        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        originalRequest: 'Open Gmail.',
-        approvalPolicy: { alwaysConfirm: ['send'] },
-        limits: { maxMinutes: 10, maxToolCalls: 30 },
-      },
     });
     const event = createEvent({
       eventId: '33333333-3333-4333-8333-333333333333',
@@ -147,7 +101,6 @@ describe('createInsightsSummary', () => {
     expect(summary.toolUsage).toEqual([
       { toolId: 'desktop.observe', count: 1, percentage: 100 },
     ]);
-    expect(summary.legacyBehaviorUsage).toEqual([]);
   });
 });
 

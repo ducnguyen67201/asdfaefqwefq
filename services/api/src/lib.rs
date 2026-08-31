@@ -11,7 +11,6 @@ pub mod postgres {
     pub use sqlx_postgres::{PgPoolOptions, PgRow};
 }
 
-pub mod agent;
 pub mod app;
 pub mod auth;
 pub mod classroom;

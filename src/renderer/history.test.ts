@@ -18,7 +18,6 @@ function createSnapshot(
     goal: null,
     lastEvent: null,
     messages: [],
-    outcomes: null,
     pendingInteraction: null,
     phase,
     progress: null,
@@ -56,7 +55,7 @@ function completedSnapshot(goal: unknown) {
     goal,
     messages: [],
     pendingInteraction: null,
-    progress: { currentStep: 1, maxSteps: 12 },
+    progress: { kind: 'tool_calls', completed: 1, limit: 12 },
     queuedSteering: [],
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -120,61 +119,27 @@ describe('createHistoryEntries', () => {
 });
 
 describe('task history view model', () => {
-  it('shows v3 assistant-only tasks without a synthetic behavior', () => {
+  it('shows local SDK tasks without synthetic legacy authority', () => {
     const snapshot = completedSnapshot({
-      schemaVersion: 3,
+      schemaVersion: 10,
       id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      originalRequest: 'What is 27 × 14?',
-      approvalPolicy: { alwaysConfirm: ['send'] },
-      limits: { maxMinutes: 10, maxToolCalls: 30 },
+      originalRequest: 'Complete the task',
+      runtimeKind: 'openai_agents_sdk',
+      executionProfile: 'everyday',
+      workspace: null,
+      activity: null,
+      limits: {
+        maxImages: 20,
+        maxMicroUsd: 500_000,
+        maxMinutes: 10,
+        maxModelSamples: 40,
+        maxToolCalls: 30,
+      },
     });
 
     expect(createHistoryEntries([snapshot], [])[0]).toMatchObject({
-      behavior: null,
       objective: 'Complete the task',
       toolsUsed: [],
-    });
-  });
-
-  it('shows v2 behavior without exposing a capability grant', () => {
-    const snapshot = completedSnapshot({
-      schemaVersion: 2,
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      originalRequest: 'Create a beat in GarageBand',
-      behavior: 'act',
-      objective: 'Create a beat in GarageBand',
-      successCriteria: [
-        { description: 'A beat is playable', verifier: 'Observe playback' },
-      ],
-      approvalPolicy: { alwaysConfirm: ['write_file'] },
-      limits: { maxMinutes: 10, maxSteps: 30 },
-    });
-
-    expect(createHistoryEntries([snapshot], [])).toMatchObject([
-      { behavior: 'act', objective: 'Create a beat in GarageBand' },
-    ]);
-  });
-
-  it('normalizes persisted v1 history into the same behavior view', () => {
-    const snapshot = completedSnapshot({
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      originalRequest: 'Research the subject for me',
-      domain: 'research',
-      interactionMode: 'mixed',
-      objective: 'Research the subject',
-      successCriteria: [
-        { description: 'Return findings', verifier: 'Findings are present' },
-      ],
-      capabilities: ['browser', 'conversation'],
-      scope: { allowedApps: [], allowedDomains: [], allowedPaths: [] },
-      approvals: { alwaysConfirm: ['send'] },
-      limits: { maxMinutes: 15, maxSteps: 12 },
-    });
-
-    expect(snapshot.goal).toMatchObject({ schemaVersion: 2, behavior: 'act' });
-    expect(createHistoryEntries([snapshot], [])[0]).toMatchObject({
-      behavior: 'act',
-      objective: 'Research the subject',
     });
   });
 });

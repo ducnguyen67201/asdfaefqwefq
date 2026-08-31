@@ -45,6 +45,9 @@ export const mainConfig: Configuration = {
     }),
   ],
   resolve: {
+    extensionAlias: {
+      '.js': ['.js', '.ts'],
+    },
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },
 };

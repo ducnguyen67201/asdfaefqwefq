@@ -1,6 +1,4 @@
 mod admin;
-mod agent_orchestrator;
-mod agent_runtime;
 mod classroom;
 mod connectors;
 mod core;
@@ -22,9 +20,7 @@ use crate::{app::AppState, error::ApiResult};
 pub fn router(state: AppState) -> Router {
     Router::new()
         .fallback(dispatch)
-        .layer(DefaultBodyLimit::max(
-            agent_runtime::MAX_DESKTOP_RESULT_BODY_BYTES,
-        ))
+        .layer(DefaultBodyLimit::max(48_000_000))
         .layer(CatchPanicLayer::new())
         .layer(axum::middleware::from_fn(middleware::security_and_logs))
         .with_state(state)
@@ -52,11 +48,6 @@ async fn dispatch(
         ));
     }
     if let Some(response) =
-        agent_orchestrator::handle(&state, &method, &uri, &headers, &body).await?
-    {
-        return Ok(response);
-    }
-    if let Some(response) =
         connectors::handle_authenticated(&state, &method, &uri, &headers, &body).await?
     {
         return Ok(response);
@@ -65,9 +56,6 @@ async fn dispatch(
         return Ok(response);
     }
     if let Some(response) = knowledge::handle(&state, &method, &uri, &headers, &body).await? {
-        return Ok(response);
-    }
-    if let Some(response) = agent_runtime::handle(&state, &method, &uri, &headers, &body).await? {
         return Ok(response);
     }
     core::handle(&state, request_id, &method, &uri, &headers, &body, path).await

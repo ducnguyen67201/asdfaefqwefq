@@ -1,0 +1,328 @@
+import {
+  RunContext,
+  RunState,
+  type AgentInputItem,
+  type ModelInputData,
+} from '@openai/agents';
+
+import { AgentGraphFactory } from './agent-graph.js';
+import { DEFAULT_AGENT_MODEL, graphVersion } from './config.js';
+import {
+  turnMessageIdentity,
+  type LocalAgentRunContext,
+  type TurnIdentity,
+} from './host-backed-session.js';
+import { childRequestId, type HostBridge } from './host-bridge.js';
+import {
+  LOCAL_AGENT_CAPABILITIES,
+  LOCAL_AGENT_PROTOCOL_DIGEST,
+  LOCAL_AGENT_PROTOCOL_VERSION,
+  LOCAL_AGENT_ROOT_ID,
+  LOCAL_AGENT_SDK_VERSION,
+  type LocalAgentHostMessage,
+  type LocalTurnEventKind,
+} from './protocol.js';
+import { ToolOutcomeUnknownError } from './tool-adapter.js';
+import {
+  EphemeralCredentialStore,
+  UserOpenAIClientFactory,
+} from './user-openai-client.js';
+
+interface ActiveTurn {
+  readonly controller: AbortController;
+  readonly steering: string[];
+}
+
+export class LocalRuntimeServer {
+  private apiBaseUrl = '';
+  private readonly credential = new EphemeralCredentialStore();
+  private graphFactory: AgentGraphFactory | null = null;
+  private initialized = false;
+  private readonly turns = new Map<string, ActiveTurn>();
+
+  constructor(private readonly bridge: HostBridge) {
+    bridge.on('message', (message: LocalAgentHostMessage) => void this.handle(message));
+    bridge.on('protocol-error', () => this.fatal('invalid_protocol_message', 'The host sent an invalid runtime message.'));
+  }
+
+  private async handle(message: LocalAgentHostMessage): Promise<void> {
+    try {
+      switch (message.kind) {
+        case 'runtime.initialize':
+          this.initialize(message);
+          return;
+        case 'runtime.replaceCredential':
+          this.requireInitialized();
+          this.credential.replace(message.credential);
+          return;
+        case 'runtime.clearCredential':
+          this.credential.clear();
+          return;
+        case 'turn.start':
+        case 'turn.resume':
+          this.requireInitialized();
+          await this.runTurn(message);
+          return;
+        case 'turn.steer': {
+          const active = this.turns.get(message.threadId);
+          if (!active) throw new Error('inactive_turn');
+          active.steering.push(message.instruction);
+          return;
+        }
+        case 'turn.cancel':
+          this.turns.get(message.threadId)?.controller.abort(new Error(message.reason));
+          return;
+        case 'runtime.shutdown':
+          this.credential.clear();
+          for (const active of this.turns.values()) active.controller.abort(new Error('shutdown'));
+          return;
+        default:
+          return;
+      }
+    } catch (error) {
+      this.fatal('runtime_command_failed', safeMessage(error));
+    }
+  }
+
+  private initialize(message: Extract<LocalAgentHostMessage, { kind: 'runtime.initialize' }>): void {
+    if (
+      message.expected.protocolVersion !== LOCAL_AGENT_PROTOCOL_VERSION ||
+      message.expected.protocolDigest !== LOCAL_AGENT_PROTOCOL_DIGEST ||
+      message.expected.sdkVersion !== LOCAL_AGENT_SDK_VERSION ||
+      message.expected.graphVersion !== graphVersion([], DEFAULT_AGENT_MODEL)
+    ) {
+      throw new Error('runtime_version_mismatch');
+    }
+    const supported = new Set<string>(LOCAL_AGENT_CAPABILITIES);
+    if (message.requiredCapabilities.some((capability) => !supported.has(capability))) {
+      throw new Error('runtime_capability_mismatch');
+    }
+    this.apiBaseUrl = message.apiBaseUrl;
+    this.graphFactory = new AgentGraphFactory(
+      new UserOpenAIClientFactory(() => this.apiBaseUrl, this.credential),
+    );
+    this.initialized = true;
+    this.bridge.send({
+      kind: 'runtime.ready',
+      requestId: message.requestId,
+      runtime: {
+        protocolVersion: LOCAL_AGENT_PROTOCOL_VERSION,
+        protocolDigest: LOCAL_AGENT_PROTOCOL_DIGEST,
+        sdkVersion: LOCAL_AGENT_SDK_VERSION,
+        graphVersion: graphVersion([], DEFAULT_AGENT_MODEL),
+        capabilities: [...LOCAL_AGENT_CAPABILITIES],
+      },
+    });
+  }
+
+  private async runTurn(
+    message: Extract<LocalAgentHostMessage, { kind: 'turn.start' | 'turn.resume' }>,
+  ): Promise<void> {
+    if (this.turns.has(message.threadId)) throw new Error('thread_already_active');
+    if (message.agentId !== LOCAL_AGENT_ROOT_ID || message.parentAgentId || message.delegationId) {
+      throw new Error('unsupported_agent_graph');
+    }
+    if (message.graphVersion !== graphVersion(message.tools, message.model)) {
+      throw new Error('graph_version_mismatch');
+    }
+    const controller = new AbortController();
+    const active: ActiveTurn = { controller, steering: [] };
+    this.turns.set(message.threadId, active);
+    const identity: TurnIdentity = {
+      agentId: message.agentId,
+      delegationId: message.delegationId,
+      graphVersion: message.graphVersion,
+      parentAgentId: message.parentAgentId,
+      threadId: message.threadId,
+      turnId: message.turnId,
+    };
+    const context: LocalAgentRunContext = { bridge: this.bridge, identity, signal: controller.signal };
+    let checkpointRevision = message.kind === 'turn.resume' ? message.checkpointRevision : 0;
+    try {
+      const factory = this.requireGraphFactory();
+      const graph = await factory.create({
+        agentTurnId: message.agentTurnId,
+        graphVersion: message.graphVersion,
+        model: message.model,
+        taskId: message.threadId,
+        toolCatalogDigest: message.toolCatalogDigest,
+        tools: message.tools,
+      }, context);
+      this.event(identity, 'lifecycle', 'The local Agents SDK started the turn.');
+      let nextInput: string | RunState<LocalAgentRunContext, typeof graph.agent>;
+      if (message.kind === 'turn.resume') {
+        const restored = await RunState.fromStringWithContext(
+          graph.agent,
+          message.checkpoint,
+          new RunContext(context),
+        );
+        if (message.pendingCallId) {
+          const interruption = restored.getInterruptions().find((candidate) =>
+            candidate.rawItem.type === 'function_call' && candidate.rawItem.callId === message.pendingCallId,
+          );
+          if (!interruption) throw new Error('pending_checkpoint_interruption_missing');
+          const pending = graph.toolSurface.resolve(interruption);
+          graph.toolSurface.markCheckpointed(pending);
+          restored.approve(interruption);
+        }
+        nextInput = restored;
+      } else {
+        nextInput = message.request;
+      }
+
+      for (;;) {
+        const result = await factory.runner.run(graph.agent, nextInput, {
+          callModelInputFilter: async ({ modelData }) =>
+            injectSteering(modelData, active.steering.splice(0)),
+          context,
+          maxTurns: message.maxTurns,
+          session: graph.session,
+          signal: controller.signal,
+          stream: true,
+        });
+        for await (const event of result) {
+          if (event.type !== 'raw_model_stream_event' || event.data.type !== 'output_text_delta') continue;
+          for (let offset = 0; offset < event.data.delta.length; offset += 2_000) {
+            this.event(identity, 'assistant_delta', event.data.delta.slice(offset, offset + 2_000));
+          }
+        }
+        await result.completed;
+        if (result.interruptions.length === 0) {
+          checkpointRevision = await this.commitCheckpoint(
+            identity,
+            checkpointRevision,
+            result.state.toString(),
+            null,
+          );
+          const finalOutput = boundedFinalOutput(result.finalOutput);
+          this.terminal(identity, 'completed', finalOutput, null, 'The local agent completed the turn.');
+          return;
+        }
+        if (result.interruptions.length !== 1) throw new Error('parallel_tool_interruption_not_supported');
+        const interruption = result.interruptions[0];
+        if (!interruption) throw new Error('missing_sdk_interruption');
+        const pending = graph.toolSurface.resolve(interruption);
+        this.event(identity, 'tool_requested', `The agent requested ${pending.modelName}.`, {
+          callId: pending.callId,
+          operation: pending.operation,
+          toolId: pending.toolId,
+        });
+        checkpointRevision = await this.commitCheckpoint(
+          identity,
+          checkpointRevision,
+          result.state.toString(),
+          pending.callId,
+        );
+        graph.toolSurface.markCheckpointed(pending);
+        result.state.approve(interruption);
+        nextInput = result.state;
+      }
+    } catch (error) {
+      if (error instanceof ToolOutcomeUnknownError) {
+        this.terminal(identity, 'unknown', null, 'tool_outcome_unknown', error.message);
+      } else if (controller.signal.aborted) {
+        this.terminal(identity, 'cancelled', null, 'cancelled', 'The local agent turn was cancelled.');
+      } else {
+        this.terminal(identity, 'failed', null, classifyCode(error), safeMessage(error));
+      }
+    } finally {
+      this.turns.delete(message.threadId);
+    }
+  }
+
+  private async commitCheckpoint(
+    identity: TurnIdentity,
+    expectedRevision: number,
+    checkpoint: string,
+    pendingCallId: string | null,
+  ): Promise<number> {
+    const active = this.turns.get(identity.threadId);
+    if (!active) throw new Error('inactive_turn');
+    const requestId = childRequestId();
+    const response = await this.bridge.request({
+      ...turnMessageIdentity(this.bridge, identity),
+      requestId,
+      kind: 'checkpoint.commit',
+      checkpoint,
+      expectedRevision,
+      pendingCallId,
+      protocolDigest: LOCAL_AGENT_PROTOCOL_DIGEST,
+      sdkVersion: LOCAL_AGENT_SDK_VERSION,
+    }, { signal: active.controller.signal });
+    if (response.kind !== 'checkpoint.commit.result') throw new Error('unexpected_checkpoint_response');
+    return response.checkpointRevision;
+  }
+
+  private event(
+    identity: TurnIdentity,
+    event: LocalTurnEventKind,
+    summary: string,
+    data: Record<string, unknown> | null = null,
+  ): void {
+    this.bridge.send({
+      ...turnMessageIdentity(this.bridge, identity),
+      kind: 'turn.event',
+      event,
+      summary,
+      data,
+    });
+  }
+
+  private terminal(
+    identity: TurnIdentity,
+    status: 'completed' | 'failed' | 'cancelled' | 'unknown',
+    finalOutput: string | null,
+    errorCode: string | null,
+    message: string,
+  ): void {
+    this.bridge.send({
+      ...turnMessageIdentity(this.bridge, identity),
+      kind: 'turn.terminal',
+      status,
+      finalOutput,
+      errorCode,
+      message: message.slice(0, 1_000),
+    });
+  }
+
+  private fatal(code: string, message: string): void {
+    this.bridge.send({ kind: 'runtime.fatal', requestId: childRequestId(), code, message: message.slice(0, 1_000) });
+  }
+
+  private requireInitialized(): void {
+    if (!this.initialized) throw new Error('runtime_not_initialized');
+  }
+
+  private requireGraphFactory(): AgentGraphFactory {
+    if (!this.graphFactory) throw new Error('runtime_not_initialized');
+    return this.graphFactory;
+  }
+}
+
+function injectSteering(modelData: ModelInputData, instructions: readonly string[]): ModelInputData {
+  if (instructions.length === 0) return modelData;
+  const input = modelData.input as AgentInputItem[];
+  const steering: AgentInputItem[] = instructions.map((instruction) => ({
+    role: 'user',
+    content: [{ type: 'input_text', text: instruction }],
+  }));
+  return { ...modelData, input: [...input, ...steering] };
+}
+
+function boundedFinalOutput(value: unknown): string {
+  const output = typeof value === 'string' ? value.trim() : JSON.stringify(value);
+  if (!output) throw new Error('empty_agent_output');
+  return output.slice(0, 8_000);
+}
+
+function safeMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'The local agent runtime could not continue.';
+  return error.message.replace(/Bearer\s+\S+/giu, 'Bearer [redacted]').slice(0, 1_000);
+}
+
+function classifyCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (message.includes('graph_version')) return 'graph_version_mismatch';
+  if (message.includes('session')) return 'session_conflict';
+  return 'internal_runtime_error';
+}

@@ -6,12 +6,8 @@ import {
   ActivateCompanionCandidateRequestSchema,
   ActivateSavedCompanionRequestSchema,
   ActivateMembershipRequestSchema,
-  ActionEffectSchema,
   AgentActivityUpdateSchema,
-  AgentTaskContractV3Schema,
-  AgentTaskContractV4Schema,
-  AgentTaskContractV5Schema,
-  AgentTaskContractV6Schema,
+  AgentTaskContractV10Schema,
   AppPreferencesSchema,
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
@@ -20,7 +16,6 @@ import {
   CompanionPetNudgeDraftSchema,
   CompanionPetNudgeSchema,
   GenerateCompanionImageRequestSchema,
-  IntentAuthorizationContractSchema,
   CompanionResponseActionRequestSchema,
   CompanionResponseCardSchema,
   SubmitTaskRequestSchema,
@@ -42,7 +37,6 @@ import {
   LEGACY_VOICE_TRANSCRIPTION_MODEL,
   MAX_COMPANION_IMAGE_BYTES,
   TaskComposerFocusRequestSchema,
-  TaskHistorySchema,
   TaskProgressSchema,
   TranscribeVoiceSegmentRequestSchema,
   UsageBudgetSnapshotSchema,
@@ -50,7 +44,6 @@ import {
   VoiceStatusSchema,
   VOICE_TRANSCRIPTION_MODEL,
 } from './contracts';
-import { LegacyHostedDesktopInvocationV2Schema } from './legacy-agent-runtime-v2';
 
 describe('companion customization contracts', () => {
   const candidateId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -295,110 +288,8 @@ describe('organization management contracts', () => {
   });
 });
 
-describe('intent-aware execution contracts', () => {
-  it('rejects hard-confirm grants and contradictory effect metadata', () => {
-    expect(
-      IntentAuthorizationContractSchema.safeParse({
-        schemaVersion: 1,
-        revision: 1,
-        source: 'user_instruction',
-        grants: [{
-          id: 'send-calendar',
-          effectKind: 'send_communication',
-          resourceKinds: ['calendar_event'],
-          permitsSafeDefaults: false,
-        }],
-      }).success,
-    ).toBe(false);
-    expect(
-      ActionEffectSchema.safeParse({
-        kind: 'create_resource',
-        resourceKind: 'calendar_event',
-        reversibility: 'reversible',
-        externality: 'cloud_private',
-        communication: 'invite',
-        overwrite: 'none',
-        sensitiveDataTransfer: false,
-      }).success,
-    ).toBe(false);
-    expect(
-      ActionEffectSchema.safeParse({
-        kind: 'none',
-        resourceKind: null,
-        reversibility: 'none',
-        externality: 'public',
-        communication: 'none',
-        overwrite: 'none',
-        sensitiveDataTransfer: false,
-      }).success,
-    ).toBe(false);
-  });
-
-  it('parses the complete legacy protocol-v2 invocation envelope', () => {
-    const envelope = {
-      protocolVersion: 2,
-      schemaDigest: 'a'.repeat(64),
-      invocationId: randomUUID(),
-      runId: randomUUID(),
-      callId: 'call-1',
-      toolId: 'application.launch',
-      operation: 'launch',
-      effect: {
-        kind: 'none',
-        resourceKind: null,
-        reversibility: 'none',
-        externality: 'local',
-        communication: 'none',
-        overwrite: 'none',
-        sensitiveDataTransfer: false,
-      },
-      intentRevision: 1,
-      approvalRequired: false,
-      authorizationSource: 'routine',
-      consequential: false,
-      input: { application: 'chrome' },
-      obligations: [],
-      expiresAt: '2026-08-21T00:01:00.000Z',
-    };
-    expect(LegacyHostedDesktopInvocationV2Schema.parse(envelope)).toEqual(envelope);
-    expect(
-      LegacyHostedDesktopInvocationV2Schema.safeParse({
-        ...envelope,
-        protocolVersion: 1,
-      }).success,
-    ).toBe(false);
-  });
-});
-
-function snapshot(goal: Record<string, unknown>, progress: unknown) {
-  const taskId = randomUUID();
-  const timestamp = '2026-08-17T00:00:00.000Z';
-  return {
-    taskId,
-    request: String(goal.originalRequest),
-    phase: 'completed',
-    goal,
-    messages: [],
-    pendingInteraction: null,
-    progress,
-    queuedSteering: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    lastEvent: null,
-  };
-}
-
-const legacyBase = {
-  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  originalRequest: 'Open Gmail for me',
-  behavior: 'act',
-  objective: 'Open Gmail',
-  successCriteria: [{ description: 'Gmail opens', verifier: 'Observe Gmail' }],
-  limits: { maxSteps: 12, maxMinutes: 10 },
-};
-
 describe('shared task contracts', () => {
-  it('binds Activity context to v6 without accepting renderer-authored context', () => {
+  it('binds trusted Activity context to the local SDK task contract', () => {
     const activityAttemptId = randomUUID();
     expect(SubmitTaskRequestSchema.parse({
       activityAttemptId,
@@ -411,16 +302,14 @@ describe('shared task contracts', () => {
     });
     expect(hostile).not.toHaveProperty('activity');
 
-    const contract = AgentTaskContractV6Schema.parse({
-      schemaVersion: 6,
+    const contract = AgentTaskContractV10Schema.parse({
+      schemaVersion: 10,
       id: randomUUID(),
       originalRequest: 'Help me debug this Activity',
-      runtimeKind: 'rust_hosted',
+      runtimeKind: 'openai_agents_sdk',
       executionProfile: 'everyday',
-      autonomyMode: 'balanced',
       workspace: null,
       activity: null,
-      approvalPolicy: { alwaysConfirm: [] },
       limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
     });
     expect(contract.activity).toBeNull();
@@ -785,37 +674,13 @@ describe('shared task contracts', () => {
     });
   });
 
-  it('parses a legacy v3 contract and tool-call progress', () => {
-    expect(
-      AgentTaskContractV3Schema.parse({
-        schemaVersion: 3,
-        id: randomUUID(),
-        originalRequest: 'Write a chord progression.',
-        approvalPolicy: { alwaysConfirm: ['send', 'delete'] },
-        limits: { maxToolCalls: 30, maxMinutes: 10 },
-      }),
-    ).not.toHaveProperty('behavior');
+  it('parses tool-call progress', () => {
     expect(
       TaskProgressSchema.parse({ kind: 'tool_calls', completed: 2, limit: 30 }),
     ).toEqual({ kind: 'tool_calls', completed: 2, limit: 30 });
   });
 
-  it('parses v4 cost limits and sanitized budget snapshots', () => {
-    expect(
-      AgentTaskContractV4Schema.parse({
-        approvalPolicy: { alwaysConfirm: ['send'] },
-        id: randomUUID(),
-        limits: {
-          maxImages: 20,
-          maxMicroUsd: 500_000,
-          maxMinutes: 10,
-          maxModelSamples: 40,
-          maxToolCalls: 30,
-        },
-        originalRequest: 'Complete a useful task.',
-        schemaVersion: 4,
-      }),
-    ).toMatchObject({ schemaVersion: 4 });
+  it('parses sanitized budget snapshots', () => {
     const usageBudget = UsageBudgetSnapshotSchema.parse({
       actualMicroUsd: 1_000,
       daily: { limitMicroUsd: 2_000_000, remainingMicroUsd: 1_999_000, reservedMicroUsd: 0, settledMicroUsd: 1_000 },
@@ -845,7 +710,7 @@ describe('shared task contracts', () => {
     expect(usageBudget).not.toHaveProperty('prompt');
   });
 
-  it('binds v5 Workspace contracts and submissions to one trusted selection', () => {
+  it('binds local SDK Workspace contracts and submissions to one trusted selection', () => {
     const workspace = {
       selectionId: randomUUID(),
       canonicalPath: '/Users/person/project',
@@ -853,9 +718,8 @@ describe('shared task contracts', () => {
       selectedAt: '2026-08-18T00:00:00.000Z',
     };
     expect(
-      AgentTaskContractV5Schema.parse({
-        approvalPolicy: { alwaysConfirm: ['send'] },
-        autonomyMode: 'balanced',
+      AgentTaskContractV10Schema.parse({
+        activity: null,
         executionProfile: 'workspace',
         id: randomUUID(),
         limits: {
@@ -866,11 +730,11 @@ describe('shared task contracts', () => {
           maxToolCalls: 30,
         },
         originalRequest: 'Fix the tests.',
-        runtimeKind: 'rust_hosted',
-        schemaVersion: 5,
+        runtimeKind: 'openai_agents_sdk',
+        schemaVersion: 10,
         workspace,
       }),
-    ).toMatchObject({ runtimeKind: 'rust_hosted', workspace });
+    ).toMatchObject({ runtimeKind: 'openai_agents_sdk', workspace });
     expect(
       SubmitTaskRequestSchema.parse({
         executionProfile: 'workspace',
@@ -903,64 +767,6 @@ describe('shared task contracts', () => {
     ).not.toHaveProperty('autonomyMode');
   });
 
-  it('loads mixed persisted v1 through v4 history', () => {
-    const history = TaskHistorySchema.parse({
-      events: [],
-      persistence: { mode: 'postgres', summary: 'Saved.' },
-      snapshots: [
-        snapshot(
-          {
-            ...legacyBase,
-            interactionMode: 'mixed',
-            capabilities: ['browser'],
-            approvals: { alwaysConfirm: ['send'] },
-          },
-          { currentStep: 1, maxSteps: 12 },
-        ),
-        snapshot(
-          {
-            ...legacyBase,
-            schemaVersion: 2,
-            approvalPolicy: { alwaysConfirm: ['send'] },
-          },
-          { currentStep: 2, maxSteps: 12 },
-        ),
-        snapshot(
-          {
-            schemaVersion: 3,
-            id: randomUUID(),
-            originalRequest: 'What is 27 × 14?',
-            approvalPolicy: { alwaysConfirm: ['send'] },
-            limits: { maxToolCalls: 30, maxMinutes: 10 },
-          },
-          { kind: 'tool_calls', completed: 0, limit: 30 },
-        ),
-        snapshot(
-          {
-            schemaVersion: 4,
-            id: randomUUID(),
-            originalRequest: 'Summarize the current screen.',
-            approvalPolicy: { alwaysConfirm: ['send'] },
-            limits: {
-              maxImages: 20,
-              maxMicroUsd: 500_000,
-              maxMinutes: 10,
-              maxModelSamples: 40,
-              maxToolCalls: 30,
-            },
-          },
-          { kind: 'tool_calls', completed: 1, limit: 30 },
-        ),
-      ],
-    });
-
-    expect(history.snapshots.map((item) => item.goal?.schemaVersion)).toEqual([
-      2, 2, 3, 4,
-    ]);
-    expect(history.snapshots.every((item) => item.runtimeResume === null)).toBe(
-      true,
-    );
-  });
 });
 
 describe('voice segment contracts', () => {

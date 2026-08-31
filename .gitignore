@@ -102,6 +102,7 @@ services/agent-runtime/dist/
 
 # Generated native desktop helpers
 .generated-native/
+.generated/
 
 # Membership signing secrets
 trocode-membership-private.pem

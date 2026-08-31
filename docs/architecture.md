@@ -1,40 +1,36 @@
 # Tro agent architecture
 
-Tro has one reasoning loop: the pinned OpenAI Agents SDK worker. The user sends
-an intent directly to that worker; there is no separate Tro planner, outcome
-compiler, approval policy, or Rust Responses loop. Rust is the trusted control
-plane. It authenticates callers, owns leases and encrypted state, proxies OpenAI
-with server-side credentials and budgets, and brokers every remote tool call.
-Electron is a narrow device executor for CUA, workspace, terminal, application,
-and browser capabilities.
+Tro has one reasoning loop: a pinned OpenAI Agents SDK `Agent` and `Runner` in a
+bundled Electron utility process. The TroCode harness around that SDK contains
+instructions, deterministic agent definitions, SDK sessions, normal SDK tool
+callbacks, and event normalization. Electron main is the trusted local host; it
+supervises the utility process, encrypts local thread state, journals external
+effects, and executes local tools. Rust authenticates the user, reserves budget,
+and proxies Responses with server-side provider credentials. It does not own the
+local agent loop or SDK state.
 
 ## Execution path
 
 ```text
-renderer -> public runtime v5 -> Rust control plane -> Agents SDK worker
-                                      ^                    |
-                                      | model/tool broker  |
-                                      +--------------------+
-                                      |
-                           Electron CUA/local adapters
-                           or Rust connector adapters
+renderer -> parsed DesktopApi -> Electron main -> bundled Agents SDK process
+                                  |       ^                  |
+                                  | tools |                  | Responses
+                                  v       |                  v
+                           local adapters +----------> Rust provider proxy
 ```
 
-For each task, Rust freezes the exact currently available tool catalog on the
-first compatible claim, stores it encrypted, and supplies that same catalog on
-every recovery claim. The SDK decides how to fulfill the intent, chooses tools,
-consumes their results, and decides when the task is finished. SDK Session
-history and serialized `RunState` checkpoints are encrypted in PostgreSQL.
+For each turn, Electron freezes the exact currently available tool catalog and
+binds it to SDK, graph, protocol, and CUA-driver digests. The SDK decides how to
+fulfill the intent, chooses tools, consumes results, and detects completion.
+SDK Session history and serialized `RunState` checkpoints are encrypted beneath
+the app's local `agent-state` directory using operating-system encryption.
 Context compaction uses the SDK's input-mode Responses compaction session through
-the Rust model proxy.
-The proxy records only a request digest and dispatch state before contacting
-OpenAI. If the worker loses a response before its next durable SDK checkpoint,
-the same model request is blocked as ambiguous instead of being sent again.
+the authenticated Rust proxy.
 
 There is no action-policy or Tro approval branch. SDK approval interruptions are
 used only to serialize state before dispatch and are resumed automatically.
 A registered, schema-valid tool call runs when its executor is available.
-macOS/Windows permissions and provider OAuth remain external technical consent
+Operating-system permissions and provider OAuth remain external technical consent
 boundaries.
 
 ## Private companion assets
@@ -88,19 +84,18 @@ over all pet nudges.
 
 ## Boundaries that remain
 
-- Runtime v5 requires exact public protocol and Tro base-tool catalog digests;
-  the private worker also requires its exact SDK and agent-graph versions. CUA
-  calls additionally require the exact live driver-catalog digest advertised by
-  the worker that accepted the task.
-- A run's encrypted tool snapshot is immutable. Recovery reconstructs the same
-  SDK graph even if Electron or a connector disconnects; a new call still needs
-  a currently valid executor route, while the same durably queued call can be
-  resumed by call ID without dispatching it twice.
+- The local host/utility protocol requires exact protocol, SDK, graph, and frozen
+  tool-catalog digests. CUA calls additionally require the exact live driver
+  catalog digest discovered when the turn was frozen.
+- A turn's tool catalog is immutable. Recovery reconstructs the same SDK graph;
+  the same durably checkpointed call can return a recorded result but is never
+  dispatched twice.
 - Authority contract v10 binds the intent, execution profile, trusted workspace,
   Activity context, and technical limits without prescribing a plan.
-- The registry rejects unknown Tro tools, operations, and malformed inputs.
-  CUA tools are discovered from the driver's canonical `listToolsJson` contract;
-  the backend and desktop both reject names or schemas outside that snapshot.
+- The registry rejects unknown tools, operations, and malformed inputs. CUA
+  tools are discovered from the driver's canonical `listToolsJson` contract and
+  projected dynamically into the frozen local catalog, so a compatible new
+  driver ability requires no Rust or static Tro tool-contract edit.
 - Browser navigation accepts credential-free public HTTPS targets only.
 - Workspace filesystem operations remain root-confined. Workspace shell input
   is structurally bounded but intentionally has the host user's shell powers.
@@ -118,7 +113,7 @@ Tro reads CUA's canonical tool inventory, removes only driver session start/end
 because the host owns task cleanup, injects the current task session into tools
 that declare a `session` property, and forwards every other compatible tool
 through the driver's generic `callTool` adapter. New tools using tool-list schema
-version 1 therefore need no Tro allowlist or backend contract edit.
+version 1 therefore need no Tro allowlist, utility-protocol, or backend edit.
 
 Tro selects CUA's unrestricted host mode, so there is no Tro action-approval
 decision in the CUA path. The driver still validates its own schemas and may
@@ -127,7 +122,7 @@ system Accessibility and Screen Recording grants remain real prerequisites.
 
 ## Compatibility
 
-New work starts only on runtime v5 with authority v10 and
-`orchestrator_kind = 'openai_agents_sdk'`. Runtime v4 endpoints are read-only.
-Terminal v2-v4/v6-v9 rows remain readable as legacy history but cannot be
-started or resumed.
+New work starts only as a locally authoritative authority-v10 task. Terminal
+hosted rows remain readable through `/v1/legacy-agent-history`, but no hosted
+run can be started or resumed. A future cloud agent must implement a separate
+runtime adapter and explicit product mode; it is never a hidden fallback.

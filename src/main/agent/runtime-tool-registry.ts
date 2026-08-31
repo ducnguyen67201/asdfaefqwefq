@@ -1,11 +1,10 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import { z } from 'zod';
 
 import {
   assertStrictFunctionSchema,
-  hostedToolContractById,
-  modelToolSpecFor,
   objectSchema,
   type StrictJsonObjectSchema,
 } from '../../shared/agent-tool-contracts';
@@ -52,6 +51,7 @@ export interface ToolResolutionContext extends Partial<TrustedToolExecutionConte
 export interface RuntimeToolDefinition<TInput = unknown> {
   available?: (context?: ToolResolutionContext) => boolean;
   description: string;
+  driverCatalogDigest?: string | null;
   id: RuntimeToolId;
   modelName: string;
   normalize(
@@ -62,6 +62,18 @@ export interface RuntimeToolDefinition<TInput = unknown> {
   operations: readonly string[];
   parameters: StrictJsonObjectSchema;
   parse(argumentsJson: string): TInput;
+}
+
+export interface FrozenRuntimeToolCatalog {
+  digest: string;
+  tools: Array<{
+    toolId: RuntimeToolId;
+    modelName: string;
+    description: string;
+    inputSchema: StrictJsonObjectSchema;
+    operations: string[];
+    driverCatalogDigest: string | null;
+  }>;
 }
 
 export interface ObserveDesktopToolInput {
@@ -466,17 +478,8 @@ function controlParametersSchema(): StrictJsonObjectSchema {
 function defineTool<T>(
   definition: RuntimeToolDefinition<T>,
 ): RuntimeToolDefinition {
-  const contract = hostedToolContractById(definition.id);
-  if (!contract) {
-    throw new Error(`Runtime tool ${definition.id} is missing from the hosted catalog.`);
-  }
-  return {
-    ...definition,
-    description: contract.description,
-    modelName: contract.modelName,
-    operations: contract.operations,
-    parameters: contract.parameters,
-  } as RuntimeToolDefinition;
+  assertStrictFunctionSchema(definition.parameters);
+  return definition as RuntimeToolDefinition;
 }
 
 export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
@@ -1021,16 +1024,18 @@ export class RuntimeToolRegistry {
   constructor(
     definitions: readonly RuntimeToolDefinition[] = defaultRuntimeToolDefinitions(),
   ) {
+    this.register(definitions);
+  }
+
+  register(definitions: readonly RuntimeToolDefinition[]): void {
     for (const definition of definitions) {
       const id = RuntimeToolIdSchema.parse(definition.id);
-      const contract = hostedToolContractById(id);
-      if (!contract) {
-        throw new Error(`Runtime tool ${id} is missing from the hosted catalog.`);
+      if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(definition.modelName)) {
+        throw new Error(`Runtime tool ${id} has an invalid model name.`);
       }
-      if (definition.modelName !== contract.modelName) {
-        throw new Error(
-          `Runtime tool ${id} must use canonical model name ${contract.modelName}.`,
-        );
+      assertStrictFunctionSchema(definition.parameters);
+      if (definition.operations.length === 0) {
+        throw new Error(`Runtime tool ${id} must declare at least one operation.`);
       }
       if (this.toolsById.has(id)) {
         throw new Error('Runtime tool ' + id + ' is already registered.');
@@ -1058,10 +1063,31 @@ export class RuntimeToolRegistry {
   modelVisibleSpecs(context?: ToolResolutionContext): ModelToolSpec[] {
     return this.list(context).map((definition) => {
       assertStrictFunctionSchema(definition.parameters);
-      const contract = hostedToolContractById(definition.id);
-      if (!contract) throw new Error('Hosted tool catalog invariant failed.');
-      return modelToolSpecFor(contract);
+      return {
+        type: 'function',
+        name: definition.modelName,
+        description: definition.description,
+        strict: true,
+        parameters: definition.parameters,
+      };
     });
+  }
+
+  freeze(context?: ToolResolutionContext): FrozenRuntimeToolCatalog {
+    const tools = this.list(context)
+      .map((definition) => ({
+        toolId: definition.id,
+        modelName: definition.modelName,
+        description: definition.description,
+        inputSchema: definition.parameters,
+        operations: [...definition.operations],
+        driverCatalogDigest: definition.driverCatalogDigest ?? null,
+      }))
+      .sort((left, right) => left.toolId.localeCompare(right.toolId));
+    return {
+      digest: createHash('sha256').update(stableJson(tools)).digest('hex'),
+      tools,
+    };
   }
 
   endTask(taskId: string): void {
@@ -1108,4 +1134,11 @@ export class RuntimeToolRegistry {
   }
 }
 
-export const defaultRuntimeToolRegistry = new RuntimeToolRegistry();
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}

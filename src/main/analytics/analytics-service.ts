@@ -9,7 +9,7 @@ import {
   TaskUpdateSchema,
   type TaskSnapshot,
 } from '../../shared/contracts';
-import { isLegacyTaskPhaseTerminal } from '../../shared/legacy-agent-runtime-v2';
+import { isTaskPhaseTerminal } from '../../shared/task-lifecycle';
 
 import type {
   AnalyticsIdentity,
@@ -201,20 +201,8 @@ export class AnalyticsService {
     const goalProperties: AnalyticsProperties = snapshot.goal
       ? {
           contract_version: snapshot.goal.schemaVersion,
-          ...(snapshot.goal.schemaVersion === 5 ||
-          snapshot.goal.schemaVersion === 6 ||
-          snapshot.goal.schemaVersion === 7 ||
-          snapshot.goal.schemaVersion === 8 ||
-          snapshot.goal.schemaVersion === 9 ||
-          snapshot.goal.schemaVersion === 10
-            ? {
-                execution_profile: snapshot.goal.executionProfile,
-                runtime_kind: snapshot.goal.runtimeKind,
-              }
-            : {}),
-          ...(snapshot.goal.schemaVersion === 2
-            ? { legacy_behavior: snapshot.goal.behavior }
-            : {}),
+          execution_profile: snapshot.goal.executionProfile,
+          runtime_kind: snapshot.goal.runtimeKind,
         }
       : {};
 
@@ -239,13 +227,9 @@ export class AnalyticsService {
     }
     if (
       snapshot.lifecycle?.terminal ??
-      isLegacyTaskPhaseTerminal(snapshot.phase)
+      isTaskPhaseTerminal(snapshot.phase)
     ) {
-      const toolCount = snapshot.progress
-        ? 'kind' in snapshot.progress
-          ? snapshot.progress.completed
-          : snapshot.progress.currentStep
-        : 0;
+      const toolCount = snapshot.progress?.completed ?? 0;
       this.capture('task ended', {
         ...goalProperties,
         outcome: snapshot.phase,

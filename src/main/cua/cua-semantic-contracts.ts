@@ -2,12 +2,27 @@ import { createHash } from 'node:crypto';
 
 import { z } from 'zod';
 
-import {
-  CuaDriverCatalogV5Schema,
-  type CuaDriverCatalogV5,
-} from '../../shared/agent-runtime-protocol';
-
 const NullableIntegerSchema = z.number().int().nullable();
+const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+
+export const CuaDriverToolSchema = z.object({
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
+  modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
+  description: z.string().trim().min(1).max(20_000),
+  inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+  injectSession: z.boolean(),
+}).strict();
+
+export const CuaDriverCatalogSchema = z.object({
+  driverVersion: z.string().trim().min(1).max(100),
+  contractVersion: z.string().trim().min(1).max(100),
+  toolsListSchemaVersion: z.literal('1'),
+  capabilityVersion: z.string().trim().min(1).max(100),
+  driverCatalogDigest: DigestSchema,
+  tools: z.array(CuaDriverToolSchema).max(128),
+}).strict();
+
+export type CuaDriverCatalog = z.infer<typeof CuaDriverCatalogSchema>;
 
 export const CuaDriverMetadataSchema = z.object({
   driverVersion: z.string().trim().min(1).max(100),
@@ -84,7 +99,7 @@ function projectedInputSchema(
 export function createCuaDriverCatalog(
   metadataValue: unknown,
   inventoryValue: unknown,
-): CuaDriverCatalogV5 {
+): CuaDriverCatalog {
   const metadata = CuaDriverMetadataSchema.parse(metadataValue);
   const inventory = CuaToolInventorySchema.parse(inventoryValue);
   if (
@@ -126,7 +141,7 @@ export function createCuaDriverCatalog(
     capabilityVersion: metadata.capabilityVersion,
     tools,
   };
-  return CuaDriverCatalogV5Schema.parse({
+  return CuaDriverCatalogSchema.parse({
     ...digestPayload,
     driverCatalogDigest: createHash('sha256')
       .update(stableJson(digestPayload))

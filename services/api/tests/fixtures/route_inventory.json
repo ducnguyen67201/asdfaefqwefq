@@ -17,6 +17,8 @@
     {"method":"DELETE","path":"/v1/organizations/me/members/{membershipId}","family":"organization"},
     {"method":"POST","path":"/v1/agent-turns","family":"usage"},
     {"method":"POST","path":"/v1/openai/responses","family":"provider"},
+    {"method":"POST","path":"/v1/openai/responses/compact","family":"provider"},
+    {"method":"GET","path":"/v1/legacy-agent-history","family":"agent"},
     {"method":"GET","path":"/v1/usage/budget","family":"usage"},
     {"method":"GET","path":"/v1/companion-images/quota","family":"usage"},
     {"method":"POST","path":"/v1/openai/images/companion-edits","family":"provider"},
@@ -84,33 +86,9 @@
     {"method":"POST","path":"/v1/attempts/{attemptId}/work-sessions","family":"knowledge"},
     {"method":"PATCH","path":"/v1/work-sessions/{workSessionId}","family":"knowledge"},
     {"method":"POST","path":"/v1/attempts/{attemptId}/knowledge/search","family":"knowledge"},
-    {"method":"POST","path":"/v1/attempts/{attemptId}/evidence","family":"knowledge"},
-    {"method":"GET","path":"/v1/agent-runtime/status","family":"agent"},
-    {"method":"GET","path":"/v1/agent-runtime/v4/status","family":"agent"},
-    {"method":"GET","path":"/v1/agent-runtime/v4/tasks","family":"agent"},
-    {"method":"POST","path":"/v1/agent-runtime/v4/tasks","family":"agent"},
-    {"method":"GET","path":"/v1/agent-runtime/v4/tasks/{runId}","family":"agent"},
-    {"method":"GET","path":"/v1/agent-runtime/v4/tasks/{runId}/events","family":"agent"},
-    {"method":"POST","path":"/v1/agent-runtime/v4/tasks/{runId}/cancel","family":"agent"},
-    {"method":"GET","path":"/v1/tasks","family":"agent"},
-    {"method":"GET","path":"/v1/tasks/{runId}","family":"agent"},
-    {"method":"DELETE","path":"/v1/tasks/{runId}","family":"agent"},
-    {"method":"GET","path":"/v1/tasks/{runId}/events","family":"agent"},
-    {"method":"POST","path":"/v1/tasks/{runId}/steering","family":"agent"},
-    {"method":"POST","path":"/v1/tasks/{runId}/cancel","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/connect","family":"agent"},
-    {"method":"GET","path":"/v1/desktop-worker/events","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/heartbeat","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/executing","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/result","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/permission-wait","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/permission-decision","family":"agent"},
-    {"method":"POST","path":"/v1/desktop-worker/{workerId}/disconnect","family":"agent"}
+    {"method":"POST","path":"/v1/attempts/{attemptId}/evidence","family":"knowledge"}
   ],
   "sse": [
-    {"path":"/v1/openai/responses","eventId":"provider-defined","heartbeat":false,"maxBytes":5000000,"maxLineBytes":1000000},
-    {"path":"/v1/agent-runtime/v4/tasks/{runId}/events","eventId":"sequence","heartbeat":true,"replayPrecedence":["Last-Event-ID","after","0"]},
-    {"path":"/v1/tasks/{runId}/events","eventId":"sequence","heartbeat":true,"replayPrecedence":["Last-Event-ID","after","0"]},
-    {"path":"/v1/desktop-worker/events","eventId":"invocationId","event":"tool.requested","heartbeat":true}
+    {"path":"/v1/openai/responses","eventId":"provider-defined","heartbeat":false,"maxBytes":5000000,"maxLineBytes":1000000}
   ]
 }
