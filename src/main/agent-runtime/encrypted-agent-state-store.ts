@@ -427,8 +427,12 @@ async function atomicWrite(target: string, value: string | Buffer): Promise<void
     await handle.sync();
   } finally { await handle.close(); }
   await rename(temporary, target);
-  const directory = await open(path.dirname(target), 'r');
-  try { await directory.sync(); } finally { await directory.close(); }
+  // Windows does not support opening a directory for fsync. The temporary file
+  // itself is still flushed before the atomic rename on every platform.
+  if (process.platform !== 'win32') {
+    const directory = await open(path.dirname(target), 'r');
+    try { await directory.sync(); } finally { await directory.close(); }
+  }
 }
 
 async function exists(target: string): Promise<boolean> {

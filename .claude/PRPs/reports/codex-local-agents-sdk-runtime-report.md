@@ -126,7 +126,7 @@ The packaged application contains:
 - `Resources/agent-runtime/node_modules/openai/package.json`
 - `Resources/agent-runtime/node_modules/zod/package.json`
 
-The review pass additionally verified that invalid turn preflight failures stay inside the runtime error boundary, duplicate thread creation cannot reset durable state or cross owners, legacy-history network failures cannot hide local history, and completed turns release sequence bookkeeping. The ponytail review removed unused health/event/status/capability surfaces and an unused runtime configuration abstraction.
+The review pass additionally verified that invalid turn preflight failures stay inside the runtime error boundary, duplicate thread creation cannot reset durable state or cross owners, legacy-history network failures cannot hide local history, and completed turns release sequence bookkeeping. Windows CI also exposed that directory `fsync` is unsupported there; encrypted writes now retain the flushed temporary file and atomic rename on every platform while using the additional directory flush only where the operating system supports it. The ponytail review removed unused health/event/status/capability surfaces and an unused runtime configuration abstraction.
 
 The three allowed Rust audit warnings are the pre-existing `ttf-parser 0.25.1` unmaintained warning, `lru 0.16.4` soundness warning, and yanked `chacha20 0.10.1` warning.
 
