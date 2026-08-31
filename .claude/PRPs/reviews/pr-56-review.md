@@ -26,6 +26,7 @@ Resolved during author and CI review:
 - `services/agent-runtime/src/local-runtime-server.ts`: awaited turn execution inside the command error boundary so invalid graph/preflight input produces a typed fatal response instead of an unhandled rejected promise; added `local-runtime-server.test.ts`.
 - `src/main/agent-runtime/encrypted-agent-state-store.ts`: moved thread ownership validation ahead of writes and made same-owner creation idempotent so a replay cannot reset session/checkpoint state or overwrite another owner's state; added regression coverage.
 - `src/main/agent-runtime/encrypted-agent-state-store.ts`: retained file flushing and atomic rename on every platform while omitting the unsupported directory `fsync` on Windows; this resolved the Windows CI failure without weakening the Unix durability path.
+- `forge.config.ts`: invoke npm through the inherited CLI JavaScript entry point, with a Windows shell fallback, so Forge can stage the local runtime on Windows instead of failing with `spawn npm ENOENT`.
 - `src/main/history/legacy-hosted-task-history-store.ts`: made legacy network/history parsing optional and bounded so an offline or malformed legacy endpoint cannot hide encrypted local history; added regression coverage.
 
 ### MEDIUM

@@ -72,6 +72,20 @@ const RUST_DESKTOP_ENGINE_BINARY = path.resolve(
   process.platform === 'win32' ? 'trocode-api.exe' : 'trocode-api',
 );
 
+function executeNpm(args: string[], cwd: string) {
+  const configuredExecutable = process.env.NPM?.trim();
+  const npmExecPath = process.env.npm_execpath?.trim();
+  if (!configuredExecutable && npmExecPath) {
+    return executeFile(process.execPath, [npmExecPath, ...args], { cwd });
+  }
+  return executeFile(configuredExecutable || 'npm', args, {
+    cwd,
+    // npm is installed as npm.cmd on Windows and therefore needs cmd.exe when
+    // no npm CLI JavaScript entry point was inherited from the parent process.
+    shell: process.platform === 'win32',
+  });
+}
+
 async function compileRustDesktopEngine(
   platform: ForgePlatform,
   arch: ForgeArch,
@@ -94,18 +108,16 @@ async function compileRustDesktopEngine(
 
 async function stageAgentRuntime(): Promise<void> {
   const packageRoot = path.resolve(__dirname, 'services/agent-runtime');
-  await executeFile(process.env.NPM?.trim() || 'npm', ['run', 'build'], {
-    cwd: packageRoot,
-  });
+  await executeNpm(['run', 'build'], packageRoot);
   await rm(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true, force: true });
   await mkdir(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true });
   await Promise.all([
     cp(path.join(packageRoot, 'dist'), path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'dist'), { recursive: true }),
     cp(path.join(packageRoot, 'package.json'), path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'package.json')),
   ]);
-  const { stdout } = await executeFile(process.env.NPM?.trim() || 'npm', [
+  const { stdout } = await executeNpm([
     'ls', '--omit=dev', '--parseable', '--all',
-  ], { cwd: packageRoot });
+  ], packageRoot);
   const dependencyRoot = path.join(packageRoot, 'node_modules');
   const dependencies = stdout.split(/\r?\n/u).filter((candidate) =>
     candidate.startsWith(`${dependencyRoot}${path.sep}`),
