@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   assertStrictFunctionSchema,
+  jsonSchemaHasType,
   type JsonSchema,
   type StrictJsonObjectSchema,
 } from '../../shared/agent-tool-contracts';
@@ -64,7 +65,7 @@ function strictify(input: Record<string, unknown>): StrictJsonObjectSchema {
 function strictNode(input: unknown): JsonSchema {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const node = input as Record<string, unknown>;
-  if (node.type === 'object') {
+  if (jsonSchemaHasType(node, 'object')) {
     const properties = node.properties && typeof node.properties === 'object' && !Array.isArray(node.properties)
       ? node.properties as Record<string, unknown>
       : {};
@@ -80,15 +81,38 @@ function strictNode(input: unknown): JsonSchema {
     node.required = Object.keys(properties);
     node.additionalProperties = false;
   }
-  if (node.items) node.items = strictNode(node.items);
+  if (Array.isArray(node.items)) {
+    node.items = node.items.map(strictNode);
+  } else if (node.items) {
+    node.items = strictNode(node.items);
+  }
   for (const keyword of ['anyOf', 'oneOf', 'allOf'] as const) {
     if (Array.isArray(node[keyword])) node[keyword] = node[keyword].map(strictNode);
+  }
+  for (const keyword of ['$defs', 'definitions'] as const) {
+    const definitions = node[keyword];
+    if (!definitions || typeof definitions !== 'object' || Array.isArray(definitions)) {
+      continue;
+    }
+    node[keyword] = Object.fromEntries(
+      Object.entries(definitions).map(([name, definition]) => [
+        name,
+        strictNode(definition),
+      ]),
+    );
+  }
+  if (
+    node.additionalProperties &&
+    typeof node.additionalProperties === 'object' &&
+    !Array.isArray(node.additionalProperties)
+  ) {
+    node.additionalProperties = strictNode(node.additionalProperties);
   }
   return node;
 }
 
 function nullable(schema: JsonSchema): JsonSchema {
-  if (schema.type === 'null') return schema;
+  if (jsonSchemaHasType(schema, 'null')) return schema;
   if (Array.isArray(schema.anyOf) && schema.anyOf.some((candidate) => candidate.type === 'null')) {
     return schema;
   }
@@ -99,20 +123,74 @@ function normalizeDriverInput(
   input: Record<string, unknown>,
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
-  const properties = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
-    ? schema.properties as Record<string, unknown>
+  const selectedSchema = schemaForValue(schema, input);
+  const properties = selectedSchema.properties && typeof selectedSchema.properties === 'object' && !Array.isArray(selectedSchema.properties)
+    ? selectedSchema.properties as Record<string, unknown>
     : {};
   const required = new Set(
-    Array.isArray(schema.required)
-      ? schema.required.filter((name): name is string => typeof name === 'string')
+    Array.isArray(selectedSchema.required)
+      ? selectedSchema.required.filter((name): name is string => typeof name === 'string')
       : [],
   );
   return Object.fromEntries(Object.entries(input).flatMap(([name, value]) => {
     if (value === null && !required.has(name)) return [];
     const property = properties[name];
-    if (value && typeof value === 'object' && !Array.isArray(value) && property && typeof property === 'object' && !Array.isArray(property)) {
-      return [[name, normalizeDriverInput(value as Record<string, unknown>, property as Record<string, unknown>)]];
-    }
-    return [[name, value]];
+    return [[name, normalizeDriverValue(value, property)]];
   }));
+}
+
+function normalizeDriverValue(value: unknown, schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return value;
+  const selectedSchema = schemaForValue(
+    schema as Record<string, unknown>,
+    value,
+  );
+  if (Array.isArray(value)) {
+    const items = selectedSchema.items;
+    if (!items || Array.isArray(items)) return value;
+    return value.map((item) => normalizeDriverValue(item, items));
+  }
+  if (value && typeof value === 'object') {
+    return normalizeDriverInput(
+      value as Record<string, unknown>,
+      selectedSchema,
+    );
+  }
+  return value;
+}
+
+function schemaForValue(
+  schema: Record<string, unknown>,
+  value: unknown,
+): Record<string, unknown> {
+  for (const keyword of ['anyOf', 'oneOf'] as const) {
+    const alternatives = schema[keyword];
+    if (!Array.isArray(alternatives)) continue;
+    const match = alternatives.find(
+      (candidate): candidate is Record<string, unknown> =>
+        Boolean(
+          candidate &&
+          typeof candidate === 'object' &&
+          !Array.isArray(candidate) &&
+          schemaMatchesValue(candidate, value),
+        ),
+    );
+    if (match) return match;
+  }
+  return schema;
+}
+
+function schemaMatchesValue(
+  schema: Record<string, unknown>,
+  value: unknown,
+): boolean {
+  if (value === null) return jsonSchemaHasType(schema, 'null');
+  if (Array.isArray(value)) return jsonSchemaHasType(schema, 'array');
+  if (typeof value === 'object') return jsonSchemaHasType(schema, 'object');
+  if (typeof value === 'string') return jsonSchemaHasType(schema, 'string');
+  if (typeof value === 'boolean') return jsonSchemaHasType(schema, 'boolean');
+  if (typeof value === 'number') {
+    return jsonSchemaHasType(schema, 'number') || jsonSchemaHasType(schema, 'integer');
+  }
+  return false;
 }

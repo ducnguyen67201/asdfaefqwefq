@@ -17,6 +17,16 @@ export const objectSchema = (
   required,
 });
 
+export function jsonSchemaHasType(
+  schema: Record<string, unknown>,
+  expected: string,
+): boolean {
+  return (
+    schema.type === expected ||
+    (Array.isArray(schema.type) && schema.type.includes(expected))
+  );
+}
+
 export function assertStrictFunctionSchema(
   schema: unknown,
   path = 'parameters',
@@ -30,7 +40,7 @@ export function assertStrictFunctionSchema(
       `Model tool schema at ${path} uses const without an explicit type.`,
     );
   }
-  if (node.type === 'object') {
+  if (jsonSchemaHasType(node, 'object')) {
     if (node.additionalProperties !== false) {
       throw new Error(
         `Strict model tool object at ${path} must set additionalProperties to false.`,
@@ -66,6 +76,31 @@ export function assertStrictFunctionSchema(
     );
   }
   if (node.items !== undefined) {
-    assertStrictFunctionSchema(node.items, `${path}.items`);
+    if (Array.isArray(node.items)) {
+      node.items.forEach((item, index) =>
+        assertStrictFunctionSchema(item, `${path}.items[${index}]`),
+      );
+    } else {
+      assertStrictFunctionSchema(node.items, `${path}.items`);
+    }
+  }
+  for (const keyword of ['$defs', 'definitions'] as const) {
+    const definitions = node[keyword];
+    if (!definitions || typeof definitions !== 'object' || Array.isArray(definitions)) {
+      continue;
+    }
+    for (const [name, definition] of Object.entries(definitions)) {
+      assertStrictFunctionSchema(definition, `${path}.${keyword}.${name}`);
+    }
+  }
+  if (
+    node.additionalProperties &&
+    typeof node.additionalProperties === 'object' &&
+    !Array.isArray(node.additionalProperties)
+  ) {
+    assertStrictFunctionSchema(
+      node.additionalProperties,
+      `${path}.additionalProperties`,
+    );
   }
 }
