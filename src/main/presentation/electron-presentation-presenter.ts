@@ -111,6 +111,8 @@ export class ElectronPresentationPresenter implements PresentationPresenter {
   ) {}
 
   apply(state: PresentationState, task: TaskSnapshot | null): void {
+    if (state === 'done' && task && task.phase !== 'completed') return;
+
     if (task?.pendingInteraction) this.showInteraction(task.pendingInteraction);
     else this.clearInteraction(task?.taskId);
     this.setCompanionState(COMPANION_STATES[state]);

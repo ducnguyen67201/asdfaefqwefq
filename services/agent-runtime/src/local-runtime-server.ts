@@ -166,6 +166,8 @@ export class LocalRuntimeServer {
         agentTurnId: message.agentTurnId,
         graphVersion: message.graphVersion,
         model: message.model,
+        requiredInitialTool:
+          message.kind === 'turn.start' ? message.requiredInitialTool : null,
         taskId: message.threadId,
         toolCatalogDigest: message.toolCatalogDigest,
         tools: message.tools,

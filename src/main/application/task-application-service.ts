@@ -10,6 +10,7 @@ import {
   type TaskSnapshot,
 } from '../../shared/contracts';
 import type { TrustedToolExecutionContext } from '../agent/runtime-tool-registry';
+import { shouldObserveInitialScreenContext } from '../agent/screen-context-policy';
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { AgentRuntimeAdapter } from '../agent-runtime/agent-runtime-adapter';
 import type { EncryptedAgentStateStore } from '../agent-runtime/encrypted-agent-state-store';
@@ -113,6 +114,13 @@ export class TaskApplicationService {
         executionContext,
         maxTurns: authority.limits.maxModelSamples,
         request: request.text,
+        ...(
+          authority.executionProfile !== 'workspace' &&
+          (authority.activity?.activity.launchTarget === 'current_surface' ||
+            shouldObserveInitialScreenContext(request.text))
+            ? { requiredInitialTool: 'observe_context' }
+            : {}
+        ),
         threadId: taskId,
       });
       return started;

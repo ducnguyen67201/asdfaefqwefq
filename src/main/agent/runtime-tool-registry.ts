@@ -94,10 +94,6 @@ export interface RuntimeToolRegistrationAdmission {
   rejected: RuntimeToolRegistrationRejection[];
 }
 
-export interface ObserveDesktopToolInput {
-  reason: string;
-}
-
 export interface DesktopControlToolInput {
   command: DesktopCommand;
   description: string;
@@ -501,9 +497,6 @@ function defineTool<T>(
 }
 
 export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
-  const observeSchema = z.object({
-    reason: z.string().trim().min(1).max(500),
-  });
   const openUrlSchema = z.object({
     url: z.string().url(),
     reason: z.string().trim().min(1).max(500),
@@ -576,32 +569,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
   };
 
   return [
-    defineTool({
-      id: 'desktop.observe',
-      modelName: 'observe_desktop',
-      description:
-        'Capture the current desktop and return a fresh screenshot. Use before coordinate actions.',
-      operations: ['observe'],
-      parameters: objectSchema(
-        {
-          reason: {
-            type: 'string',
-            maxLength: 500,
-            description: 'Why current visual state is needed.',
-          },
-        },
-        ['reason'],
-      ),
-      parse: (value) => parseWith(observeSchema, value),
-      normalize: (input, call) => ({
-        callId: call.callId,
-        input,
-        kind: 'observe',
-        modelName: call.name,
-        operation: 'observe',
-        toolId: 'desktop.observe',
-      }),
-    }),
     defineTool({
       id: 'desktop.control',
       modelName: 'control_desktop',
@@ -1024,7 +991,7 @@ export function toolIdentityForAction(action: ProposedAction): {
     return { toolId: 'browser.navigate', operation: 'open_url' };
   }
   if (action.action === 'observe_screen') {
-    return { toolId: 'desktop.observe', operation: 'observe' };
+    return { toolId: 'computer.observe', operation: 'observe' };
   }
   if (action.action === 'answer' || action.action === 'guide') {
     return { toolId: 'task.guidance', operation: 'show' };

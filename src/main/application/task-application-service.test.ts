@@ -13,7 +13,9 @@ function localDependencies() {
     initialize: vi.fn(async () => undefined),
     resume: vi.fn(async () => undefined),
     shutdown: vi.fn(async () => undefined),
-    start: vi.fn(async () => undefined),
+    start: vi.fn(async (_input: unknown) => {
+      void _input;
+    }),
     steer: vi.fn(),
   };
   const state = {
@@ -61,6 +63,29 @@ describe('TaskApplicationService', () => {
     expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
       threadId: snapshot.taskId,
       request: 'Create a calendar event.',
+    }));
+    expect(localRuntime.start.mock.calls[0]?.[0]).not.toHaveProperty(
+      'requiredInitialTool',
+    );
+  });
+
+  it('requires an initial context observation for visible-context requests', async () => {
+    const runtime = new TaskRuntime();
+    const { localRuntime, state } = localDependencies();
+    const service = new TaskApplicationService(runtime, {
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+
+    const snapshot = await service.submitAndStart({
+      executionProfile: 'everyday',
+      text: 'Làm sao làm bài tập Scratch này?',
+    });
+
+    expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: snapshot.taskId,
+      requiredInitialTool: 'observe_context',
     }));
   });
 

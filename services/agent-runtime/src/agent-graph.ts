@@ -19,6 +19,7 @@ export interface AgentGraph {
 export interface AgentGraphInput {
   readonly agentTurnId: string;
   readonly model: string;
+  readonly requiredInitialTool: string | null;
   readonly graphVersion: string;
   readonly taskId: string;
   readonly toolCatalogDigest: string;
@@ -43,6 +44,12 @@ export class AgentGraphFactory {
     if (input.graphVersion !== graphVersion(input.tools, input.model)) {
       throw new Error('graph_version_mismatch');
     }
+    if (
+      input.requiredInitialTool &&
+      !input.tools.some((tool) => tool.modelName === input.requiredInitialTool)
+    ) {
+      throw new Error('required_initial_tool_unavailable');
+    }
     const clients = this.clients.create({ agentTurnId: input.agentTurnId, taskId: input.taskId });
     const model = await clients.provider.getModel(input.model);
     const toolSurface = this.tools.create(input.tools, input.toolCatalogDigest);
@@ -50,7 +57,7 @@ export class AgentGraphFactory {
       name: ROOT_AGENT_DEFINITION.displayName,
       instructions: AGENT_INSTRUCTIONS,
       model,
-      modelSettings: modelSettings(),
+      modelSettings: modelSettings(input.requiredInitialTool ?? 'auto'),
       tools: toolSurface.tools as never,
     });
     const underlying = new HostBackedSession(context);

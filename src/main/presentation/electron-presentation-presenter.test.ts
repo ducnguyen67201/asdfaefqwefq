@@ -165,6 +165,25 @@ describe('ElectronPresentationPresenter', () => {
     expect(reveal).not.toHaveBeenCalled();
   });
 
+  it('ignores a stale done projection for a nonterminal task', () => {
+    const {
+      clearInteraction,
+      presentCompanionResponse,
+      presenter,
+      reset,
+      reveal,
+      setState,
+    } = createPresenter();
+
+    presenter.apply('done', createTask({ phase: 'planning' }));
+
+    expect(clearInteraction).not.toHaveBeenCalled();
+    expect(setState).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(presentCompanionResponse).not.toHaveBeenCalled();
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
   it('shows an ordinary foreground completion in the companion without narrating', () => {
     const { presentCompanionResponse, presenter, reveal } =
       createPresenter(false);

@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 
+import type {
+  ModelSettings,
+  ModelSettingsToolChoice,
+} from '@openai/agents';
+
 import {
   LOCAL_AGENT_PROTOCOL_DIGEST,
   LOCAL_AGENT_ROOT_ID,
@@ -39,18 +44,14 @@ export function graphVersion(
     .digest('hex');
 }
 
-export function modelSettings(): {
-  readonly maxTokens: number;
-  readonly parallelToolCalls: false;
-  readonly retry: { readonly maxRetries: 0 };
-  readonly store: false;
-  readonly toolChoice: 'auto';
-} {
+export function modelSettings(
+  toolChoice: ModelSettingsToolChoice = 'auto',
+): ModelSettings {
   return {
     maxTokens: 4_000,
     parallelToolCalls: false,
     retry: { maxRetries: 0 },
     store: false,
-    toolChoice: 'auto',
+    toolChoice,
   };
 }

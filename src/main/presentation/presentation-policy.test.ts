@@ -73,6 +73,32 @@ describe('presentation projection', () => {
     expect(derivePresentationState({ task: task('acting') })).toBe('working');
   });
 
+  it('hands a submitted Task voice turn to live task presentation', () => {
+    const voice = {
+      appLanguage: 'en' as const,
+      destination: { kind: 'task' as const, label: 'Tro task' },
+      mode: 'task' as const,
+      phase: 'complete' as const,
+      transcript: '',
+    };
+
+    expect(derivePresentationState({ task: task('planning'), voice })).toBe(
+      'thinking',
+    );
+    expect(derivePresentationState({ task: task('observing'), voice })).toBe(
+      'working',
+    );
+    expect(
+      derivePresentationState({
+        task: task('planning'),
+        voice: { ...voice, phase: 'committing' },
+      }),
+    ).toBe('thinking');
+    expect(derivePresentationState({ task: task('completed'), voice })).toBe(
+      'done',
+    );
+  });
+
   it('coordinates only validated task updates and emits idempotent state changes', () => {
     const apply = vi.fn();
     const coordinator = new PresentationCoordinator({ apply });

@@ -67,6 +67,7 @@ describe('LocalRuntimeServer', () => {
       sequence: 1,
       agentTurnId: randomUUID(),
       request: 'Inspect the current application.',
+      requiredInitialTool: null,
       model: DEFAULT_AGENT_MODEL,
       maxTurns: 4,
       toolCatalogDigest: 'a'.repeat(64),

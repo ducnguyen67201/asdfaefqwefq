@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 /** Local-only protocol between Electron main and the bundled SDK process. */
-export const LOCAL_AGENT_PROTOCOL_VERSION = 2 as const;
+export const LOCAL_AGENT_PROTOCOL_VERSION = 3 as const;
 export const LOCAL_AGENT_SDK_VERSION = '0.17.0' as const;
 export const LOCAL_AGENT_ROOT_ID = 'tro.root' as const;
 
@@ -83,10 +83,15 @@ const CredentialReplaceSchema = RequestIdentitySchema.extend({
 const CredentialClearSchema = RequestIdentitySchema.extend({ kind: z.literal('runtime.clearCredential') }).strict();
 const TurnStartSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.start'), agentTurnId: UuidSchema, request: BoundedMessageSchema,
+  requiredInitialTool: LocalRuntimeToolSpecSchema.shape.modelName.nullable(),
   model: z.string().trim().min(1).max(100), maxTurns: z.number().int().positive().max(100),
   toolCatalogDigest: DigestSchema, tools: z.array(LocalRuntimeToolSpecSchema).max(128),
 }).strict();
-const TurnResumeSchema = TurnStartSchema.omit({ kind: true, request: true }).extend({
+const TurnResumeSchema = TurnStartSchema.omit({
+  kind: true,
+  request: true,
+  requiredInitialTool: true,
+}).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
 }).strict();

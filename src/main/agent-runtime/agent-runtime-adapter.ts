@@ -28,9 +28,11 @@ import {
   type LocalToolExecutionResult,
 } from '../../../services/agent-runtime/src/protocol';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
+import type { DesktopObservation } from '../agent/execution-contracts';
 import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
 import type {
   RuntimeToolRegistry,
+  ToolResolutionContext,
   TrustedToolExecutionContext,
 } from '../agent/runtime-tool-registry';
 
@@ -49,6 +51,7 @@ export interface LocalTurnStart {
   maxTurns: number;
   model?: string;
   request: string;
+  requiredInitialTool?: string;
   threadId: string;
 }
 
@@ -75,11 +78,14 @@ interface ActiveTurn {
   readonly agentTurnId: string;
   readonly catalog: { digest: string; tools: LocalRuntimeToolSpec[] };
   readonly controller: AbortController;
-  readonly executionContext: TrustedToolExecutionContext;
+  executionContext: GroundedToolExecutionContext;
   readonly graphVersion: string;
   readonly model: string;
   readonly turnId: string;
 }
+
+type GroundedToolExecutionContext = TrustedToolExecutionContext &
+  Pick<ToolResolutionContext, 'latestObservation'>;
 
 export interface LocalAgentRuntimeOptions {
   accessTokenProvider(): Promise<string>;
@@ -161,7 +167,8 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     }
     const token = await this.options.accessTokenProvider();
     await this.ensureReady(token);
-    const catalog = this.options.tools.freeze(input.executionContext);
+    const executionContext = { ...input.executionContext };
+    const catalog = this.options.tools.freeze(executionContext);
     const model = input.model?.trim() || DEFAULT_AGENT_MODEL;
     const version = graphVersion(catalog.tools, model);
     const turnId = randomUUID();
@@ -170,7 +177,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       agentTurnId,
       catalog,
       controller: new AbortController(),
-      executionContext: input.executionContext,
+      executionContext,
       graphVersion: version,
       model,
       turnId,
@@ -182,6 +189,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         kind: 'turn.start',
         agentTurnId,
         request: input.request,
+        requiredInitialTool: input.requiredInitialTool ?? null,
         model,
         maxTurns: input.maxTurns,
         toolCatalogDigest: catalog.digest,
@@ -203,7 +211,8 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     const state = await this.options.state.readThread(threadId);
     const checkpoint = state.checkpoint;
     if (!checkpoint) throw new Error('Local task has no durable SDK checkpoint.');
-    const catalog = this.options.tools.freeze(executionContext);
+    const groundedExecutionContext = { ...executionContext };
+    const catalog = this.options.tools.freeze(groundedExecutionContext);
     const version = graphVersion(catalog.tools, checkpoint.model);
     if (catalog.digest !== checkpoint.toolCatalogDigest || version !== checkpoint.graphVersion) {
       throw new Error('The installed local agent graph changed; this checkpoint cannot be resumed safely.');
@@ -212,7 +221,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       agentTurnId: checkpoint.agentTurnId,
       catalog,
       controller: new AbortController(),
-      executionContext,
+      executionContext: groundedExecutionContext,
       graphVersion: checkpoint.graphVersion,
       model: checkpoint.model,
       turnId: randomUUID(),
@@ -546,10 +555,15 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       if (invocation.toolId !== message.toolId || invocation.operation !== message.operation) {
         throw new Error('Tool invocation does not match the frozen catalog.');
       }
-      result = normalizeToolResult(await this.options.coordinator.dispatchTool(invocation, {
+      const toolResult = await this.options.coordinator.dispatchTool(invocation, {
         signal: active.controller.signal,
         taskId: message.threadId,
-      }));
+      });
+      active.executionContext = executionContextAfterToolResult(
+        active.executionContext,
+        toolResult,
+      );
+      result = normalizeLocalToolResult(toolResult);
     } catch (error) {
       result = { status: 'unknown', summary: safeError(error), data: null, imageDataUrl: null };
     }
@@ -731,17 +745,55 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
   }
 }
 
-function normalizeToolResult(result: ToolExecutionResult): LocalToolExecutionResult {
+export function executionContextAfterToolResult(
+  context: GroundedToolExecutionContext,
+  result: ToolExecutionResult,
+): GroundedToolExecutionContext {
+  return result.observation
+    ? { ...context, latestObservation: result.observation }
+    : context;
+}
+
+function modelObservationData(observation: DesktopObservation) {
+  return {
+    capturedAt: observation.capturedAt,
+    degraded: observation.degraded,
+    observationId: observation.observationId,
+    route: observation.route,
+    text: observation.text,
+    ...(observation.structuredState
+      ? { structuredState: observation.structuredState }
+      : {}),
+    ...(observation.coordinateSpace
+      ? { coordinateSpace: observation.coordinateSpace }
+      : {}),
+    ...(observation.surface ? { surface: observation.surface } : {}),
+    ...(observation.elements ? { elements: observation.elements } : {}),
+  };
+}
+
+export function normalizeLocalToolResult(
+  result: ToolExecutionResult,
+): LocalToolExecutionResult {
   const status = result.status === 'confirmed'
     ? 'completed'
     : result.status === 'unknown'
       ? 'unknown'
       : 'failed';
+  const data = result.observation
+    ? {
+        ...(result.data ?? {}),
+        observation: modelObservationData(result.observation),
+      }
+    : result.data ?? null;
+  const observationImageDataUrl = result.observation?.screenshot
+    ? `data:${result.observation.screenshot.mimeType};base64,${result.observation.screenshot.dataBase64}`
+    : null;
   return {
     status,
     summary: result.summary.slice(0, 1_000),
-    data: result.data ?? null,
-    imageDataUrl: result.imageDataUrl ?? null,
+    data,
+    imageDataUrl: result.imageDataUrl ?? observationImageDataUrl,
   };
 }
 

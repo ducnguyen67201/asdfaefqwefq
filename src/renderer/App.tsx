@@ -101,7 +101,11 @@ import {
   captureVoiceDraftSnapshot,
   type VoiceDraftSnapshot,
 } from './voice-draft';
-import { voiceTurnRoute } from './voice-route';
+import {
+  shouldRetainVoiceTerminalActivity,
+  voiceTurnRoute,
+  type VoiceTerminalDisposition,
+} from './voice-route';
 import {
   isVoiceModeToggleShortcut,
   nextVoiceMode,
@@ -1837,9 +1841,23 @@ export function App({
   }, [clearError, recordSnapshot, reportError, snapshot]);
 
   const showVoiceTerminalActivity = useCallback(
-    (activity: CompanionVoiceActivity, durationMs: number): void => {
+    (
+      activity: CompanionVoiceActivity,
+      durationMs: number,
+      disposition: VoiceTerminalDisposition = 'feedback',
+    ): void => {
       if (voiceActivityTimerRef.current) {
         clearTimeout(voiceActivityTimerRef.current);
+      }
+      if (
+        !shouldRetainVoiceTerminalActivity({
+          disposition,
+          mode: activity.mode,
+        })
+      ) {
+        setVoiceActivityOverride(null);
+        voiceActivityTimerRef.current = null;
+        return;
       }
       setVoiceActivityOverride(activity);
       voiceActivityTimerRef.current = setTimeout(() => {
@@ -2028,6 +2046,7 @@ export function App({
             transcript: '',
           },
           800,
+          'task_submitted',
         );
         return;
       }

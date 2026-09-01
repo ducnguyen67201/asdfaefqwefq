@@ -106,6 +106,7 @@ import {
   AppPreferencesService,
   FileAppPreferencesStore,
 } from './main/preferences/app-preferences-service';
+import { DesktopObservationGuard } from './main/presentation/desktop-observation-guard';
 import {
   ElectronPresentationPresenter,
   startCompletionNarration,
@@ -425,6 +426,7 @@ const executionCoordinator = new TaskExecutionCoordinator({
     desktopApplicationLauncher.launch(application),
   onDesktopControlChange: updateDesktopControlIndicator,
   openExternal: async (url) => shell.openExternal(url, { activate: true }),
+  prepareDesktopObservation,
   presentGuidance: async (
     input: GuidanceToolInput,
     context: { signal: AbortSignal; taskId: string },
@@ -563,6 +565,7 @@ const VOICE_ISLAND_SIZE = { height: 76, width: 420 } as const;
 const VOICE_ISLAND_TOP_GAP = 10;
 const CONTROL_INDICATOR_MIN_VISIBLE_MS = 400;
 const CONTROL_INDICATOR_HIDE_SETTLE_MS = 80;
+const DESKTOP_OBSERVATION_SETTLE_MS = 120;
 const SHUTDOWN_GRACE_PERIOD_MS = 2_000;
 const MAX_TRACKED_PRESENTATION_TASKS = 128;
 
@@ -646,9 +649,43 @@ let isShuttingDown = false;
 let auxiliaryWindowsEnabled = false;
 let companionPetEnabled = true;
 let activeCompanionHover = false;
+let desktopObservationGuard: DesktopObservationGuard | null = null;
 const knownPresentationTaskIds = new Set<string>();
 const backgroundPresentationTaskIds = new Set<string>();
 let backgroundCompletionNarration: AbortController | null = null;
+
+function prepareDesktopObservation(): Promise<() => Promise<void>> {
+  desktopObservationGuard ??= new DesktopObservationGuard({
+    settle: () => new Promise((resolve) => {
+      setTimeout(resolve, DESKTOP_OBSERVATION_SETTLE_MS);
+    }),
+    surfaces: [
+      { getWindow: () => mainWindow, shouldRestore: () => false },
+      {
+        getWindow: () => voiceIslandWindow,
+        shouldRestore: () =>
+          auxiliaryWindowsEnabled && activeCompanionVoiceActivity !== null,
+      },
+      {
+        getWindow: () => companionWindow,
+        shouldRestore: () => auxiliaryWindowsEnabled && companionPetEnabled,
+      },
+      {
+        getWindow: () => cursorBuddyWindow,
+        shouldRestore: () => auxiliaryWindowsEnabled,
+      },
+      { getWindow: () => guidanceWindow, shouldRestore: () => false },
+      { getWindow: () => guidanceTargetWindow, shouldRestore: () => false },
+      {
+        getWindow: () => desktopControlIndicatorWindow,
+        shouldRestore: () =>
+          auxiliaryWindowsEnabled && activeDesktopControlTasks.size > 0,
+      },
+    ],
+  });
+  return desktopObservationGuard.prepare();
+}
+
 const companionCustomizationService = new CompanionCustomizationService({
   accessTokenProvider: () => authService.getAccessToken(),
   apiBaseUrl: trocodeApiBaseUrl,

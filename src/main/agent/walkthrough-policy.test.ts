@@ -58,11 +58,11 @@ describe('guided walkthrough policy', () => {
     const initial = createWalkthroughState('Guide me through this form.');
     expect(initial).toMatchObject({ enabled: true, phase: 'needs_observation' });
     expect(evaluateWalkthroughTool(initial, 'show_guidance').allowed).toBe(false);
-    expect(evaluateWalkthroughTool(initial, 'observe_desktop').allowed).toBe(true);
+    expect(evaluateWalkthroughTool(initial, 'observe_context').allowed).toBe(true);
 
-    const observed = advanceWalkthrough(initial, 'observe_desktop');
+    const observed = advanceWalkthrough(initial, 'observe_context');
     expect(observed.phase).toBe('needs_guidance');
-    expect(evaluateWalkthroughTool(observed, 'observe_desktop').allowed).toBe(
+    expect(evaluateWalkthroughTool(observed, 'observe_context').allowed).toBe(
       false,
     );
     expect(evaluateWalkthroughTool(observed, 'show_guidance').allowed).toBe(true);
