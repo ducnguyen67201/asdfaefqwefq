@@ -3,11 +3,11 @@
 **Reviewed**: 2026-09-01
 **Author**: Duc Minh Nguyen (`ducnguyen67201`)
 **Branch**: `duc/seamless-screen-context-voice-handoff` → `main`
-**Decision**: APPROVE AFTER FIXES
+**Decision**: APPROVE
 
 ## Summary
 
-The implementation preserves the intended ownership boundaries: the Agents SDK plans and emits one `observe_context` function call, Electron resolves and checkpoints it, and CUA performs surface-first observation or a guarded desktop fallback. Voice-to-Task presentation now yields to the task lifecycle without foregrounding Tro. Three medium hardening findings were corrected during review.
+The implementation preserves the intended ownership boundaries: the Agents SDK plans and emits one `observe_context` function call, Electron resolves and checkpoints it, and CUA performs surface-first observation or a guarded desktop fallback. The follow-up request-boundary failure is fixed: Rust accepts the exact named function choice, correlated safe diagnostics cross the SDK/Electron/API boundaries, and Voice-to-Task finalization no longer reports a successful handoff as cancelled. Independent review found no open findings.
 
 ## Findings
 
@@ -26,6 +26,9 @@ Resolved:
 1. `TaskExecutionCoordinator` allowed desktop observation preparation to default to a no-op. An alternate construction could therefore capture Tro-owned windows. The default now fails closed before calling `cua.observe()`.
 2. Workspace isolation was implemented but lacked a task-application regression test. A Workspace request that explicitly references visible context now proves that `requiredInitialTool` is absent.
 3. The provider-level named tool choice constrained only `observe_context`, so the model could still supply `scope: desktop` or select the inspection operation on its first call. The host now supplies an exact `observe + auto` contract, the SDK adapter normalizes the first interruption to it before checkpointing, Electron verifies the exact arguments before dispatch, and the requirement survives checkpoint resume.
+4. The Rust proxy rejected the Agents SDK's valid named function `tool_choice` before inference. Validation now accepts only `auto` or an exact named function present in the submitted catalog and returns stable coded errors for invalid choices.
+5. Model-proxy failures had no shared identity across the task trace and server logs. The SDK now emits bounded structural diagnostics with request/task/turn IDs while excluding prompts, credentials, schemas, screenshots, and results.
+6. `isSubmitting` disabled push-to-talk while the transcript callback was still finalizing, producing a misleading `cancelled` event after task submission. Finalizing turns now complete and report `task_submitted`.
 
 ### LOW
 
@@ -36,11 +39,12 @@ None open.
 | Check | Result |
 |---|---|
 | Focused feature tests | Pass — 12 files / 148 tests |
-| Agents SDK lint/typecheck/tests | Pass — 5 files / 17 tests |
+| Agents SDK lint/typecheck/tests | Pass — 5 files / 19 tests |
 | Root lint and TypeScript | Pass |
-| Root Vitest | Pass — 126 files / 842 tests |
-| Cargo fmt/clippy/audit/tests | Pass — 69 unit tests; three repository-allowed audit warnings |
+| Root Vitest | Pass — 126 files / 844 tests |
+| Cargo fmt/clippy/audit/tests | Pass — 71 unit tests; three repository-allowed audit warnings |
 | Electron package | Pass — arm64/darwin |
+| Bazel Rust/runtime gate | Pass — 13 tests and 2 build targets |
 | npm audit | Pass — 0 vulnerabilities |
 | Diff hygiene | Pass |
 

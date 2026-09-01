@@ -35,7 +35,10 @@ The repository and installed skills do not define a workflow named “ponytail r
 - Unknown execution outcomes retain the existing no-replay behavior.
 - Workspace tasks do not receive the required screen-observation tool.
 - The first screen-grounding call cannot be changed into region inspection or direct desktop capture by model-supplied arguments.
+- Named provider tool choice is restricted to an exact function in the submitted catalog; unsupported choices fail closed with a stable code.
+- Request diagnostics expose only bounded correlation and structural metadata, not prompts, credentials, tool schemas, screenshots, or results.
+- Voice Task submission can disable new recording without cancelling the turn that is already committing.
 
 ## Open Items
 
-No code-level blocker remains. The real Scratch foreground flow, semantic-disabled desktop fallback, and macOS permission denial should still be exercised manually in the packaged app.
+No code-level blocker remains. A packaged build passed; the real Scratch foreground flow, semantic-disabled desktop fallback, and macOS permission denial should still be exercised manually.

@@ -12,6 +12,7 @@ import {
   usePushToTalk,
   VOICE_TASK_CONFIRMATION_MS,
   type VoiceAttemptDecision,
+  type VoiceCommitDisposition,
   type VoiceTurnContext,
   voiceConnectionErrorMessage,
 } from './use-push-to-talk';
@@ -133,7 +134,9 @@ function setup(upload = vi.fn(), selectedMode: 'dictation' | 'task' = 'task') {
     ),
     onError: vi.fn(),
     onTranscriptChange: vi.fn(),
-    onTranscriptReady: vi.fn(async () => undefined),
+    onTranscriptReady: vi.fn(
+      async (): Promise<VoiceCommitDisposition | void> => undefined,
+    ),
     onTurnEnd: vi.fn(),
   };
   // The lightweight test harness invokes the hook with mocked React primitives.
@@ -258,6 +261,7 @@ describe('segmented push-to-talk lifecycle', () => {
   });
 
   it('shows a completed phrase before release but submits only after release', async () => {
+    const diagnostic = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const upload = vi.fn(async (request) => ({
       audioDurationMs: request.durationMs,
       billedSeconds: request.durationMs / 1_000,
@@ -267,6 +271,7 @@ describe('segmented push-to-talk lifecycle', () => {
       utteranceId: request.utteranceId,
     }));
     const { callbacks, fakeWindow } = setup(upload);
+    callbacks.onTranscriptReady.mockResolvedValueOnce('task_submitted');
     pressShortcut(fakeWindow);
     await flushMicrotasks();
     emitFrames(15, 0.1);
@@ -292,6 +297,9 @@ describe('segmented push-to-talk lifecycle', () => {
     expect(callbacks.onTurnEnd).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'task' }),
       'completed',
+    );
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('"disposition":"task_submitted"'),
     );
   });
 
