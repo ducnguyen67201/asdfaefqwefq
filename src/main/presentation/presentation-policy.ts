@@ -60,6 +60,11 @@ export function derivePresentationState(input: {
     return 'needs_attention';
   }
   if (input.voice?.phase === 'error') return 'error';
+  const taskPresentationState = input.task && THINKING_PHASES.has(input.task.phase)
+    ? 'thinking'
+    : input.task && WORKING_PHASES.has(input.task.phase)
+      ? 'working'
+      : null;
   if (
     input.voice &&
     [
@@ -69,12 +74,18 @@ export function derivePresentationState(input: {
       'committing',
     ].includes(input.voice.phase)
   ) {
+    if (
+      input.voice.mode === 'task' &&
+      input.voice.phase === 'committing' &&
+      taskPresentationState
+    ) {
+      return taskPresentationState;
+    }
     return 'listening';
   }
-  if (input.voice?.phase === 'complete') return 'done';
   if (input.task?.phase === 'completed') return 'done';
-  if (input.task && THINKING_PHASES.has(input.task.phase)) return 'thinking';
-  if (input.task && WORKING_PHASES.has(input.task.phase)) return 'working';
+  if (taskPresentationState) return taskPresentationState;
+  if (input.voice?.phase === 'complete') return 'done';
   if (input.task?.phase === 'cancelled') return 'ready';
   return 'ready';
 }

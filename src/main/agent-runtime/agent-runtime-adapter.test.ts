@@ -7,8 +7,15 @@ import {
   LocalAgentHostMessageSchema,
   type LocalAgentHostMessage,
 } from '../../../services/agent-runtime/src/protocol';
+import type { ToolExecutionResult } from '../agent/agent-contracts';
+import type { DesktopObservation } from '../agent/execution-contracts';
 
-import { LocalAgentRuntime } from './agent-runtime-adapter';
+import {
+  LocalAgentRuntime,
+  executionContextAfterToolResult,
+  normalizeLocalToolResult,
+  pendingToolResumeDisposition,
+} from './agent-runtime-adapter';
 
 vi.mock('electron', () => ({
   utilityProcess: { fork: vi.fn() },
@@ -82,6 +89,46 @@ function runtimeWith(process: FakeUtilityProcess): LocalAgentRuntime {
 }
 
 describe('LocalAgentRuntime process supervision', () => {
+  it('rechecks undispatched pending tools but replays journaled effects', () => {
+    const invocation = {
+      callId: 'call-1',
+      idempotencyDigest: 'a'.repeat(64),
+      operation: 'click',
+      result: null,
+      status: 'checkpointed' as const,
+      toolId: 'computer.control',
+      updatedAt: '2026-09-01T07:30:00.000Z',
+    };
+
+    expect(pendingToolResumeDisposition(null)).toBe('recheck');
+    expect(pendingToolResumeDisposition(invocation)).toBe('recheck');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      status: 'executing',
+    })).toBe('replay');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      result: {
+        status: 'completed',
+        summary: 'The click completed.',
+        data: null,
+        imageDataUrl: null,
+      },
+      status: 'completed',
+    })).toBe('replay');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      result: {
+        status: 'completed',
+        summary: 'Captured an observation.',
+        data: null,
+        imageDataUrl: 'data:image/png;base64,aW1hZ2U=',
+      },
+      status: 'completed',
+      toolId: 'computer.observe',
+    })).toBe('reobserve');
+  });
+
   it('sends credentials only after a compatible runtime handshake', async () => {
     const process = new FakeUtilityProcess('ready');
     await runtimeWith(process).initialize();
@@ -132,5 +179,61 @@ describe('LocalAgentRuntime process supervision', () => {
     expect(process.messages.map((message) => message.kind)).toContain(
       'runtime.validateCatalog',
     );
+  });
+});
+
+describe('LocalAgentRuntime observation delivery', () => {
+  const observation: DesktopObservation = {
+    capturedAt: '2026-09-01T02:00:00.000Z',
+    degraded: false,
+    fingerprint: 'a'.repeat(64),
+    observationId: '0f157354-9ed4-4dc8-a1fa-9020f13a7710',
+    route: 'window_vision',
+    screenshot: {
+      dataBase64: 'aW1hZ2U=',
+      mimeType: 'image/png',
+    },
+    surface: { application: 'Scratch', kind: 'native_app' },
+    taskId: '475131d4-d970-46c9-85ca-8ddc4d3f85db',
+    text: 'Scratch shows an exercise asking for a repeat loop.',
+  };
+
+  const toolResult: ToolExecutionResult = {
+    observation,
+    status: 'confirmed',
+    summary: 'Captured a fresh application-surface observation.',
+  };
+
+  it('returns observation metadata and the screenshot to the model', () => {
+    expect(normalizeLocalToolResult(toolResult)).toEqual({
+      status: 'completed',
+      summary: 'Captured a fresh application-surface observation.',
+      data: {
+        observation: {
+          capturedAt: observation.capturedAt,
+          degraded: false,
+          observationId: observation.observationId,
+          route: 'window_vision',
+          surface: observation.surface,
+          text: observation.text,
+        },
+      },
+      imageDataUrl: 'data:image/png;base64,aW1hZ2U=',
+    });
+  });
+
+  it('keeps the latest observation available for the next grounded tool call', () => {
+    const context = {
+      activity: null,
+      executionProfile: 'everyday' as const,
+      taskId: observation.taskId,
+      workspace: null,
+    };
+
+    const updated = executionContextAfterToolResult(context, toolResult);
+
+    expect(updated).not.toBe(context);
+    expect(updated.latestObservation).toBe(observation);
+    expect(context).not.toHaveProperty('latestObservation');
   });
 });

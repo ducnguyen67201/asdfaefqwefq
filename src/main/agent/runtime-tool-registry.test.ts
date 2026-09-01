@@ -6,6 +6,7 @@ import type { RuntimeToolDefinition } from './runtime-tool-registry';
 import {
   defaultRuntimeToolDefinitions,
   RuntimeToolRegistry,
+  toolIdentityForAction,
 } from './runtime-tool-registry';
 
 function activityGoal(insightPolicy: 'explicit_and_operational' | 'evidence_candidates') {
@@ -42,7 +43,6 @@ describe('RuntimeToolRegistry', () => {
     const registry = new RuntimeToolRegistry();
 
     expect(registry.modelVisibleSpecs().map((tool) => tool.name)).toEqual([
-      'observe_desktop',
       'control_desktop',
       'open_url',
       'open_application',
@@ -50,6 +50,13 @@ describe('RuntimeToolRegistry', () => {
       'request_user_input',
     ]);
     expect(registry.modelVisibleSpecs().every((tool) => tool.strict)).toBe(true);
+  });
+
+  it('routes high-level screen observations through the unified host tool', () => {
+    expect(toolIdentityForAction({
+      action: 'observe_screen',
+      description: 'Observe the visible exercise.',
+    })).toEqual({ toolId: 'computer.observe', operation: 'observe' });
   });
 
   it('exposes knowledge and evidence tools only for the trusted Activity policy', () => {

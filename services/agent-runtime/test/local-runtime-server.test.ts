@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_AGENT_MODEL, graphVersion } from '../src/config.js';
 import type { HostBridge } from '../src/host-bridge.js';
-import { LocalRuntimeServer } from '../src/local-runtime-server.js';
+import {
+  applyPendingToolResume,
+  LocalRuntimeServer,
+  rejectPendingToolAfterRestart,
+} from '../src/local-runtime-server.js';
 import {
   LOCAL_AGENT_CAPABILITIES,
   LOCAL_AGENT_PROTOCOL_DIGEST,
@@ -25,6 +29,63 @@ class FakeBridge extends EventEmitter {
 }
 
 describe('LocalRuntimeServer', () => {
+  it('rejects a checkpointed tool that never ran so the model re-checks current state', () => {
+    const reject = vi.fn();
+    const interruption = {
+      rawItem: {
+        type: 'function_call',
+        callId: 'call-before-restart',
+        name: 'control_surface',
+        arguments: JSON.stringify({ observationId: randomUUID() }),
+      },
+    };
+
+    rejectPendingToolAfterRestart({ reject } as never, interruption as never);
+
+    expect(reject).toHaveBeenCalledOnce();
+    expect(reject).toHaveBeenCalledWith(interruption, {
+      message: expect.stringMatching(/re-check the current state/i),
+    });
+  });
+
+  it('replays a dispatched pending tool through the durable invocation journal', () => {
+    const approve = vi.fn();
+    const markForReplay = vi.fn();
+    const reject = vi.fn();
+    const interruption = { rawItem: { type: 'function_call', callId: 'call-1' } };
+
+    applyPendingToolResume(
+      { approve, reject } as never,
+      interruption as never,
+      'replay',
+      markForReplay,
+    );
+
+    expect(markForReplay).toHaveBeenCalledOnce();
+    expect(approve).toHaveBeenCalledWith(interruption);
+    expect(reject).not.toHaveBeenCalled();
+  });
+
+  it('requires a fresh observation instead of replaying a stale observation binding', () => {
+    const approve = vi.fn();
+    const markForReplay = vi.fn();
+    const reject = vi.fn();
+    const interruption = { rawItem: { type: 'function_call', callId: 'observe-1' } };
+
+    applyPendingToolResume(
+      { approve, reject } as never,
+      interruption as never,
+      'reobserve',
+      markForReplay,
+    );
+
+    expect(reject).toHaveBeenCalledWith(interruption, {
+      message: expect.stringMatching(/fresh observation/i),
+    });
+    expect(markForReplay).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it('releases process lifetime only after an explicit runtime shutdown', async () => {
     const bridge = new FakeBridge();
     const onShutdown = vi.fn();
@@ -67,6 +128,7 @@ describe('LocalRuntimeServer', () => {
       sequence: 1,
       agentTurnId: randomUUID(),
       request: 'Inspect the current application.',
+      requiredInitialTool: null,
       model: DEFAULT_AGENT_MODEL,
       maxTurns: 4,
       toolCatalogDigest: 'a'.repeat(64),

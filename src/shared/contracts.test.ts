@@ -586,8 +586,8 @@ describe('shared task contracts', () => {
       taskId: randomUUID(),
       timestamp: '2026-08-17T00:00:00.000Z',
       kind: 'tool_started',
-      summary: 'Using observe_desktop.',
-      tool: { name: 'observe_desktop', status: 'running' },
+      summary: 'Using observe_context.',
+      tool: { name: 'observe_context', status: 'running' },
     });
     expect(activity.sequence).toBe(2);
     expect(activity).not.toHaveProperty('arguments');

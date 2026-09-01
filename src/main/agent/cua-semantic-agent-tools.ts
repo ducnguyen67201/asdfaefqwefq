@@ -56,23 +56,55 @@ const SurfaceControlInputSchema = z.object({
   command: ModelSurfaceCommandSchema,
 });
 
-const ObserveSurfaceInputSchema = z.object({
-  reason: z.string().trim().min(1).max(500).optional(),
-  query: z.string().trim().min(1).max(500).nullable().optional(),
-  observationId: z.string().uuid().optional(),
-  region: z.object({
-    x: z.number().int().min(0).max(999),
-    y: z.number().int().min(0).max(999),
-    width: z.number().int().min(1).max(1_000),
-    height: z.number().int().min(1).max(1_000),
-  }).strict().optional(),
-}).superRefine((value, context) => {
-  const inspecting = Boolean(value.observationId || value.region);
-  if (inspecting !== Boolean(value.observationId && value.region)) {
-    context.addIssue({ code: 'custom', message: 'Image inspection requires observationId and region.' });
+const ObservationRegionSchema = z.object({
+  x: z.number().int().min(0).max(999),
+  y: z.number().int().min(0).max(999),
+  width: z.number().int().min(1).max(1_000),
+  height: z.number().int().min(1).max(1_000),
+}).strict();
+
+const ObserveContextInputSchema = z.object({
+  operation: z.enum(['observe', 'inspect_surface_region']),
+  scope: z.enum(['auto', 'desktop']).nullable(),
+  reason: z.string().trim().min(1).max(500).nullable(),
+  query: z.string().trim().min(1).max(500).nullable(),
+  observationId: z.string().uuid().nullable(),
+  region: ObservationRegionSchema.nullable(),
+}).strict().superRefine((value, context) => {
+  if (value.operation === 'observe') {
+    if (!value.scope) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Context observation requires an auto or desktop scope.',
+        path: ['scope'],
+      });
+    }
+    if (!value.reason) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Context observation requires a reason.',
+        path: ['reason'],
+      });
+    }
+    if (value.observationId || value.region) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A fresh observation cannot include an observationId or region.',
+      });
+    }
+    return;
   }
-  if (!inspecting && !value.reason) {
-    context.addIssue({ code: 'custom', message: 'Surface observation requires a reason.' });
+  if (!value.observationId || !value.region) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Image inspection requires observationId and region.',
+    });
+  }
+  if (value.scope || value.query) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Image inspection requires null scope and query.',
+    });
   }
 });
 
@@ -81,11 +113,13 @@ const PrepareBrowserInputSchema = z.object({
   reason: z.string().trim().min(1).max(2_000),
 });
 
-export interface ObserveSurfaceToolInput {
-  observationId?: string;
-  query?: string;
-  reason?: string;
-  region?: { height: number; width: number; x: number; y: number };
+export interface ObserveContextToolInput {
+  observationId: string | null;
+  operation: 'inspect_surface_region' | 'observe';
+  query: string | null;
+  reason: string | null;
+  region: { height: number; width: number; x: number; y: number } | null;
+  scope: 'auto' | 'desktop' | null;
 }
 
 export interface SurfaceControlToolInput {
@@ -297,14 +331,25 @@ export function createCuaSemanticToolDefinitions(
   const definitions: RuntimeToolDefinition[] = [
     {
       id: 'computer.observe',
-      modelName: 'observe_surface',
+      modelName: 'observe_context',
       description:
-        'Read the current non-Tro browser tab or application window using structured semantics first. It returns opaque element references and falls back to vision when needed.',
+        'Observe visible context without bringing Tro forward. Use operation observe with scope auto to understand the current non-Tro application, or scope desktop when coordinate-space evidence is required. Use inspect_surface_region only to inspect a bounded region of the latest observation.',
       operations: ['observe', 'inspect_surface_region'],
-      available: options.semanticAvailable,
       parameters: objectSchema(
         {
-          reason: { type: 'string', maxLength: 500 },
+          operation: {
+            type: 'string',
+            enum: ['observe', 'inspect_surface_region'],
+          },
+          scope: {
+            anyOf: [
+              { type: 'string', enum: ['auto', 'desktop'] },
+              { type: 'null' },
+            ],
+          },
+          reason: {
+            anyOf: [{ type: 'string', maxLength: 500 }, { type: 'null' }],
+          },
           query: {
             anyOf: [{ type: 'string', maxLength: 500 }, { type: 'null' }],
           },
@@ -328,23 +373,15 @@ export function createCuaSemanticToolDefinitions(
             ],
           },
         },
-        ['reason', 'query', 'observationId', 'region'],
+        ['operation', 'scope', 'reason', 'query', 'observationId', 'region'],
       ),
-      parse: (value) => {
-        const parsed = parseJson(ObserveSurfaceInputSchema, value);
-        return {
-          ...(parsed.reason ? { reason: parsed.reason } : {}),
-          ...(parsed.query ? { query: parsed.query } : {}),
-          ...(parsed.observationId ? { observationId: parsed.observationId } : {}),
-          ...(parsed.region ? { region: parsed.region } : {}),
-        } satisfies ObserveSurfaceToolInput;
-      },
-      normalize: (input: ObserveSurfaceToolInput, call: AgentToolCall) => ({
+      parse: (value) => parseJson(ObserveContextInputSchema, value),
+      normalize: (input: ObserveContextToolInput, call: AgentToolCall) => ({
         callId: call.callId,
         input,
         kind: 'observe',
         modelName: call.name,
-        operation: input.observationId ? 'inspect_surface_region' : 'observe',
+        operation: input.operation,
         toolId: 'computer.observe',
       }),
     },
@@ -352,7 +389,7 @@ export function createCuaSemanticToolDefinitions(
       id: 'computer.control',
       modelName: 'control_surface',
       description:
-        'Execute one exact click, type, key, or scroll action using an opaque ref from the latest observe_surface result. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use desktop control only when the observation route is desktop vision.',
+        'Execute one exact click, type, key, or scroll action using an opaque ref from the latest observe_context result when its route is semantic or window-based. Set description to one concise user-facing sentence stating what will happen; the host shows it immediately before execution. Use desktop control when the observation route is desktop vision.',
       operations: ['click_element', 'type_text', 'press_key', 'scroll'],
       available: options.semanticAvailable,
       parameters: controlParameters(),
@@ -396,7 +433,7 @@ export function createCuaSemanticToolDefinitions(
       id: 'browser.prepare',
       modelName: 'prepare_browser_access',
       description:
-        'Prepare CUA access to the exact current logged-in Chromium profile when observe_surface reports that deeper browser access is ready to prepare.',
+        'Prepare CUA access to the exact current logged-in Chromium profile when observe_context reports that deeper browser access is ready to prepare.',
       operations: ['attach_existing_profile'],
       available: () =>
         options.semanticAvailable() && options.browserPrepareAvailable(),

@@ -13,7 +13,9 @@ function localDependencies() {
     initialize: vi.fn(async () => undefined),
     resume: vi.fn(async () => undefined),
     shutdown: vi.fn(async () => undefined),
-    start: vi.fn(async () => undefined),
+    start: vi.fn(async (_input: unknown) => {
+      void _input;
+    }),
     steer: vi.fn(),
   };
   const state = {
@@ -62,6 +64,68 @@ describe('TaskApplicationService', () => {
       threadId: snapshot.taskId,
       request: 'Create a calendar event.',
     }));
+    expect(localRuntime.start.mock.calls[0]?.[0]).not.toHaveProperty(
+      'requiredInitialTool',
+    );
+  });
+
+  it('requires an initial context observation for visible-context requests', async () => {
+    const runtime = new TaskRuntime();
+    const { localRuntime, state } = localDependencies();
+    const service = new TaskApplicationService(runtime, {
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+
+    const snapshot = await service.submitAndStart({
+      executionProfile: 'everyday',
+      text: 'Làm sao làm bài tập Scratch này?',
+    });
+
+    expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: snapshot.taskId,
+      requiredInitialTool: {
+        modelName: 'observe_context',
+        arguments: {
+          operation: 'observe',
+          scope: 'auto',
+          reason: 'Ground the response in the current visible context.',
+          query: null,
+          observationId: null,
+          region: null,
+        },
+      },
+    }));
+  });
+
+  it('does not grant screen observation to Workspace requests', async () => {
+    const runtime = new TaskRuntime();
+    const { localRuntime, state } = localDependencies();
+    const selectionId = 'bc8d20ad-5a9d-40db-870f-1d0ce0bc59cd';
+    const service = new TaskApplicationService(runtime, {
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+      workspaceSelectionService: {
+        resolve: vi.fn(async () => ({
+          canonicalPath: '/trusted/workspace',
+          displayName: 'workspace',
+          selectedAt: '2026-09-01T00:00:00.000Z',
+          selectionId,
+        })),
+      },
+    });
+
+    await service.submitAndStart({
+      executionProfile: 'workspace',
+      text: 'Explain this file on my screen.',
+      workspaceSelectionId: selectionId,
+    });
+
+    expect(localRuntime.start.mock.calls[0]?.[0]).not.toHaveProperty(
+      'requiredInitialTool',
+    );
   });
 
   it('routes steer and cancel directly to the local runtime', async () => {

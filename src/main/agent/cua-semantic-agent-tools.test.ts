@@ -5,10 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { createCuaSemanticToolDefinitions } from './cua-semantic-agent-tools';
 import { RuntimeToolRegistry } from './runtime-tool-registry';
 
-function registry() {
+function registry(semanticAvailable = true) {
   return new RuntimeToolRegistry(
     createCuaSemanticToolDefinitions({
-      semanticAvailable: () => true,
+      semanticAvailable: () => semanticAvailable,
       browserPrepareAvailable: () => true,
     }),
   );
@@ -30,12 +30,81 @@ describe('CUA semantic agent tools', () => {
   it('publishes strict curated tools without raw CUA methods', () => {
     const specs = registry().modelVisibleSpecs();
     expect(specs.map((spec) => spec.name)).toEqual([
-      'observe_surface',
+      'observe_context',
       'control_surface',
       'prepare_browser_access',
     ]);
     expect(specs.every((spec) => spec.strict)).toBe(true);
     expect(JSON.stringify(specs)).not.toContain('callTool');
+  });
+
+  it('keeps context observation available without the semantic fast path', () => {
+    expect(registry(false).modelVisibleSpecs().map((spec) => spec.name)).toEqual([
+      'observe_context',
+    ]);
+  });
+
+  it.each(['auto', 'desktop'] as const)(
+    'normalizes a fresh %s context observation',
+    (scope) => {
+      const invocation = registry(false).resolve(
+        {
+          callId: `observe-${scope}`,
+          name: 'observe_context',
+          arguments: JSON.stringify({
+            operation: 'observe',
+            scope,
+            reason: 'Understand the visible exercise.',
+            query: null,
+            observationId: null,
+            region: null,
+          }),
+        },
+        { taskId: observation.taskId },
+      );
+
+      expect(invocation).toMatchObject({
+        operation: 'observe',
+        toolId: 'computer.observe',
+        input: { operation: 'observe', scope },
+      });
+    },
+  );
+
+  it('normalizes bounded inspection and rejects mixed observation fields', () => {
+    const tools = registry(false);
+    const invocation = tools.resolve(
+      {
+        callId: 'inspect-region',
+        name: 'observe_context',
+        arguments: JSON.stringify({
+          operation: 'inspect_surface_region',
+          scope: null,
+          reason: null,
+          query: null,
+          observationId: observation.observationId,
+          region: { x: 100, y: 200, width: 300, height: 400 },
+        }),
+      },
+      { taskId: observation.taskId },
+    );
+    expect(invocation.operation).toBe('inspect_surface_region');
+
+    expect(() => tools.resolve(
+      {
+        callId: 'mixed-region',
+        name: 'observe_context',
+        arguments: JSON.stringify({
+          operation: 'observe',
+          scope: 'auto',
+          reason: 'Observe.',
+          query: null,
+          observationId: observation.observationId,
+          region: null,
+        }),
+      },
+      { taskId: observation.taskId },
+    )).toThrow();
   });
 
   it('normalizes a public element ref into trusted execution evidence', () => {

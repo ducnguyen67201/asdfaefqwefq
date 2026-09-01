@@ -11,7 +11,7 @@ import type {
   ToolExecutionResult,
 } from './agent-contracts';
 import type {
-  ObserveSurfaceToolInput,
+  ObserveContextToolInput,
   PrepareBrowserAccessToolInput,
   SurfaceControlToolInput,
 } from './cua-semantic-agent-tools';
@@ -25,6 +25,8 @@ import type {
   OpenApplicationToolInput,
   OpenUrlToolInput,
 } from './runtime-tool-registry';
+
+export type DesktopObservationCleanup = () => Promise<void> | void;
 
 interface ExecutionCoordinatorOptions {
   additionalToolAdapters?: readonly RuntimeToolExecutionAdapter[];
@@ -49,6 +51,10 @@ interface ExecutionCoordinatorOptions {
     taskId: string,
     active: boolean,
   ) => Promise<void> | void;
+  prepareDesktopObservation?: () =>
+    | Promise<DesktopObservationCleanup | undefined>
+    | DesktopObservationCleanup
+    | undefined;
   presentGuidance?: (
     input: GuidanceToolInput,
     context: { signal: AbortSignal; taskId: string },
@@ -88,6 +94,9 @@ export class TaskExecutionCoordinator {
       throw new Error('URL navigation is not configured.');
     },
     onDesktopControlChange = async () => undefined,
+    prepareDesktopObservation = () => {
+      throw new Error('Desktop observation preparation is not configured.');
+    },
     presentGuidance = async () => undefined,
     toolDispatcher,
   }: ExecutionCoordinatorOptions) {
@@ -97,17 +106,9 @@ export class TaskExecutionCoordinator {
       toolDispatcher ??
       new RuntimeToolDispatcher([
         {
-          id: 'desktop.observe',
-          execute: async (_invocation, context) => ({
-            observation: await cua.observe(context.taskId, context.signal),
-            status: 'confirmed',
-            summary: 'Captured a fresh desktop observation.',
-          }),
-        },
-        {
           id: 'computer.observe',
           execute: async (invocation, context) => {
-            const input = invocation.input as ObserveSurfaceToolInput;
+            const input = invocation.input as ObserveContextToolInput;
             if (invocation.operation === 'inspect_surface_region') {
               if (!input.observationId || !input.region) {
                 throw new Error(
@@ -133,17 +134,34 @@ export class TaskExecutionCoordinator {
                 summary: `Captured a ${crop.width} by ${crop.height} original-resolution crop.`,
               };
             }
-            const observation =
-              (await cua.observeCurrentSurface(
+            if (input.scope === 'auto') {
+              const surfaceObservation = await cua.observeCurrentSurface(
                 context.taskId,
-                { query: input.query },
+                { query: input.query ?? undefined },
                 context.signal,
-              )) ?? (await cua.observe(context.taskId, context.signal));
-            return {
-              observation,
-              status: 'confirmed' as const,
-              summary: 'Captured a fresh application-surface observation.',
-            };
+              );
+              if (surfaceObservation) {
+                return {
+                  observation: surfaceObservation,
+                  status: 'confirmed' as const,
+                  summary: 'Captured a fresh application-surface observation.',
+                };
+              }
+            }
+            if (input.scope !== 'auto' && input.scope !== 'desktop') {
+              throw new Error('Context observation requires an auto or desktop scope.');
+            }
+            const cleanup = await prepareDesktopObservation();
+            try {
+              const observation = await cua.observe(context.taskId, context.signal);
+              return {
+                observation,
+                status: 'confirmed' as const,
+                summary: 'Captured a fresh desktop observation.',
+              };
+            } finally {
+              await cleanup?.();
+            }
           },
         },
         {
@@ -243,7 +261,6 @@ export class TaskExecutionCoordinator {
     context: { signal: AbortSignal; taskId: string },
   ): Promise<ToolExecutionResult> {
     if (
-      invocation.toolId === 'desktop.observe' ||
       invocation.toolId === 'desktop.control' ||
       invocation.toolId === 'computer.observe' ||
       invocation.toolId === 'computer.control' ||

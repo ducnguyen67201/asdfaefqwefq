@@ -26,15 +26,21 @@ import {
   type LocalRuntimeCatalogValidation,
   type LocalRuntimeToolSpec,
   type LocalToolExecutionResult,
+  type PendingToolResumeDisposition,
+  type RequiredInitialToolCall,
 } from '../../../services/agent-runtime/src/protocol';
+import { digest } from '../../../services/agent-runtime/src/serialization';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
+import type { DesktopObservation } from '../agent/execution-contracts';
 import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
 import type {
   RuntimeToolRegistry,
+  ToolResolutionContext,
   TrustedToolExecutionContext,
 } from '../agent/runtime-tool-registry';
 
 import type { EncryptedAgentStateStore } from './encrypted-agent-state-store';
+import type { LocalInvocation } from './local-agent-state';
 
 const AgentTurnResponseSchema = z.object({ id: z.string().uuid() }).passthrough();
 const RUNTIME_READY_TIMEOUT_MS = 15_000;
@@ -49,6 +55,7 @@ export interface LocalTurnStart {
   maxTurns: number;
   model?: string;
   request: string;
+  requiredInitialTool?: RequiredInitialToolCall;
   threadId: string;
 }
 
@@ -75,11 +82,15 @@ interface ActiveTurn {
   readonly agentTurnId: string;
   readonly catalog: { digest: string; tools: LocalRuntimeToolSpec[] };
   readonly controller: AbortController;
-  readonly executionContext: TrustedToolExecutionContext;
+  executionContext: GroundedToolExecutionContext;
   readonly graphVersion: string;
   readonly model: string;
+  requiredInitialTool: RequiredInitialToolCall | null;
   readonly turnId: string;
 }
+
+type GroundedToolExecutionContext = TrustedToolExecutionContext &
+  Pick<ToolResolutionContext, 'latestObservation'>;
 
 export interface LocalAgentRuntimeOptions {
   accessTokenProvider(): Promise<string>;
@@ -161,7 +172,8 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     }
     const token = await this.options.accessTokenProvider();
     await this.ensureReady(token);
-    const catalog = this.options.tools.freeze(input.executionContext);
+    const executionContext = { ...input.executionContext };
+    const catalog = this.options.tools.freeze(executionContext);
     const model = input.model?.trim() || DEFAULT_AGENT_MODEL;
     const version = graphVersion(catalog.tools, model);
     const turnId = randomUUID();
@@ -170,9 +182,10 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       agentTurnId,
       catalog,
       controller: new AbortController(),
-      executionContext: input.executionContext,
+      executionContext,
       graphVersion: version,
       model,
+      requiredInitialTool: input.requiredInitialTool ?? null,
       turnId,
     };
     this.active.set(input.threadId, active);
@@ -182,6 +195,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         kind: 'turn.start',
         agentTurnId,
         request: input.request,
+        requiredInitialTool: input.requiredInitialTool ?? null,
         model,
         maxTurns: input.maxTurns,
         toolCatalogDigest: catalog.digest,
@@ -203,7 +217,13 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     const state = await this.options.state.readThread(threadId);
     const checkpoint = state.checkpoint;
     if (!checkpoint) throw new Error('Local task has no durable SDK checkpoint.');
-    const catalog = this.options.tools.freeze(executionContext);
+    const pendingToolDisposition = checkpoint.pendingCallId
+      ? pendingToolResumeDisposition(
+          await this.options.state.invocation(threadId, checkpoint.pendingCallId),
+        )
+      : null;
+    const groundedExecutionContext = { ...executionContext };
+    const catalog = this.options.tools.freeze(groundedExecutionContext);
     const version = graphVersion(catalog.tools, checkpoint.model);
     if (catalog.digest !== checkpoint.toolCatalogDigest || version !== checkpoint.graphVersion) {
       throw new Error('The installed local agent graph changed; this checkpoint cannot be resumed safely.');
@@ -212,9 +232,10 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       agentTurnId: checkpoint.agentTurnId,
       catalog,
       controller: new AbortController(),
-      executionContext,
+      executionContext: groundedExecutionContext,
       graphVersion: checkpoint.graphVersion,
       model: checkpoint.model,
+      requiredInitialTool: checkpoint.requiredInitialTool,
       turnId: randomUUID(),
     };
     this.active.set(threadId, active);
@@ -230,6 +251,8 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         checkpoint: checkpoint.state,
         checkpointRevision: checkpoint.revision,
         pendingCallId: checkpoint.pendingCallId,
+        pendingToolDisposition,
+        requiredInitialTool: checkpoint.requiredInitialTool,
       });
     } catch (error) {
       this.active.delete(threadId);
@@ -468,6 +491,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model: active.model,
       pendingCallId: message.pendingCallId,
       protocolDigest: message.protocolDigest,
+      requiredInitialTool: active.requiredInitialTool,
       sdkVersion: message.sdkVersion,
       state: message.checkpoint,
       toolCatalogDigest: active.catalog.digest,
@@ -485,6 +509,16 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       throw new Error('Tool execution was requested without its durable checkpoint.');
     }
     if (message.catalogDigest !== active.catalog.digest) throw new Error('tool_catalog_mismatch');
+    const completesRequiredInitialTool = active.requiredInitialTool !== null;
+    if (
+      active.requiredInitialTool &&
+      (
+        active.requiredInitialTool.modelName !== message.modelName ||
+        digest(active.requiredInitialTool.arguments) !== digest(message.arguments)
+      )
+    ) {
+      throw new Error('required_initial_tool_mismatch');
+    }
     let record = await this.options.state.addInvocation(message.threadId, {
       callId: message.callId,
       idempotencyDigest: message.idempotencyDigest,
@@ -492,6 +526,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       toolId: message.toolId,
     });
     if (record.result) {
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
       this.emitToolLifecycle(
         message,
         record.result.status === 'completed'
@@ -505,6 +540,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       return;
     }
     if (record.status === 'executing') {
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
       const unknown: LocalToolExecutionResult = {
         status: 'unknown', summary: 'The app restarted after dispatch, so this action was not repeated.', data: null, imageDataUrl: null,
       };
@@ -546,10 +582,16 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       if (invocation.toolId !== message.toolId || invocation.operation !== message.operation) {
         throw new Error('Tool invocation does not match the frozen catalog.');
       }
-      result = normalizeToolResult(await this.options.coordinator.dispatchTool(invocation, {
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
+      const toolResult = await this.options.coordinator.dispatchTool(invocation, {
         signal: active.controller.signal,
         taskId: message.threadId,
-      }));
+      });
+      active.executionContext = executionContextAfterToolResult(
+        active.executionContext,
+        toolResult,
+      );
+      result = normalizeLocalToolResult(toolResult);
     } catch (error) {
       result = { status: 'unknown', summary: safeError(error), data: null, imageDataUrl: null };
     }
@@ -731,17 +773,66 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
   }
 }
 
-function normalizeToolResult(result: ToolExecutionResult): LocalToolExecutionResult {
+export function executionContextAfterToolResult(
+  context: GroundedToolExecutionContext,
+  result: ToolExecutionResult,
+): GroundedToolExecutionContext {
+  return result.observation
+    ? { ...context, latestObservation: result.observation }
+    : context;
+}
+
+export function pendingToolResumeDisposition(
+  invocation: LocalInvocation | null,
+): PendingToolResumeDisposition {
+  if (invocation?.toolId === 'computer.observe') return 'reobserve';
+  return !invocation
+    || invocation.status === 'checkpointed'
+    || invocation.status === 'cancelled-before-dispatch'
+    ? 'recheck'
+    : 'replay';
+}
+
+function modelObservationData(observation: DesktopObservation) {
+  return {
+    capturedAt: observation.capturedAt,
+    degraded: observation.degraded,
+    observationId: observation.observationId,
+    route: observation.route,
+    text: observation.text,
+    ...(observation.structuredState
+      ? { structuredState: observation.structuredState }
+      : {}),
+    ...(observation.coordinateSpace
+      ? { coordinateSpace: observation.coordinateSpace }
+      : {}),
+    ...(observation.surface ? { surface: observation.surface } : {}),
+    ...(observation.elements ? { elements: observation.elements } : {}),
+  };
+}
+
+export function normalizeLocalToolResult(
+  result: ToolExecutionResult,
+): LocalToolExecutionResult {
   const status = result.status === 'confirmed'
     ? 'completed'
     : result.status === 'unknown'
       ? 'unknown'
       : 'failed';
+  const data = result.observation
+    ? {
+        ...(result.data ?? {}),
+        observation: modelObservationData(result.observation),
+      }
+    : result.data ?? null;
+  const observationImageDataUrl = result.observation?.screenshot
+    ? `data:${result.observation.screenshot.mimeType};base64,${result.observation.screenshot.dataBase64}`
+    : null;
   return {
     status,
     summary: result.summary.slice(0, 1_000),
-    data: result.data ?? null,
-    imageDataUrl: result.imageDataUrl ?? null,
+    data,
+    imageDataUrl: result.imageDataUrl ?? observationImageDataUrl,
   };
 }
 

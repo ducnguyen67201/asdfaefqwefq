@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeSet,
+    time::{Duration, Instant},
+};
 
 use axum::{
     body::Body,
@@ -357,14 +360,37 @@ pub async fn handle(
         )
         .await?;
         let mut input = read_json(headers, bytes, 25_000_000)?;
-        if path.ends_with("/compact") {
-            validate_responses_compact(state, &input)?;
-        } else {
-            validate_responses(state, &mut input)?;
-        }
         let header_request = uuid_header(headers, "x-trocode-request-id")?;
         let task = uuid_header(headers, "x-trocode-task-id")?;
         let turn = uuid_header(headers, "x-trocode-agent-turn-id")?;
+        if path.ends_with("/compact") {
+            validate_responses_compact(state, &input)?;
+        } else {
+            match validate_responses_payload(&state.config.openai_models, &mut input) {
+                Ok(summary) => tracing::info!(
+                    event = "agent.model.request.accepted",
+                    serverRequestId = %request_id,
+                    clientRequestId = %header_request,
+                    taskId = %task,
+                    agentTurnId = %turn,
+                    model = summary.model,
+                    toolChoice = summary.tool_choice,
+                    toolCount = summary.tool_count,
+                    inputItemCount = summary.input_item_count,
+                ),
+                Err(error) => {
+                    tracing::warn!(
+                        event = "agent.model.request.rejected",
+                        serverRequestId = %request_id,
+                        clientRequestId = %header_request,
+                        taskId = %task,
+                        agentTurnId = %turn,
+                        code = error.code.unwrap_or("responses_invalid_request"),
+                    );
+                    return Err(error);
+                }
+            }
+        }
         let provider_input = ResponsesInput {
             body: input,
             agent_turn_id: turn,
@@ -560,40 +586,103 @@ fn hosted_model_calls_available(state: &AppState) -> bool {
     state.config.cost_guard.enabled
 }
 
-fn validate_responses(state: &AppState, input: &mut Value) -> ApiResult<()> {
-    let object = input
-        .as_object_mut()
-        .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Responses request is invalid."))?;
-    object
-        .entry("tool_choice")
-        .or_insert(Value::String("auto".to_owned()));
-    let valid = object
-        .get("model")
-        .and_then(Value::as_str)
-        .is_some_and(|model| state.config.openai_models.contains(model))
-        && object
-            .get("input")
-            .and_then(Value::as_array)
-            .is_some_and(|items| items.len() <= 256)
+#[derive(Debug, Eq, PartialEq)]
+struct ResponsesRequestSummary {
+    model: String,
+    tool_choice: String,
+    tool_count: usize,
+    input_item_count: usize,
+}
+
+fn valid_function_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn response_tool_choice(object: &serde_json::Map<String, Value>) -> ApiResult<String> {
+    let tool_choice = object.get("tool_choice").ok_or_else(|| {
+        ApiError::bad_request(
+            "responses_invalid_tool_choice",
+            "The requested model tool is unavailable.",
+        )
+    })?;
+    if tool_choice.as_str() == Some("auto") {
+        return Ok("auto".to_owned());
+    }
+    let Some(choice) = tool_choice.as_object() else {
+        return Err(ApiError::bad_request(
+            "responses_invalid_tool_choice",
+            "The requested model tool is unavailable.",
+        ));
+    };
+    let Some(name) = choice.get("name").and_then(Value::as_str) else {
+        return Err(ApiError::bad_request(
+            "responses_invalid_tool_choice",
+            "The requested model tool is unavailable.",
+        ));
+    };
+    let named_function = choice.get("type").and_then(Value::as_str) == Some("function")
+        && valid_function_name(name)
         && object
             .get("tools")
             .and_then(Value::as_array)
-            .is_some_and(|items| items.len() <= 128)
-        && object.get("tool_choice").and_then(Value::as_str) == Some("auto")
+            .is_some_and(|tools| {
+                tools.iter().any(|tool| {
+                    tool.get("type").and_then(Value::as_str) == Some("function")
+                        && tool.get("name").and_then(Value::as_str) == Some(name)
+                })
+            });
+    if named_function {
+        Ok(format!("function:{name}"))
+    } else {
+        Err(ApiError::bad_request(
+            "responses_invalid_tool_choice",
+            "The requested model tool is unavailable.",
+        ))
+    }
+}
+
+fn validate_responses_payload(
+    allowed_models: &BTreeSet<String>,
+    input: &mut Value,
+) -> ApiResult<ResponsesRequestSummary> {
+    let object = input.as_object_mut().ok_or_else(|| {
+        ApiError::bad_request("responses_invalid_request", "Responses request is invalid.")
+    })?;
+    object
+        .entry("tool_choice")
+        .or_insert(Value::String("auto".to_owned()));
+    let model = object
+        .get("model")
+        .and_then(Value::as_str)
+        .filter(|model| allowed_models.contains(*model));
+    let input_items = object.get("input").and_then(Value::as_array);
+    let tools = object.get("tools").and_then(Value::as_array);
+    let valid = model.is_some()
+        && input_items.is_some_and(|items| items.len() <= 256)
+        && tools.is_some_and(|items| items.len() <= 128)
         && object.get("parallel_tool_calls").and_then(Value::as_bool) == Some(false)
         && object.get("store").and_then(Value::as_bool) == Some(false)
         && object
             .get("max_output_tokens")
             .and_then(Value::as_i64)
             .is_some_and(|value| (1..=4_000).contains(&value));
-    if valid {
-        Ok(())
-    } else {
-        Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
+    if !valid {
+        return Err(ApiError::bad_request(
+            "responses_invalid_request",
             "Responses request is invalid.",
-        ))
+        ));
     }
+    let tool_choice = response_tool_choice(object)?;
+    Ok(ResponsesRequestSummary {
+        model: model.expect("validated model").to_owned(),
+        tool_choice,
+        tool_count: tools.expect("validated tools").len(),
+        input_item_count: input_items.expect("validated input").len(),
+    })
 }
 
 fn validate_responses_compact(state: &AppState, input: &Value) -> ApiResult<()> {
@@ -917,4 +1006,57 @@ fn format_time(value: time::OffsetDateTime) -> String {
     value
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::json;
+
+    use super::*;
+
+    fn allowed_models() -> BTreeSet<String> {
+        BTreeSet::from(["gpt-5.6-luna".to_owned()])
+    }
+
+    fn responses_request(tool_choice: Value, tools: Value) -> Value {
+        json!({
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "private"}]}],
+            "max_output_tokens": 128,
+            "model": "gpt-5.6-luna",
+            "parallel_tool_calls": false,
+            "store": false,
+            "tool_choice": tool_choice,
+            "tools": tools,
+        })
+    }
+
+    #[test]
+    fn responses_validation_accepts_a_named_function_present_in_the_catalog() {
+        let mut input = responses_request(
+            json!({"type": "function", "name": "observe_context"}),
+            json!([{"type": "function", "name": "observe_context"}]),
+        );
+
+        let summary = validate_responses_payload(&allowed_models(), &mut input)
+            .expect("the named function is present in the submitted catalog");
+
+        assert_eq!(summary.model, "gpt-5.6-luna");
+        assert_eq!(summary.tool_choice, "function:observe_context");
+        assert_eq!(summary.tool_count, 1);
+    }
+
+    #[test]
+    fn responses_validation_rejects_a_named_function_missing_from_the_catalog() {
+        let mut input = responses_request(
+            json!({"type": "function", "name": "observe_context"}),
+            json!([{"type": "function", "name": "different_tool"}]),
+        );
+
+        let error = validate_responses_payload(&allowed_models(), &mut input)
+            .expect_err("an unavailable named function must fail closed");
+
+        assert_eq!(error.code, Some("responses_invalid_tool_choice"));
+    }
 }

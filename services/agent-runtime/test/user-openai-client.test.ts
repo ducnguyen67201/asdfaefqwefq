@@ -45,6 +45,65 @@ describe('UserOpenAIClientFactory', () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
+  it('reports safe correlated diagnostics when the proxy rejects a model request', async () => {
+    const diagnostics: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: 'Responses request is invalid.',
+    }), {
+      status: 400,
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'server-request-1',
+      },
+    })));
+    const credential = new EphemeralCredentialStore();
+    credential.replace('ephemeral-user-token');
+    const taskId = randomUUID();
+    const agentTurnId = randomUUID();
+    const clients = new UserOpenAIClientFactory(
+      () => 'https://api.example.com',
+      credential,
+    ).create(
+      { agentTurnId, taskId },
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+
+    await expect(clients.openai.responses.create({
+      input: 'private Scratch prompt',
+      model: 'gpt-test',
+      tool_choice: { type: 'function', name: 'observe_context' },
+      tools: [{
+        type: 'function',
+        name: 'observe_context',
+        description: 'Observe the current context.',
+        parameters: { type: 'object', properties: {}, required: [] },
+        strict: true,
+      }],
+    })).rejects.toThrow();
+
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        agentTurnId,
+        event: 'model_request_started',
+        model: 'gpt-test',
+        taskId,
+        toolChoice: 'function:observe_context',
+        toolCount: 1,
+      }),
+      expect.objectContaining({
+        agentTurnId,
+        event: 'model_request_rejected',
+        serverRequestId: 'server-request-1',
+        status: 400,
+        taskId,
+      }),
+    ]);
+    const serialized = JSON.stringify(diagnostics);
+    expect(serialized).not.toContain('private Scratch prompt');
+    expect(serialized).not.toContain('ephemeral-user-token');
+    expect(serialized).not.toContain('parameters');
+  });
+
   it('clears credentials from memory on sign-out', () => {
     const credential = new EphemeralCredentialStore();
     credential.replace('ephemeral-user-token');

@@ -113,12 +113,12 @@ export function evaluateWalkthroughTool(
     return { allowed: true, summary: 'Walkthrough sequencing is not active.' };
   }
   if (state.phase === 'needs_observation') {
-    return toolName === 'observe_desktop'
+    return toolName === 'observe_context'
       ? { allowed: true, summary: 'Capturing the next walkthrough step.' }
       : {
           allowed: false,
           summary:
-            'This walkthrough needs a fresh observe_desktop result before the next show_guidance step.',
+            'This walkthrough needs a fresh observe_context result with scope desktop before the next show_guidance step.',
         };
   }
   return toolName === 'show_guidance'
@@ -137,7 +137,7 @@ export function advanceWalkthrough(
   if (!state.enabled) return state;
   if (
     state.phase === 'needs_observation' &&
-    completedToolName === 'observe_desktop'
+    completedToolName === 'observe_context'
   ) {
     return { ...state, phase: 'needs_guidance' };
   }
@@ -157,9 +157,9 @@ export function walkthroughModelInstruction(state: WalkthroughState): string {
     return 'Trusted host walkthrough checkpoint: call show_guidance exactly once using the latest observation. Show one target and one concise instruction; do not give the remaining answers upfront.';
   }
   if (state.completedSteps === 0) {
-    return 'Trusted host walkthrough checkpoint: call observe_desktop now. Do not return an upfront text answer; the first visible step must follow as one show_guidance call.';
+    return 'Trusted host walkthrough checkpoint: call observe_context with operation observe and scope desktop now. Do not return an upfront text answer; the first visible step must follow as one show_guidance call.';
   }
-  return 'Trusted host walkthrough checkpoint: if another visible step remains, call observe_desktop before showing it. If the walkthrough is complete, return only a concise completion note.';
+  return 'Trusted host walkthrough checkpoint: if another visible step remains, call observe_context with operation observe and scope desktop before showing it. If the walkthrough is complete, return only a concise completion note.';
 }
 
 export function parseWalkthroughCompletion(output: string): string | null {
@@ -178,13 +178,13 @@ export function parseWalkthroughCompletion(output: string): string | null {
 
 export const WALKTHROUGH_RECOVERY_INSTRUCTION = [
   'Trusted host correction: the upfront text response was rejected because the user requested an interactive walkthrough.',
-  'Call observe_desktop, then call show_guidance exactly once for the first visible target.',
+  'Call observe_context with operation observe and scope desktop, then call show_guidance exactly once for the first visible target.',
   'Do not provide the full answer or all remaining steps upfront.',
 ].join('\n');
 
 export const WALKTHROUGH_COMPLETION_INSTRUCTION = [
   'Trusted host walkthrough completion checkpoint: re-read the original request and the complete tool-result history.',
-  'If another visible step remains, continue with a fresh observe_desktop call followed by exactly one show_guidance call.',
+  'If another visible step remains, continue with a fresh observe_context call using operation observe and scope desktop followed by exactly one show_guidance call.',
   `Only when the interactive walkthrough is complete, return exactly one line in this form: ${WALKTHROUGH_COMPLETION_PREFIX}<concise recap>`,
   `The recap must be ${MAX_WALKTHROUGH_RECAP_LENGTH} characters or fewer and must not contain answers, steps, bullets, or a numbered list.`,
 ].join('\n');

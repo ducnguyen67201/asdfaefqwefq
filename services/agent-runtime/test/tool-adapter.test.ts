@@ -20,6 +20,68 @@ function toolSpec(
 }
 
 describe('SDK tool adapter', () => {
+  it('normalizes only the first interruption to the required exact call', () => {
+    const observeContext: LocalRuntimeToolSpec = {
+      toolId: 'computer.observe',
+      modelName: 'observe_context',
+      description: 'Observe or inspect the current visible context.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          operation: {
+            type: 'string',
+            enum: ['observe', 'inspect_surface_region'],
+          },
+          scope: {
+            anyOf: [
+              { type: 'string', enum: ['auto', 'desktop'] },
+              { type: 'null' },
+            ],
+          },
+        },
+        required: ['operation', 'scope'],
+      },
+      operations: ['observe', 'inspect_surface_region'],
+      driverCatalogDigest: digest,
+    };
+    const requiredInitialTool = {
+      modelName: 'observe_context',
+      arguments: { operation: 'observe', scope: 'auto' },
+    };
+    const surface = new ToolSurfaceFactory().create(
+      [observeContext],
+      digest,
+      requiredInitialTool,
+    );
+
+    const first = surface.resolve({
+      rawItem: {
+        type: 'function_call',
+        callId: 'call-1',
+        name: 'observe_context',
+        arguments: 'model arguments are ignored for the required call',
+      },
+    } as never);
+    const second = surface.resolve({
+      rawItem: {
+        type: 'function_call',
+        callId: 'call-2',
+        name: 'observe_context',
+        arguments: JSON.stringify({ operation: 'observe', scope: 'desktop' }),
+      },
+    } as never);
+
+    expect(first).toMatchObject({
+      arguments: requiredInitialTool.arguments,
+      operation: 'observe',
+    });
+    expect(second).toMatchObject({
+      arguments: { operation: 'observe', scope: 'desktop' },
+      operation: 'observe',
+    });
+  });
+
   it('constructs strict SDK tools from normalized nullable CUA object branches', () => {
     const startSession = toolSpec('start_session', {
       type: 'object',

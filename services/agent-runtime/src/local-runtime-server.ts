@@ -3,6 +3,7 @@ import {
   RunState,
   type AgentInputItem,
   type ModelInputData,
+  type RunToolApprovalItem,
 } from '@openai/agents';
 
 import { AgentGraphFactory } from './agent-graph.js';
@@ -21,16 +22,57 @@ import {
   LOCAL_AGENT_SDK_VERSION,
   type LocalAgentHostMessage,
   type LocalTurnEventKind,
+  type PendingToolResumeDisposition,
 } from './protocol.js';
 import { ToolOutcomeUnknownError, ToolSurfaceFactory } from './tool-adapter.js';
 import {
   EphemeralCredentialStore,
+  type ModelRequestDiagnostic,
   UserOpenAIClientFactory,
 } from './user-openai-client.js';
 
 interface ActiveTurn {
   readonly controller: AbortController;
   readonly steering: string[];
+}
+
+interface PendingToolResumeState {
+  approve(interruption: RunToolApprovalItem): void;
+  reject(
+    interruption: RunToolApprovalItem,
+    options: { message: string },
+  ): void;
+}
+
+const RESTARTED_PENDING_TOOL_MESSAGE =
+  'The application restarted before this tool ran. Re-check the current state, then request the tool again only if it is still needed.';
+const RESTARTED_OBSERVATION_MESSAGE =
+  'The saved observation is stale after the application restarted. Capture a fresh observation before requesting another grounded action.';
+
+/** A pre-restart interruption is known not to have run, but its host context is stale. */
+export function rejectPendingToolAfterRestart(
+  state: PendingToolResumeState,
+  interruption: RunToolApprovalItem,
+): void {
+  state.reject(interruption, { message: RESTARTED_PENDING_TOOL_MESSAGE });
+}
+
+export function applyPendingToolResume(
+  state: PendingToolResumeState,
+  interruption: RunToolApprovalItem,
+  disposition: PendingToolResumeDisposition,
+  markForReplay: () => void,
+): void {
+  if (disposition === 'reobserve') {
+    state.reject(interruption, { message: RESTARTED_OBSERVATION_MESSAGE });
+    return;
+  }
+  if (disposition === 'recheck') {
+    rejectPendingToolAfterRestart(state, interruption);
+    return;
+  }
+  markForReplay();
+  state.approve(interruption);
 }
 
 export class LocalRuntimeServer {
@@ -162,14 +204,19 @@ export class LocalRuntimeServer {
     let checkpointRevision = message.kind === 'turn.resume' ? message.checkpointRevision : 0;
     try {
       const factory = this.requireGraphFactory();
-      const graph = await factory.create({
-        agentTurnId: message.agentTurnId,
-        graphVersion: message.graphVersion,
-        model: message.model,
-        taskId: message.threadId,
-        toolCatalogDigest: message.toolCatalogDigest,
-        tools: message.tools,
-      }, context);
+      const graph = await factory.create(
+        {
+          agentTurnId: message.agentTurnId,
+          graphVersion: message.graphVersion,
+          model: message.model,
+          requiredInitialTool: message.requiredInitialTool,
+          taskId: message.threadId,
+          toolCatalogDigest: message.toolCatalogDigest,
+          tools: message.tools,
+        },
+        context,
+        (diagnostic) => this.modelRequestEvent(identity, diagnostic),
+      );
       this.event(identity, 'lifecycle', 'The local Agents SDK started the turn.');
       let nextInput: string | RunState<LocalAgentRunContext, typeof graph.agent>;
       if (message.kind === 'turn.resume') {
@@ -179,13 +226,38 @@ export class LocalRuntimeServer {
           new RunContext(context),
         );
         if (message.pendingCallId) {
+          if (!message.pendingToolDisposition) {
+            throw new Error('pending_tool_disposition_missing');
+          }
           const interruption = restored.getInterruptions().find((candidate) =>
             candidate.rawItem.type === 'function_call' && candidate.rawItem.callId === message.pendingCallId,
           );
           if (!interruption) throw new Error('pending_checkpoint_interruption_missing');
-          const pending = graph.toolSurface.resolve(interruption);
-          graph.toolSurface.markCheckpointed(pending);
-          restored.approve(interruption);
+          applyPendingToolResume(
+            restored,
+            interruption,
+            message.pendingToolDisposition,
+            () => {
+              const pending = graph.toolSurface.resolve(interruption);
+              graph.toolSurface.markCheckpointed(pending);
+            },
+          );
+          if (message.pendingToolDisposition === 'replay') {
+            active.steering.push(
+              'The application restarted. Use the durable pending tool result, then observe current state before requesting another computer action.',
+            );
+          }
+          this.event(
+            identity,
+            'lifecycle',
+            message.pendingToolDisposition === 'replay'
+              ? 'The app is reconciling a pending tool with its durable invocation journal.'
+              : message.pendingToolDisposition === 'reobserve'
+                ? 'The app restarted; the agent must capture a fresh observation.'
+                : 'The app restarted before a pending tool ran; the agent must re-check current state.',
+          );
+        } else if (message.pendingToolDisposition) {
+          throw new Error('unexpected_pending_tool_disposition');
         }
         nextInput = restored;
       } else {
@@ -287,6 +359,34 @@ export class LocalRuntimeServer {
       event,
       summary,
       data,
+    });
+  }
+
+  private modelRequestEvent(
+    identity: TurnIdentity,
+    diagnostic: ModelRequestDiagnostic,
+  ): void {
+    const requestId = diagnostic.serverRequestId ?? diagnostic.clientRequestId;
+    const status = diagnostic.status === null ? '' : `${diagnostic.status}; `;
+    const choice = diagnostic.toolChoice ? `${diagnostic.toolChoice}; ` : '';
+    const summary = diagnostic.event === 'model_request_started'
+      ? `Model request started (${choice}request ${requestId}).`
+      : diagnostic.event === 'model_request_completed'
+        ? `Model request completed (${status}request ${requestId}).`
+        : diagnostic.event === 'model_request_rejected'
+          ? `Model request rejected (${status}request ${requestId}).`
+          : `Model request failed before a response was received (request ${requestId}).`;
+    this.event(identity, diagnostic.event, summary, {
+      agentTurnId: diagnostic.agentTurnId,
+      clientRequestId: diagnostic.clientRequestId,
+      durationMs: diagnostic.durationMs,
+      inputItemCount: diagnostic.inputItemCount,
+      model: diagnostic.model,
+      serverRequestId: diagnostic.serverRequestId,
+      status: diagnostic.status,
+      taskId: diagnostic.taskId,
+      toolChoice: diagnostic.toolChoice,
+      toolCount: diagnostic.toolCount,
     });
   }
 

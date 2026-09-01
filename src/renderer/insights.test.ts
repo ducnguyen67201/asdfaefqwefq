@@ -93,13 +93,13 @@ describe('createInsightsSummary', () => {
       eventId: '33333333-3333-4333-8333-333333333333',
       taskId: task.taskId,
       phase: 'verifying',
-      tool: { toolId: 'desktop.observe', operation: 'observe' },
+      tool: { toolId: 'computer.observe', operation: 'observe' },
     });
 
     const summary = createInsightsSummary([task], [event]);
     expect(summary.stepsObserved).toBe(2);
     expect(summary.toolUsage).toEqual([
-      { toolId: 'desktop.observe', count: 1, percentage: 100 },
+      { toolId: 'computer.observe', count: 1, percentage: 100 },
     ]);
   });
 });

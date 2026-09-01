@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { graphVersion, ROOT_AGENT_DEFINITION } from '../src/config.js';
+import { AgentGraphFactory } from '../src/agent-graph.js';
+import {
+  graphVersion,
+  modelSettings,
+  ROOT_AGENT_DEFINITION,
+} from '../src/config.js';
 import {
   LOCAL_AGENT_CAPABILITIES,
   LOCAL_AGENT_PROTOCOL_DIGEST,
@@ -53,6 +58,30 @@ describe('local agent protocol and graph', () => {
     );
   });
 
+  it('publishes the requested initial context tool choice', () => {
+    expect(modelSettings('observe_context')).toMatchObject({
+      toolChoice: 'observe_context',
+    });
+    expect(modelSettings()).toMatchObject({ toolChoice: 'auto' });
+  });
+
+  it('rejects a required initial tool outside the frozen catalog', async () => {
+    const factory = new AgentGraphFactory({ create: vi.fn() } as never);
+
+    await expect(factory.create({
+      agentTurnId: randomUUID(),
+      graphVersion: graphVersion([], 'gpt-test'),
+      model: 'gpt-test',
+      requiredInitialTool: {
+        modelName: 'observe_context',
+        arguments: { operation: 'observe', scope: 'auto' },
+      },
+      taskId: randomUUID(),
+      toolCatalogDigest: digest,
+      tools: [],
+    }, {} as never)).rejects.toThrow('required_initial_tool_unavailable');
+  });
+
   it('rejects unknown host message fields and wrong protocol versions', () => {
     const valid = {
       kind: 'runtime.initialize',
@@ -72,7 +101,7 @@ describe('local agent protocol and graph', () => {
     expect(LocalAgentHostMessageSchema.safeParse({ ...valid, credential: 'secret' }).success).toBe(false);
     expect(LocalAgentHostMessageSchema.safeParse({
       ...valid,
-      expected: { ...valid.expected, protocolVersion: 3 },
+      expected: { ...valid.expected, protocolVersion: 2 },
     }).success).toBe(false);
   });
 
@@ -111,5 +140,31 @@ describe('local agent protocol and graph', () => {
       LocalAgentChildMessageSchema.safeParse({ ...event, summary: ' ' })
         .success,
     ).toBe(true);
+  });
+
+  it('admits bounded model-request diagnostics across the process protocol', () => {
+    const parsed = LocalAgentChildMessageSchema.parse({
+      kind: 'turn.event',
+      requestId: randomUUID(),
+      threadId: randomUUID(),
+      turnId: randomUUID(),
+      agentId: LOCAL_AGENT_ROOT_ID,
+      parentAgentId: null,
+      delegationId: null,
+      graphVersion: digest,
+      sequence: 1,
+      event: 'model_request_rejected',
+      summary: 'The model request was rejected before inference.',
+      data: {
+        clientRequestId: randomUUID(),
+        serverRequestId: randomUUID(),
+        status: 400,
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      event: 'model_request_rejected',
+      data: { status: 400 },
+    });
   });
 });

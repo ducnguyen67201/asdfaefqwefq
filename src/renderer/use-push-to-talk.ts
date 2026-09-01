@@ -58,6 +58,8 @@ export type VoiceTurnEndReason =
   | 'partial_failure'
   | 'preflight_rejected';
 
+export type VoiceCommitDisposition = 'completed' | 'task_submitted';
+
 export const VOICE_TASK_CONFIRMATION_MS = 1_000;
 
 export interface UsePushToTalkOptions {
@@ -69,7 +71,7 @@ export interface UsePushToTalkOptions {
   onTranscriptReady(
     context: VoiceTurnContext,
     transcript: string,
-  ): Promise<void>;
+  ): Promise<VoiceCommitDisposition | void>;
   onTurnEnd(context: VoiceTurnContext, reason: VoiceTurnEndReason): void;
   selectedMode: VoiceMode;
 }
@@ -107,6 +109,16 @@ interface PushToTalkAttemptReadiness {
   hasActiveTurn: boolean;
   isChordHeld: boolean;
   platform: PushToTalkPlatform;
+}
+
+export function shouldCancelVoiceTurnForAvailability(input: {
+  disabled: boolean;
+  enabled: boolean;
+  finalizing: boolean;
+  platform: PushToTalkPlatform;
+}): boolean {
+  if (!input.enabled || input.platform === 'unsupported') return true;
+  return input.disabled && !input.finalizing;
 }
 
 interface VoiceShortcutEventHandlers {
@@ -341,13 +353,15 @@ export function usePushToTalk({
       if (activeTurnRef.current !== turn || turn.cancelled) return;
       setStatus('committing');
       try {
-        await onTranscriptReadyRef.current(turn.context, transcript);
+        const disposition =
+          (await onTranscriptReadyRef.current(turn.context, transcript)) ??
+          'completed';
         if (activeTurnRef.current !== turn || turn.cancelled) return;
         voiceTurnDiagnostic('completed', {
           activation: turn.context.activation,
           attempt: turn.attempt,
           characters: transcript.length,
-          disposition: 'completed',
+          disposition,
           mode: turn.context.mode,
           releaseToFinalMs,
           segmentCount: turn.expectedSegmentCount ?? 0,
@@ -772,10 +786,16 @@ export function usePushToTalk({
   }, [finishListening]);
 
   useEffect(() => {
-    if (!enabled || disabled || platform === 'unsupported') {
+    if (shouldCancelVoiceTurnForAvailability({
+      disabled,
+      enabled,
+      finalizing: activeTurnRef.current?.finalizing ?? false,
+      platform,
+    })) {
       cancel();
       return;
     }
+    if (disabled) return;
     if (activeTurnRef.current) return;
     let cancelled = false;
     queueMicrotask(() => {

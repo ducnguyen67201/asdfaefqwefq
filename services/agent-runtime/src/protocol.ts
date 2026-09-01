@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 /** Local-only protocol between Electron main and the bundled SDK process. */
-export const LOCAL_AGENT_PROTOCOL_VERSION = 2 as const;
+export const LOCAL_AGENT_PROTOCOL_VERSION = 3 as const;
 export const LOCAL_AGENT_SDK_VERSION = '0.17.0' as const;
 export const LOCAL_AGENT_ROOT_ID = 'tro.root' as const;
 
@@ -45,6 +45,11 @@ export const LocalRuntimeToolSpecSchema = z
   })
   .strict();
 
+export const RequiredInitialToolCallSchema = z.object({
+  modelName: LocalRuntimeToolSpecSchema.shape.modelName,
+  arguments: JsonObjectSchema,
+}).strict();
+
 export const LocalRuntimeCapabilitiesSchema = z
   .object({
     protocolVersion: z.literal(LOCAL_AGENT_PROTOCOL_VERSION),
@@ -83,12 +88,17 @@ const CredentialReplaceSchema = RequestIdentitySchema.extend({
 const CredentialClearSchema = RequestIdentitySchema.extend({ kind: z.literal('runtime.clearCredential') }).strict();
 const TurnStartSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.start'), agentTurnId: UuidSchema, request: BoundedMessageSchema,
+  requiredInitialTool: RequiredInitialToolCallSchema.nullable(),
   model: z.string().trim().min(1).max(100), maxTurns: z.number().int().positive().max(100),
   toolCatalogDigest: DigestSchema, tools: z.array(LocalRuntimeToolSpecSchema).max(128),
 }).strict();
-const TurnResumeSchema = TurnStartSchema.omit({ kind: true, request: true }).extend({
+const TurnResumeSchema = TurnStartSchema.omit({
+  kind: true,
+  request: true,
+}).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
+  pendingToolDisposition: z.enum(['recheck', 'reobserve', 'replay']).nullable(),
 }).strict();
 const TurnSteerSchema = TurnIdentitySchema.extend({ kind: z.literal('turn.steer'), instruction: BoundedMessageSchema }).strict();
 const TurnCancelSchema = TurnIdentitySchema.extend({
@@ -144,7 +154,8 @@ const RuntimeFatalSchema = RequestIdentitySchema.extend({
 }).strict();
 export const LocalTurnEventKindSchema = z.enum([
   'lifecycle', 'assistant_delta', 'tool_requested', 'tool_started', 'tool_completed',
-  'tool_failed', 'tool_unknown',
+  'tool_failed', 'tool_unknown', 'model_request_started', 'model_request_completed',
+  'model_request_rejected', 'model_request_failed',
 ]);
 const TurnEventSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.event'), event: LocalTurnEventKindSchema,
@@ -211,5 +222,10 @@ export type LocalAgentChildMessage = z.infer<typeof LocalAgentChildMessageSchema
 export type LocalRuntimeCapabilities = z.infer<typeof LocalRuntimeCapabilitiesSchema>;
 export type LocalRuntimeCatalogValidation = z.infer<typeof RuntimeCatalogValidatedSchema>;
 export type LocalRuntimeToolSpec = z.infer<typeof LocalRuntimeToolSpecSchema>;
+export type PendingToolResumeDisposition = Extract<
+  z.infer<typeof TurnResumeSchema>['pendingToolDisposition'],
+  string
+>;
+export type RequiredInitialToolCall = z.infer<typeof RequiredInitialToolCallSchema>;
 export type LocalToolExecutionResult = z.infer<typeof LocalToolExecutionResultSchema>;
 export type LocalTurnEventKind = z.infer<typeof LocalTurnEventKindSchema>;

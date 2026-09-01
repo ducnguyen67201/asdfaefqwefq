@@ -92,6 +92,7 @@ import {
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
   type VoiceAttemptDecision,
+  type VoiceCommitDisposition,
   type VoiceInputStatus,
   type VoiceTurnContext,
   type VoiceTurnEndReason,
@@ -101,7 +102,11 @@ import {
   captureVoiceDraftSnapshot,
   type VoiceDraftSnapshot,
 } from './voice-draft';
-import { voiceTurnRoute } from './voice-route';
+import {
+  shouldRetainVoiceTerminalActivity,
+  voiceTurnRoute,
+  type VoiceTerminalDisposition,
+} from './voice-route';
 import {
   isVoiceModeToggleShortcut,
   nextVoiceMode,
@@ -1837,9 +1842,23 @@ export function App({
   }, [clearError, recordSnapshot, reportError, snapshot]);
 
   const showVoiceTerminalActivity = useCallback(
-    (activity: CompanionVoiceActivity, durationMs: number): void => {
+    (
+      activity: CompanionVoiceActivity,
+      durationMs: number,
+      disposition: VoiceTerminalDisposition = 'feedback',
+    ): void => {
       if (voiceActivityTimerRef.current) {
         clearTimeout(voiceActivityTimerRef.current);
+      }
+      if (
+        !shouldRetainVoiceTerminalActivity({
+          disposition,
+          mode: activity.mode,
+        })
+      ) {
+        setVoiceActivityOverride(null);
+        voiceActivityTimerRef.current = null;
+        return;
       }
       setVoiceActivityOverride(activity);
       voiceActivityTimerRef.current = setTimeout(() => {
@@ -2009,7 +2028,10 @@ export function App({
   );
 
   const handleVoiceTranscriptReady = useCallback(
-    async (context: VoiceTurnContext, transcript: string): Promise<void> => {
+    async (
+      context: VoiceTurnContext,
+      transcript: string,
+    ): Promise<VoiceCommitDisposition> => {
       const destination =
         voiceDestinationsRef.current.get(context.turnId) ?? voiceDestination;
       const route = voiceTurnRoute(context);
@@ -2028,8 +2050,9 @@ export function App({
             transcript: '',
           },
           800,
+          'task_submitted',
         );
-        return;
+        return 'task_submitted';
       }
 
       if (route === 'local_dictation') {
@@ -2060,7 +2083,7 @@ export function App({
           },
           800,
         );
-        return;
+        return 'completed';
       }
 
       preparedGlobalDictationsRef.current.delete(context.turnId);
@@ -2089,7 +2112,7 @@ export function App({
             },
             800,
           );
-          return;
+          return 'completed';
         }
         keepVoiceRecoveryDraft(transcript);
         const message = t('Text kept in your Tro draft. {summary}', {
@@ -2134,6 +2157,7 @@ export function App({
           3_000,
         );
       }
+      return 'completed';
     },
     [
       appLanguageDraft,
