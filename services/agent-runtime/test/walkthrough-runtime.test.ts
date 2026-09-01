@@ -5,6 +5,7 @@ import {
   assessWalkthroughCompletion,
   createWalkthroughState,
   evaluateWalkthroughTool,
+  nextWalkthroughCorrectionCount,
   walkthroughModelInstruction,
 } from '../src/walkthrough-runtime.js';
 
@@ -31,6 +32,11 @@ describe('Agents SDK walkthrough runtime', () => {
     const initial = createWalkthroughState(true);
     expect(advanceWalkthrough(initial, 'observe_context', 'failed')).toEqual(initial);
     expect(advanceWalkthrough(initial, 'open_url', 'completed')).toEqual(initial);
+  });
+
+  it('resets completion-recovery attempts after a successful visible step', () => {
+    expect(nextWalkthroughCorrectionCount(2, 'failed')).toBe(2);
+    expect(nextWalkthroughCorrectionCount(2, 'completed')).toBe(0);
   });
 
   it('rejects upfront text and accepts only a bounded completion sentinel after guidance', () => {
