@@ -135,7 +135,8 @@ export function nextWalkthroughCorrectionCount(
 export function walkthroughModelInstruction(state: WalkthroughState): string {
   if (!state.enabled) return '';
   if (state.phase === 'needs_guidance') {
-    return 'Trusted teacher walkthrough checkpoint: call show_guidance exactly once using the latest desktop observation. Point to one visible target and speak one concise, friendly instruction. Do not click, modify the app, or reveal the remaining steps upfront.';
+    const stepNumber = state.completedSteps + 1;
+    return `Trusted teacher walkthrough checkpoint: this is step ${stepNumber}. Call show_guidance exactly once using the latest desktop observation. Point to one visible target and speak one concise, friendly instruction that naturally introduces step ${stepNumber} in the user's language. Do not click, modify the app, or reveal the remaining steps upfront.`;
   }
   if (state.completedSteps === 0) {
     return 'Trusted teacher walkthrough checkpoint: call observe_context with operation observe and scope desktop now. Do not return an upfront text answer. The first visible step must be one show_guidance call.';
