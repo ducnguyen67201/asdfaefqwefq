@@ -6,6 +6,7 @@ export {
   assessWalkthroughCompletion,
   createWalkthroughState,
   evaluateWalkthroughTool,
+  nextWalkthroughCorrectionCount,
   parseWalkthroughCompletion,
   requestsGuidedWalkthrough,
   walkthroughModelInstruction,

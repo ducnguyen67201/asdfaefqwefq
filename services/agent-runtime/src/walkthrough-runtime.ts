@@ -125,6 +125,13 @@ export function advanceWalkthrough(
   return state;
 }
 
+export function nextWalkthroughCorrectionCount(
+  current: number,
+  toolStatus: WalkthroughToolStatus,
+): number {
+  return toolStatus === 'completed' ? 0 : current;
+}
+
 export function walkthroughModelInstruction(state: WalkthroughState): string {
   if (!state.enabled) return '';
   if (state.phase === 'needs_guidance') {

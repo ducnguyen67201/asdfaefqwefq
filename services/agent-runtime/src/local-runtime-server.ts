@@ -34,6 +34,7 @@ import {
   advanceWalkthrough,
   assessWalkthroughCompletion,
   evaluateWalkthroughTool,
+  nextWalkthroughCorrectionCount,
   walkthroughModelInstruction,
 } from './walkthrough-runtime.js';
 
@@ -225,6 +226,10 @@ export class LocalRuntimeServer {
             walkthroughState = advanceWalkthrough(
               walkthroughState,
               modelName,
+              status,
+            );
+            walkthroughCorrections = nextWalkthroughCorrectionCount(
+              walkthroughCorrections,
               status,
             );
           },
