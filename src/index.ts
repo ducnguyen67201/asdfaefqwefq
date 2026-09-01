@@ -76,6 +76,7 @@ import {
   CompanionResponseController,
   selectCompanionOverlayMode,
 } from './main/companion/companion-response-controller';
+import { broadcastCompanionState } from './main/companion/companion-state-broadcast';
 import { nextCursorBuddyFollowSchedule } from './main/companion/cursor-buddy-follow-policy';
 import {
   registerGlobalNumberedChoiceShortcuts,
@@ -744,11 +745,10 @@ function stopCursorBuddyFollowing(): void {
 }
 
 function sendCompanionState(): void {
-  if (!companionWindow || companionWindow.isDestroyed()) return;
-  companionWindow.webContents.send(
-    IPC_CHANNELS.companionStateChanged,
-    companionState,
-  );
+  broadcastCompanionState(companionState, [
+    companionWindow,
+    cursorBuddyWindow,
+  ]);
 }
 
 function sendCompanionHover(): void {
@@ -2953,6 +2953,7 @@ const createCursorBuddyWindow = (): void => {
   });
   cursorBuddyWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   cursorBuddyWindow.webContents.on('did-finish-load', () => {
+    sendCompanionState();
     lastCursorBuddyPosition = null;
     positionCursorBuddy();
     wakeCursorBuddyFollowing();

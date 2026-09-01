@@ -870,6 +870,7 @@ html.voice-island-mode #root {
 }
 
 .cursor-buddy {
+  position: relative;
   display: grid;
   width: 100%;
   height: 100%;
@@ -888,12 +889,37 @@ html.voice-island-mode #root {
 }
 
 .cursor-buddy__image {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 32px;
   height: auto;
   max-height: 38px;
   object-fit: contain;
   filter: drop-shadow(0 2px 3px rgba(16, 28, 64, 0.32));
+}
+
+.cursor-buddy__loading {
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  border: 2px solid rgba(242, 201, 76, 0.22);
+  border-top-color: #d6aa21;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.cursor-buddy--busy .cursor-buddy__loading {
+  opacity: 1;
+  animation: cursor-buddy-loading-spin 0.78s linear infinite;
+}
+
+@keyframes cursor-buddy-loading-spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 .desktop-control-indicator__border {
@@ -2635,6 +2661,10 @@ html.voice-island-mode #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cursor-buddy__loading {
+    animation: none;
+  }
+
   .cursor-companion__sprite,
   .cursor-companion__image--custom {
     animation: none;
