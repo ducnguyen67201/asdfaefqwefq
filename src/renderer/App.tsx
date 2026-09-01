@@ -92,6 +92,7 @@ import {
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
   type VoiceAttemptDecision,
+  type VoiceCommitDisposition,
   type VoiceInputStatus,
   type VoiceTurnContext,
   type VoiceTurnEndReason,
@@ -2027,7 +2028,10 @@ export function App({
   );
 
   const handleVoiceTranscriptReady = useCallback(
-    async (context: VoiceTurnContext, transcript: string): Promise<void> => {
+    async (
+      context: VoiceTurnContext,
+      transcript: string,
+    ): Promise<VoiceCommitDisposition> => {
       const destination =
         voiceDestinationsRef.current.get(context.turnId) ?? voiceDestination;
       const route = voiceTurnRoute(context);
@@ -2048,7 +2052,7 @@ export function App({
           800,
           'task_submitted',
         );
-        return;
+        return 'task_submitted';
       }
 
       if (route === 'local_dictation') {
@@ -2079,7 +2083,7 @@ export function App({
           },
           800,
         );
-        return;
+        return 'completed';
       }
 
       preparedGlobalDictationsRef.current.delete(context.turnId);
@@ -2108,7 +2112,7 @@ export function App({
             },
             800,
           );
-          return;
+          return 'completed';
         }
         keepVoiceRecoveryDraft(transcript);
         const message = t('Text kept in your Tro draft. {summary}', {
@@ -2153,6 +2157,7 @@ export function App({
           3_000,
         );
       }
+      return 'completed';
     },
     [
       appLanguageDraft,

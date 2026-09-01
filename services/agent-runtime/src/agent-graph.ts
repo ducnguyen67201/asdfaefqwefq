@@ -11,7 +11,10 @@ import type {
   RequiredInitialToolCall,
 } from './protocol.js';
 import { ToolSurfaceFactory, type ToolSurface } from './tool-adapter.js';
-import type { UserOpenAIClientFactory } from './user-openai-client.js';
+import type {
+  ModelRequestDiagnosticSink,
+  UserOpenAIClientFactory,
+} from './user-openai-client.js';
 
 export interface AgentGraph {
   readonly agent: Agent<LocalAgentRunContext, 'text'>;
@@ -43,7 +46,11 @@ export class AgentGraphFactory {
     private readonly compactionItemThreshold = 80,
   ) {}
 
-  async create(input: AgentGraphInput, context: LocalAgentRunContext): Promise<AgentGraph> {
+  async create(
+    input: AgentGraphInput,
+    context: LocalAgentRunContext,
+    onModelRequestDiagnostic: ModelRequestDiagnosticSink = () => undefined,
+  ): Promise<AgentGraph> {
     if (input.graphVersion !== graphVersion(input.tools, input.model)) {
       throw new Error('graph_version_mismatch');
     }
@@ -55,7 +62,10 @@ export class AgentGraphFactory {
     ) {
       throw new Error('required_initial_tool_unavailable');
     }
-    const clients = this.clients.create({ agentTurnId: input.agentTurnId, taskId: input.taskId });
+    const clients = this.clients.create(
+      { agentTurnId: input.agentTurnId, taskId: input.taskId },
+      onModelRequestDiagnostic,
+    );
     const model = await clients.provider.getModel(input.model);
     const toolSurface = this.tools.create(
       input.tools,

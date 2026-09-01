@@ -101,7 +101,12 @@ export class TaskRuntime extends EventEmitter {
       : snapshot.progress;
     return this.commit({ ...snapshot, phase, progress }, {
       summary,
-      status: event === 'tool_failed' || event === 'tool_unknown' ? 'warning' : 'success',
+      status: event === 'tool_failed'
+        || event === 'tool_unknown'
+        || event === 'model_request_rejected'
+        || event === 'model_request_failed'
+        ? 'warning'
+        : 'success',
       ...(tool ? { tool } : {}),
     });
   }

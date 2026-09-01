@@ -153,7 +153,8 @@ const RuntimeFatalSchema = RequestIdentitySchema.extend({
 }).strict();
 export const LocalTurnEventKindSchema = z.enum([
   'lifecycle', 'assistant_delta', 'tool_requested', 'tool_started', 'tool_completed',
-  'tool_failed', 'tool_unknown',
+  'tool_failed', 'tool_unknown', 'model_request_started', 'model_request_completed',
+  'model_request_rejected', 'model_request_failed',
 ]);
 const TurnEventSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.event'), event: LocalTurnEventKindSchema,

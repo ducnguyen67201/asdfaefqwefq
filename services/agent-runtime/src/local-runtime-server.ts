@@ -25,6 +25,7 @@ import {
 import { ToolOutcomeUnknownError, ToolSurfaceFactory } from './tool-adapter.js';
 import {
   EphemeralCredentialStore,
+  type ModelRequestDiagnostic,
   UserOpenAIClientFactory,
 } from './user-openai-client.js';
 
@@ -162,15 +163,19 @@ export class LocalRuntimeServer {
     let checkpointRevision = message.kind === 'turn.resume' ? message.checkpointRevision : 0;
     try {
       const factory = this.requireGraphFactory();
-      const graph = await factory.create({
-        agentTurnId: message.agentTurnId,
-        graphVersion: message.graphVersion,
-        model: message.model,
-        requiredInitialTool: message.requiredInitialTool,
-        taskId: message.threadId,
-        toolCatalogDigest: message.toolCatalogDigest,
-        tools: message.tools,
-      }, context);
+      const graph = await factory.create(
+        {
+          agentTurnId: message.agentTurnId,
+          graphVersion: message.graphVersion,
+          model: message.model,
+          requiredInitialTool: message.requiredInitialTool,
+          taskId: message.threadId,
+          toolCatalogDigest: message.toolCatalogDigest,
+          tools: message.tools,
+        },
+        context,
+        (diagnostic) => this.modelRequestEvent(identity, diagnostic),
+      );
       this.event(identity, 'lifecycle', 'The local Agents SDK started the turn.');
       let nextInput: string | RunState<LocalAgentRunContext, typeof graph.agent>;
       if (message.kind === 'turn.resume') {
@@ -288,6 +293,34 @@ export class LocalRuntimeServer {
       event,
       summary,
       data,
+    });
+  }
+
+  private modelRequestEvent(
+    identity: TurnIdentity,
+    diagnostic: ModelRequestDiagnostic,
+  ): void {
+    const requestId = diagnostic.serverRequestId ?? diagnostic.clientRequestId;
+    const status = diagnostic.status === null ? '' : `${diagnostic.status}; `;
+    const choice = diagnostic.toolChoice ? `${diagnostic.toolChoice}; ` : '';
+    const summary = diagnostic.event === 'model_request_started'
+      ? `Model request started (${choice}request ${requestId}).`
+      : diagnostic.event === 'model_request_completed'
+        ? `Model request completed (${status}request ${requestId}).`
+        : diagnostic.event === 'model_request_rejected'
+          ? `Model request rejected (${status}request ${requestId}).`
+          : `Model request failed before a response was received (request ${requestId}).`;
+    this.event(identity, diagnostic.event, summary, {
+      agentTurnId: diagnostic.agentTurnId,
+      clientRequestId: diagnostic.clientRequestId,
+      durationMs: diagnostic.durationMs,
+      inputItemCount: diagnostic.inputItemCount,
+      model: diagnostic.model,
+      serverRequestId: diagnostic.serverRequestId,
+      status: diagnostic.status,
+      taskId: diagnostic.taskId,
+      toolChoice: diagnostic.toolChoice,
+      toolCount: diagnostic.toolCount,
     });
   }
 
