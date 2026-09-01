@@ -18,6 +18,7 @@ describe('Agents SDK walkthrough runtime', () => {
     const observed = advanceWalkthrough(initial, 'observe_context', 'completed');
     expect(observed.phase).toBe('needs_guidance');
     expect(walkthroughModelInstruction(observed)).toMatch(/show_guidance/u);
+    expect(walkthroughModelInstruction(observed)).toMatch(/step 1/iu);
     expect(evaluateWalkthroughTool(observed, 'show_guidance').allowed).toBe(true);
 
     const guided = advanceWalkthrough(observed, 'show_guidance', 'completed');
@@ -26,6 +27,12 @@ describe('Agents SDK walkthrough runtime', () => {
       enabled: true,
       phase: 'needs_observation',
     });
+    const secondObserved = advanceWalkthrough(
+      guided,
+      'observe_context',
+      'completed',
+    );
+    expect(walkthroughModelInstruction(secondObserved)).toMatch(/step 2/iu);
   });
 
   it('does not advance sequencing for failed or unrelated tools', () => {
