@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -31,12 +33,14 @@ describe('CursorBuddy', () => {
       createElement(CursorBuddyView, {
         overlayTracking: true,
         position: { x: 10, y: 20 },
+        state: 'idle',
       }),
     );
     const nativeMarkup = renderToStaticMarkup(
       createElement(CursorBuddyView, {
         overlayTracking: false,
         position: { x: 10, y: 20 },
+        state: 'idle',
       }),
     );
 
@@ -46,20 +50,64 @@ describe('CursorBuddy', () => {
     expect(nativeMarkup).not.toContain('translate3d');
   });
 
+  it('shows an accessible loading ring while a submitted task is active', () => {
+    const workingMarkup = renderToStaticMarkup(
+      createElement(CursorBuddyView, {
+        overlayTracking: false,
+        position: { x: 0, y: 0 },
+        state: 'working',
+      }),
+    );
+    const idleMarkup = renderToStaticMarkup(
+      createElement(CursorBuddyView, {
+        overlayTracking: false,
+        position: { x: 0, y: 0 },
+        state: 'idle',
+      }),
+    );
+
+    expect(workingMarkup).toContain('Tro action cursor: Working');
+    expect(workingMarkup).toContain('cursor-buddy--working');
+    expect(workingMarkup).toContain('cursor-buddy--busy');
+    expect(workingMarkup).toContain('cursor-buddy__loading');
+    expect(idleMarkup).toContain('cursor-buddy--idle');
+    expect(idleMarkup).not.toContain('cursor-buddy--busy');
+  });
+
+  it('uses a transform-only spinner and leaves a static reduced-motion signal', () => {
+    const css = readFileSync(resolve(__dirname, '../index.css'), 'utf8');
+
+    expect(css).toContain('@keyframes cursor-buddy-loading-spin');
+    expect(css).toContain('transform: rotate(1turn);');
+    expect(css).toMatch(
+      /\.cursor-buddy--busy \.cursor-buddy__loading\s*\{[^}]*animation: cursor-buddy-loading-spin/u,
+    );
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.cursor-buddy__loading[^{]*\{[^}]*animation: none;/u,
+    );
+  });
+
   it('subscribes to overlay positions, renders updates, and cleans up', async () => {
     const container = document.createElement('div');
     const unsubscribe = vi.fn();
+    const unsubscribeState = vi.fn();
     let publishPosition: ((position: { x: number; y: number }) => void) | null =
       null;
+    let publishState: ((state: 'working') => void) | null = null;
     const onCursorBuddyPositionChange = vi.fn((listener) => {
       publishPosition = listener;
       return unsubscribe;
+    });
+    const onStateChange = vi.fn((listener) => {
+      publishState = listener;
+      return unsubscribeState;
     });
     Object.defineProperty(window, 'troCompanion', {
       configurable: true,
       value: {
         getCursorBuddyPosition: vi.fn(async () => ({ x: 0, y: 0 })),
         onCursorBuddyPositionChange,
+        onStateChange,
       } as unknown as CompanionApi,
     });
     let root: Root | null = null;
@@ -69,14 +117,21 @@ describe('CursorBuddy', () => {
       root.render(createElement(CursorBuddy, { overlayTracking: true }));
     });
     expect(onCursorBuddyPositionChange).toHaveBeenCalledOnce();
+    expect(onStateChange).toHaveBeenCalledOnce();
 
     await act(async () => {
       publishPosition?.({ x: 31, y: 47 });
     });
     expect(container.innerHTML).toContain('translate3d(31px, 47px, 0)');
 
+    await act(async () => {
+      publishState?.('working');
+    });
+    expect(container.innerHTML).toContain('cursor-buddy--busy');
+
     await act(async () => root?.unmount());
     expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(unsubscribeState).toHaveBeenCalledOnce();
   });
 
   it('requests the current overlay position after subscribing', async () => {
@@ -95,6 +150,7 @@ describe('CursorBuddy', () => {
       value: {
         getCursorBuddyPosition,
         onCursorBuddyPositionChange,
+        onStateChange: vi.fn(() => vi.fn()),
       } as unknown as CompanionApi,
     });
     let root: Root | null = null;
