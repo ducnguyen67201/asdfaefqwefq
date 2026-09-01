@@ -75,7 +75,7 @@ describe('LocalRuntimeServer', () => {
     applyPendingToolResume(
       { approve, reject } as never,
       interruption as never,
-      'reobserve' as never,
+      'reobserve',
       markForReplay,
     );
 

@@ -98,7 +98,7 @@ const TurnResumeSchema = TurnStartSchema.omit({
 }).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
-  pendingToolDisposition: z.enum(['recheck', 'replay']).nullable(),
+  pendingToolDisposition: z.enum(['recheck', 'reobserve', 'replay']).nullable(),
 }).strict();
 const TurnSteerSchema = TurnIdentitySchema.extend({ kind: z.literal('turn.steer'), instruction: BoundedMessageSchema }).strict();
 const TurnCancelSchema = TurnIdentitySchema.extend({

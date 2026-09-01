@@ -785,6 +785,7 @@ export function executionContextAfterToolResult(
 export function pendingToolResumeDisposition(
   invocation: LocalInvocation | null,
 ): PendingToolResumeDisposition {
+  if (invocation?.toolId === 'computer.observe') return 'reobserve';
   return !invocation
     || invocation.status === 'checkpointed'
     || invocation.status === 'cancelled-before-dispatch'

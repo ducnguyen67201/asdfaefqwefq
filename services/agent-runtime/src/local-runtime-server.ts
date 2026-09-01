@@ -46,6 +46,8 @@ interface PendingToolResumeState {
 
 const RESTARTED_PENDING_TOOL_MESSAGE =
   'The application restarted before this tool ran. Re-check the current state, then request the tool again only if it is still needed.';
+const RESTARTED_OBSERVATION_MESSAGE =
+  'The saved observation is stale after the application restarted. Capture a fresh observation before requesting another grounded action.';
 
 /** A pre-restart interruption is known not to have run, but its host context is stale. */
 export function rejectPendingToolAfterRestart(
@@ -61,6 +63,10 @@ export function applyPendingToolResume(
   disposition: PendingToolResumeDisposition,
   markForReplay: () => void,
 ): void {
+  if (disposition === 'reobserve') {
+    state.reject(interruption, { message: RESTARTED_OBSERVATION_MESSAGE });
+    return;
+  }
   if (disposition === 'recheck') {
     rejectPendingToolAfterRestart(state, interruption);
     return;
@@ -246,7 +252,9 @@ export class LocalRuntimeServer {
             'lifecycle',
             message.pendingToolDisposition === 'replay'
               ? 'The app is reconciling a pending tool with its durable invocation journal.'
-              : 'The app restarted before a pending tool ran; the agent must re-check current state.',
+              : message.pendingToolDisposition === 'reobserve'
+                ? 'The app restarted; the agent must capture a fresh observation.'
+                : 'The app restarted before a pending tool ran; the agent must re-check current state.',
           );
         } else if (message.pendingToolDisposition) {
           throw new Error('unexpected_pending_tool_disposition');

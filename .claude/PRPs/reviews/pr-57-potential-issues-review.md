@@ -39,6 +39,7 @@ The repository and installed skills do not define a workflow named “ponytail r
 - Request diagnostics expose only bounded correlation and structural metadata, not prompts, credentials, tool schemas, screenshots, or results.
 - Voice Task submission can disable new recording without cancelling the turn that is already committing.
 - Pending pre-restart tool interruptions reconcile with Electron's invocation journal: undispatched calls re-ground, completed results replay, and executing calls become unknown without redispatch.
+- Journaled screen observations are recaptured after restart because their opaque CUA bindings cannot be safely rehydrated from persisted model output.
 
 ## Open Items
 
