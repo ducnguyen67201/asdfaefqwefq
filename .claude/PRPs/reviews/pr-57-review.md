@@ -7,7 +7,7 @@
 
 ## Summary
 
-The implementation preserves the intended ownership boundaries: the Agents SDK plans and emits one `observe_context` function call, Electron resolves and checkpoints it, and CUA performs surface-first observation or a guarded desktop fallback. Voice-to-Task presentation now yields to the task lifecycle without foregrounding Tro. Two medium hardening findings were corrected during review.
+The implementation preserves the intended ownership boundaries: the Agents SDK plans and emits one `observe_context` function call, Electron resolves and checkpoints it, and CUA performs surface-first observation or a guarded desktop fallback. Voice-to-Task presentation now yields to the task lifecycle without foregrounding Tro. Three medium hardening findings were corrected during review.
 
 ## Findings
 
@@ -25,6 +25,7 @@ Resolved:
 
 1. `TaskExecutionCoordinator` allowed desktop observation preparation to default to a no-op. An alternate construction could therefore capture Tro-owned windows. The default now fails closed before calling `cua.observe()`.
 2. Workspace isolation was implemented but lacked a task-application regression test. A Workspace request that explicitly references visible context now proves that `requiredInitialTool` is absent.
+3. The provider-level named tool choice constrained only `observe_context`, so the model could still supply `scope: desktop` or select the inspection operation on its first call. The host now supplies an exact `observe + auto` contract, the SDK adapter normalizes the first interruption to it before checkpointing, Electron verifies the exact arguments before dispatch, and the requirement survives checkpoint resume.
 
 ### LOW
 
@@ -34,12 +35,12 @@ None open.
 
 | Check | Result |
 |---|---|
-| Focused feature tests | Pass — 12 files / 147 tests |
-| Agents SDK lint/typecheck/tests | Pass — 5 files / 16 tests |
+| Focused feature tests | Pass — 12 files / 148 tests |
+| Agents SDK lint/typecheck/tests | Pass — 5 files / 17 tests |
 | Root lint and TypeScript | Pass |
 | Root Vitest | Pass — 126 files / 842 tests |
 | Cargo fmt/clippy/audit/tests | Pass — 69 unit tests; three repository-allowed audit warnings |
-| Electron package | Pass — arm64/darwin, before review-only hardening |
+| Electron package | Pass — arm64/darwin |
 | npm audit | Pass — 0 vulnerabilities |
 | Diff hygiene | Pass |
 
@@ -57,4 +58,4 @@ The pre-existing `.media/*` and `.tours/*` working-tree changes are not part of 
 
 ## Recommendation
 
-Ready for peer review after the resolved findings are pushed. Interactive packaged verification with Scratch and macOS permission toggles remains the only manual product check.
+Ready for peer review. Interactive packaged verification with Scratch and macOS permission toggles remains the only manual product check.

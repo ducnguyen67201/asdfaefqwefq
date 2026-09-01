@@ -85,7 +85,17 @@ describe('TaskApplicationService', () => {
 
     expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
       threadId: snapshot.taskId,
-      requiredInitialTool: 'observe_context',
+      requiredInitialTool: {
+        modelName: 'observe_context',
+        arguments: {
+          operation: 'observe',
+          scope: 'auto',
+          reason: 'Ground the response in the current visible context.',
+          query: null,
+          observationId: null,
+          region: null,
+        },
+      },
     }));
   });
 

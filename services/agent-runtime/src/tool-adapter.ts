@@ -2,7 +2,11 @@ import { tool, type FunctionTool, type RunToolApprovalItem } from '@openai/agent
 
 import { turnMessageIdentity, type LocalAgentRunContext } from './host-backed-session.js';
 import { childRequestId } from './host-bridge.js';
-import type { LocalRuntimeToolSpec, LocalToolExecutionResult } from './protocol.js';
+import type {
+  LocalRuntimeToolSpec,
+  LocalToolExecutionResult,
+  RequiredInitialToolCall,
+} from './protocol.js';
 import { digest } from './serialization.js';
 
 export class ToolOutcomeUnknownError extends Error {
@@ -63,9 +67,14 @@ export class ToolSurfaceFactory {
     return { acceptedModelNames, rejected };
   }
 
-  create(specs: readonly LocalRuntimeToolSpec[], catalogDigest: string): ToolSurface {
+  create(
+    specs: readonly LocalRuntimeToolSpec[],
+    catalogDigest: string,
+    requiredInitialTool: RequiredInitialToolCall | null = null,
+  ): ToolSurface {
     const byName = new Map<string, LocalRuntimeToolSpec>();
     const checkpointed = new Map<string, PendingToolCall>();
+    let pendingRequiredInitialTool = requiredInitialTool;
     const tools = specs.map((spec) => {
       if (byName.has(spec.modelName)) throw new Error('duplicate_model_tool_name');
       byName.set(spec.modelName, spec);
@@ -116,11 +125,19 @@ export class ToolSurfaceFactory {
         if (raw.type !== 'function_call') throw new Error('unsupported_sdk_interruption');
         const spec = byName.get(raw.name);
         if (!spec) throw new Error('unknown_sdk_tool_interruption');
-        const parsed: unknown = JSON.parse(raw.arguments);
-        if (!isRecord(parsed)) throw new Error('invalid_sdk_tool_arguments');
-        const operation = resolveOperation(spec, parsed);
+        if (
+          pendingRequiredInitialTool &&
+          pendingRequiredInitialTool.modelName !== spec.modelName
+        ) {
+          throw new Error('required_initial_tool_unavailable');
+        }
+        const argumentsForExecution = pendingRequiredInitialTool
+          ? pendingRequiredInitialTool.arguments
+          : parseArguments(raw.arguments);
+        const operation = resolveOperation(spec, argumentsForExecution);
+        pendingRequiredInitialTool = null;
         const value = {
-          arguments: parsed,
+          arguments: argumentsForExecution,
           callId: raw.callId,
           catalogDigest,
           driverCatalogDigest: spec.driverCatalogDigest,
@@ -155,4 +172,10 @@ function resolveOperation(spec: LocalRuntimeToolSpec, input: Record<string, unkn
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseArguments(value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  if (!isRecord(parsed)) throw new Error('invalid_sdk_tool_arguments');
+  return parsed;
 }

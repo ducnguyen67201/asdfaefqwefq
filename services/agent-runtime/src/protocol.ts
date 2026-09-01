@@ -45,6 +45,11 @@ export const LocalRuntimeToolSpecSchema = z
   })
   .strict();
 
+export const RequiredInitialToolCallSchema = z.object({
+  modelName: LocalRuntimeToolSpecSchema.shape.modelName,
+  arguments: JsonObjectSchema,
+}).strict();
+
 export const LocalRuntimeCapabilitiesSchema = z
   .object({
     protocolVersion: z.literal(LOCAL_AGENT_PROTOCOL_VERSION),
@@ -83,14 +88,13 @@ const CredentialReplaceSchema = RequestIdentitySchema.extend({
 const CredentialClearSchema = RequestIdentitySchema.extend({ kind: z.literal('runtime.clearCredential') }).strict();
 const TurnStartSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.start'), agentTurnId: UuidSchema, request: BoundedMessageSchema,
-  requiredInitialTool: LocalRuntimeToolSpecSchema.shape.modelName.nullable(),
+  requiredInitialTool: RequiredInitialToolCallSchema.nullable(),
   model: z.string().trim().min(1).max(100), maxTurns: z.number().int().positive().max(100),
   toolCatalogDigest: DigestSchema, tools: z.array(LocalRuntimeToolSpecSchema).max(128),
 }).strict();
 const TurnResumeSchema = TurnStartSchema.omit({
   kind: true,
   request: true,
-  requiredInitialTool: true,
 }).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
@@ -216,5 +220,6 @@ export type LocalAgentChildMessage = z.infer<typeof LocalAgentChildMessageSchema
 export type LocalRuntimeCapabilities = z.infer<typeof LocalRuntimeCapabilitiesSchema>;
 export type LocalRuntimeCatalogValidation = z.infer<typeof RuntimeCatalogValidatedSchema>;
 export type LocalRuntimeToolSpec = z.infer<typeof LocalRuntimeToolSpecSchema>;
+export type RequiredInitialToolCall = z.infer<typeof RequiredInitialToolCallSchema>;
 export type LocalToolExecutionResult = z.infer<typeof LocalToolExecutionResultSchema>;
 export type LocalTurnEventKind = z.infer<typeof LocalTurnEventKindSchema>;

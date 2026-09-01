@@ -4,6 +4,10 @@ import { TaskSnapshotSchema, TaskUpdateSchema } from '../../shared/contracts';
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const AgentItemSchema = z.record(z.string().min(1).max(200), z.unknown());
+const RequiredInitialToolCallSchema = z.object({
+  modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
+  arguments: z.record(z.string().min(1).max(200), z.unknown()),
+}).strict();
 
 export const LocalCheckpointSchema = z.object({
   revision: z.number().int().positive(),
@@ -15,6 +19,7 @@ export const LocalCheckpointSchema = z.object({
   sdkVersion: z.string().trim().min(1).max(100),
   graphVersion: DigestSchema,
   protocolDigest: DigestSchema,
+  requiredInitialTool: RequiredInitialToolCallSchema.nullable().default(null),
 }).strict();
 
 export const LocalSessionSchema = z.object({

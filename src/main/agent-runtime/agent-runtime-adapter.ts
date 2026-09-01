@@ -26,7 +26,9 @@ import {
   type LocalRuntimeCatalogValidation,
   type LocalRuntimeToolSpec,
   type LocalToolExecutionResult,
+  type RequiredInitialToolCall,
 } from '../../../services/agent-runtime/src/protocol';
+import { digest } from '../../../services/agent-runtime/src/serialization';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
@@ -51,7 +53,7 @@ export interface LocalTurnStart {
   maxTurns: number;
   model?: string;
   request: string;
-  requiredInitialTool?: string;
+  requiredInitialTool?: RequiredInitialToolCall;
   threadId: string;
 }
 
@@ -81,6 +83,7 @@ interface ActiveTurn {
   executionContext: GroundedToolExecutionContext;
   readonly graphVersion: string;
   readonly model: string;
+  requiredInitialTool: RequiredInitialToolCall | null;
   readonly turnId: string;
 }
 
@@ -180,6 +183,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       executionContext,
       graphVersion: version,
       model,
+      requiredInitialTool: input.requiredInitialTool ?? null,
       turnId,
     };
     this.active.set(input.threadId, active);
@@ -224,6 +228,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       executionContext: groundedExecutionContext,
       graphVersion: checkpoint.graphVersion,
       model: checkpoint.model,
+      requiredInitialTool: checkpoint.requiredInitialTool,
       turnId: randomUUID(),
     };
     this.active.set(threadId, active);
@@ -239,6 +244,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         checkpoint: checkpoint.state,
         checkpointRevision: checkpoint.revision,
         pendingCallId: checkpoint.pendingCallId,
+        requiredInitialTool: checkpoint.requiredInitialTool,
       });
     } catch (error) {
       this.active.delete(threadId);
@@ -477,6 +483,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model: active.model,
       pendingCallId: message.pendingCallId,
       protocolDigest: message.protocolDigest,
+      requiredInitialTool: active.requiredInitialTool,
       sdkVersion: message.sdkVersion,
       state: message.checkpoint,
       toolCatalogDigest: active.catalog.digest,
@@ -494,6 +501,16 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       throw new Error('Tool execution was requested without its durable checkpoint.');
     }
     if (message.catalogDigest !== active.catalog.digest) throw new Error('tool_catalog_mismatch');
+    const completesRequiredInitialTool = active.requiredInitialTool !== null;
+    if (
+      active.requiredInitialTool &&
+      (
+        active.requiredInitialTool.modelName !== message.modelName ||
+        digest(active.requiredInitialTool.arguments) !== digest(message.arguments)
+      )
+    ) {
+      throw new Error('required_initial_tool_mismatch');
+    }
     let record = await this.options.state.addInvocation(message.threadId, {
       callId: message.callId,
       idempotencyDigest: message.idempotencyDigest,
@@ -501,6 +518,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       toolId: message.toolId,
     });
     if (record.result) {
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
       this.emitToolLifecycle(
         message,
         record.result.status === 'completed'
@@ -514,6 +532,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       return;
     }
     if (record.status === 'executing') {
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
       const unknown: LocalToolExecutionResult = {
         status: 'unknown', summary: 'The app restarted after dispatch, so this action was not repeated.', data: null, imageDataUrl: null,
       };
@@ -555,6 +574,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       if (invocation.toolId !== message.toolId || invocation.operation !== message.operation) {
         throw new Error('Tool invocation does not match the frozen catalog.');
       }
+      if (completesRequiredInitialTool) active.requiredInitialTool = null;
       const toolResult = await this.options.coordinator.dispatchTool(invocation, {
         signal: active.controller.signal,
         taskId: message.threadId,

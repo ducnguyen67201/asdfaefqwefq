@@ -72,7 +72,10 @@ describe('local agent protocol and graph', () => {
       agentTurnId: randomUUID(),
       graphVersion: graphVersion([], 'gpt-test'),
       model: 'gpt-test',
-      requiredInitialTool: 'observe_context',
+      requiredInitialTool: {
+        modelName: 'observe_context',
+        arguments: { operation: 'observe', scope: 'auto' },
+      },
       taskId: randomUUID(),
       toolCatalogDigest: digest,
       tools: [],

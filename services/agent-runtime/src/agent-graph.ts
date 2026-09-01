@@ -6,7 +6,10 @@ import {
   HostBackedSession,
   type LocalAgentRunContext,
 } from './host-backed-session.js';
-import type { LocalRuntimeToolSpec } from './protocol.js';
+import type {
+  LocalRuntimeToolSpec,
+  RequiredInitialToolCall,
+} from './protocol.js';
 import { ToolSurfaceFactory, type ToolSurface } from './tool-adapter.js';
 import type { UserOpenAIClientFactory } from './user-openai-client.js';
 
@@ -19,7 +22,7 @@ export interface AgentGraph {
 export interface AgentGraphInput {
   readonly agentTurnId: string;
   readonly model: string;
-  readonly requiredInitialTool: string | null;
+  readonly requiredInitialTool: RequiredInitialToolCall | null;
   readonly graphVersion: string;
   readonly taskId: string;
   readonly toolCatalogDigest: string;
@@ -46,18 +49,24 @@ export class AgentGraphFactory {
     }
     if (
       input.requiredInitialTool &&
-      !input.tools.some((tool) => tool.modelName === input.requiredInitialTool)
+      !input.tools.some(
+        (tool) => tool.modelName === input.requiredInitialTool?.modelName,
+      )
     ) {
       throw new Error('required_initial_tool_unavailable');
     }
     const clients = this.clients.create({ agentTurnId: input.agentTurnId, taskId: input.taskId });
     const model = await clients.provider.getModel(input.model);
-    const toolSurface = this.tools.create(input.tools, input.toolCatalogDigest);
+    const toolSurface = this.tools.create(
+      input.tools,
+      input.toolCatalogDigest,
+      input.requiredInitialTool,
+    );
     const agent = new Agent<LocalAgentRunContext, 'text'>({
       name: ROOT_AGENT_DEFINITION.displayName,
       instructions: AGENT_INSTRUCTIONS,
       model,
-      modelSettings: modelSettings(input.requiredInitialTool ?? 'auto'),
+      modelSettings: modelSettings(input.requiredInitialTool?.modelName ?? 'auto'),
       tools: toolSurface.tools as never,
     });
     const underlying = new HostBackedSession(context);

@@ -85,6 +85,10 @@ describe('EncryptedAgentStateStore', () => {
   it('applies session operations and checkpoints with optimistic revisions', async () => {
     const { snapshot, store } = await fixture();
     const operationDigest = 'a'.repeat(64);
+    const requiredInitialTool = {
+      modelName: 'observe_context',
+      arguments: { operation: 'observe', scope: 'auto' },
+    };
 
     await expect(store.appendSession(
       snapshot.taskId,
@@ -114,10 +118,15 @@ describe('EncryptedAgentStateStore', () => {
       model: 'gpt-test',
       pendingCallId: 'call-1',
       protocolDigest: 'd'.repeat(64),
+      requiredInitialTool,
       sdkVersion: '0.17.0',
       state: '{"state":true}',
       toolCatalogDigest: 'e'.repeat(64),
     })).resolves.toEqual({ replayed: false, revision: 1 });
+
+    await expect(store.readThread(snapshot.taskId)).resolves.toMatchObject({
+      checkpoint: { requiredInitialTool },
+    });
   });
 
   it('keeps an existing thread intact and rejects a different owner', async () => {

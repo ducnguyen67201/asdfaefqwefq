@@ -118,7 +118,19 @@ export class TaskApplicationService {
           authority.executionProfile !== 'workspace' &&
           (authority.activity?.activity.launchTarget === 'current_surface' ||
             shouldObserveInitialScreenContext(request.text))
-            ? { requiredInitialTool: 'observe_context' }
+            ? {
+                requiredInitialTool: {
+                  modelName: 'observe_context',
+                  arguments: {
+                    operation: 'observe',
+                    scope: 'auto',
+                    reason: 'Ground the response in the current visible context.',
+                    query: null,
+                    observationId: null,
+                    region: null,
+                  },
+                },
+              }
             : {}
         ),
         threadId: taskId,

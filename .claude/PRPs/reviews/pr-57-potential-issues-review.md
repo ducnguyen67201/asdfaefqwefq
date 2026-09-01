@@ -20,6 +20,7 @@ The repository and installed skills do not define a workflow named “ponytail r
 
 - Desktop fallback could have run without a preparation guard when a coordinator omitted the optional callback. It now fails closed before capture.
 - Workspace visible-context isolation had no direct task-boundary test. Coverage now prevents future accidental screen grants.
+- A required first tool name did not constrain the first operation or observation scope. The exact `observe + auto` call is now normalized before checkpointing, verified again at the Electron boundary, and persisted across restart/resume.
 
 ### Verified
 
@@ -33,6 +34,7 @@ The repository and installed skills do not define a workflow named “ponytail r
 - Observation images and structured evidence are sent to the model but not added to logs or analytics.
 - Unknown execution outcomes retain the existing no-replay behavior.
 - Workspace tasks do not receive the required screen-observation tool.
+- The first screen-grounding call cannot be changed into region inspection or direct desktop capture by model-supplied arguments.
 
 ## Open Items
 
