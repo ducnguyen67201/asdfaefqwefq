@@ -2,6 +2,13 @@ import { createHash } from 'node:crypto';
 
 import { z } from 'zod';
 
+import {
+  assertStrictFunctionSchema,
+  jsonSchemaHasType,
+  type JsonSchema,
+  type StrictJsonObjectSchema,
+} from '../../shared/agent-tool-contracts';
+
 const NullableIntegerSchema = z.number().int().nullable();
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 
@@ -10,15 +17,20 @@ export const CuaDriverToolSchema = z.object({
   modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
   description: z.string().trim().min(1).max(20_000),
   inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+  driverInputSchema: z.record(z.string().min(1).max(200), z.unknown()),
   injectSession: z.boolean(),
+  schemaAdaptation: z.enum(['none', 'legacy-v1']),
+  schemaDialect: z.string().trim().min(1).max(200),
+  schemaVersion: z.string().trim().min(1).max(100),
 }).strict();
 
 export const CuaDriverCatalogSchema = z.object({
   driverVersion: z.string().trim().min(1).max(100),
   contractVersion: z.string().trim().min(1).max(100),
-  toolsListSchemaVersion: z.literal('1'),
+  toolsListSchemaVersion: z.enum(['1', '2']),
   capabilityVersion: z.string().trim().min(1).max(100),
   driverCatalogDigest: DigestSchema,
+  requiredTools: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u)).max(128),
   tools: z.array(CuaDriverToolSchema).max(128),
 }).strict();
 
@@ -31,17 +43,33 @@ export const CuaDriverMetadataSchema = z.object({
   capabilityVersion: z.string().trim().min(1).max(100),
 }).passthrough();
 
-export const CuaToolInventorySchema = z.object({
+const CuaToolInventoryEnvelopeSchema = z.object({
   capability_version: z.string().min(1).max(100),
   schema_version: z.string().min(1).max(100),
-  tools: z.array(
-    z.object({
-      capabilities: z.array(z.string().min(1).max(200)).max(100).default([]),
-      description: z.string().min(1).max(100_000),
-      inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
-      name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
-    }).passthrough(),
-  ).max(128),
+  tools: z.array(z.unknown()).max(128),
+  requiredTools: z
+    .array(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u))
+    .max(128)
+    .optional(),
+}).passthrough();
+
+export const CuaToolInventorySchema = CuaToolInventoryEnvelopeSchema;
+
+const CuaLegacyToolSchema = z.object({
+  capabilities: z.array(z.string().min(1).max(200)).max(100).default([]),
+  description: z.string().min(1).max(100_000),
+  inputSchema: z.record(z.string().min(1).max(200), z.unknown()),
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
+}).passthrough();
+
+const CuaDeclaredToolSchema = CuaLegacyToolSchema.extend({
+  audience: z.enum(['host', 'model']),
+  schemaDialect: z.string().trim().min(1).max(200),
+  schemaVersion: z.string().trim().min(1).max(100),
+  injectSession: z.boolean().optional().default(false),
+  modelInputSchema: z
+    .record(z.string().min(1).max(200), z.unknown())
+    .optional(),
 }).passthrough();
 
 const CuaSemanticToolInventorySchema = z.object({
@@ -53,7 +81,63 @@ const CuaSemanticToolInventorySchema = z.object({
   ).max(128),
 }).passthrough();
 
-const HOST_OWNED_CAPABILITY_PREFIXES = ['session.lifecycle.'] as const;
+const HOST_OWNED_CAPABILITY_PREFIXES = [
+  'session.lifecycle.',
+  'system.config.',
+] as const;
+
+const RESERVED_HOST_TOOL_NAMES = new Set(['set_config']);
+
+export const CUA_MODEL_SCHEMA_DIALECT = 'openai.function.strict' as const;
+export const CUA_MODEL_SCHEMA_VERSION = '1' as const;
+
+export interface CuaModelSchemaValidator {
+  readonly dialect: string;
+  readonly version: string;
+  validate(schema: Record<string, unknown>): void;
+}
+
+export interface CuaCatalogToolDiagnostic {
+  readonly code:
+    | 'invalid_tool_contract'
+    | 'invalid_model_schema'
+    | 'reserved_host_tool'
+    | 'unsupported_schema_dialect';
+  readonly message: string;
+  readonly name: string;
+}
+
+export interface CuaRequiredToolFailure {
+  readonly code: 'incompatible_required_tool' | 'missing_required_tool';
+  readonly message: string;
+  readonly name: string;
+}
+
+export interface CuaDriverCatalogReport {
+  readonly compatibilityMessages: string[];
+  readonly hostOwnedTools: string[];
+  readonly inventorySchemaVersion: string;
+  readonly quarantinedTools: CuaCatalogToolDiagnostic[];
+  readonly requiredToolFailures: CuaRequiredToolFailure[];
+  readonly state: 'ready' | 'degraded' | 'unavailable';
+}
+
+export interface CuaDriverCatalogLoadResult {
+  readonly catalog: CuaDriverCatalog | null;
+  readonly report: CuaDriverCatalogReport;
+}
+
+export interface CuaDriverCatalogLoadOptions {
+  readonly schemaValidators?: readonly CuaModelSchemaValidator[];
+}
+
+const OpenAiStrictFunctionSchemaValidator: CuaModelSchemaValidator = {
+  dialect: CUA_MODEL_SCHEMA_DIALECT,
+  version: CUA_MODEL_SCHEMA_VERSION,
+  validate(schema) {
+    assertStrictFunctionSchema(schema);
+  },
+};
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) {
@@ -90,63 +174,414 @@ function projectedInputSchema(
       schema.required = schema.required.filter((name) => name !== 'session');
     }
   }
+  assertModelSchemaSize(schema);
+  return { injectSession, schema };
+}
+
+function assertModelSchemaSize(schema: Record<string, unknown>): void {
   if (Buffer.byteLength(stableJson(schema), 'utf8') > 100_000) {
     throw new Error('CUA tool input schema exceeds the runtime catalog limit.');
   }
-  return { injectSession, schema };
+}
+
+function legacyStrictify(input: Record<string, unknown>): StrictJsonObjectSchema {
+  const cloned = legacyStrictNode(structuredClone(input));
+  if (
+    cloned.type !== 'object' ||
+    !cloned.properties ||
+    Array.isArray(cloned.properties)
+  ) {
+    throw new Error('CUA tool schemas must be JSON object schemas.');
+  }
+  assertStrictFunctionSchema(cloned);
+  return cloned as StrictJsonObjectSchema;
+}
+
+function legacyStrictNode(input: unknown): JsonSchema {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const node = input as Record<string, unknown>;
+  if (jsonSchemaHasType(node, 'object')) {
+    const properties =
+      node.properties &&
+      typeof node.properties === 'object' &&
+      !Array.isArray(node.properties)
+        ? (node.properties as Record<string, unknown>)
+        : {};
+    const originallyRequired = new Set(
+      Array.isArray(node.required)
+        ? node.required.filter(
+            (name): name is string => typeof name === 'string',
+          )
+        : [],
+    );
+    node.properties = Object.fromEntries(
+      Object.entries(properties).map(([name, value]) => {
+        const strict = legacyStrictNode(value);
+        return [name, originallyRequired.has(name) ? strict : nullable(strict)];
+      }),
+    );
+    node.required = Object.keys(properties);
+    node.additionalProperties = false;
+  }
+  if (Array.isArray(node.items)) {
+    node.items = node.items.map(legacyStrictNode);
+  } else if (node.items) {
+    node.items = legacyStrictNode(node.items);
+  }
+  for (const keyword of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (Array.isArray(node[keyword])) {
+      node[keyword] = node[keyword].map(legacyStrictNode);
+    }
+  }
+  for (const keyword of ['$defs', 'definitions'] as const) {
+    const definitions = node[keyword];
+    if (
+      !definitions ||
+      typeof definitions !== 'object' ||
+      Array.isArray(definitions)
+    ) {
+      continue;
+    }
+    node[keyword] = Object.fromEntries(
+      Object.entries(definitions).map(([name, definition]) => [
+        name,
+        legacyStrictNode(definition),
+      ]),
+    );
+  }
+  if (
+    node.additionalProperties &&
+    typeof node.additionalProperties === 'object' &&
+    !Array.isArray(node.additionalProperties)
+  ) {
+    node.additionalProperties = legacyStrictNode(node.additionalProperties);
+  }
+  return node;
+}
+
+function nullable(schema: JsonSchema): JsonSchema {
+  if (jsonSchemaHasType(schema, 'null')) return schema;
+  if (
+    Array.isArray(schema.anyOf) &&
+    schema.anyOf.some(
+      (candidate) =>
+        candidate &&
+        typeof candidate === 'object' &&
+        !Array.isArray(candidate) &&
+        jsonSchemaHasType(candidate as Record<string, unknown>, 'null'),
+    )
+  ) {
+    return schema;
+  }
+  return { anyOf: [schema, { type: 'null' }] };
+}
+
+function diagnosticName(value: unknown, index: number): string {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>).name === 'string'
+  ) {
+    return String((value as Record<string, unknown>).name).slice(0, 100);
+  }
+  return `<tool:${index}>`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown catalog error.';
+}
+
+function unavailableCatalogResult(
+  inventorySchemaVersion: string,
+  message: string,
+): CuaDriverCatalogLoadResult {
+  return {
+    catalog: null,
+    report: {
+      compatibilityMessages: [message],
+      hostOwnedTools: [],
+      inventorySchemaVersion,
+      quarantinedTools: [],
+      requiredToolFailures: [],
+      state: 'unavailable',
+    },
+  };
+}
+
+export function loadCuaDriverCatalog(
+  metadataValue: unknown,
+  inventoryValue: unknown,
+  options: CuaDriverCatalogLoadOptions = {},
+): CuaDriverCatalogLoadResult {
+  const metadataResult = CuaDriverMetadataSchema.safeParse(metadataValue);
+  if (!metadataResult.success) {
+    return unavailableCatalogResult(
+      'unknown',
+      'CUA driver metadata is not compatible with this TroCode build.',
+    );
+  }
+  const inventoryResult = CuaToolInventoryEnvelopeSchema.safeParse(inventoryValue);
+  if (!inventoryResult.success) {
+    return unavailableCatalogResult(
+      'unknown',
+      'CUA tool inventory is malformed and cannot be admitted.',
+    );
+  }
+  const metadata = metadataResult.data;
+  const inventory = inventoryResult.data;
+  if (!['1', '2'].includes(metadata.toolsListSchemaVersion)) {
+    return unavailableCatalogResult(
+      metadata.toolsListSchemaVersion,
+      `CUA tool inventory schema ${metadata.toolsListSchemaVersion} is unsupported; TroCode supports schemas 1 and 2.`,
+    );
+  }
+  if (
+    inventory.schema_version !== metadata.toolsListSchemaVersion ||
+    inventory.capability_version !== metadata.capabilityVersion
+  ) {
+    return unavailableCatalogResult(
+      inventory.schema_version,
+      'CUA tool inventory metadata does not match the driver contract.',
+    );
+  }
+  if (inventory.schema_version === '2' && !inventory.requiredTools) {
+    return unavailableCatalogResult(
+      inventory.schema_version,
+      'CUA tool inventory schema 2 must declare requiredTools explicitly.',
+    );
+  }
+  const requiredTools = inventory.requiredTools ?? [];
+
+  const validators = new Map<string, CuaModelSchemaValidator>();
+  for (const validator of options.schemaValidators ?? [OpenAiStrictFunctionSchemaValidator]) {
+    validators.set(`${validator.dialect}@${validator.version}`, validator);
+  }
+  const legacy = inventory.schema_version === '1';
+  const compatibilityMessages = legacy
+    ? [
+        'CUA inventory schema 1 uses the reported legacy schema adapter; upgrade CUA Core to schema 2 for exact provider schemas.',
+      ]
+    : [];
+  const hostOwnedTools: string[] = [];
+  const quarantinedTools: CuaCatalogToolDiagnostic[] = [];
+  const admittedTools: Array<z.infer<typeof CuaDriverToolSchema>> = [];
+  const admittedNames = new Set<string>();
+  const admittedModelNames = new Set<string>();
+  const rawNames = new Set<string>();
+
+  inventory.tools.forEach((rawTool, index) => {
+    const name = diagnosticName(rawTool, index);
+    const parsed = legacy
+      ? CuaLegacyToolSchema.safeParse(rawTool)
+      : CuaDeclaredToolSchema.safeParse(rawTool);
+    if (!parsed.success) {
+      quarantinedTools.push({
+        code: 'invalid_tool_contract',
+        message: `CUA tool ${name} has an invalid inventory contract.`,
+        name,
+      });
+      return;
+    }
+    const tool = parsed.data;
+    const declaredTool = legacy
+      ? null
+      : CuaDeclaredToolSchema.parse(rawTool);
+    if (rawNames.has(tool.name)) {
+      quarantinedTools.push({
+        code: 'invalid_tool_contract',
+        message: `CUA tool ${tool.name} is duplicated in the inventory.`,
+        name: tool.name,
+      });
+      return;
+    }
+    rawNames.add(tool.name);
+
+    const hostOwned = legacy
+      ? tool.capabilities.some((capability) =>
+          HOST_OWNED_CAPABILITY_PREFIXES.some((prefix) =>
+            capability.startsWith(prefix),
+          ),
+        )
+      : declaredTool?.audience === 'host';
+    if (hostOwned) {
+      hostOwnedTools.push(tool.name);
+      return;
+    }
+    if (RESERVED_HOST_TOOL_NAMES.has(tool.name)) {
+      hostOwnedTools.push(tool.name);
+      quarantinedTools.push({
+        code: 'reserved_host_tool',
+        message: `CUA tool ${tool.name} is reserved for the host and cannot be exposed to the model.`,
+        name: tool.name,
+      });
+      return;
+    }
+
+    try {
+      const projected = legacy
+        ? (() => {
+            const projection = projectedInputSchema(tool.inputSchema);
+            return { ...projection, driverSchema: projection.schema };
+          })()
+        : (() => {
+            if (!declaredTool?.modelInputSchema) {
+              throw new Error(
+                'Schema-2 model tools must declare modelInputSchema.',
+              );
+            }
+            return {
+              driverSchema: structuredClone(tool.inputSchema),
+              injectSession: declaredTool.injectSession,
+              schema: structuredClone(declaredTool.modelInputSchema),
+            };
+          })();
+      assertModelSchemaSize(projected.schema);
+      assertModelSchemaSize(projected.driverSchema);
+      if (
+        !legacy &&
+        projected.injectSession &&
+        projected.schema.properties &&
+        typeof projected.schema.properties === 'object' &&
+        !Array.isArray(projected.schema.properties) &&
+        Object.hasOwn(projected.schema.properties, 'session')
+      ) {
+        throw new Error(
+          'Schema-2 model tools with injectSession must not expose the host-owned session property.',
+        );
+      }
+      if (
+        !legacy &&
+        projected.injectSession &&
+        (!projected.driverSchema.properties ||
+          typeof projected.driverSchema.properties !== 'object' ||
+          Array.isArray(projected.driverSchema.properties) ||
+          !Object.hasOwn(projected.driverSchema.properties, 'session'))
+      ) {
+        throw new Error(
+          'Schema-2 driver inputSchema must declare session when injectSession is enabled.',
+        );
+      }
+      const schemaDialect = legacy
+        ? CUA_MODEL_SCHEMA_DIALECT
+        : (declaredTool?.schemaDialect ?? 'missing');
+      const schemaVersion = legacy
+        ? CUA_MODEL_SCHEMA_VERSION
+        : (declaredTool?.schemaVersion ?? 'missing');
+      const validator = validators.get(`${schemaDialect}@${schemaVersion}`);
+      if (!validator) {
+        quarantinedTools.push({
+          code: 'unsupported_schema_dialect',
+          message: `CUA tool ${tool.name} uses unsupported model schema ${schemaDialect}@${schemaVersion}.`,
+          name: tool.name,
+        });
+        return;
+      }
+      const inputSchema = (() => {
+        if (legacy) return legacyStrictify(projected.schema);
+        const exact = structuredClone(projected.schema);
+        const beforeValidation = stableJson(exact);
+        validator.validate(exact);
+        if (stableJson(exact) !== beforeValidation) {
+          throw new Error('Model schema validators must not mutate schemas.');
+        }
+        assertStrictFunctionSchema(exact);
+        return exact;
+      })();
+      const modelName = modelNameForCuaTool(tool.name);
+      if (admittedNames.has(tool.name) || admittedModelNames.has(modelName)) {
+        quarantinedTools.push({
+          code: 'invalid_tool_contract',
+          message: `CUA tool ${tool.name} collides with another admitted model tool.`,
+          name: tool.name,
+        });
+        return;
+      }
+      admittedNames.add(tool.name);
+      admittedModelNames.add(modelName);
+      admittedTools.push({
+        name: tool.name,
+        modelName,
+        description: tool.description.trim().slice(0, 20_000),
+        driverInputSchema: projected.driverSchema,
+        inputSchema,
+        injectSession: projected.injectSession,
+        schemaAdaptation: legacy ? 'legacy-v1' : 'none',
+        schemaDialect,
+        schemaVersion,
+      });
+    } catch (error) {
+      quarantinedTools.push({
+        code: 'invalid_model_schema',
+        message: `CUA tool ${tool.name} has an invalid ${legacy ? 'legacy-adapted' : 'declared'} model schema: ${errorMessage(error)}`,
+        name: tool.name,
+      });
+    }
+  });
+
+  const requiredToolFailures = requiredTools.flatMap(
+    (name): CuaRequiredToolFailure[] => {
+      if (admittedNames.has(name)) return [];
+      const quarantined = quarantinedTools.find((tool) => tool.name === name);
+      return [
+        {
+          code: quarantined
+            ? 'incompatible_required_tool'
+            : 'missing_required_tool',
+          message: quarantined
+            ? `Required CUA model tool ${name} is incompatible: ${quarantined.message}`
+            : `Required CUA model tool ${name} is missing from the inventory.`,
+          name,
+        },
+      ];
+    },
+  );
+  const state =
+    requiredToolFailures.length > 0
+      ? 'unavailable'
+      : compatibilityMessages.length > 0 || quarantinedTools.length > 0
+        ? 'degraded'
+        : 'ready';
+  const report: CuaDriverCatalogReport = {
+    compatibilityMessages,
+    hostOwnedTools,
+    inventorySchemaVersion: inventory.schema_version,
+    quarantinedTools,
+    requiredToolFailures,
+    state,
+  };
+  if (state === 'unavailable') return { catalog: null, report };
+
+  const digestPayload = {
+    driverVersion: metadata.driverVersion,
+    contractVersion: metadata.contractVersion,
+    toolsListSchemaVersion: metadata.toolsListSchemaVersion,
+    capabilityVersion: metadata.capabilityVersion,
+    requiredTools,
+    tools: admittedTools,
+  };
+  return {
+    catalog: CuaDriverCatalogSchema.parse({
+      ...digestPayload,
+      driverCatalogDigest: createHash('sha256')
+        .update(stableJson(digestPayload))
+        .digest('hex'),
+    }),
+    report,
+  };
 }
 
 export function createCuaDriverCatalog(
   metadataValue: unknown,
   inventoryValue: unknown,
 ): CuaDriverCatalog {
-  const metadata = CuaDriverMetadataSchema.parse(metadataValue);
-  const inventory = CuaToolInventorySchema.parse(inventoryValue);
-  if (
-    metadata.toolsListSchemaVersion !== '1' ||
-    inventory.schema_version !== metadata.toolsListSchemaVersion ||
-    inventory.capability_version !== metadata.capabilityVersion
-  ) {
-    throw new Error('CUA tool inventory metadata does not match the driver contract.');
-  }
-  const tools = inventory.tools
-    .filter(
-      (tool) =>
-        !tool.capabilities.some((capability) =>
-          HOST_OWNED_CAPABILITY_PREFIXES.some((prefix) =>
-            capability.startsWith(prefix),
-          ),
-        ),
-    )
-    .map((tool) => {
-      const projected = projectedInputSchema(tool.inputSchema);
-      return {
-        name: tool.name,
-        modelName: modelNameForCuaTool(tool.name),
-        description: tool.description.trim().slice(0, 20_000),
-        inputSchema: projected.schema,
-        injectSession: projected.injectSession,
-      };
-    });
-  if (new Set(tools.map((tool) => tool.name)).size !== tools.length) {
-    throw new Error('CUA tool inventory contains duplicate tool names.');
-  }
-  if (new Set(tools.map((tool) => tool.modelName)).size !== tools.length) {
-    throw new Error('CUA tool inventory contains duplicate model tool names.');
-  }
-  const digestPayload = {
-    driverVersion: metadata.driverVersion,
-    contractVersion: metadata.contractVersion,
-    toolsListSchemaVersion: metadata.toolsListSchemaVersion,
-    capabilityVersion: metadata.capabilityVersion,
-    tools,
-  };
-  return CuaDriverCatalogSchema.parse({
-    ...digestPayload,
-    driverCatalogDigest: createHash('sha256')
-      .update(stableJson(digestPayload))
-      .digest('hex'),
-  });
+  const result = loadCuaDriverCatalog(metadataValue, inventoryValue);
+  if (result.catalog) return result.catalog;
+  const message =
+    result.report.requiredToolFailures[0]?.message ??
+    result.report.compatibilityMessages[0] ??
+    'CUA tool catalog is unavailable.';
+  throw new Error(message);
 }
 
 const WINDOW_DISCOVERY_TOOLS = ['list_windows', 'get_window_state'] as const;

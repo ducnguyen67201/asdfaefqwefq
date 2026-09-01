@@ -22,7 +22,7 @@ import {
   type LocalAgentHostMessage,
   type LocalTurnEventKind,
 } from './protocol.js';
-import { ToolOutcomeUnknownError } from './tool-adapter.js';
+import { ToolOutcomeUnknownError, ToolSurfaceFactory } from './tool-adapter.js';
 import {
   EphemeralCredentialStore,
   UserOpenAIClientFactory,
@@ -40,7 +40,10 @@ export class LocalRuntimeServer {
   private initialized = false;
   private readonly turns = new Map<string, ActiveTurn>();
 
-  constructor(private readonly bridge: HostBridge) {
+  constructor(
+    private readonly bridge: HostBridge,
+    private readonly onShutdown: () => void = () => undefined,
+  ) {
     bridge.on('message', (message: LocalAgentHostMessage) => void this.handle(message));
     bridge.on('protocol-error', () => this.fatal('invalid_protocol_message', 'The host sent an invalid runtime message.'));
   }
@@ -50,6 +53,10 @@ export class LocalRuntimeServer {
       switch (message.kind) {
         case 'runtime.initialize':
           this.initialize(message);
+          return;
+        case 'runtime.validateCatalog':
+          this.requireInitialized();
+          this.validateCatalog(message);
           return;
         case 'runtime.replaceCredential':
           this.requireInitialized();
@@ -75,6 +82,7 @@ export class LocalRuntimeServer {
         case 'runtime.shutdown':
           this.credential.clear();
           for (const active of this.turns.values()) active.controller.abort(new Error('shutdown'));
+          this.onShutdown();
           return;
         default:
           return;
@@ -112,6 +120,20 @@ export class LocalRuntimeServer {
         graphVersion: graphVersion([], DEFAULT_AGENT_MODEL),
         capabilities: [...LOCAL_AGENT_CAPABILITIES],
       },
+    });
+  }
+
+  private validateCatalog(
+    message: Extract<LocalAgentHostMessage, { kind: 'runtime.validateCatalog' }>,
+  ): void {
+    const result = new ToolSurfaceFactory().inspect(
+      message.tools,
+      message.catalogDigest,
+    );
+    this.bridge.send({
+      kind: 'runtime.catalogValidated',
+      requestId: message.requestId,
+      ...result,
     });
   }
 

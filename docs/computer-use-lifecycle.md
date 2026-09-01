@@ -1,9 +1,13 @@
 # Computer-use lifecycle
 
-1. Electron discovers the installed CUA driver's canonical tool inventory and
-   freezes it with Tro's local tools for the turn.
-2. The local Agents SDK harness registers those schemas as normal SDK tools and
-   checkpoints RunState before a callback may cross into Electron.
+1. Electron discovers the installed CUA driver's canonical tool inventory at
+   startup, validates each model tool independently, quarantines incompatible
+   optional tools, and makes CUA unavailable if a required tool is missing or
+   incompatible.
+2. Before any task starts, the local Agents SDK process validates each admitted
+   schema and rejects any schema it would rewrite. Electron then registers the
+   accepted tools. During a turn, the harness checkpoints RunState before a
+   callback may cross into Electron.
 3. Electron checks the local protocol/tool digest and, for CUA, the live
    driver-catalog digest, then checks task/workspace mapping.
 4. If Accessibility or Screen Recording is unavailable, the run enters the
@@ -41,6 +45,12 @@ Tro starts and ends the CUA session for the task and overwrites any supplied
 host mode, so browser-profile preparation does not create a Tro approval step.
 CUA still validates the target and may refuse a malformed, stale, or natively
 unavailable operation.
+
+Inventory schema 2 uses declared `audience`, `schemaDialect`, and
+`schemaVersion` metadata. Model schemas are admitted exactly as supplied after
+check-only validation; Tro does not widen or narrow them. `set_config` remains
+host-owned. Schema 1 is supported only through a reported legacy adapter. See
+`docs/cua-tool-inventory-contract.md`.
 
 ## Workspace shell
 

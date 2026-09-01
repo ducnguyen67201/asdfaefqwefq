@@ -37,4 +37,22 @@ describe('dynamic agent tool schema helpers', () => {
       }),
     ).toThrow(/additionalProperties/u);
   });
+
+  it('rejects a typeless leaf before the provider sees the tool catalog', () => {
+    expect(() =>
+      assertStrictFunctionSchema(
+        objectSchema(
+          {
+            value: {
+              anyOf: [
+                { description: 'A value whose JSON type is unspecified.' },
+                { type: 'null' },
+              ],
+            },
+          },
+          ['value'],
+        ),
+      ),
+    ).toThrow(/explicit type/u);
+  });
 });

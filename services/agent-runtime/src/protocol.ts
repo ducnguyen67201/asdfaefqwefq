@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 /** Local-only protocol between Electron main and the bundled SDK process. */
-export const LOCAL_AGENT_PROTOCOL_VERSION = 1 as const;
+export const LOCAL_AGENT_PROTOCOL_VERSION = 2 as const;
 export const LOCAL_AGENT_SDK_VERSION = '0.17.0' as const;
 export const LOCAL_AGENT_ROOT_ID = 'tro.root' as const;
 
@@ -14,6 +14,7 @@ export const LocalAgentCapabilitySchema = z.enum([
   'durableToolCheckpoints',
   'steering',
   'cancellation',
+  'catalogValidation',
 ]);
 
 export const LOCAL_AGENT_CAPABILITIES = [
@@ -23,6 +24,7 @@ export const LOCAL_AGENT_CAPABILITIES = [
   'durableToolCheckpoints',
   'steering',
   'cancellation',
+  'catalogValidation',
 ] as const satisfies readonly z.infer<typeof LocalAgentCapabilitySchema>[];
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -70,6 +72,11 @@ const RuntimeInitializeSchema = RequestIdentitySchema.extend({
   requiredCapabilities: z.array(LocalAgentCapabilitySchema).max(32),
   expected: LocalRuntimeCapabilitiesSchema,
 }).strict();
+const RuntimeValidateCatalogSchema = RequestIdentitySchema.extend({
+  kind: z.literal('runtime.validateCatalog'),
+  catalogDigest: DigestSchema,
+  tools: z.array(LocalRuntimeToolSpecSchema).max(128),
+}).strict();
 const CredentialReplaceSchema = RequestIdentitySchema.extend({
   kind: z.literal('runtime.replaceCredential'), credential: z.string().min(1).max(16_384),
 }).strict();
@@ -115,13 +122,22 @@ const ToolExecuteResultSchema = TurnIdentitySchema.extend({
 const RuntimeShutdownSchema = RequestIdentitySchema.extend({ kind: z.literal('runtime.shutdown') }).strict();
 
 export const LocalAgentHostMessageSchema = z.discriminatedUnion('kind', [
-  RuntimeInitializeSchema, CredentialReplaceSchema, CredentialClearSchema, TurnStartSchema,
+  RuntimeInitializeSchema, RuntimeValidateCatalogSchema, CredentialReplaceSchema, CredentialClearSchema, TurnStartSchema,
   TurnResumeSchema, TurnSteerSchema, TurnCancelSchema, SessionReadResultSchema,
   SessionAppendResultSchema, SessionReplaceResultSchema, CheckpointCommitResultSchema, ToolExecuteResultSchema,
   RuntimeShutdownSchema,
 ]);
 
 const RuntimeReadySchema = RequestIdentitySchema.extend({ kind: z.literal('runtime.ready'), runtime: LocalRuntimeCapabilitiesSchema }).strict();
+const RuntimeCatalogValidatedSchema = RequestIdentitySchema.extend({
+  kind: z.literal('runtime.catalogValidated'),
+  acceptedModelNames: z.array(LocalRuntimeToolSpecSchema.shape.modelName).max(128),
+  rejected: z.array(z.object({
+    message: z.string().trim().min(1).max(1_000),
+    modelName: LocalRuntimeToolSpecSchema.shape.modelName,
+    toolId: LocalRuntimeToolSpecSchema.shape.toolId,
+  }).strict()).max(128),
+}).strict();
 const RuntimeFatalSchema = RequestIdentitySchema.extend({
   kind: z.literal('runtime.fatal'), code: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u),
   message: z.string().trim().min(1).max(1_000),
@@ -132,7 +148,7 @@ export const LocalTurnEventKindSchema = z.enum([
 ]);
 const TurnEventSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.event'), event: LocalTurnEventKindSchema,
-  summary: z.string().trim().min(1).max(2_000), data: JsonObjectSchema.nullable().default(null),
+  summary: z.string().min(1).max(2_000), data: JsonObjectSchema.nullable().default(null),
 }).strict();
 const SessionReadSchema = TurnIdentitySchema.extend({
   kind: z.literal('session.read'), limit: z.number().int().positive().max(10_000).nullable(),
@@ -165,7 +181,7 @@ const TurnTerminalSchema = TurnIdentitySchema.extend({
 }).strict();
 
 export const LocalAgentChildMessageSchema = z.discriminatedUnion('kind', [
-  RuntimeReadySchema, RuntimeFatalSchema, TurnEventSchema,
+  RuntimeReadySchema, RuntimeCatalogValidatedSchema, RuntimeFatalSchema, TurnEventSchema,
   SessionReadSchema, SessionAppendSchema, SessionReplaceSchema, CheckpointCommitSchema,
   ToolExecuteSchema, TurnTerminalSchema,
 ]);
@@ -193,6 +209,7 @@ export type LocalAgentCapability = z.infer<typeof LocalAgentCapabilitySchema>;
 export type LocalAgentHostMessage = z.infer<typeof LocalAgentHostMessageSchema>;
 export type LocalAgentChildMessage = z.infer<typeof LocalAgentChildMessageSchema>;
 export type LocalRuntimeCapabilities = z.infer<typeof LocalRuntimeCapabilitiesSchema>;
+export type LocalRuntimeCatalogValidation = z.infer<typeof RuntimeCatalogValidatedSchema>;
 export type LocalRuntimeToolSpec = z.infer<typeof LocalRuntimeToolSpecSchema>;
 export type LocalToolExecutionResult = z.infer<typeof LocalToolExecutionResultSchema>;
 export type LocalTurnEventKind = z.infer<typeof LocalTurnEventKindSchema>;

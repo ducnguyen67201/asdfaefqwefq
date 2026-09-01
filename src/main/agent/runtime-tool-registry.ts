@@ -76,6 +76,24 @@ export interface FrozenRuntimeToolCatalog {
   }>;
 }
 
+export interface RuntimeToolRegistrationRejection {
+  code:
+    | 'duplicate_model_name'
+    | 'duplicate_tool_id'
+    | 'invalid_model_name'
+    | 'invalid_schema'
+    | 'invalid_tool_id'
+    | 'missing_operation';
+  message: string;
+  modelName: string;
+  toolId: string;
+}
+
+export interface RuntimeToolRegistrationAdmission {
+  accepted: RuntimeToolDefinition[];
+  rejected: RuntimeToolRegistrationRejection[];
+}
+
 export interface ObserveDesktopToolInput {
   reason: string;
 }
@@ -1028,26 +1046,88 @@ export class RuntimeToolRegistry {
   }
 
   register(definitions: readonly RuntimeToolDefinition[]): void {
-    for (const definition of definitions) {
-      const id = RuntimeToolIdSchema.parse(definition.id);
-      if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(definition.modelName)) {
-        throw new Error(`Runtime tool ${id} has an invalid model name.`);
-      }
-      assertStrictFunctionSchema(definition.parameters);
-      if (definition.operations.length === 0) {
-        throw new Error(`Runtime tool ${id} must declare at least one operation.`);
-      }
-      if (this.toolsById.has(id)) {
-        throw new Error('Runtime tool ' + id + ' is already registered.');
-      }
-      if (this.toolsByModelName.has(definition.modelName)) {
-        throw new Error(
-          'Model tool ' + definition.modelName + ' is already registered.',
-        );
-      }
-      this.toolsById.set(id, definition);
+    const admission = this.inspectRegistration(definitions);
+    const rejection = admission.rejected[0];
+    if (rejection) throw new Error(rejection.message);
+    for (const definition of admission.accepted) {
+      this.toolsById.set(definition.id, definition);
       this.toolsByModelName.set(definition.modelName, definition);
     }
+  }
+
+  inspectRegistration(
+    definitions: readonly RuntimeToolDefinition[],
+  ): RuntimeToolRegistrationAdmission {
+    const accepted: RuntimeToolDefinition[] = [];
+    const rejected: RuntimeToolRegistrationRejection[] = [];
+    const toolIds = new Set<RuntimeToolId>(this.toolsById.keys());
+    const modelNames = new Set<string>(this.toolsByModelName.keys());
+    for (const definition of definitions) {
+      const toolId = String(definition.id);
+      const modelName = String(definition.modelName);
+      const idResult = RuntimeToolIdSchema.safeParse(definition.id);
+      if (!idResult.success) {
+        rejected.push({
+          code: 'invalid_tool_id',
+          message: `Runtime tool ${toolId} has an invalid tool id.`,
+          modelName,
+          toolId,
+        });
+        continue;
+      }
+      const id = idResult.data;
+      if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(definition.modelName)) {
+        rejected.push({
+          code: 'invalid_model_name',
+          message: `Runtime tool ${id} has an invalid model name.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      try {
+        assertStrictFunctionSchema(definition.parameters);
+      } catch (error) {
+        rejected.push({
+          code: 'invalid_schema',
+          message: `Runtime tool ${id} has an invalid model schema: ${error instanceof Error ? error.message : 'unknown schema error'}`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (definition.operations.length === 0) {
+        rejected.push({
+          code: 'missing_operation',
+          message: `Runtime tool ${id} must declare at least one operation.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (toolIds.has(id)) {
+        rejected.push({
+          code: 'duplicate_tool_id',
+          message: `Runtime tool ${id} is already registered.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (modelNames.has(definition.modelName)) {
+        rejected.push({
+          code: 'duplicate_model_name',
+          message: `Model tool ${definition.modelName} is already registered.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      toolIds.add(id);
+      modelNames.add(definition.modelName);
+      accepted.push(definition);
+    }
+    return { accepted, rejected };
   }
 
   listRegistered(): RuntimeToolDefinition[] {

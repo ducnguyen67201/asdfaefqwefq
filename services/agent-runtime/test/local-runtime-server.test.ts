@@ -25,6 +25,19 @@ class FakeBridge extends EventEmitter {
 }
 
 describe('LocalRuntimeServer', () => {
+  it('releases process lifetime only after an explicit runtime shutdown', async () => {
+    const bridge = new FakeBridge();
+    const onShutdown = vi.fn();
+    new LocalRuntimeServer(bridge as unknown as HostBridge, onShutdown);
+
+    bridge.emit('message', {
+      kind: 'runtime.shutdown',
+      requestId: randomUUID(),
+    } satisfies LocalAgentHostMessage);
+
+    await vi.waitFor(() => expect(onShutdown).toHaveBeenCalledOnce());
+  });
+
   it('reports invalid turn preflight as a fatal protocol command', async () => {
     const bridge = new FakeBridge();
     new LocalRuntimeServer(bridge as unknown as HostBridge);
@@ -66,6 +79,70 @@ describe('LocalRuntimeServer', () => {
         code: 'runtime_command_failed',
         message: 'graph_version_mismatch',
       }));
+    });
+  });
+
+  it('quarantines SDK-incompatible tools individually during catalog startup validation', async () => {
+    const bridge = new FakeBridge();
+    new LocalRuntimeServer(bridge as unknown as HostBridge);
+    const expectedGraphVersion = graphVersion([], DEFAULT_AGENT_MODEL);
+    bridge.emit('message', {
+      kind: 'runtime.initialize',
+      requestId: randomUUID(),
+      apiBaseUrl: 'https://api.example.com',
+      requiredCapabilities: ['sessions', 'compaction', 'catalogValidation'],
+      expected: {
+        protocolVersion: LOCAL_AGENT_PROTOCOL_VERSION,
+        protocolDigest: LOCAL_AGENT_PROTOCOL_DIGEST,
+        sdkVersion: LOCAL_AGENT_SDK_VERSION,
+        graphVersion: expectedGraphVersion,
+        capabilities: [...LOCAL_AGENT_CAPABILITIES],
+      },
+    } satisfies LocalAgentHostMessage);
+    const requestId = randomUUID();
+    bridge.emit('message', {
+      kind: 'runtime.validateCatalog',
+      requestId,
+      catalogDigest: 'a'.repeat(64),
+      tools: [
+        {
+          toolId: 'cua.valid_action',
+          modelName: 'valid_action',
+          description: 'Valid action.',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {},
+            required: [],
+          },
+          operations: ['valid_action'],
+          driverCatalogDigest: 'b'.repeat(64),
+        },
+        {
+          toolId: 'cua.rewritten_action',
+          modelName: 'rewritten_action',
+          description: 'Would require an SDK rewrite.',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { value: { type: 'string' } },
+            required: [],
+          },
+          operations: ['rewritten_action'],
+          driverCatalogDigest: 'b'.repeat(64),
+        },
+      ],
+    } satisfies LocalAgentHostMessage);
+
+    await vi.waitFor(() => {
+      expect(bridge.sent).toContainEqual({
+        kind: 'runtime.catalogValidated',
+        requestId,
+        acceptedModelNames: ['valid_action'],
+        rejected: [
+          expect.objectContaining({ modelName: 'rewritten_action' }),
+        ],
+      });
     });
   });
 });

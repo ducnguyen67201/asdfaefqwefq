@@ -9,6 +9,7 @@ import {
   LOCAL_AGENT_PROTOCOL_VERSION,
   LOCAL_AGENT_ROOT_ID,
   LOCAL_AGENT_SDK_VERSION,
+  LocalAgentChildMessageSchema,
   LocalAgentHostMessageSchema,
   LocalRuntimeCapabilitiesSchema,
   type LocalRuntimeToolSpec,
@@ -71,7 +72,7 @@ describe('local agent protocol and graph', () => {
     expect(LocalAgentHostMessageSchema.safeParse({ ...valid, credential: 'secret' }).success).toBe(false);
     expect(LocalAgentHostMessageSchema.safeParse({
       ...valid,
-      expected: { ...valid.expected, protocolVersion: 2 },
+      expected: { ...valid.expected, protocolVersion: 3 },
     }).success).toBe(false);
   });
 
@@ -85,5 +86,30 @@ describe('local agent protocol and graph', () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it('preserves assistant delta whitespace across the process protocol', () => {
+    const event = {
+      kind: 'turn.event',
+      requestId: randomUUID(),
+      threadId: randomUUID(),
+      turnId: randomUUID(),
+      agentId: LOCAL_AGENT_ROOT_ID,
+      parentAgentId: null,
+      delegationId: null,
+      graphVersion: digest,
+      sequence: 1,
+      event: 'assistant_delta',
+      summary: ' gửi bài tập ',
+      data: null,
+    } as const;
+
+    const parsed = LocalAgentChildMessageSchema.parse(event);
+    if (parsed.kind !== 'turn.event') throw new Error('missing turn event');
+    expect(parsed.summary).toBe(' gửi bài tập ');
+    expect(
+      LocalAgentChildMessageSchema.safeParse({ ...event, summary: ' ' })
+        .success,
+    ).toBe(true);
   });
 });

@@ -94,8 +94,10 @@ over all pet nudges.
   Activity context, and technical limits without prescribing a plan.
 - The registry rejects unknown tools, operations, and malformed inputs. CUA
   tools are discovered from the driver's canonical `listToolsJson` contract and
-  projected dynamically into the frozen local catalog, so a compatible new
-  driver ability requires no Rust or static Tro tool-contract edit.
+  admitted independently through a versioned schema-dialect validator. Optional
+  incompatibilities are quarantined; required incompatibilities make CUA
+  unavailable before a task. A compatible new driver ability requires no Rust
+  or static Tro tool-contract edit.
 - Browser navigation accepts credential-free public HTTPS targets only.
 - Workspace filesystem operations remain root-confined. Workspace shell input
   is structurally bounded but intentionally has the host user's shell powers.
@@ -109,11 +111,12 @@ over all pet nudges.
 ## CUA
 
 CUA is an execution capability, not the planner and not an authority source.
-Tro reads CUA's canonical tool inventory, removes only driver session start/end
-because the host owns task cleanup, injects the current task session into tools
-that declare a `session` property, and forwards every other compatible tool
-through the driver's generic `callTool` adapter. New tools using tool-list schema
-version 1 therefore need no Tro allowlist, utility-protocol, or backend edit.
+Tro reads CUA's canonical tool inventory and uses schema-2 `audience` metadata
+to separate model tools from host tools. Session lifecycle and `set_config`
+remain host-owned. Schema-2 model schemas carry an explicit dialect/version and
+are never rewritten; supported tools flow through the generic `callTool`
+adapter without a Tro allowlist, utility-protocol, or backend edit. Schema 1 is
+a reported legacy compatibility adapter, not the forward contract.
 
 Tro selects CUA's unrestricted host mode, so there is no Tro action-approval
 decision in the CUA path. The driver still validates its own schemas and may

@@ -98,4 +98,22 @@ describe('SDK tool adapter', () => {
       ),
     ).not.toThrow();
   });
+
+  it('rejects schemas that the Agents SDK would rewrite', () => {
+    const optional = toolSpec('optional_value', {
+      type: 'object',
+      additionalProperties: false,
+      properties: { value: { type: 'string' } },
+      required: [],
+    });
+
+    const admission = new ToolSurfaceFactory().inspect([optional], digest);
+
+    expect(admission.acceptedModelNames).toEqual([]);
+    expect(admission.rejected[0]).toMatchObject({
+      modelName: 'optional_value',
+      toolId: 'cua.optional_value',
+    });
+    expect(admission.rejected[0]?.message).toContain('rewrote model schema');
+  });
 });

@@ -1,25 +1,28 @@
 import { CuaDriver } from '@trycua/cua-driver';
 import { describe, expect, it } from 'vitest';
 
+import { ToolSurfaceFactory } from '../../../services/agent-runtime/src/tool-adapter';
 import {
   createCuaDriverCatalog,
-  type CuaDriverCatalog,
 } from '../cua/cua-semantic-contracts';
 
 import { createCuaDriverToolDefinitions } from './cua-driver-agent-tools';
 import { RuntimeToolRegistry } from './runtime-tool-registry';
 
-const catalog: CuaDriverCatalog = {
+const metadata = {
   driverVersion: '0.19.3',
   contractVersion: '1',
   toolsListSchemaVersion: '1',
   capabilityVersion: '2026-08',
-  driverCatalogDigest: 'a'.repeat(64),
+};
+
+const catalog = createCuaDriverCatalog(metadata, {
+  capability_version: '2026-08',
+  schema_version: '1',
   tools: [{
     name: 'new_driver_ability',
-    modelName: 'new_driver_ability',
     description: 'Exercise a newly discovered driver ability.',
-    injectSession: false,
+    capabilities: ['future.action'],
     inputSchema: {
       type: 'object',
       properties: {
@@ -29,16 +32,16 @@ const catalog: CuaDriverCatalog = {
       required: ['requiredValue'],
     },
   }],
-};
+});
 
-const nullableObjectCatalog: CuaDriverCatalog = {
-  ...catalog,
+const nullableObjectCatalog = createCuaDriverCatalog(metadata, {
+  capability_version: '2026-08',
+  schema_version: '1',
   tools: [
     {
       name: 'start_session',
-      modelName: 'start_session',
       description: 'Start a CUA session.',
-      injectSession: false,
+      capabilities: ['future.start'],
       inputSchema: {
         type: 'object',
         properties: {
@@ -64,9 +67,8 @@ const nullableObjectCatalog: CuaDriverCatalog = {
     },
     {
       name: 'verify_state',
-      modelName: 'verify_state',
       description: 'Verify the observed CUA state.',
-      injectSession: false,
+      capabilities: ['state.verify'],
       inputSchema: {
         type: 'object',
         properties: {
@@ -104,7 +106,7 @@ const nullableObjectCatalog: CuaDriverCatalog = {
       },
     },
   ],
-};
+});
 
 describe('dynamic CUA agent tools', () => {
   it('normalizes every tool exposed by the installed CUA driver', async () => {
@@ -117,6 +119,10 @@ describe('dynamic CUA agent tools', () => {
         JSON.parse(await driver.listToolsJson()),
       );
       const definitions = createCuaDriverToolDefinitions(driverCatalog);
+      const registry = new RuntimeToolRegistry(definitions);
+      const frozen = registry.freeze({
+        taskId: '11111111-1111-4111-8111-111111111111',
+      });
 
       expect(definitions).toHaveLength(driverCatalog.tools.length);
       const toolIds = definitions.map((definition) => definition.id);
@@ -126,6 +132,21 @@ describe('dynamic CUA agent tools', () => {
       expect(toolIds).not.toContain(
         'cua.start_session',
       );
+      expect(toolIds).not.toContain('cua.get_config');
+      expect(toolIds).not.toContain('cua.set_config');
+      expect(() =>
+        new ToolSurfaceFactory().create(
+          frozen.tools.map((tool) => ({
+            toolId: tool.toolId,
+            modelName: tool.modelName,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            operations: tool.operations,
+            driverCatalogDigest: tool.driverCatalogDigest,
+          })),
+          frozen.digest,
+        ),
+      ).not.toThrow();
     } finally {
       await driver.shutdown();
       driver.uniffiDestroy();
@@ -151,6 +172,13 @@ describe('dynamic CUA agent tools', () => {
     });
   });
 
+  it('registers the admitted provider schema without rewriting it again', () => {
+    const [definition] = createCuaDriverToolDefinitions(catalog);
+    if (!definition) throw new Error('missing dynamic definition');
+
+    expect(definition.parameters).toBe(catalog.tools[0]?.inputSchema);
+  });
+
   it('removes SDK-required null placeholders before driver dispatch', () => {
     const [definition] = createCuaDriverToolDefinitions(catalog);
     if (!definition) throw new Error('missing dynamic definition');
@@ -161,7 +189,7 @@ describe('dynamic CUA agent tools', () => {
     }))).toEqual({ requiredValue: 'present' });
   });
 
-  it('strictifies nullable object branches exposed by the CUA driver', () => {
+  it('uses explicitly adapted nullable object branches from a legacy driver', () => {
     const definitions = createCuaDriverToolDefinitions(nullableObjectCatalog);
     const startSession = definitions.find((definition) => definition.id === 'cua.start_session');
     const verifyState = definitions.find((definition) => definition.id === 'cua.verify_state');

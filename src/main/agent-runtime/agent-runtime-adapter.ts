@@ -23,6 +23,7 @@ import {
   type LocalAgentChildMessage,
   type LocalAgentCapability,
   type LocalAgentHostMessage,
+  type LocalRuntimeCatalogValidation,
   type LocalRuntimeToolSpec,
   type LocalToolExecutionResult,
 } from '../../../services/agent-runtime/src/protocol';
@@ -40,6 +41,7 @@ const RUNTIME_READY_TIMEOUT_MS = 15_000;
 const REQUIRED_RUNTIME_CAPABILITIES = [
   'sessions',
   'compaction',
+  'catalogValidation',
 ] as const satisfies readonly LocalAgentCapability[];
 
 export interface LocalTurnStart {
@@ -108,6 +110,13 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
   private readonly childSequences = new Map<string, number>();
   private readonly hostSequences = new Map<string, number>();
   private handshakeRequestId: string | null = null;
+  private readonly pendingCatalogValidations = new Map<
+    string,
+    {
+      reject(error: Error): void;
+      resolve(result: LocalRuntimeCatalogValidation): void;
+    }
+  >();
   private readonly pendingDeltas = new Map<string, {
     message: Extract<LocalAgentChildMessage, { kind: 'turn.event' }>;
     text: string;
@@ -118,6 +127,32 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
 
   async initialize(): Promise<void> {
     await this.ensureReady(await this.options.accessTokenProvider());
+  }
+
+  async validateToolCatalog(
+    tools: readonly LocalRuntimeToolSpec[],
+    catalogDigest: string,
+  ): Promise<LocalRuntimeCatalogValidation> {
+    await this.ensureReady(await this.options.accessTokenProvider());
+    const requestId = randomUUID();
+    const result = new Promise<LocalRuntimeCatalogValidation>((resolve, reject) => {
+      this.pendingCatalogValidations.set(requestId, { resolve, reject });
+    });
+    try {
+      this.post({
+        kind: 'runtime.validateCatalog',
+        requestId,
+        catalogDigest,
+        tools: [...tools],
+      });
+      return await withTimeout(
+        result,
+        this.options.runtimeReadyTimeoutMs ?? RUNTIME_READY_TIMEOUT_MS,
+        'The bundled local agent runtime did not validate the tool catalog.',
+      );
+    } finally {
+      this.pendingCatalogValidations.delete(requestId);
+    }
   }
 
   async start(input: LocalTurnStart): Promise<void> {
@@ -236,6 +271,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     for (const threadId of this.pendingDeltas.keys()) this.flushAssistantDelta(threadId);
     this.child = null;
     this.handshakeRequestId = null;
+    this.rejectCatalogValidations(new Error('The local agent runtime shut down.'));
     child.kill();
   }
 
@@ -347,6 +383,17 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         this.readyResolve = null;
         this.readyReject = null;
         return;
+      case 'runtime.catalogValidated': {
+        const pending = this.pendingCatalogValidations.get(message.requestId);
+        if (!pending) {
+          this.failClosed(
+            new Error('The local agent runtime sent an unexpected catalog validation.'),
+          );
+          return;
+        }
+        pending.resolve(message);
+        return;
+      }
       case 'runtime.fatal':
         this.failClosed(new Error(message.message));
         return;
@@ -632,6 +679,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     this.readyReject?.(error);
     this.readyResolve = null;
     this.readyReject = null;
+    this.rejectCatalogValidations(error);
     this.child?.kill();
   }
 
@@ -645,6 +693,9 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     this.child = null;
     this.handshakeRequestId = null;
     this.ready = null;
+    this.rejectCatalogValidations(
+      new Error(`The local agent runtime exited during catalog validation (${code}).`),
+    );
     const active = [...this.active.entries()];
     this.active.clear();
     for (const [threadId, turn] of active) {
@@ -670,6 +721,13 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         threadId, turnId: turn.turnId,
       });
     }
+  }
+
+  private rejectCatalogValidations(error: Error): void {
+    for (const pending of this.pendingCatalogValidations.values()) {
+      pending.reject(error);
+    }
+    this.pendingCatalogValidations.clear();
   }
 }
 
@@ -698,14 +756,14 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error('The local agent runtime failed.');
 }
 
-async function withTimeout(
-  value: Promise<void>,
+async function withTimeout<T>(
+  value: Promise<T>,
   timeoutMs: number,
   message: string,
-): Promise<void> {
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
-    await Promise.race([
+    return await Promise.race([
       value,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => reject(new Error(message)), timeoutMs);

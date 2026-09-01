@@ -29,14 +29,47 @@ export interface ToolSurface {
   resolve(interruption: RunToolApprovalItem): PendingToolCall;
 }
 
+export interface ToolSurfaceAdmission {
+  readonly acceptedModelNames: string[];
+  readonly rejected: Array<{
+    readonly message: string;
+    readonly modelName: string;
+    readonly toolId: string;
+  }>;
+}
+
 export class ToolSurfaceFactory {
+  inspect(
+    specs: readonly LocalRuntimeToolSpec[],
+    catalogDigest: string,
+  ): ToolSurfaceAdmission {
+    const acceptedModelNames: string[] = [];
+    const rejected: ToolSurfaceAdmission['rejected'] = [];
+    for (const spec of specs) {
+      try {
+        this.create([spec], catalogDigest);
+        acceptedModelNames.push(spec.modelName);
+      } catch (error) {
+        rejected.push({
+          message:
+            error instanceof Error
+              ? error.message.slice(0, 1_000)
+              : 'The Agents SDK rejected this tool schema.',
+          modelName: spec.modelName,
+          toolId: spec.toolId,
+        });
+      }
+    }
+    return { acceptedModelNames, rejected };
+  }
+
   create(specs: readonly LocalRuntimeToolSpec[], catalogDigest: string): ToolSurface {
     const byName = new Map<string, LocalRuntimeToolSpec>();
     const checkpointed = new Map<string, PendingToolCall>();
     const tools = specs.map((spec) => {
       if (byName.has(spec.modelName)) throw new Error('duplicate_model_tool_name');
       byName.set(spec.modelName, spec);
-      return tool({
+      const sdkTool = tool({
         name: spec.modelName,
         description: spec.description,
         parameters: spec.inputSchema as never,
@@ -67,6 +100,12 @@ export class ToolSurfaceFactory {
           return modelToolResult(response.result, pending.callId);
         },
       }) as FunctionTool<LocalAgentRunContext, never, unknown>;
+      if (digest(sdkTool.parameters) !== digest(spec.inputSchema)) {
+        throw new Error(
+          `The Agents SDK rewrote model schema for ${spec.modelName}; publish an exact provider-compatible schema instead.`,
+        );
+      }
+      return sdkTool;
     });
 
     return {

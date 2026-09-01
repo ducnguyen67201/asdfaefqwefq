@@ -29,7 +29,9 @@ doppler run --project tro-app --config dev -- npm run engine -- serve
 
 At sign-in, Electron starts the utility process, validates protocol/SDK/graph
 capabilities, and only then sends the current user credential to child memory.
-Sign-out clears the credential and stops the process.
+Protocol v2 also validates the admitted CUA catalog through the bundled Agents
+SDK before registering tools or allowing a task to start. Sign-out clears the
+credential and stops the process.
 
 ## State and recovery
 
@@ -68,6 +70,12 @@ it automatically.
   not an approval profile.
 - CUA catalog mismatch: reconnect/discover the driver and start a new turn. A
   running turn never expands its frozen catalog.
+- CUA catalog degraded: inspect `catalog.tool-quarantined` and
+  `catalog.compatibility` logs. Compatible optional tools remain available.
+- CUA catalog unavailable: install a compatible driver. Required-tool and
+  schema-dialect failures are detected at startup and logged as
+  `catalog.required-tool-failed`; do not retry the same task expecting a
+  different catalog.
 
 ## Legacy hosted history
 

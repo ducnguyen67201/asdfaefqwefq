@@ -440,6 +440,34 @@ describe('RuntimeToolRegistry', () => {
     ).toThrow('uses const without an explicit type');
   });
 
+  it('inspects optional registrations independently before mutating the catalog', () => {
+    const registry = new RuntimeToolRegistry();
+    const template = defaultRuntimeToolDefinitions()[0];
+    if (!template) throw new Error('missing runtime tool template');
+    const collision = {
+      ...template,
+      id: 'cua.collision' as const,
+    };
+    const compatible = {
+      ...template,
+      id: 'cua.future_action' as const,
+      modelName: 'future_cua_action',
+    };
+
+    const admission = registry.inspectRegistration([collision, compatible]);
+
+    expect(admission.accepted).toEqual([compatible]);
+    expect(admission.rejected).toEqual([
+      expect.objectContaining({
+        toolId: 'cua.collision',
+        code: 'duplicate_model_name',
+      }),
+    ]);
+    expect(registry.listRegistered()).not.toContain(compatible);
+    registry.register(admission.accepted);
+    expect(registry.listRegistered()).toContain(compatible);
+  });
+
   it('supplies trusted tool identity while parsing model arguments', () => {
     const registry = new RuntimeToolRegistry();
     const taskId = randomUUID();

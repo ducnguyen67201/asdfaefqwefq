@@ -29,6 +29,15 @@ class FakeUtilityProcess extends EventEmitter {
   postMessage(input: unknown): void {
     const message = LocalAgentHostMessageSchema.parse(input);
     this.messages.push(message);
+    if (message.kind === 'runtime.validateCatalog') {
+      queueMicrotask(() => this.emit('message', {
+        kind: 'runtime.catalogValidated',
+        requestId: message.requestId,
+        acceptedModelNames: message.tools.map((tool) => tool.modelName),
+        rejected: [],
+      }));
+      return;
+    }
     if (message.kind !== 'runtime.initialize') return;
     if (this.behavior === 'exit') {
       queueMicrotask(() => this.emit('exit', 17));
@@ -92,6 +101,36 @@ describe('LocalAgentRuntime process supervision', () => {
 
     await expect(runtimeWith(process).initialize()).rejects.toThrow(
       'exited before it was ready',
+    );
+  });
+
+  it('validates a catalog through the bundled SDK process before task start', async () => {
+    const process = new FakeUtilityProcess('ready');
+    const runtime = runtimeWith(process);
+    await runtime.initialize();
+    const validation = await runtime.validateToolCatalog(
+      [{
+        toolId: 'cua.valid_action',
+        modelName: 'valid_action',
+        description: 'Valid action.',
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {},
+          required: [],
+        },
+        operations: ['valid_action'],
+        driverCatalogDigest: 'a'.repeat(64),
+      }],
+      'b'.repeat(64),
+    );
+
+    expect(validation).toMatchObject({
+      acceptedModelNames: ['valid_action'],
+      rejected: [],
+    });
+    expect(process.messages.map((message) => message.kind)).toContain(
+      'runtime.validateCatalog',
     );
   });
 });

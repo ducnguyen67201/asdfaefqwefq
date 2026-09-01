@@ -40,6 +40,23 @@ export function assertStrictFunctionSchema(
       `Model tool schema at ${path} uses const without an explicit type.`,
     );
   }
+  const hasExplicitType =
+    (typeof node.type === 'string' && node.type.length > 0) ||
+    (Array.isArray(node.type) &&
+      node.type.length > 0 &&
+      node.type.every((type) => typeof type === 'string' && type.length > 0));
+  const hasCompositeSchema = ['anyOf', 'oneOf', 'allOf'].some(
+    (keyword) => Array.isArray(node[keyword]) && node[keyword].length > 0,
+  );
+  if (
+    !hasExplicitType &&
+    !hasCompositeSchema &&
+    typeof node.$ref !== 'string'
+  ) {
+    throw new Error(
+      `Model tool schema at ${path} must declare an explicit type, composition, or reference.`,
+    );
+  }
   if (jsonSchemaHasType(node, 'object')) {
     if (node.additionalProperties !== false) {
       throw new Error(

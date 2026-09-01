@@ -1555,7 +1555,53 @@ async function prepareLocalAgentRuntime(): Promise<void> {
       return null;
     });
     if (cuaCatalog) {
-      runtimeToolRegistry.register(createCuaDriverToolDefinitions(cuaCatalog));
+      const definitions = createCuaDriverToolDefinitions(cuaCatalog);
+      const admission = runtimeToolRegistry.inspectRegistration(definitions);
+      const sdkValidation = await localAgentRuntime.validateToolCatalog(
+        admission.accepted.map((definition) => ({
+          toolId: definition.id,
+          modelName: definition.modelName,
+          description: definition.description,
+          inputSchema: definition.parameters,
+          operations: [...definition.operations],
+          driverCatalogDigest: definition.driverCatalogDigest ?? null,
+        })),
+        cuaCatalog.driverCatalogDigest,
+      );
+      const sdkRejectedNames = new Set(
+        sdkValidation.rejected.map((rejection) => rejection.modelName),
+      );
+      const acceptedDefinitions = admission.accepted.filter(
+        (definition) => !sdkRejectedNames.has(definition.modelName),
+      );
+      const registrationFailures = [
+        ...admission.rejected,
+        ...sdkValidation.rejected,
+      ].map((rejection) => {
+        const definition = definitions.find(
+          (candidate) => candidate.id === rejection.toolId,
+        );
+        return {
+          name: definition?.operations[0] ?? rejection.modelName,
+          message: rejection.message,
+        };
+      });
+      cuaService.reportToolCatalogRegistrationFailures(registrationFailures);
+      for (const rejection of admission.rejected) {
+        console.warn(
+          '[local-agent-runtime] CUA tool registration quarantined.',
+          JSON.stringify(rejection),
+        );
+      }
+      for (const rejection of sdkValidation.rejected) {
+        console.warn(
+          '[local-agent-runtime] CUA tool SDK validation quarantined.',
+          JSON.stringify(rejection),
+        );
+      }
+      if (cuaService.cuaToolCatalogReport()?.state !== 'unavailable') {
+        runtimeToolRegistry.register(acceptedDefinitions);
+      }
       cuaDriverToolsRegistered = true;
     }
   }

@@ -26,11 +26,12 @@ import type { ImageEvidencePolicy } from '../inference/image-evidence-policy';
 import { CuaCapabilityBroker } from './cua-capability-broker';
 import {
   type CuaDriverCatalog,
+  type CuaDriverCatalogReport,
   CuaDriverMetadataSchema,
   CuaWindowListSchema,
   CuaSemanticCapabilitiesSchema,
-  createCuaDriverCatalog,
   deriveCuaSemanticCapabilities,
+  loadCuaDriverCatalog,
   normalizedCuaActionEffect,
   parseCuaStructuredResult,
   type CuaOpenToolResult,
@@ -93,6 +94,11 @@ export interface CuaServiceOptions {
   platform?: NodeJS.Platform;
   performanceNow?: () => number;
   waitForSystemUiReveal?: (signal?: AbortSignal) => Promise<void>;
+}
+
+export interface CuaCatalogRegistrationFailure {
+  readonly message: string;
+  readonly name: string;
 }
 
 const WINDOWS_BOTTOM_EDGE_READY_MS = 15_000;
@@ -287,6 +293,8 @@ export class CuaService {
 
   private driverCatalog: CuaDriverCatalog | null = null;
 
+  private driverCatalogReport: CuaDriverCatalogReport | null = null;
+
   private semanticCapabilityState: CuaSemanticCapabilities =
     NO_SEMANTIC_CAPABILITIES;
 
@@ -342,13 +350,61 @@ export class CuaService {
     return this.driverCatalog;
   }
 
+  cuaToolCatalogReport(): CuaDriverCatalogReport | null {
+    return this.driverCatalogReport;
+  }
+
+  reportToolCatalogRegistrationFailures(
+    failures: readonly CuaCatalogRegistrationFailure[],
+  ): void {
+    if (!this.driverCatalog || !this.driverCatalogReport || failures.length === 0) {
+      return;
+    }
+    const required = new Set(this.driverCatalog.requiredTools);
+    const requiredToolFailures = [
+      ...this.driverCatalogReport.requiredToolFailures,
+      ...failures.flatMap((failure) =>
+        required.has(failure.name)
+          ? [
+              {
+                code: 'incompatible_required_tool' as const,
+                message: `Required CUA model tool ${failure.name} could not be registered: ${failure.message}`,
+                name: failure.name,
+              },
+            ]
+          : [],
+      ),
+    ];
+    const quarantinedTools = [
+      ...this.driverCatalogReport.quarantinedTools,
+      ...failures.map((failure) => ({
+        code: 'invalid_tool_contract' as const,
+        message: `CUA tool ${failure.name} could not be registered: ${failure.message}`,
+        name: failure.name,
+      })),
+    ];
+    this.driverCatalogReport = {
+      ...this.driverCatalogReport,
+      quarantinedTools,
+      requiredToolFailures,
+      state: requiredToolFailures.length > 0 ? 'unavailable' : 'degraded',
+    };
+    for (const failure of requiredToolFailures) {
+      console.error(
+        '[cua] catalog.required-tool-failed',
+        JSON.stringify(failure),
+      );
+    }
+    if (requiredToolFailures.length > 0) this.driverCatalog = null;
+  }
+
   async discoverToolCatalog(): Promise<CuaDriverCatalog> {
     if (this.driverCatalog) return this.driverCatalog;
     const cua = await this.loadModule();
     const driver = cua.CuaDriver.create(undefined) as Driver;
     try {
       const metadata = await driver.metadata();
-      this.driverCatalog = createCuaDriverCatalog(
+      this.driverCatalog = this.admitDriverCatalog(
         metadata,
         JSON.parse(await driver.listToolsJson()),
       );
@@ -408,6 +464,19 @@ export class CuaService {
         };
       }
 
+      if (this.driverCatalogReport?.state === 'unavailable') {
+        return {
+          state: 'error',
+          available: false,
+          platform,
+          permissions,
+          summary: this.catalogUnavailableMessage(),
+          nextActions: [
+            'Install a compatible CUA driver before starting computer-use tasks.',
+          ],
+        };
+      }
+
       if (!this.driver) {
         return {
           state: 'disconnected',
@@ -425,8 +494,17 @@ export class CuaService {
         platform,
         version: this.driverVersion,
         permissions,
-        summary: 'CUA is connected to this desktop process.',
-        nextActions: ['Give Tro a goal that requires computer use.'],
+        summary:
+          this.driverCatalogReport?.state === 'degraded'
+            ? `CUA is connected in compatibility mode with ${this.driverCatalogReport.quarantinedTools.length} optional tool(s) quarantined.`
+            : 'CUA is connected to this desktop process.',
+        nextActions:
+          this.driverCatalogReport?.state === 'degraded'
+            ? [
+                'Upgrade CUA Core to remove legacy adapters or quarantined optional tools.',
+                'Compatible tools remain available for tasks.',
+              ]
+            : ['Give Tro a goal that requires computer use.'],
       };
     } catch (error) {
       return {
@@ -1277,14 +1355,9 @@ export class CuaService {
     this.driver = driver;
     try {
       const metadata = CuaDriverMetadataSchema.parse(await driver.metadata());
-      if (metadata.toolsListSchemaVersion !== '1') {
-        throw new Error(
-          'CUA runtime uses an unsupported tool inventory schema.',
-        );
-      }
       this.driverVersion = metadata.driverVersion;
       const inventory = JSON.parse(await driver.listToolsJson());
-      this.driverCatalog = createCuaDriverCatalog(metadata, inventory);
+      this.driverCatalog = this.admitDriverCatalog(metadata, inventory);
       this.semanticCapabilityState = deriveCuaSemanticCapabilities(inventory);
       this.authorizationBroker = authorizationBroker;
       this.surfaceRouter = new CuaSurfaceRouter({
@@ -1311,6 +1384,7 @@ export class CuaService {
     this.driver = null;
     this.driverVersion = undefined;
     this.driverCatalog = null;
+    this.driverCatalogReport = null;
     this.semanticCapabilityState = NO_SEMANTIC_CAPABILITIES;
     this.activeSessions.clear();
     this.desktopScopeSessions.clear();
@@ -1333,6 +1407,33 @@ export class CuaService {
       throw new Error('Connect the computer-use runtime before starting a task.');
     }
     return this.driver;
+  }
+
+  private admitDriverCatalog(
+    metadata: unknown,
+    inventory: unknown,
+  ): CuaDriverCatalog {
+    const result = loadCuaDriverCatalog(metadata, inventory);
+    this.driverCatalogReport = result.report;
+    for (const message of result.report.compatibilityMessages) {
+      console.warn('[cua] catalog.compatibility', JSON.stringify({ message }));
+    }
+    for (const tool of result.report.quarantinedTools) {
+      console.warn('[cua] catalog.tool-quarantined', JSON.stringify(tool));
+    }
+    for (const failure of result.report.requiredToolFailures) {
+      console.error('[cua] catalog.required-tool-failed', JSON.stringify(failure));
+    }
+    if (!result.catalog) throw new Error(this.catalogUnavailableMessage());
+    return result.catalog;
+  }
+
+  private catalogUnavailableMessage(): string {
+    return (
+      this.driverCatalogReport?.requiredToolFailures[0]?.message ??
+      this.driverCatalogReport?.compatibilityMessages[0] ??
+      'The CUA tool catalog is incompatible with this TroCode build.'
+    );
   }
 
   private async ensureDesktopScope(
