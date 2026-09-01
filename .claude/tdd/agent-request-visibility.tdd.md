@@ -40,6 +40,14 @@ The follow-up journeys were derived from the repeated `400 "Responses request is
 
 - GREEN checkpoint: `21ad72d fix: accept grounded model requests with correlated diagnostics`
 
+### Restarted pending tool grounding
+
+- RED checkpoint: `264ca19 test: reproduce stale pending tool resume`
+- RED command: `npm --prefix services/agent-runtime test -- --run test/local-runtime-server.test.ts`
+- RED evidence: the new regression test failed because `rejectPendingToolAfterRestart` did not exist.
+- GREEN command: the same Vitest target.
+- GREEN evidence: 1 file and 4 tests passed. A checkpointed tool that is known not to have run is rejected after process restart, so the model re-checks current state instead of dispatching it against missing observation bindings.
+
 ## Test specification
 
 | # | What is guaranteed | Test target | Type | Result |
@@ -50,6 +58,7 @@ The follow-up journeys were derived from the repeated `400 "Responses request is
 | 4 | Model request diagnostics cross the utility-process protocol | `services/agent-runtime/test/protocol-and-graph.test.ts` | Contract | PASS |
 | 5 | A proxy rejection is visible as warning progress before terminal failure | `src/main/agent/task-runtime.test.ts` | Projection | PASS |
 | 6 | `isSubmitting` does not cancel a voice turn already finalizing | `src/renderer/use-push-to-talk.test.ts` | Race regression | PASS |
+| 7 | A pre-restart pending tool is not auto-approved against reconstructed host context | `services/agent-runtime/test/local-runtime-server.test.ts` | Restart/replay safety | PASS |
 
 ## Coverage and validation
 
@@ -65,4 +74,4 @@ Known non-blocking gap: there is no single-process fixture that runs the complet
 
 ## Merge evidence
 
-Preserve the RED checkpoint `74e15a3` and GREEN checkpoint `21ad72d`, or retain this report and its RED/GREEN summary if the PR is squash-merged.
+Preserve RED checkpoints `74e15a3` and `264ca19` plus their GREEN fix commits, or retain this report and its RED/GREEN summary if the PR is squash-merged.

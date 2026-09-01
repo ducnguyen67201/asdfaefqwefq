@@ -29,6 +29,7 @@ Resolved:
 4. The Rust proxy rejected the Agents SDK's valid named function `tool_choice` before inference. Validation now accepts only `auto` or an exact named function present in the submitted catalog and returns stable coded errors for invalid choices.
 5. Model-proxy failures had no shared identity across the task trace and server logs. The SDK now emits bounded structural diagnostics with request/task/turn IDs while excluding prompts, credentials, schemas, screenshots, and results.
 6. `isSubmitting` disabled push-to-talk while the transcript callback was still finalizing, producing a misleading `cancelled` event after task submission. Finalizing turns now complete and report `task_submitted`.
+7. Codex re-review found that a pre-restart pending control call could be auto-approved after its observation binding was lost. Pending tools that are known not to have run are now rejected after restart with an explicit re-check instruction, preserving no-replay safety and allowing the model to ground again.
 
 ### LOW
 
@@ -39,7 +40,7 @@ None open.
 | Check | Result |
 |---|---|
 | Focused feature tests | Pass — 12 files / 148 tests |
-| Agents SDK lint/typecheck/tests | Pass — 5 files / 19 tests |
+| Agents SDK lint/typecheck/tests | Pass — 5 files / 20 tests |
 | Root lint and TypeScript | Pass |
 | Root Vitest | Pass — 126 files / 844 tests |
 | Cargo fmt/clippy/audit/tests | Pass — 71 unit tests; three repository-allowed audit warnings |

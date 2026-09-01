@@ -38,6 +38,7 @@ The repository and installed skills do not define a workflow named “ponytail r
 - Named provider tool choice is restricted to an exact function in the submitted catalog; unsupported choices fail closed with a stable code.
 - Request diagnostics expose only bounded correlation and structural metadata, not prompts, credentials, tool schemas, screenshots, or results.
 - Voice Task submission can disable new recording without cancelling the turn that is already committing.
+- Pending pre-restart tool interruptions are rejected instead of auto-approved against a reconstructed context with stale or missing observation bindings.
 
 ## Open Items
 

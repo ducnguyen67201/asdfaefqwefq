@@ -3,6 +3,7 @@ import {
   RunState,
   type AgentInputItem,
   type ModelInputData,
+  type RunToolApprovalItem,
 } from '@openai/agents';
 
 import { AgentGraphFactory } from './agent-graph.js';
@@ -32,6 +33,24 @@ import {
 interface ActiveTurn {
   readonly controller: AbortController;
   readonly steering: string[];
+}
+
+interface PendingToolRejectionState {
+  reject(
+    interruption: RunToolApprovalItem,
+    options: { message: string },
+  ): void;
+}
+
+const RESTARTED_PENDING_TOOL_MESSAGE =
+  'The application restarted before this tool ran. Re-check the current state, then request the tool again only if it is still needed.';
+
+/** A pre-restart interruption is known not to have run, but its host context is stale. */
+export function rejectPendingToolAfterRestart(
+  state: PendingToolRejectionState,
+  interruption: RunToolApprovalItem,
+): void {
+  state.reject(interruption, { message: RESTARTED_PENDING_TOOL_MESSAGE });
 }
 
 export class LocalRuntimeServer {
@@ -189,9 +208,12 @@ export class LocalRuntimeServer {
             candidate.rawItem.type === 'function_call' && candidate.rawItem.callId === message.pendingCallId,
           );
           if (!interruption) throw new Error('pending_checkpoint_interruption_missing');
-          const pending = graph.toolSurface.resolve(interruption);
-          graph.toolSurface.markCheckpointed(pending);
-          restored.approve(interruption);
+          rejectPendingToolAfterRestart(restored, interruption);
+          this.event(
+            identity,
+            'lifecycle',
+            'The app restarted before a pending tool ran; the agent must re-check current state.',
+          );
         }
         nextInput = restored;
       } else {
