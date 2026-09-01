@@ -32,9 +32,7 @@ function normalizeRequest(request: string): string {
     .replace(/[\u2010-\u2015]/gu, '-');
 }
 
-/** Chooses teacher mode only for a request tied to a visible, concrete task. */
-export function requestsGuidedWalkthrough(request: string): boolean {
-  const normalized = normalizeRequest(request);
+function requestsEnglishWalkthrough(normalized: string): boolean {
   const englishSpatialTour =
     /^(?:\s*please\s+)?(?:show\s+(?:me|us)\b|point\b|circle\b|highlight\b|(?:can|could|will|would)\s+you\b)/u.test(normalized) &&
     /\b(?:area|part|question|field|control|section|button|target|here|there)\b/u.test(normalized) &&
@@ -59,8 +57,10 @@ export function requestsGuidedWalkthrough(request: string): boolean {
     (/\b(?:help|guide|show|teach)\s+(?:me|us)\b/u.test(normalized) ||
       /\blet\s+(?:me|us)\b/u.test(normalized) ||
       /\b(?:i|we)\s+(?:need|want|would\s+like)\s+to\b/u.test(normalized));
-  if (englishIntent || englishSelfDirected) return true;
+  return englishIntent || englishSelfDirected;
+}
 
+function requestsVietnameseWalkthrough(normalized: string): boolean {
   const learner = '(?:toi|minh|em|chung toi|chung minh)';
   const vietnameseSelfDirected =
     new RegExp(`\\b(?:giup|chi|day|huong\\s+dan)\\s+(?:cho\\s+)?${learner}\\s+tu\\s+(?:lam|giai|hoan\\s+thanh|thuc\\s+hien)\\b`, 'u').test(normalized) ||
@@ -82,6 +82,15 @@ export function requestsGuidedWalkthrough(request: string): boolean {
     vietnameseSelfDirected ||
     vietnameseSpatialTour ||
     vietnameseVisibleHowTo
+  );
+}
+
+/** Chooses teacher mode only for a request tied to a visible, concrete task. */
+export function requestsGuidedWalkthrough(request: string): boolean {
+  const normalized = normalizeRequest(request);
+  return (
+    requestsEnglishWalkthrough(normalized) ||
+    requestsVietnameseWalkthrough(normalized)
   );
 }
 
