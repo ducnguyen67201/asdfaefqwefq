@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AGENT_MODEL, graphVersion } from '../src/config.js';
 import type { HostBridge } from '../src/host-bridge.js';
 import {
+  applyPendingToolResume,
   LocalRuntimeServer,
   rejectPendingToolAfterRestart,
 } from '../src/local-runtime-server.js';
@@ -45,6 +46,24 @@ describe('LocalRuntimeServer', () => {
     expect(reject).toHaveBeenCalledWith(interruption, {
       message: expect.stringMatching(/re-check the current state/i),
     });
+  });
+
+  it('replays a dispatched pending tool through the durable invocation journal', () => {
+    const approve = vi.fn();
+    const markForReplay = vi.fn();
+    const reject = vi.fn();
+    const interruption = { rawItem: { type: 'function_call', callId: 'call-1' } };
+
+    applyPendingToolResume(
+      { approve, reject } as never,
+      interruption as never,
+      'replay',
+      markForReplay,
+    );
+
+    expect(markForReplay).toHaveBeenCalledOnce();
+    expect(approve).toHaveBeenCalledWith(interruption);
+    expect(reject).not.toHaveBeenCalled();
   });
 
   it('releases process lifetime only after an explicit runtime shutdown', async () => {

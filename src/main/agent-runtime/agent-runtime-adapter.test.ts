@@ -14,6 +14,7 @@ import {
   LocalAgentRuntime,
   executionContextAfterToolResult,
   normalizeLocalToolResult,
+  pendingToolResumeDisposition,
 } from './agent-runtime-adapter';
 
 vi.mock('electron', () => ({
@@ -88,6 +89,35 @@ function runtimeWith(process: FakeUtilityProcess): LocalAgentRuntime {
 }
 
 describe('LocalAgentRuntime process supervision', () => {
+  it('rechecks undispatched pending tools but replays journaled effects', () => {
+    const invocation = {
+      callId: 'call-1',
+      idempotencyDigest: 'a'.repeat(64),
+      operation: 'click',
+      result: null,
+      status: 'checkpointed' as const,
+      toolId: 'computer.control',
+      updatedAt: '2026-09-01T07:30:00.000Z',
+    };
+
+    expect(pendingToolResumeDisposition(null)).toBe('recheck');
+    expect(pendingToolResumeDisposition(invocation)).toBe('recheck');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      status: 'executing',
+    })).toBe('replay');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      result: {
+        status: 'completed',
+        summary: 'The click completed.',
+        data: null,
+        imageDataUrl: null,
+      },
+      status: 'completed',
+    })).toBe('replay');
+  });
+
   it('sends credentials only after a compatible runtime handshake', async () => {
     const process = new FakeUtilityProcess('ready');
     await runtimeWith(process).initialize();
