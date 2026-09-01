@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { WalkthroughStateSchema } from '../../../services/agent-runtime/src/walkthrough-runtime';
 import { TaskSnapshotSchema, TaskUpdateSchema } from '../../shared/contracts';
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -20,6 +21,11 @@ export const LocalCheckpointSchema = z.object({
   graphVersion: DigestSchema,
   protocolDigest: DigestSchema,
   requiredInitialTool: RequiredInitialToolCallSchema.nullable().default(null),
+  walkthroughState: WalkthroughStateSchema.default({
+    completedSteps: 0,
+    enabled: false,
+    phase: 'needs_observation',
+  }),
 }).strict();
 
 export const LocalSessionSchema = z.object({

@@ -12,6 +12,7 @@ import {
 import type { TrustedToolExecutionContext } from '../agent/runtime-tool-registry';
 import { shouldObserveInitialScreenContext } from '../agent/screen-context-policy';
 import type { TaskRuntime } from '../agent/task-runtime';
+import { createWalkthroughState } from '../agent/walkthrough-policy';
 import type { AgentRuntimeAdapter } from '../agent-runtime/agent-runtime-adapter';
 import type { EncryptedAgentStateStore } from '../agent-runtime/encrypted-agent-state-store';
 import type { ActivityContextService } from '../knowledge/activity-context-service';
@@ -97,6 +98,9 @@ export class TaskApplicationService {
       limits: DEFAULT_LIMITS,
     });
     try {
+      const walkthroughState = createWalkthroughState(
+        authority.executionProfile !== 'workspace' ? request.text : false,
+      );
       const snapshot = this.runtime.submit(
         { ...request, activityAttemptId, executionProfile },
         { authority, taskId },
@@ -114,6 +118,7 @@ export class TaskApplicationService {
         executionContext,
         maxTurns: authority.limits.maxModelSamples,
         request: request.text,
+        walkthroughState,
         ...(
           authority.executionProfile !== 'workspace' &&
           (authority.activity?.activity.launchTarget === 'current_surface' ||
@@ -123,8 +128,10 @@ export class TaskApplicationService {
                   modelName: 'observe_context',
                   arguments: {
                     operation: 'observe',
-                    scope: 'auto',
-                    reason: 'Ground the response in the current visible context.',
+                    scope: walkthroughState.enabled ? 'desktop' : 'auto',
+                    reason: walkthroughState.enabled
+                      ? 'Ground the first teacher walkthrough step in the desktop.'
+                      : 'Ground the response in the current visible context.',
                     query: null,
                     observationId: null,
                     region: null,

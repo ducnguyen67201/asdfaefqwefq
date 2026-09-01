@@ -75,6 +75,14 @@ click-through full-desktop overlay and sends only the parsed overlay-local buddy
 position to its sandboxed renderer. Neither pointer coordinates nor buddy
 positions enter logs, persistence, analytics, task history, or network calls.
 
+Teacher walkthrough motion belongs to Electron presentation, not the model.
+The model supplies one grounded target and one short narration through
+`show_guidance`; it cannot click through that tool. Electron stages target
+preparation, a distance-aware curved companion glide, marker reveal, and voice
+playback in that order. Operating-system Reduce Motion snaps the companion to
+the target and CSS removes ambient marker animation. The Agents SDK utility
+process owns only the durable observe/show sequencing and completion guard.
+
 Long-running task encouragement is a separate deterministic timer service. It
 parses `TaskUpdate`, maps only explicit thinking/working/verifying phases to
 curated bilingual copy, and uses the existing low-priority pet-nudge slot. It

@@ -10,6 +10,7 @@ import {
   safeStorage,
   screen,
   shell,
+  systemPreferences,
   Tray,
   type OpenDialogOptions,
 } from 'electron';
@@ -57,7 +58,9 @@ import {
 import {
   clampCompanionPosition,
   getVirtualDisplayBounds,
+  guidanceGlideDuration,
   interpolateCompanionPosition,
+  interpolateGuidancePosition,
   interpolateCompanionWanderPosition,
   placeCompanionAtRest,
   placeCompanionNearCursor,
@@ -572,6 +575,8 @@ const MAX_TRACKED_PRESENTATION_TASKS = 128;
 interface CompanionGlide {
   abortListener: () => void;
   from: Point;
+  guidance: boolean;
+  durationMs: number;
   reject: (error: Error) => void;
   resolve: () => void;
   signal: AbortSignal;
@@ -978,6 +983,15 @@ function showGuidanceTargetMarker(
   target: Point,
   region?: Rectangle,
 ): boolean {
+  if (!prepareGuidanceTargetMarker(target, region)) return false;
+  guidanceTargetWindow?.showInactive();
+  return true;
+}
+
+function prepareGuidanceTargetMarker(
+  target: Point,
+  region?: Rectangle,
+): boolean {
   if (!auxiliaryWindowsEnabled) return false;
   if (!guidanceTargetWindow || guidanceTargetWindow.isDestroyed()) {
     createGuidanceTargetWindow();
@@ -990,8 +1004,8 @@ function showGuidanceTargetMarker(
     region,
     display.bounds,
   );
+  guidanceTargetWindow.hide();
   guidanceTargetWindow.setBounds(activeGuidanceTargetBounds, false);
-  guidanceTargetWindow.showInactive();
   sendCompanionGuidanceVisual();
   return true;
 }
@@ -1479,7 +1493,8 @@ async function presentCompanionAction(
   const isPointPresentation = command.kind === 'point';
   const isGuidancePoint = isPointPresentation;
   if (isPointPresentation) {
-    showGuidanceTargetMarker(
+    hideGuidanceCallout();
+    prepareGuidanceTargetMarker(
       presentation?.screenPoint ?? { x: command.x, y: command.y },
       presentation?.screenRegion,
     );
@@ -1513,6 +1528,13 @@ async function presentCompanionAction(
   }
 
   const from = getCurrentCompanionScreenPosition();
+  const animationSettings =
+    process.platform === 'darwin' || process.platform === 'win32'
+      ? systemPreferences.getAnimationSettings()
+      : { prefersReducedMotion: false, shouldRenderRichAnimation: true };
+  const durationMs = isGuidancePoint
+    ? guidanceGlideDuration(from, to, animationSettings)
+    : COMPANION_GLIDE_DURATION_MS;
   if (pointEqual(from, to)) {
     companionPinnedPosition = to;
     positionCompanion();
@@ -1522,12 +1544,20 @@ async function presentCompanionAction(
     return;
   }
 
+  if (durationMs === 0) {
+    companionPinnedPosition = to;
+    applyCompanionScreenPosition(to);
+    return showGuidancePresentation(command as Extract<DesktopCommand, { kind: 'point' }>, presentation, signal);
+  }
+
   cancelCompanionGlide();
   await new Promise<void>((resolve, reject) => {
     const abortListener = (): void => settleCompanionGlide(createAbortError());
     companionGlide = {
       abortListener,
+      durationMs,
       from,
+      guidance: isGuidancePoint,
       reject,
       resolve,
       signal,
@@ -2682,8 +2712,10 @@ function positionCompanion(now = Date.now()): CompanionMotionActivity {
 
   const glide = companionGlide;
   if (glide) {
-    const progress = (now - glide.startedAt) / COMPANION_GLIDE_DURATION_MS;
-    const position = interpolateCompanionPosition(glide.from, glide.to, progress);
+    const progress = (now - glide.startedAt) / glide.durationMs;
+    const position = glide.guidance
+      ? interpolateGuidancePosition(glide.from, glide.to, progress)
+      : interpolateCompanionPosition(glide.from, glide.to, progress);
     applyCompanionScreenPosition(position);
     if (progress >= 1) settleCompanionGlide();
     return { nextFrameDelayMs: progress < 1 ? 16 : null };

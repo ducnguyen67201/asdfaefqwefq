@@ -30,6 +30,7 @@ import {
   type RequiredInitialToolCall,
 } from '../../../services/agent-runtime/src/protocol';
 import { digest } from '../../../services/agent-runtime/src/serialization';
+import type { WalkthroughState } from '../../../services/agent-runtime/src/walkthrough-runtime';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
@@ -48,6 +49,7 @@ const REQUIRED_RUNTIME_CAPABILITIES = [
   'sessions',
   'compaction',
   'catalogValidation',
+  'guidedWalkthrough',
 ] as const satisfies readonly LocalAgentCapability[];
 
 export interface LocalTurnStart {
@@ -57,6 +59,7 @@ export interface LocalTurnStart {
   request: string;
   requiredInitialTool?: RequiredInitialToolCall;
   threadId: string;
+  walkthroughState: WalkthroughState;
 }
 
 export interface LocalRuntimeTerminal {
@@ -87,6 +90,7 @@ interface ActiveTurn {
   readonly model: string;
   requiredInitialTool: RequiredInitialToolCall | null;
   readonly turnId: string;
+  walkthroughState: WalkthroughState;
 }
 
 type GroundedToolExecutionContext = TrustedToolExecutionContext &
@@ -187,6 +191,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model,
       requiredInitialTool: input.requiredInitialTool ?? null,
       turnId,
+      walkthroughState: input.walkthroughState,
     };
     this.active.set(input.threadId, active);
     try {
@@ -200,6 +205,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         maxTurns: input.maxTurns,
         toolCatalogDigest: catalog.digest,
         tools: catalog.tools,
+        walkthroughState: input.walkthroughState,
       });
     } catch (error) {
       this.active.delete(input.threadId);
@@ -237,6 +243,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model: checkpoint.model,
       requiredInitialTool: checkpoint.requiredInitialTool,
       turnId: randomUUID(),
+      walkthroughState: checkpoint.walkthroughState,
     };
     this.active.set(threadId, active);
     try {
@@ -253,6 +260,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         pendingCallId: checkpoint.pendingCallId,
         pendingToolDisposition,
         requiredInitialTool: checkpoint.requiredInitialTool,
+        walkthroughState: checkpoint.walkthroughState,
       });
     } catch (error) {
       this.active.delete(threadId);
@@ -485,6 +493,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
 
   private async checkpointCommit(message: Extract<LocalAgentChildMessage, { kind: 'checkpoint.commit' }>): Promise<void> {
     const active = this.requireActive(message.threadId);
+    active.walkthroughState = message.walkthroughState;
     const result = await this.options.state.commitCheckpoint(message.threadId, message.expectedRevision, {
       agentTurnId: active.agentTurnId,
       graphVersion: active.graphVersion,
@@ -495,6 +504,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       sdkVersion: message.sdkVersion,
       state: message.checkpoint,
       toolCatalogDigest: active.catalog.digest,
+      walkthroughState: active.walkthroughState,
     });
     this.respond(message, {
       kind: 'checkpoint.commit.result', responseTo: message.requestId,

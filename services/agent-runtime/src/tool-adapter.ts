@@ -42,6 +42,13 @@ export interface ToolSurfaceAdmission {
   }>;
 }
 
+export interface ToolSurfaceHooks {
+  onToolResult?(
+    modelName: string,
+    status: LocalToolExecutionResult['status'],
+  ): void;
+}
+
 export class ToolSurfaceFactory {
   inspect(
     specs: readonly LocalRuntimeToolSpec[],
@@ -71,6 +78,7 @@ export class ToolSurfaceFactory {
     specs: readonly LocalRuntimeToolSpec[],
     catalogDigest: string,
     requiredInitialTool: RequiredInitialToolCall | null = null,
+    hooks: ToolSurfaceHooks = {},
   ): ToolSurface {
     const byName = new Map<string, LocalRuntimeToolSpec>();
     const checkpointed = new Map<string, PendingToolCall>();
@@ -106,6 +114,7 @@ export class ToolSurfaceFactory {
             idempotencyDigest: pending.idempotencyDigest,
           }, { signal: runtime.signal, timeoutMs: 180_000 });
           if (response.kind !== 'tool.execute.result') throw new Error('unexpected_tool_execute_response');
+          hooks.onToolResult?.(pending.modelName, response.result.status);
           return modelToolResult(response.result, pending.callId);
         },
       }) as FunctionTool<LocalAgentRunContext, never, unknown>;

@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { z } from 'zod';
 
+import { WalkthroughStateSchema } from './walkthrough-runtime.js';
+
 /** Local-only protocol between Electron main and the bundled SDK process. */
-export const LOCAL_AGENT_PROTOCOL_VERSION = 3 as const;
+export const LOCAL_AGENT_PROTOCOL_VERSION = 4 as const;
 export const LOCAL_AGENT_SDK_VERSION = '0.17.0' as const;
 export const LOCAL_AGENT_ROOT_ID = 'tro.root' as const;
 
@@ -15,6 +17,7 @@ export const LocalAgentCapabilitySchema = z.enum([
   'steering',
   'cancellation',
   'catalogValidation',
+  'guidedWalkthrough',
 ]);
 
 export const LOCAL_AGENT_CAPABILITIES = [
@@ -25,6 +28,7 @@ export const LOCAL_AGENT_CAPABILITIES = [
   'steering',
   'cancellation',
   'catalogValidation',
+  'guidedWalkthrough',
 ] as const satisfies readonly z.infer<typeof LocalAgentCapabilitySchema>[];
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -91,6 +95,7 @@ const TurnStartSchema = TurnIdentitySchema.extend({
   requiredInitialTool: RequiredInitialToolCallSchema.nullable(),
   model: z.string().trim().min(1).max(100), maxTurns: z.number().int().positive().max(100),
   toolCatalogDigest: DigestSchema, tools: z.array(LocalRuntimeToolSpecSchema).max(128),
+  walkthroughState: WalkthroughStateSchema,
 }).strict();
 const TurnResumeSchema = TurnStartSchema.omit({
   kind: true,
@@ -178,6 +183,7 @@ const CheckpointCommitSchema = TurnIdentitySchema.extend({
   kind: z.literal('checkpoint.commit'), expectedRevision: z.number().int().nonnegative(),
   checkpoint: z.string().min(2).max(10_000_000), pendingCallId: z.string().trim().min(1).max(255).nullable(),
   sdkVersion: z.literal(LOCAL_AGENT_SDK_VERSION), protocolDigest: DigestSchema,
+  walkthroughState: WalkthroughStateSchema,
 }).strict();
 const ToolExecuteSchema = TurnIdentitySchema.extend({
   kind: z.literal('tool.execute'), callId: z.string().trim().min(1).max(255),

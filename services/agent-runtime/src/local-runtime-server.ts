@@ -30,6 +30,12 @@ import {
   type ModelRequestDiagnostic,
   UserOpenAIClientFactory,
 } from './user-openai-client.js';
+import {
+  advanceWalkthrough,
+  assessWalkthroughCompletion,
+  evaluateWalkthroughTool,
+  walkthroughModelInstruction,
+} from './walkthrough-runtime.js';
 
 interface ActiveTurn {
   readonly controller: AbortController;
@@ -202,6 +208,8 @@ export class LocalRuntimeServer {
     };
     const context: LocalAgentRunContext = { bridge: this.bridge, identity, signal: controller.signal };
     let checkpointRevision = message.kind === 'turn.resume' ? message.checkpointRevision : 0;
+    let walkthroughCorrections = 0;
+    let walkthroughState = message.walkthroughState;
     try {
       const factory = this.requireGraphFactory();
       const graph = await factory.create(
@@ -213,6 +221,13 @@ export class LocalRuntimeServer {
           taskId: message.threadId,
           toolCatalogDigest: message.toolCatalogDigest,
           tools: message.tools,
+          onToolResult: (modelName, status) => {
+            walkthroughState = advanceWalkthrough(
+              walkthroughState,
+              modelName,
+              status,
+            );
+          },
         },
         context,
         (diagnostic) => this.modelRequestEvent(identity, diagnostic),
@@ -267,7 +282,11 @@ export class LocalRuntimeServer {
       for (;;) {
         const result = await factory.runner.run(graph.agent, nextInput, {
           callModelInputFilter: async ({ modelData }) =>
-            injectSteering(modelData, active.steering.splice(0)),
+            injectRuntimeInstructions(
+              modelData,
+              active.steering.splice(0),
+              walkthroughModelInstruction(walkthroughState),
+            ),
           context,
           maxTurns: message.maxTurns,
           session: graph.session,
@@ -275,27 +294,55 @@ export class LocalRuntimeServer {
           stream: true,
         });
         for await (const event of result) {
-          if (event.type !== 'raw_model_stream_event' || event.data.type !== 'output_text_delta') continue;
+          if (
+            event.type !== 'raw_model_stream_event' ||
+            event.data.type !== 'output_text_delta' ||
+            walkthroughState.enabled
+          ) continue;
           for (let offset = 0; offset < event.data.delta.length; offset += 2_000) {
             this.event(identity, 'assistant_delta', event.data.delta.slice(offset, offset + 2_000));
           }
         }
         await result.completed;
         if (result.interruptions.length === 0) {
+          const output = boundedFinalOutput(result.finalOutput);
+          const assessment = assessWalkthroughCompletion(
+            walkthroughState,
+            output,
+          );
+          if (!assessment.accepted) {
+            walkthroughCorrections += 1;
+            if (walkthroughCorrections > 3) {
+              throw new Error('walkthrough_completion_invalid');
+            }
+            nextInput = assessment.correction;
+            continue;
+          }
           checkpointRevision = await this.commitCheckpoint(
             identity,
             checkpointRevision,
             result.state.toString(),
             null,
+            walkthroughState,
           );
-          const finalOutput = boundedFinalOutput(result.finalOutput);
-          this.terminal(identity, 'completed', finalOutput, null, 'The local agent completed the turn.');
+          this.terminal(identity, 'completed', assessment.finalOutput, null, 'The local agent completed the turn.');
           return;
         }
         if (result.interruptions.length !== 1) throw new Error('parallel_tool_interruption_not_supported');
         const interruption = result.interruptions[0];
         if (!interruption) throw new Error('missing_sdk_interruption');
         const pending = graph.toolSurface.resolve(interruption);
+        const walkthroughDecision = evaluateWalkthroughTool(
+          walkthroughState,
+          pending.modelName,
+        );
+        if (!walkthroughDecision.allowed) {
+          result.state.reject(interruption, {
+            message: walkthroughDecision.summary,
+          });
+          nextInput = result.state;
+          continue;
+        }
         this.event(identity, 'tool_requested', `The agent requested ${pending.modelName}.`, {
           callId: pending.callId,
           operation: pending.operation,
@@ -306,6 +353,7 @@ export class LocalRuntimeServer {
           checkpointRevision,
           result.state.toString(),
           pending.callId,
+          walkthroughState,
         );
         graph.toolSurface.markCheckpointed(pending);
         result.state.approve(interruption);
@@ -329,6 +377,7 @@ export class LocalRuntimeServer {
     expectedRevision: number,
     checkpoint: string,
     pendingCallId: string | null,
+    walkthroughState: Extract<LocalAgentHostMessage, { kind: 'turn.start' }>['walkthroughState'],
   ): Promise<number> {
     const active = this.turns.get(identity.threadId);
     if (!active) throw new Error('inactive_turn');
@@ -342,6 +391,7 @@ export class LocalRuntimeServer {
       pendingCallId,
       protocolDigest: LOCAL_AGENT_PROTOCOL_DIGEST,
       sdkVersion: LOCAL_AGENT_SDK_VERSION,
+      walkthroughState,
     }, { signal: active.controller.signal });
     if (response.kind !== 'checkpoint.commit.result') throw new Error('unexpected_checkpoint_response');
     return response.checkpointRevision;
@@ -421,14 +471,26 @@ export class LocalRuntimeServer {
   }
 }
 
-function injectSteering(modelData: ModelInputData, instructions: readonly string[]): ModelInputData {
-  if (instructions.length === 0) return modelData;
+function injectRuntimeInstructions(
+  modelData: ModelInputData,
+  instructions: readonly string[],
+  walkthroughInstruction: string,
+): ModelInputData {
+  const systemInstructions = walkthroughInstruction
+    ? [modelData.instructions, walkthroughInstruction]
+        .filter(Boolean)
+        .join('\n\n')
+    : modelData.instructions;
+  const instructedModelData = systemInstructions
+    ? { ...modelData, instructions: systemInstructions }
+    : modelData;
+  if (instructions.length === 0) return instructedModelData;
   const input = modelData.input as AgentInputItem[];
   const steering: AgentInputItem[] = instructions.map((instruction) => ({
     role: 'user',
     content: [{ type: 'input_text', text: instruction }],
   }));
-  return { ...modelData, input: [...input, ...steering] };
+  return { ...instructedModelData, input: [...input, ...steering] };
 }
 
 function boundedFinalOutput(value: unknown): string {

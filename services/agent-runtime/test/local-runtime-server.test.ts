@@ -133,6 +133,11 @@ describe('LocalRuntimeServer', () => {
       maxTurns: 4,
       toolCatalogDigest: 'a'.repeat(64),
       tools: [],
+      walkthroughState: {
+        completedSteps: 0,
+        enabled: false,
+        phase: 'needs_observation',
+      },
     } satisfies LocalAgentHostMessage);
 
     await vi.waitFor(() => {
