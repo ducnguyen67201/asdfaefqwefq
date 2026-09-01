@@ -89,6 +89,11 @@ describe('EncryptedAgentStateStore', () => {
       modelName: 'observe_context',
       arguments: { operation: 'observe', scope: 'auto' },
     };
+    const walkthroughState = {
+      completedSteps: 1,
+      enabled: true,
+      phase: 'needs_observation' as const,
+    };
 
     await expect(store.appendSession(
       snapshot.taskId,
@@ -122,10 +127,11 @@ describe('EncryptedAgentStateStore', () => {
       sdkVersion: '0.17.0',
       state: '{"state":true}',
       toolCatalogDigest: 'e'.repeat(64),
+      walkthroughState,
     })).resolves.toEqual({ replayed: false, revision: 1 });
 
     await expect(store.readThread(snapshot.taskId)).resolves.toMatchObject({
-      checkpoint: { requiredInitialTool },
+      checkpoint: { requiredInitialTool, walkthroughState },
     });
   });
 

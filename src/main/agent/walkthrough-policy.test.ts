@@ -33,6 +33,9 @@ describe('guided walkthrough policy', () => {
     'Point here, explain, then continue one area at a time.',
     'Chỉ vào từng phần rồi giải thích, sau đó tiếp tục.',
     'Khoanh vùng từng câu, giải thích rồi chuyển sang câu tiếp theo.',
+    'Làm sao làm bài tập Scratch này?',
+    'Làm sao để làm bài tập Scratch này?',
+    'How do I do this on-screen exercise?',
   ])('recognizes explicit user-controlled tutoring intent: %s', (request) => {
     expect(requestsGuidedWalkthrough(request)).toBe(true);
   });

@@ -69,7 +69,7 @@ describe('TaskApplicationService', () => {
     );
   });
 
-  it('requires an initial context observation for visible-context requests', async () => {
+  it('starts visible how-to requests as a desktop-grounded walkthrough', async () => {
     const runtime = new TaskRuntime();
     const { localRuntime, state } = localDependencies();
     const service = new TaskApplicationService(runtime, {
@@ -89,12 +89,17 @@ describe('TaskApplicationService', () => {
         modelName: 'observe_context',
         arguments: {
           operation: 'observe',
-          scope: 'auto',
-          reason: 'Ground the response in the current visible context.',
+          scope: 'desktop',
+          reason: 'Ground the first teacher walkthrough step in the desktop.',
           query: null,
           observationId: null,
           region: null,
         },
+      },
+      walkthroughState: {
+        completedSteps: 0,
+        enabled: true,
+        phase: 'needs_observation',
       },
     }));
   });
