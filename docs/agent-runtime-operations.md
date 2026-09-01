@@ -1,106 +1,114 @@
-# OpenAI Agents SDK runtime operations
+# Local OpenAI Agents SDK runtime operations
 
-New tasks use public runtime v5 and authority v10. The separate
-`services/agent-runtime` process is the sole planner/executor loop. Rust remains
-the trusted control plane for authentication, leases, encrypted Session and
-`RunState` storage, spend, OpenAI proxying, connectors, and desktop work.
+New desktop tasks are locally authoritative. A bundled Node utility process
+runs the pinned OpenAI Agents SDK `Agent` and `Runner`; Electron main owns local
+task lifecycle, OS-encrypted SDK state, trusted tools, and the external-effect
+journal. Rust remains the authenticated provider, budget, accounting, and
+connector boundary.
 
-## Deployment order
+There is no backend-agent enable flag, hosted SDK worker, worker lease, private
+orchestration endpoint, or orchestration service token in the live path.
 
-1. Build and health-check the SDK worker with
-   `npm --prefix services/agent-runtime ci` and
-   `npm --prefix services/agent-runtime run check`.
-2. Give the Rust API `OPENAI_API_KEY`,
-   `TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN`, and database credentials.
-3. Give the SDK worker only `TROCODE_API_BASE_URL` and the same orchestrator
-   token. It must not receive an OpenAI key, database URL, connector credential,
-   or desktop session.
-4. Deploy the worker idle, then the Rust private endpoints, then the v5
-   API/desktop release together.
-5. Enable the backend-agent rollout only after the worker's `/healthz` is ready
-   and a staging task has completed through a real desktop worker.
+## Development
 
-## v5 drain and migration 031
+Install and verify both JavaScript workspaces:
 
-Migration 031 intentionally refuses to run while any legacy task is nonterminal:
-
-```sql
-SELECT protocol_version, orchestrator_kind, state, COUNT(*)
-FROM agent_runs
-WHERE state NOT IN ('completed','blocked','failed','cancelled','expired')
-GROUP BY protocol_version, orchestrator_kind, state
-ORDER BY protocol_version, orchestrator_kind, state;
+```bash
+npm ci
+npm ci --prefix services/agent-runtime
+npm --prefix services/agent-runtime run check
 ```
 
-Stop v4 starts first, then let known in-flight actions finish or cancel them
-through the old release. Do not weaken the migration guard. Migration 029 is
-`class_session_materials`; never replace or renumber it on a database where
-SQLx already recorded version 29. Migration 030 remains the approval-policy
-cleanup. Terminal legacy records remain read-only history.
+`npm start` builds `services/agent-runtime/dist/process-entry.js` before Electron
+starts. The backend can be started independently without any agent service
+token:
 
-Before changing `@openai/agents`, instructions, protocol schemas, or tool shape,
-drain every nonterminal SDK graph:
-
-```sql
-SELECT sdk_version, orchestrator_graph_version, state, COUNT(*)
-FROM agent_runs
-WHERE orchestrator_kind='openai_agents_sdk'
-  AND state NOT IN ('completed','blocked','failed','cancelled','expired')
-GROUP BY sdk_version, orchestrator_graph_version, state;
+```bash
+doppler run --project tro-app --config dev -- npm run engine -- serve
 ```
 
-A pending serialized `RunState` may resume only on the exact SDK and graph
-version that created it.
+At sign-in, Electron starts the utility process, validates protocol/SDK/graph
+capabilities, and only then sends the current user credential to child memory.
+Protocol v2 also validates the admitted CUA catalog through the bundled Agents
+SDK before registering tools or allowing a task to start. Sign-out clears the
+credential and stops the process.
 
-Migration 033 also refuses to run while an Agents SDK task is nonterminal. It
-introduces the encrypted immutable per-run tool snapshot used to reconstruct the
-same agent graph after a crash. Drain the SDK graph with the query above before
-applying it; do not backfill a live run from whatever tools happen to be online
-later.
+## State and recovery
+
+New local task state lives beneath Electron's `userData/agent-state/` directory:
+
+- `threads/index.enc` contains bounded thread metadata;
+- each thread has an atomically replaced `snapshot.enc`;
+- `events.enc` is an encrypted, checksummed, length-delimited event log;
+- `invocations.enc` is the exactly-once external-effect journal.
+
+All logical records are Zod-validated before encryption and after decryption.
+Files are mode `0600`, directories are mode `0700`, and replacement writes use
+same-directory temporary files, fsync, and rename. A torn final event frame is
+quarantined; corruption in a complete frame fails closed.
+
+A checkpoint may resume only when protocol, SDK, graph, model, and frozen tool
+catalog digests still match. A tool record found in `executing` without a durable
+result becomes terminal `unknown`; operators and the runtime must never replay
+it automatically.
 
 ## Incident checks
 
-- Worker health: inspect `agent_orchestrator_workers` heartbeat, expiry, SDK,
-  graph, and release fields; do not select service tokens.
-- Lease recovery: an expired SDK lease is reclaimable. A live lease must never be
-  manually reassigned.
-- Session conflict: stop the run and inspect only revision/generation/mutation
-  metadata. Do not edit encrypted Session items.
-- Compaction failure: keep the previous generation. The atomic replace-suffix
-  transaction must either commit completely or not at all.
-- Provider ambiguity: `ambiguous_dispatch` or `ambiguous_response` is terminal
-  `provider_outcome_unknown`; do not repeat the request manually. Inspect only
-  state and timestamps in `agent_model_dispatches`. A repeated digest is also
-  blocked after a completed provider response because the SDK checkpoint may
-  have been lost; provider bodies are never stored for replay.
-- Tool ambiguity: an invocation that reached `executing` and lost its executor
-  becomes `unknown`; the SDK blocks and must not replan an equivalent action.
-- Tool-surface recovery: inspect only the snapshot digest and version columns in
-  `agent_run_tool_snapshots`. Do not replace or decrypt a run's frozen catalog.
-  An already-queued call may be rebound after an executor disconnects, but a new
-  call must pass the current route and schema checks.
-- OS permission wait: this is a macOS/Windows prerequisite for the same durable
-  invocation, not an approval decision.
-- Connector OAuth failure: repair authorization, then start a new user task. Do
-  not mutate a pending invocation into executable state.
+- Runtime start failure: verify the packaged `agent-runtime/dist/process-entry.js`
+  exists and its health response matches the pinned SDK/protocol versions.
+- Authentication failure: sign in again. Never place the device token in an
+  environment variable or log; the child receives it only over the typed process
+  channel after handshake.
+- Provider/network failure: local history remains readable. Start a new model
+  turn only after connectivity returns; do not claim offline inference.
+- Session/checkpoint mismatch: leave the encrypted state intact and surface a
+  version-mismatch recovery error. Do not edit serialized RunState.
+- Tool ambiguity: if dispatch may have occurred, preserve `unknown` and inspect
+  the external system manually. Do not change it to `failed` or retry.
+- OS permission failure: grant Accessibility or Screen Recording in system
+  settings, then begin a new safe continuation. This is a technical prerequisite,
+  not an approval profile.
+- CUA catalog mismatch: reconnect/discover the driver and start a new turn. A
+  running turn never expands its frozen catalog.
+- CUA catalog degraded: inspect `catalog.tool-quarantined` and
+  `catalog.compatibility` logs. Compatible optional tools remain available.
+- CUA catalog unavailable: install a compatible driver. Required-tool and
+  schema-dialect failures are detected at startup and logged as
+  `catalog.required-tool-failed`; do not retry the same task expecting a
+  different catalog.
 
-## Service-token rotation
+## Legacy hosted history
 
-Deploy a coordinated API and worker release with the new random token. Keep the
-old pair running only long enough to drain their exact graph, then remove the old
-secret. Never log the token or place it in public protocol payloads.
+Terminal historical rows remain read-only through `/v1/legacy-agent-history`.
+Nonterminal hosted runs are not imported into local SDK state. Historical SQL
+migrations and tables remain immutable; any later archival/drop requires a new
+forward migration and retention evidence.
 
-## Release gates
+## Packaging and release gates
 
-- `npm run agent:protocol:check`
-- `npm run agent:orchestrator:check`
-- `npm --prefix services/agent-runtime run check`
-- `npm run agent:runtime-versions`
-- `npm run check`
-- `npm run bazel:check`
-- `npm run package`
-- zero nonterminal legacy rows before migration 031;
-- zero nonterminal Agents SDK rows before migration 033;
-- zero duplicate adapter dispatches or unknown-result retries;
-- packaged v5 handshake, cancellation, steering, direct navigation, and workspace
-  smoke tests.
+Forge compiles the utility package and stages its production dependency closure
+as an extra resource. The packaged app must not rely on global Node, a repository
+checkout, Railway worker files, or development `node_modules`.
+
+Run:
+
+```bash
+npm --prefix services/agent-runtime run check
+npm run check
+npm run package
+npm run bazel:check
+```
+
+Then inspect the packaged resource for the process entry and `@openai/agents`,
+start the app with no hosted worker deployment, complete a local tool turn,
+restart the app, and confirm encrypted local history. Review logs and artifacts
+for tokens, prompts, model output, tool arguments, screenshots, or RunState.
+
+## Future cloud and multi-agent modes
+
+A future cloud runtime implements the product `AgentRuntimeAdapter` explicitly;
+it is never a hidden fallback for a local task. The current graph contains only
+`tro.root`. Future native SDK handoffs or agents-as-tools require an eval-backed
+use case, a deterministic graph-version bump, bounded lineage/depth, and
+per-agent tool-capability tests, but do not require changing the renderer or Rust
+provider boundary.

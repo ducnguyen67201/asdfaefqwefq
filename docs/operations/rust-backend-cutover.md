@@ -31,12 +31,13 @@ provider; do not remove it while the Electron `package.json` remains at root.
 - Pass disposable PostgreSQL/S3 integration tests and the PDF corpus.
 - Rehearse deploy, roll-forward, and a coordinated PostgreSQL/object-store restore to a pre-migration-030 snapshot in staging.
 - Inventory Railway variable names only. Never copy secret values into logs or reports.
-- Set `TROCODE_BACKEND_AGENT_ENABLED=false` and disable Knowledge Spaces until
-  its worker smoke test passes.
+- Keep Knowledge Spaces disabled until its ingestion-worker smoke test passes.
 
 ## Active-work drain gate
 
-Stop accepting new backend-agent work with the existing rollout control. Pause the ingestion worker only after its current lease completes. Run these read-only queries through the approved operator path:
+Local agent work is not owned by this deployment. Pause the ingestion worker
+only after its current lease completes. Run these read-only queries through the
+approved operator path to confirm no retired hosted work remains active:
 
 ```sql
 SELECT count(*) AS nonterminal_legacy_runs
@@ -46,10 +47,6 @@ WHERE state NOT IN ('completed','blocked','failed','cancelled','expired');
 SELECT count(*) AS in_flight_invocations
 FROM agent_tool_invocations
 WHERE state IN ('delivered','executing');
-
-SELECT count(*) AS connected_workers
-FROM agent_worker_sessions
-WHERE disconnected_at IS NULL AND expires_at > NOW();
 
 SELECT count(*) AS leased_ingestion_jobs
 FROM knowledge_ingestion_jobs
@@ -64,10 +61,11 @@ Every count must be zero. Do not edit rows to make the gate pass. A nonzero coun
 2. Change the existing API and worker Root Directory from the legacy `/services/api` value to `/`, assign their checked-in config paths above, then deploy the Rust commit with the same domain, database reference, variables, and `/healthz` check.
 3. Wait for Railway health, then independently check `/healthz` and `/readyz`.
 4. Run non-mutating checks, followed by synthetic auth/session/access/budget/provider/admin flows.
-5. Change the existing ingestion worker command to `./bin/trocode-api ingestion-worker` from the same commit. Do not overlap old and new agent workers.
+5. Change the existing ingestion worker command to `./bin/trocode-api ingestion-worker` from the same commit.
 6. Smoke upload, HEAD verification, ingestion, search, Activity/Run/Attempt/submission/evidence/dashboard before enabling Knowledge Spaces.
-7. Enable backend-agent only for explicit canaries. Verify task SSE replay, worker connect/request/executing/result/completion, and disconnect-during-tool-execution becoming unknown/blocked without replay.
-8. Expand the existing percentage gradually under separate operator approval.
+7. Verify an installed desktop can reserve an agent turn, call Responses and
+   compaction, load terminal legacy history, and run its bundled local harness
+   without a hosted agent worker or service token.
 
 Observe 5xx/429 rate, p50/p95, SSE disconnect/replay errors, uncertain reservations, PostgreSQL pool saturation, stale leases, unknown outcomes, ingestion retries, and RSS for the approved window.
 
@@ -86,14 +84,13 @@ Migration 030 is destructive and is not backward-compatible with the previous
 backend. After it has been applied, never redeploy the previous application
 against the migrated database and never reconstruct dropped columns manually.
 
-1. Set `TROCODE_BACKEND_AGENT_ENABLED=false` to reject new starts; set
-   `TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT=0` and clear
-   `TROCODE_BACKEND_AGENT_CANARY_USERS` before re-enabling the runtime later.
-   Disable Knowledge Spaces if implicated.
+1. Disable Knowledge Spaces if implicated. Local desktop tasks are not switched
+   by a backend-agent flag; provider access can be stopped only through the
+   existing paid-call/provider incident controls.
 2. Stop the Rust ingestion worker after its current lease. Preserve current
    workers until every executing or unknown-outcome action is reconciled; never
    replay a tool invocation with an unknown outcome.
-3. Prefer a roll-forward from the current v4 backend. Deploy the corrected
+3. Prefer a roll-forward from the current backend. Deploy the corrected
    commit against the migrated database, then check health/readiness and
    synthetic auth/session/access/budget/admin/provider paths.
 4. If roll-forward is impossible, declare disaster recovery and stop all

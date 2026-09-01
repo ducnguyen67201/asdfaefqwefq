@@ -1,10 +1,9 @@
 import type {
   RuntimeToolId,
-  TaskBehavior,
   TaskEvent,
   TaskSnapshot,
 } from '../shared/contracts';
-import { isLegacyTaskPhaseTerminal } from '../shared/legacy-agent-runtime-v2';
+import { isTaskPhaseTerminal } from '../shared/task-lifecycle';
 
 const ACTIVITY_DAY_COUNT = 42;
 const LEARNING_TOPIC_MAX_LENGTH = 140;
@@ -28,12 +27,6 @@ const SCIENCE_RECOMMENDATION =
 const GENERAL_RECOMMENDATION =
   'Break the assignment into one smaller question, explain the first step in your own words, then practise a similar example.';
 
-export interface BehaviorUsage {
-  behavior: TaskBehavior;
-  count: number;
-  percentage: number;
-}
-
 export interface ToolUsage {
   count: number;
   percentage: number;
@@ -50,7 +43,6 @@ export interface ActivityDay {
 
 export interface InsightsSummary {
   activityDays: ActivityDay[];
-  legacyBehaviorUsage: BehaviorUsage[];
   completedTasks: number;
   completionRate: number;
   currentStreak: number;
@@ -178,32 +170,8 @@ export function createInsightsSummary(
   ).length;
   const finishedTasks = tasks.filter(
     (task) =>
-      task.lifecycle?.terminal ?? isLegacyTaskPhaseTerminal(task.phase),
+      task.lifecycle?.terminal ?? isTaskPhaseTerminal(task.phase),
   ).length;
-  const behaviorCounts = new Map<TaskBehavior, number>();
-
-  for (const task of tasks) {
-    if (!task.goal || task.goal.schemaVersion !== 2) continue;
-    const behavior = task.goal.behavior;
-    behaviorCounts.set(behavior, (behaviorCounts.get(behavior) ?? 0) + 1);
-  }
-
-  const highestBehaviorCount = Math.max(
-    1,
-    ...behaviorCounts.values(),
-  );
-  const behaviorUsage = [...behaviorCounts.entries()]
-    .map(([behavior, count]) => ({
-      behavior,
-      count,
-      percentage: Math.round((count / highestBehaviorCount) * 100),
-    }))
-    .sort((left, right) =>
-      right.count === left.count
-        ? left.behavior.localeCompare(right.behavior)
-        : right.count - left.count,
-    );
-
   const toolCounts = new Map<RuntimeToolId, number>();
   for (const event of events) {
     if (event.phase !== 'verifying' || !event.tool) continue;
@@ -281,7 +249,6 @@ export function createInsightsSummary(
 
   return {
     activityDays,
-    legacyBehaviorUsage: behaviorUsage,
     completedTasks,
     completionRate:
       finishedTasks === 0
@@ -296,9 +263,7 @@ export function createInsightsSummary(
       (total, task) => {
         const progress = task.progress;
         if (!progress) return total;
-        return (
-          total + ('kind' in progress ? progress.completed : progress.currentStep)
-        );
+        return total + progress.completed;
       },
       0,
     ),

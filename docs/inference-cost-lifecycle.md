@@ -1,18 +1,17 @@
 # Inference cost lifecycle
 
-Backend Agents SDK model calls use the same transactional reservation ledger as
-the Responses proxy. The host selects Luna, Terra, or Sol plus reasoning effort;
+Local Agents SDK model calls use the authenticated Responses proxy and its
+transactional reservation ledger. The host selects Luna, Terra, or Sol;
 the model cannot escalate itself. Estimates use conservative text and image
 token counts, and settlement uses provider usage including cache reads/writes.
 Long contexts above 272K input tokens apply the catalog multiplier.
 
-The transport retries at most twice only for a definitive pre-event provider
-rejection. A network failure, received stream event, or otherwise ambiguous
-dispatch is marked uncertain and is not replayed. A circuit breaker and durable
-submission capacity gate fail honestly before unbounded provider or queue load.
+The SDK, OpenAI client, and Rust provider transport do not automatically retry.
+A network failure, received stream event, or otherwise ambiguous dispatch is
+marked uncertain and is not replayed.
 
 TroCode uses an object-oriented application shell with pure cost and lifecycle
-policies. The desktop decides what it needs to ask; the hosted API is the only
+policies. The local SDK decides what it needs to ask; the hosted API is the only
 authority that can price, reserve, dispatch, and settle a paid production call.
 
 ## Text to model to screen
@@ -23,7 +22,7 @@ sequenceDiagram
     participant UI as Sandboxed renderer
     participant App as TaskApplicationService
     participant Agent as OpenAI Agents SDK Runner
-    participant Session as bounded SDK Session + context filter
+    participant Session as encrypted host-backed SDK Session
     participant Turn as AgentTurnService
     participant API as Hosted Responses service
     participant Budget as BudgetService

@@ -1,15 +1,14 @@
-import type { ComputerPermissionV4 } from '../shared/agent-runtime-protocol';
-import type { TaskSnapshot } from '../shared/contracts';
+import type { ComputerPermission, TaskSnapshot } from '../shared/contracts';
 import {
-  isLegacyTaskPhaseSteerable,
-  isLegacyTaskPhaseTerminal,
-} from '../shared/legacy-agent-runtime-v2';
+  isTaskPhaseSteerable,
+  isTaskPhaseTerminal,
+} from '../shared/task-lifecycle';
 
 type PhaseSnapshot = Pick<TaskSnapshot, 'phase'> &
   Partial<Pick<TaskSnapshot, 'lifecycle' | 'pendingInteraction'>>;
 
 export function computerPermissionWaitPresentation(
-  requiredPermissions: readonly ComputerPermissionV4[],
+  requiredPermissions: readonly ComputerPermission[],
 ): { body: string; title: string } {
   const labels = requiredPermissions.map((permission) =>
     permission === 'accessibility' ? 'Accessibility' : 'Screen Recording');
@@ -30,7 +29,7 @@ export function isTaskTerminal(snapshot: PhaseSnapshot | null): boolean {
   return Boolean(
     snapshot &&
       (snapshot.lifecycle?.terminal ??
-        isLegacyTaskPhaseTerminal(snapshot.phase)),
+        isTaskPhaseTerminal(snapshot.phase)),
   );
 }
 
@@ -42,7 +41,7 @@ export function isTaskCancellable(
       (snapshot.lifecycle
         ? !snapshot.lifecycle.terminal &&
           snapshot.lifecycle.availableActions.includes('cancel')
-        : !isLegacyTaskPhaseTerminal(snapshot.phase)),
+        : !isTaskPhaseTerminal(snapshot.phase)),
   );
 }
 
@@ -52,7 +51,7 @@ export function isTaskSteerable(snapshot: PhaseSnapshot | null): boolean {
       (snapshot.lifecycle
         ? !snapshot.lifecycle.terminal &&
           snapshot.lifecycle.availableActions.includes('steer')
-        : isLegacyTaskPhaseSteerable(snapshot.phase)),
+        : isTaskPhaseSteerable(snapshot.phase)),
   );
 }
 

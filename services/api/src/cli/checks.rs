@@ -6,10 +6,6 @@ use std::{
 
 use anyhow::Context;
 use serde::Deserialize;
-use sqlx_core::row::Row;
-
-use crate::{agent::protocol, postgres::PgPoolOptions};
-
 const EXPECTED_DESKTOP_RUNTIME_VERSIONS: [(&str, &str); 3] = [
     ("@trycua/cua-driver", "0.19.3"),
     ("playwright-core", "1.62.1"),
@@ -88,53 +84,13 @@ fn check_package_versions(
     Ok(())
 }
 
-pub async fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
+pub fn agent_runtime_versions_report(repository_root: &Path) -> anyhow::Result<()> {
     check_agent_runtime_versions(repository_root)?;
 
-    println!(
-        "Canonical agent protocol: v{}",
-        protocol::v5::PROTOCOL_VERSION
-    );
-    println!("Protocol digest: {}", protocol::v5::protocol_digest());
-    println!(
-        "Tool catalog digest: {}",
-        protocol::v5::tool_catalog_digest()
-    );
-    println!("Start mode: v5 only (OpenAI Agents SDK)");
+    println!("Agent execution: bundled local OpenAI Agents SDK utility process");
+    println!("Rust responsibility: authenticated model proxy and usage accounting");
 
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        println!("Active legacy v2-v4 runs: unavailable (DATABASE_URL is not configured)");
-        println!("Cutover readiness: unknown until the legacy-run drain query is available");
-        return Ok(());
-    };
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(&database_url)
-        .await
-        .context("failed to inspect active agent runtime versions")?;
-    let counts = sqlx::query(
-        "SELECT \
-           COUNT(*) FILTER (WHERE protocol_version = 2) AS active_v2, \
-           COUNT(*) FILTER (WHERE protocol_version = 3) AS active_v3, \
-           COUNT(*) FILTER (WHERE protocol_version = 4) AS active_v4 \
-         FROM agent_runs \
-         WHERE state NOT IN ('completed','blocked','failed','cancelled','expired')",
-    )
-    .fetch_one(&pool)
-    .await
-    .context("failed to count active agent runtime rows")?;
-    let active_v2 = counts.get::<i64, _>("active_v2");
-    let active_v3 = counts.get::<i64, _>("active_v3");
-    let active_v4 = counts.get::<i64, _>("active_v4");
-    println!("Active legacy runs: v2={active_v2}, v3={active_v3}, v4={active_v4}");
-    println!(
-        "Cutover readiness: {}",
-        if active_v2 == 0 && active_v3 == 0 && active_v4 == 0 {
-            "ready (no active legacy runs)"
-        } else {
-            "not ready (drain active v2-v4 runs before migration 031)"
-        }
-    );
+    println!("Legacy hosted task history: read-only terminal projection");
     Ok(())
 }
 
@@ -152,7 +108,7 @@ pub fn check_rust_only_script_layout(repository_root: &Path) -> anyhow::Result<(
             .join("\n")
     );
     println!(
-        "The legacy script runtime is absent; Rust is the control plane and the pinned Agents SDK worker is the sole reasoning loop."
+        "The legacy script runtime is absent; Electron main owns task execution and the bundled Agents SDK utility process is the sole reasoning loop."
     );
     Ok(())
 }

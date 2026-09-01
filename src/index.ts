@@ -16,6 +16,7 @@ import {
 import path from 'node:path';
 
 import { AgentActivityService } from './main/agent/agent-activity-service';
+import { createCuaDriverToolDefinitions } from './main/agent/cua-driver-agent-tools';
 import { createCuaSemanticToolDefinitions } from './main/agent/cua-semantic-agent-tools';
 import type { DesktopCommand } from './main/agent/execution-contracts';
 import {
@@ -25,18 +26,17 @@ import {
   defaultRuntimeToolDefinitions,
   RuntimeToolRegistry,
   type GuidanceToolInput,
+  type InteractionToolInput,
 } from './main/agent/runtime-tool-registry';
 import { TaskRuntime } from './main/agent/task-runtime';
 import { requestsGuidedWalkthrough } from './main/agent/walkthrough-policy';
 import { createWorkspaceRuntimeToolAdapters } from './main/agent/workspace-runtime-tool-adapters';
+import { LocalAgentRuntime } from './main/agent-runtime/agent-runtime-adapter';
+import { EncryptedAgentStateStore } from './main/agent-runtime/encrypted-agent-state-store';
 import { FileAnalyticsIdentityStore } from './main/analytics/analytics-identity-store';
 import { AnalyticsService } from './main/analytics/analytics-service';
 import { ApplicationSurfaceVerifier } from './main/application/application-surface-verifier';
 import { DesktopApplicationLauncher } from './main/application/desktop-application-launcher';
-import {
-  HostedTaskClient,
-  projectHostedTask,
-} from './main/application/hosted-task-client';
 import { TaskApplicationService } from './main/application/task-application-service';
 import { EncryptedAuthSessionStore } from './main/auth/auth-session-store';
 import { GoogleAuthService } from './main/auth/google-auth-service';
@@ -80,14 +80,12 @@ import {
 } from './main/companion/global-numbered-choice-shortcuts';
 import { TaskPetService } from './main/companion/task-pet-service';
 import { ConnectorClient } from './main/connectors/connector-client';
+import { ComputerPermissionCoordinator } from './main/cua/computer-permission-coordinator';
 import { CuaService } from './main/cua/cua-service';
 import { createRustDesktopEngineClient } from './main/engine/rust-desktop-engine-client';
-import { HostedTaskHistoryStore } from './main/history/hosted-task-history-store';
+import { CompositeTaskHistoryStore } from './main/history/composite-task-history-store';
+import { LegacyHostedTaskHistoryStore } from './main/history/legacy-hosted-task-history-store';
 import { TaskHistoryService } from './main/history/task-history-service';
-import { ComputerPermissionCoordinator } from './main/hosted/computer-permission-coordinator';
-import { DesktopToolWorker } from './main/hosted/desktop-tool-worker';
-import { DesktopWorkerClient } from './main/hosted/desktop-worker-client';
-import { desktopWorkerCapabilities } from './main/hosted/desktop-worker-protocol';
 import { ImageEvidencePolicy } from './main/inference/image-evidence-policy';
 import { registerIpcHandlers } from './main/ipc/register-ipc';
 import { ActivityContextService } from './main/knowledge/activity-context-service';
@@ -248,16 +246,15 @@ const authService = new GoogleAuthService({
   rustEngine: rustDesktopEngine,
   sessionStore: authSessionStore,
 });
-const hostedRuntimeConfigured = Boolean(trocodeApiBaseUrl);
-const hostedTaskClient = new HostedTaskClient({
-  accessTokenProvider: () => authService.getAccessToken(),
-  apiBaseUrl: trocodeApiBaseUrl,
-});
+const localAgentStateStore = new EncryptedAgentStateStore();
 const taskHistoryService = new TaskHistoryService({
   onError: (error) => {
     console.error('[task-history] durable persistence failed.', error);
   },
-  store: new HostedTaskHistoryStore(hostedTaskClient, (run) => projectHostedTask(run)),
+  store: new CompositeTaskHistoryStore(
+    localAgentStateStore,
+    new LegacyHostedTaskHistoryStore(trocodeApiBaseUrl, () => authService.getAccessToken()),
+  ),
 });
 const usageBudgetService = new UsageBudgetService(
   trocodeApiBaseUrl,
@@ -314,6 +311,7 @@ const runtimeToolRegistry = new RuntimeToolRegistry([
     semanticAvailable: () => cuaService.supportsSemanticFastPath(),
   }),
 ]);
+let cuaDriverToolsRegistered = false;
 const taskRuntime = new TaskRuntime();
 taskRuntime.on('task-update', taskHistoryService.recordTaskUpdate);
 taskRuntime.on('task-update', reportActivityProgress);
@@ -405,6 +403,18 @@ const executionCoordinator = new TaskExecutionCoordinator({
   additionalToolAdapters: [
     ...createActivityToolAdapters(knowledgeSpaceClient),
     ...createWorkspaceRuntimeToolAdapters(),
+    {
+      id: 'task.interaction',
+      execute: async (invocation, context) => {
+        const input = invocation.input as InteractionToolInput;
+        const answer = await requestLocalInteraction(context.taskId, input);
+        return {
+          status: 'confirmed' as const,
+          summary: 'The user answered the clarification.',
+          data: { answer },
+        };
+      },
+    },
   ],
   applicationSurfaceVerifier: new ApplicationSurfaceVerifier({
     queryVisibleApplicationSurfaces: (application, signal) =>
@@ -434,52 +444,84 @@ const executionCoordinator = new TaskExecutionCoordinator({
     await handle?.completion;
   },
 });
+const localAgentRuntime = new LocalAgentRuntime({
+  accessTokenProvider: async () => {
+    const token = await authService.getAccessToken();
+    if (!token) throw new Error('Sign in before starting the local agent.');
+    return token;
+  },
+  apiBaseUrl: trocodeApiBaseUrl,
+  coordinator: executionCoordinator,
+  isPackaged: app.isPackaged,
+  repositoryRoot,
+  resourcesPath: process.resourcesPath,
+  state: localAgentStateStore,
+  tools: runtimeToolRegistry,
+  onEvent: (message) => {
+    taskRuntime.applyRuntimeEvent(
+      message.threadId,
+      message.event,
+      message.summary,
+      message.data,
+    );
+    if (message.event === 'assistant_delta') {
+      agentActivityService.publish(message.threadId, {
+        kind: 'text_delta',
+        textDelta: message.summary,
+      });
+    } else if (message.event === 'tool_requested' || message.event === 'tool_started') {
+      agentActivityService.publish(message.threadId, {
+        kind: 'tool_started',
+        summary: message.summary,
+        tool: {
+          name: typeof message.data?.toolId === 'string' ? message.data.toolId : 'local_tool',
+          status: 'running',
+        },
+      });
+    } else if (message.event === 'tool_completed' || message.event === 'tool_failed' || message.event === 'tool_unknown') {
+      agentActivityService.publish(message.threadId, {
+        kind: 'tool_completed',
+        summary: message.summary,
+        tool: {
+          name: typeof message.data?.toolId === 'string' ? message.data.toolId : 'local_tool',
+          status: message.event === 'tool_completed' ? 'completed' : 'failed',
+        },
+      });
+    } else {
+      agentActivityService.publish(message.threadId, {
+        kind: message.event === 'lifecycle' ? 'run_started' : 'status',
+        summary: message.summary,
+      });
+    }
+  },
+  onTerminal: (terminal) => {
+    taskRuntime.complete(terminal.threadId, terminal);
+    agentActivityService.publish(terminal.threadId, {
+      kind: terminal.status === 'completed' ? 'run_completed' : 'run_failed',
+      summary: terminal.finalOutput ?? terminal.message,
+    });
+    taskApplicationService.finish(terminal.threadId);
+  },
+});
 const taskApplicationService = new TaskApplicationService(
   taskRuntime,
   {
     activityContextService,
     activityProgressReporter,
     classroomSessionService,
-    hostedTaskClient,
-    onHostedTerminal: (taskId) => executionCoordinator.endHostedTask(taskId),
+    currentOwnerId: async () => (await authService.assertSignedIn()).id,
+    localRuntime: localAgentRuntime,
+    state: localAgentStateStore,
     workspaceSelectionService,
   },
 );
-const desktopWorkerClient = new DesktopWorkerClient({
-  accessTokenProvider: () => authService.getAccessToken(),
-  apiBaseUrl: trocodeApiBaseUrl,
-});
 const computerPermissionCoordinator = new ComputerPermissionCoordinator({
-  backend: desktopWorkerClient,
   connectIfPermitted: () => cuaService.connectIfPermitted(),
   getStatus: () => cuaService.getStatus(),
   openSystemPermissionSettings: async (permission) =>
     shell.openExternal(systemPermissionSettingsUrl(permission), {
       activate: true,
     }),
-});
-const desktopToolWorker = new DesktopToolWorker({
-  commitResult: (result) => desktopWorkerClient.commitResult(result),
-  cua: cuaService,
-  dispatcher: {
-    dispatch: (invocation, context) =>
-      executionCoordinator.dispatchHostedTool(invocation, context),
-  },
-  executionContextProvider: (runId) =>
-    taskApplicationService.hostedExecutionContext(runId),
-  interactionProvider: requestHostedInteraction,
-  permissionCoordinator: computerPermissionCoordinator,
-  registry: runtimeToolRegistry,
-  requestExecuting: (invocationId, expectedRunVersion) =>
-    desktopWorkerClient.requestExecuting(invocationId, expectedRunVersion),
-});
-desktopWorkerClient.on('invocation', (invocation) => {
-  void desktopToolWorker.handle(invocation).catch((error: unknown) => {
-    console.error('[desktop-worker] invocation failed.', error);
-  });
-});
-desktopWorkerClient.on('transport-error', (error: unknown) => {
-  console.error('[desktop-worker] connection degraded.', error);
 });
 const presentationCoordinator = new PresentationCoordinator(
   new ElectronPresentationPresenter(
@@ -1496,7 +1538,7 @@ function showGuidancePresentation(
 
 async function identifyAnalyticsUser(user: AuthUser): Promise<void> {
   taskHistoryService.setCurrentOwner(user.id);
-  await startHostedDesktopWorker();
+  await prepareLocalAgentRuntime();
   await analyticsService?.identifyUser({
     email: user.email,
     loginMethod: 'oauth',
@@ -1505,38 +1547,74 @@ async function identifyAnalyticsUser(user: AuthUser): Promise<void> {
   });
 }
 
-async function startHostedDesktopWorker(): Promise<void> {
-  if (!hostedRuntimeConfigured) return;
-  const status = await hostedTaskClient.status().catch((error: unknown) => {
-    console.error('[desktop-worker] runtime status unavailable.', error);
-    return { enabled: false, protocolVersion: 2, workerRequired: false };
-  });
-  if (!status.enabled) {
-    console.error('[desktop-worker] Rust runtime is disabled.');
-    return;
+async function prepareLocalAgentRuntime(): Promise<void> {
+  await localAgentRuntime.initialize();
+  if (!cuaDriverToolsRegistered) {
+    const cuaCatalog = await cuaService.discoverToolCatalog().catch((error: unknown) => {
+      console.error('[local-agent-runtime] CUA tool discovery failed.', error);
+      return null;
+    });
+    if (cuaCatalog) {
+      const definitions = createCuaDriverToolDefinitions(cuaCatalog);
+      const admission = runtimeToolRegistry.inspectRegistration(definitions);
+      const sdkValidation = await localAgentRuntime.validateToolCatalog(
+        admission.accepted.map((definition) => ({
+          toolId: definition.id,
+          modelName: definition.modelName,
+          description: definition.description,
+          inputSchema: definition.parameters,
+          operations: [...definition.operations],
+          driverCatalogDigest: definition.driverCatalogDigest ?? null,
+        })),
+        cuaCatalog.driverCatalogDigest,
+      );
+      const sdkRejectedNames = new Set(
+        sdkValidation.rejected.map((rejection) => rejection.modelName),
+      );
+      const acceptedDefinitions = admission.accepted.filter(
+        (definition) => !sdkRejectedNames.has(definition.modelName),
+      );
+      const registrationFailures = [
+        ...admission.rejected,
+        ...sdkValidation.rejected,
+      ].map((rejection) => {
+        const definition = definitions.find(
+          (candidate) => candidate.id === rejection.toolId,
+        );
+        return {
+          name: definition?.operations[0] ?? rejection.modelName,
+          message: rejection.message,
+        };
+      });
+      cuaService.reportToolCatalogRegistrationFailures(registrationFailures);
+      for (const rejection of admission.rejected) {
+        console.warn(
+          '[local-agent-runtime] CUA tool registration quarantined.',
+          JSON.stringify(rejection),
+        );
+      }
+      for (const rejection of sdkValidation.rejected) {
+        console.warn(
+          '[local-agent-runtime] CUA tool SDK validation quarantined.',
+          JSON.stringify(rejection),
+        );
+      }
+      if (cuaService.cuaToolCatalogReport()?.state !== 'unavailable') {
+        runtimeToolRegistry.register(acceptedDefinitions);
+      }
+      cuaDriverToolsRegistered = true;
+    }
   }
-  if (!status.workerRequired) return;
-  await taskApplicationService.restoreHostedRuns().catch((error: unknown) => {
-    console.error('[desktop-worker] active task restoration failed.', error);
+  await taskApplicationService.restoreLocalTasks().catch((error: unknown) => {
+    console.error('[local-agent-runtime] active task restoration failed.', error);
     return 0;
   });
-  const cuaCatalog = await cuaService.discoverToolCatalog().catch((error: unknown) => {
-    console.error('[desktop-worker] CUA tool discovery failed.', error);
-    return null;
-  });
-  await desktopWorkerClient
-    .start(desktopWorkerCapabilities(runtimeToolRegistry, cuaCatalog))
-    .catch((error: unknown) => {
-      console.error('[desktop-worker] could not connect.', error);
-    });
 }
 
-async function requestHostedInteraction(
-  runId: string,
+async function requestLocalInteraction(
+  taskId: string,
   input: { choices?: string[]; prompt: string },
 ): Promise<string> {
-  const taskId = taskApplicationService.hostedExecutionContext(runId)?.taskId;
-  if (!taskId) throw new Error('Hosted run is not mapped to a local task.');
   const waiting = taskRuntime.requestInput({
     choices: input.choices?.map((label, index) => ({
       id: `choice-${index + 1}`,
@@ -1716,7 +1794,7 @@ function prepareApplicationShutdown(): Promise<void> {
     await dictationService.shutdown();
     await Promise.allSettled([
       cuaService.shutdown(),
-      desktopWorkerClient.stop(),
+      localAgentRuntime.shutdown(),
       rustDesktopEngine.stop(),
       taskHistoryService.shutdown(),
     ]);
@@ -2319,7 +2397,8 @@ const createWindow = (): void => {
       await companionCustomizationService.setCurrentOwner(null);
       disableAuthenticatedAuxiliaryWindows();
       taskHistoryService.setCurrentOwner(null);
-      await desktopWorkerClient.stop();
+      localAgentRuntime.clearCredential();
+      await localAgentRuntime.shutdown();
       await systemAudioDuckingService.setActive(false).catch((error: unknown) => {
         console.error('[voice] Could not restore system audio after sign-out.', error);
       });

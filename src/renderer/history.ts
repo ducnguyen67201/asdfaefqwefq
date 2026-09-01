@@ -1,12 +1,7 @@
-import type {
-  TaskBehavior,
-  TaskEvent,
-  TaskSnapshot,
-} from '../shared/contracts';
-import { isLegacyTaskPhaseTerminal } from '../shared/legacy-agent-runtime-v2';
+import type { TaskEvent, TaskSnapshot } from '../shared/contracts';
+import { isTaskPhaseTerminal } from '../shared/task-lifecycle';
 
 export interface HistoryEntry {
-  behavior: TaskBehavior | null;
   events: TaskEvent[];
   finalResponse: string | null;
   objective: string;
@@ -36,7 +31,7 @@ export function createHistoryEntries(
   return [...snapshotsByTaskId.values()]
     .filter((snapshot) =>
       snapshot.lifecycle?.terminal ??
-      isLegacyTaskPhaseTerminal(snapshot.phase),
+      isTaskPhaseTerminal(snapshot.phase),
     )
     .map((snapshot) => {
       const taskEvents = [
@@ -49,16 +44,9 @@ export function createHistoryEntries(
             message.role === 'assistant' && message.kind === 'answer',
         )?.text ?? null;
       return {
-        behavior:
-          snapshot.goal?.schemaVersion === 2
-            ? snapshot.goal.behavior
-            : null,
         events: taskEvents,
         finalResponse,
-        objective:
-          snapshot.goal?.schemaVersion === 2
-            ? snapshot.goal.objective
-            : snapshot.request,
+        objective: snapshot.request,
         phase: snapshot.phase as HistoryEntry['phase'],
         progress: snapshot.progress,
         snapshot,

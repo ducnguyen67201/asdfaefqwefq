@@ -13,12 +13,11 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt as _;
 use trocode_api::{
-    agent::{OrchestratorWorkerRegistration, orchestrator_protocol, protocol},
     app::AppState,
     auth::User,
     config::{
-        AdminConfig, AgentRuntimeConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode,
-        KnowledgeConfig, ObjectStoreConfig,
+        AdminConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode, KnowledgeConfig,
+        ObjectStoreConfig,
     },
     knowledge::IngestionWorker,
     postgres::PgPoolOptions,
@@ -91,22 +90,6 @@ fn test_config_with_store(database_url: String, object_store: Option<ObjectStore
     Config {
         admin: AdminConfig {
             access_token: Some(ADMIN_TOKEN.to_owned()),
-        },
-        agent_runtime: AgentRuntimeConfig {
-            canary_users: BTreeSet::from(["http-owner".to_owned()]),
-            current_encryption_key_version: 1,
-            enabled: true,
-            encryption_keys: Some("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
-            heartbeat_ttl_ms: 35_000,
-            lease_ms: 30_000,
-            max_active_runs_per_user: 10,
-            max_queue_depth: 1_000,
-            orchestrator_model: "gpt-5.6-sol".to_owned(),
-            orchestrator_sdk_version: "0.17.0".to_owned(),
-            orchestrator_service_token: Some("o".repeat(32)),
-            payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
-            protocol_version: 5,
-            rollout_percent: 0,
         },
         connectors: ConnectorConfig {
             callback_url: None,
@@ -210,27 +193,6 @@ async fn send_with_headers(
         headers,
         status,
     }
-}
-
-async fn send_without_collecting(
-    router: &Router,
-    path: &str,
-    bearer: &str,
-) -> (StatusCode, HeaderMap) {
-    let response = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(path)
-                .header("authorization", format!("Bearer {bearer}"))
-                .header("host", "api.example.test")
-                .body(Body::empty())
-                .expect("build streaming request"),
-        )
-        .await
-        .expect("streaming router response");
-    (response.status(), response.headers().clone())
 }
 
 #[track_caller]
@@ -359,6 +321,17 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         .mount(&provider)
         .await;
     Mock::given(method("POST"))
+        .and(path("/v1/responses/compact"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_json(
+                    json!({"output":[{"type":"compaction","encrypted_content":"opaque"}]}),
+                ),
+        )
+        .mount(&provider)
+        .await;
+    Mock::given(method("POST"))
         .and(path("/v1/audio/transcriptions"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -386,21 +359,6 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     let mut state = AppState::compose(test_config(database_url))
         .await
         .expect("compose Rust application");
-    state
-        .orchestrator
-        .as_ref()
-        .expect("Agents SDK orchestrator")
-        .register_worker(&OrchestratorWorkerRegistration {
-            graph_version: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            instance_id: Uuid::new_v4(),
-            protocol_digest: orchestrator_protocol::protocol_digest(),
-            protocol_version: 1,
-            public_protocol_digest: protocol::v5::protocol_digest(),
-            release_version: "http-compat",
-            sdk_version: "0.17.0",
-        })
-        .await
-        .expect("register Agents SDK worker");
     state.responses = ResponsesService::new_with_endpoint(
         state.budget.clone(),
         reqwest::Client::new(),
@@ -1665,6 +1623,24 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     .await;
     assert_status(&responses, StatusCode::OK);
     assert_eq!(responses.headers["x-trocode-usage-source"], "actual");
+    let compact_request_id = Uuid::new_v4().to_string();
+    let compact = send_with_headers(
+        &router,
+        Method::POST,
+        "/v1/openai/responses/compact",
+        Some(&owner_token),
+        Some(&json!({
+            "input":[{"content":[{"text":"older context","type":"input_text"}],"role":"user"}],
+            "model":"gpt-5.6-luna"
+        })),
+        &[
+            ("x-trocode-agent-turn-id", &agent_turn_id),
+            ("x-trocode-request-id", &compact_request_id),
+            ("x-trocode-task-id", &task_id_header),
+        ],
+    )
+    .await;
+    assert_status(&compact, StatusCode::OK);
     let transcription_request_id = Uuid::new_v4().to_string();
     let transcription = send_with_headers(
         &router,
@@ -1737,242 +1713,27 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
         StatusCode::SERVICE_UNAVAILABLE,
     );
 
-    let status = send(
-        &router,
-        Method::GET,
+    for removed_path in [
         "/v1/agent-runtime/v5/status",
-        Some(&owner_token),
-        None,
-    )
-    .await;
-    assert_status(&status, StatusCode::OK);
-    assert_eq!(status.json()["enabled"], true);
-    let durable_task = send(
-        &router,
-        Method::POST,
         "/v1/agent-runtime/v5/tasks",
-        Some(&owner_token),
-        Some(&json!({
-            "protocolVersion":5,
-            "protocolDigest":protocol::v5::protocol_digest(),
-            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
-            "clientTaskId":Uuid::new_v4(),
-            "executionProfile":"everyday",
-            "request":"Open the browser for the compatibility test.",
-            "taskId":Uuid::new_v4(),
-            "workspaceSelectionId":null,
-            "activityAttemptId":null,
-            "activityIntent":"work"
-        })),
-    )
-    .await;
-    assert_status(&durable_task, StatusCode::CREATED);
-    let durable_task_id = durable_task.json()["id"]
-        .as_str()
-        .expect("durable task id")
-        .to_owned();
-    let durable_run_version = durable_task.json()["projection"]["runVersion"]
-        .as_i64()
-        .expect("durable task run version");
-    assert_status(
-        &send(
-            &router,
-            Method::GET,
-            "/v1/agent-runtime/v5/tasks",
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::GET,
-            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}"),
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::GET,
-            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=-1"),
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::BAD_REQUEST,
-    );
-    let (event_status, event_headers) = send_without_collecting(
-        &router,
-        &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/events?after=0"),
-        &owner_token,
-    )
-    .await;
-    assert_eq!(event_status, StatusCode::OK);
-    assert!(
-        event_headers["content-type"]
-            .to_str()
-            .unwrap()
-            .starts_with("text/event-stream")
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/tasks/{durable_task_id}/steering"),
-            Some(&owner_token),
-            Some(&json!({
-                "clientTurnId":Uuid::new_v4(),
-                "instruction":"Keep the action read-only."
-            })),
-        )
-        .await,
-        StatusCode::ACCEPTED,
-    );
-    let worker = send(
-        &router,
-        Method::POST,
         "/v1/desktop-worker/connect",
-        Some(&owner_token),
-        Some(&json!({
-            "protocolVersion":5,
-            "protocolDigest":protocol::v5::protocol_digest(),
-            "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
-            "maxResultBytes":48_000_000,
-            "cua":null,
-            "tools":[{"operations":["launch"],"toolId":"application.launch"}]
-        })),
-    )
-    .await;
-    assert_status(&worker, StatusCode::CREATED);
-    let worker_id = worker.json()["id"]
-        .as_str()
-        .expect("worker session id")
-        .to_owned();
-    let (worker_event_status, _) = send_without_collecting(
-        &router,
-        &format!("/v1/desktop-worker/events?workerSessionId={worker_id}"),
-        &owner_token,
-    )
-    .await;
-    assert_eq!(worker_event_status, StatusCode::OK);
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/desktop-worker/{worker_id}/executing"),
-            Some(&owner_token),
-            Some(&json!({})),
-        )
-        .await,
-        StatusCode::BAD_REQUEST,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/desktop-worker/{worker_id}/result"),
-            Some(&owner_token),
-            Some(&json!({})),
-        )
-        .await,
-        StatusCode::BAD_REQUEST,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/desktop-worker/{worker_id}/result"),
-            Some(&owner_token),
-            Some(&json!({
-                "invocationId":Uuid::new_v4(),
-                "status":"confirmed",
-                "summary":"Captured a detailed desktop observation.",
-                "data":null,
-                "visual":{
-                    "dataBase64":"a".repeat(1_100_000),
-                    "detail":"original",
-                    "mimeType":"image/png",
-                    "observationId":Uuid::new_v4()
-                }
-            })),
-        )
-        .await,
-        StatusCode::OK,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/desktop-worker/{worker_id}/heartbeat"),
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/desktop-worker/{worker_id}/disconnect"),
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::POST,
-            &format!("/v1/agent-runtime/v5/tasks/{durable_task_id}/cancel"),
-            Some(&owner_token),
-            Some(&json!({
-                "protocolVersion":5,
-                "protocolDigest":protocol::v5::protocol_digest(),
-                "toolCatalogDigest":protocol::v5::tool_catalog_digest(),
-                "clientCommandId":Uuid::new_v4(),
-                "expectedRunVersion":durable_run_version,
-                "source":"stop_button"
-            })),
-        )
-        .await,
-        StatusCode::OK,
-    );
-    query("UPDATE agent_runs SET protocol_version=3 WHERE id=$1")
-        .bind(Uuid::parse_str(&durable_task_id).expect("durable task uuid"))
-        .execute(&state.pool)
-        .await
-        .expect("mark terminal task as retained legacy history");
+    ] {
+        assert_status(
+            &send(&router, Method::GET, removed_path, Some(&owner_token), None).await,
+            StatusCode::NOT_FOUND,
+        );
+    }
     assert_status(
         &send(
             &router,
             Method::GET,
-            &format!("/v1/agent-runtime/v4/tasks/{durable_task_id}"),
-            Some(&owner_token),
-            None,
-        )
-        .await,
-        StatusCode::NOT_FOUND,
-    );
-    assert_status(
-        &send(
-            &router,
-            Method::GET,
-            &format!("/v1/tasks/{durable_task_id}"),
+            "/v1/legacy-agent-history",
             Some(&owner_token),
             None,
         )
         .await,
         StatusCode::OK,
     );
-
     let refreshed = send(
         &router,
         Method::POST,

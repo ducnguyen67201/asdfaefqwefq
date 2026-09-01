@@ -38,7 +38,6 @@ const ACTIVE_TASK_UPDATE: TaskUpdate = {
       timestamp: TIMESTAMP,
     },
     messages: [],
-    outcomes: null,
     pendingInteraction: null,
     phase: 'acting',
     progress: null,

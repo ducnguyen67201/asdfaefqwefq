@@ -1,11 +1,10 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import { z } from 'zod';
 
 import {
   assertStrictFunctionSchema,
-  hostedToolContractById,
-  modelToolSpecFor,
   objectSchema,
   type StrictJsonObjectSchema,
 } from '../../shared/agent-tool-contracts';
@@ -52,6 +51,7 @@ export interface ToolResolutionContext extends Partial<TrustedToolExecutionConte
 export interface RuntimeToolDefinition<TInput = unknown> {
   available?: (context?: ToolResolutionContext) => boolean;
   description: string;
+  driverCatalogDigest?: string | null;
   id: RuntimeToolId;
   modelName: string;
   normalize(
@@ -62,6 +62,36 @@ export interface RuntimeToolDefinition<TInput = unknown> {
   operations: readonly string[];
   parameters: StrictJsonObjectSchema;
   parse(argumentsJson: string): TInput;
+}
+
+export interface FrozenRuntimeToolCatalog {
+  digest: string;
+  tools: Array<{
+    toolId: RuntimeToolId;
+    modelName: string;
+    description: string;
+    inputSchema: StrictJsonObjectSchema;
+    operations: string[];
+    driverCatalogDigest: string | null;
+  }>;
+}
+
+export interface RuntimeToolRegistrationRejection {
+  code:
+    | 'duplicate_model_name'
+    | 'duplicate_tool_id'
+    | 'invalid_model_name'
+    | 'invalid_schema'
+    | 'invalid_tool_id'
+    | 'missing_operation';
+  message: string;
+  modelName: string;
+  toolId: string;
+}
+
+export interface RuntimeToolRegistrationAdmission {
+  accepted: RuntimeToolDefinition[];
+  rejected: RuntimeToolRegistrationRejection[];
 }
 
 export interface ObserveDesktopToolInput {
@@ -466,17 +496,8 @@ function controlParametersSchema(): StrictJsonObjectSchema {
 function defineTool<T>(
   definition: RuntimeToolDefinition<T>,
 ): RuntimeToolDefinition {
-  const contract = hostedToolContractById(definition.id);
-  if (!contract) {
-    throw new Error(`Runtime tool ${definition.id} is missing from the hosted catalog.`);
-  }
-  return {
-    ...definition,
-    description: contract.description,
-    modelName: contract.modelName,
-    operations: contract.operations,
-    parameters: contract.parameters,
-  } as RuntimeToolDefinition;
+  assertStrictFunctionSchema(definition.parameters);
+  return definition as RuntimeToolDefinition;
 }
 
 export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
@@ -1021,28 +1042,92 @@ export class RuntimeToolRegistry {
   constructor(
     definitions: readonly RuntimeToolDefinition[] = defaultRuntimeToolDefinitions(),
   ) {
-    for (const definition of definitions) {
-      const id = RuntimeToolIdSchema.parse(definition.id);
-      const contract = hostedToolContractById(id);
-      if (!contract) {
-        throw new Error(`Runtime tool ${id} is missing from the hosted catalog.`);
-      }
-      if (definition.modelName !== contract.modelName) {
-        throw new Error(
-          `Runtime tool ${id} must use canonical model name ${contract.modelName}.`,
-        );
-      }
-      if (this.toolsById.has(id)) {
-        throw new Error('Runtime tool ' + id + ' is already registered.');
-      }
-      if (this.toolsByModelName.has(definition.modelName)) {
-        throw new Error(
-          'Model tool ' + definition.modelName + ' is already registered.',
-        );
-      }
-      this.toolsById.set(id, definition);
+    this.register(definitions);
+  }
+
+  register(definitions: readonly RuntimeToolDefinition[]): void {
+    const admission = this.inspectRegistration(definitions);
+    const rejection = admission.rejected[0];
+    if (rejection) throw new Error(rejection.message);
+    for (const definition of admission.accepted) {
+      this.toolsById.set(definition.id, definition);
       this.toolsByModelName.set(definition.modelName, definition);
     }
+  }
+
+  inspectRegistration(
+    definitions: readonly RuntimeToolDefinition[],
+  ): RuntimeToolRegistrationAdmission {
+    const accepted: RuntimeToolDefinition[] = [];
+    const rejected: RuntimeToolRegistrationRejection[] = [];
+    const toolIds = new Set<RuntimeToolId>(this.toolsById.keys());
+    const modelNames = new Set<string>(this.toolsByModelName.keys());
+    for (const definition of definitions) {
+      const toolId = String(definition.id);
+      const modelName = String(definition.modelName);
+      const idResult = RuntimeToolIdSchema.safeParse(definition.id);
+      if (!idResult.success) {
+        rejected.push({
+          code: 'invalid_tool_id',
+          message: `Runtime tool ${toolId} has an invalid tool id.`,
+          modelName,
+          toolId,
+        });
+        continue;
+      }
+      const id = idResult.data;
+      if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(definition.modelName)) {
+        rejected.push({
+          code: 'invalid_model_name',
+          message: `Runtime tool ${id} has an invalid model name.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      try {
+        assertStrictFunctionSchema(definition.parameters);
+      } catch (error) {
+        rejected.push({
+          code: 'invalid_schema',
+          message: `Runtime tool ${id} has an invalid model schema: ${error instanceof Error ? error.message : 'unknown schema error'}`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (definition.operations.length === 0) {
+        rejected.push({
+          code: 'missing_operation',
+          message: `Runtime tool ${id} must declare at least one operation.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (toolIds.has(id)) {
+        rejected.push({
+          code: 'duplicate_tool_id',
+          message: `Runtime tool ${id} is already registered.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      if (modelNames.has(definition.modelName)) {
+        rejected.push({
+          code: 'duplicate_model_name',
+          message: `Model tool ${definition.modelName} is already registered.`,
+          modelName,
+          toolId: id,
+        });
+        continue;
+      }
+      toolIds.add(id);
+      modelNames.add(definition.modelName);
+      accepted.push(definition);
+    }
+    return { accepted, rejected };
   }
 
   listRegistered(): RuntimeToolDefinition[] {
@@ -1058,10 +1143,31 @@ export class RuntimeToolRegistry {
   modelVisibleSpecs(context?: ToolResolutionContext): ModelToolSpec[] {
     return this.list(context).map((definition) => {
       assertStrictFunctionSchema(definition.parameters);
-      const contract = hostedToolContractById(definition.id);
-      if (!contract) throw new Error('Hosted tool catalog invariant failed.');
-      return modelToolSpecFor(contract);
+      return {
+        type: 'function',
+        name: definition.modelName,
+        description: definition.description,
+        strict: true,
+        parameters: definition.parameters,
+      };
     });
+  }
+
+  freeze(context?: ToolResolutionContext): FrozenRuntimeToolCatalog {
+    const tools = this.list(context)
+      .map((definition) => ({
+        toolId: definition.id,
+        modelName: definition.modelName,
+        description: definition.description,
+        inputSchema: definition.parameters,
+        operations: [...definition.operations],
+        driverCatalogDigest: definition.driverCatalogDigest ?? null,
+      }))
+      .sort((left, right) => left.toolId.localeCompare(right.toolId));
+    return {
+      digest: createHash('sha256').update(stableJson(tools)).digest('hex'),
+      tools,
+    };
   }
 
   endTask(taskId: string): void {
@@ -1108,4 +1214,11 @@ export class RuntimeToolRegistry {
   }
 }
 
-export const defaultRuntimeToolRegistry = new RuntimeToolRegistry();
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}

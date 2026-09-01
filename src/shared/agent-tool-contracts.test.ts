@@ -1,39 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  HOSTED_TOOL_CONTRACTS,
   assertStrictFunctionSchema,
-  hostedToolContractByModelName,
+  objectSchema,
 } from './agent-tool-contracts';
 
-describe('canonical hosted tool catalog', () => {
-  it('contains unique, recursively strict tools', () => {
-    expect(new Set(HOSTED_TOOL_CONTRACTS.map((tool) => tool.toolId)).size).toBe(
-      HOSTED_TOOL_CONTRACTS.length,
-    );
-    expect(
-      new Set(HOSTED_TOOL_CONTRACTS.map((tool) => tool.modelName)).size,
-    ).toBe(HOSTED_TOOL_CONTRACTS.length);
-    for (const tool of HOSTED_TOOL_CONTRACTS) {
-      expect(() => assertStrictFunctionSchema(tool.parameters)).not.toThrow();
-    }
-  });
-
-  it('defines direct YouTube navigation without a CUA prerequisite', () => {
-    const openUrl = hostedToolContractByModelName('open_url');
-    expect(openUrl).toMatchObject({
-      toolId: 'browser.navigate',
-      operations: ['open_url'],
-      prerequisites: [],
-      parameters: {
-        additionalProperties: false,
-        required: ['url', 'reason'],
+describe('dynamic agent tool schema helpers', () => {
+  it('accepts a recursively strict function schema', () => {
+    const schema = objectSchema(
+      {
+        input: objectSchema(
+          { value: { type: 'string', maxLength: 100 } },
+          ['value'],
+        ),
       },
-    });
-    expect(openUrl?.parameters.properties).toEqual({
-      url: { type: 'string', maxLength: 8_000 },
-      reason: { type: 'string', maxLength: 500 },
-    });
+      ['input'],
+    );
+
+    expect(() => assertStrictFunctionSchema(schema)).not.toThrow();
   });
 
   it('rejects a nested permissive strict schema', () => {
@@ -52,5 +36,23 @@ describe('canonical hosted tool catalog', () => {
         },
       }),
     ).toThrow(/additionalProperties/u);
+  });
+
+  it('rejects a typeless leaf before the provider sees the tool catalog', () => {
+    expect(() =>
+      assertStrictFunctionSchema(
+        objectSchema(
+          {
+            value: {
+              anyOf: [
+                { description: 'A value whose JSON type is unspecified.' },
+                { type: 'null' },
+              ],
+            },
+          },
+          ['value'],
+        ),
+      ),
+    ).toThrow(/explicit type/u);
   });
 });

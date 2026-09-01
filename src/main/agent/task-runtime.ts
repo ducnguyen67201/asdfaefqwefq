@@ -1,59 +1,36 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
+import type { LocalTurnEventKind } from '../../../services/agent-runtime/src/protocol';
 import {
   AgentTaskContractV10Schema,
+  CancelTaskRequestSchema,
   RequestTaskInputSchema,
   RespondToInteractionRequestSchema,
   StartTaskRequestSchema,
+  SteerTaskRequestSchema,
   SubmitTaskRequestSchema,
   TaskSnapshotSchema,
   TaskUpdateSchema,
-  type HostedTaskAuthorityContractV10,
   type PendingInteraction,
   type TaskEvent,
   type TaskMessage,
   type TaskSnapshot,
-  type WorkspaceIdentity,
 } from '../../shared/contracts';
 
 const MAX_TASK_MESSAGES = 200;
 
-export interface HostedTaskProjectionOptions {
-  authority: HostedTaskAuthorityContractV10;
+export interface LocalTaskSubmissionOptions {
+  authority: unknown;
   taskId: string;
-  workspace: WorkspaceIdentity | null;
 }
 
-interface TaskRuntimeOptions {
-  now?: () => Date;
-}
+interface TaskRuntimeOptions { now?: () => Date }
+interface LocalEvent { nextActions?: string[]; status?: TaskEvent['status']; summary: string; tool?: TaskEvent['tool'] }
 
-interface LocalEvent {
-  nextActions?: string[];
-  status?: TaskEvent['status'];
-  summary: string;
-}
-
-function projectAuthority(
-  authority: HostedTaskAuthorityContractV10,
-  workspace: WorkspaceIdentity | null,
-) {
-  const projected: Record<string, unknown> = { ...authority };
-  delete projected.workspaceSelectionId;
-  return AgentTaskContractV10Schema.parse({ ...projected, workspace });
-}
-
-/**
- * Desktop projection of a Rust-owned task.
- *
- * This class owns only renderer-facing state and short-lived clarification UI.
- * It cannot compile goals, plan, sample a model, evaluate
- * policy, verify completion, or transition the canonical backend run.
- */
+/** Canonical, pure renderer-facing lifecycle for locally owned SDK tasks. */
 export class TaskRuntime extends EventEmitter {
   private readonly tasks = new Map<string, TaskSnapshot>();
-
   private readonly now: () => Date;
 
   constructor(options: TaskRuntimeOptions = {}) {
@@ -61,202 +38,174 @@ export class TaskRuntime extends EventEmitter {
     this.now = options.now ?? (() => new Date());
   }
 
-  submit(input: unknown, options: HostedTaskProjectionOptions): TaskSnapshot {
+  submit(input: unknown, options: LocalTaskSubmissionOptions): TaskSnapshot {
     const request = SubmitTaskRequestSchema.parse(input);
-    if (request.text !== options.authority.originalRequest) {
-      throw new Error('The Rust authority contract does not match the task request.');
-    }
-    if (
-      options.authority.workspaceSelectionId !==
-      (options.workspace?.selectionId ?? null)
-    ) {
-      throw new Error('The Rust authority contract does not match the trusted workspace.');
-    }
-    const goal = projectAuthority(options.authority, options.workspace);
+    const goal = AgentTaskContractV10Schema.parse(options.authority);
+    if (request.text !== goal.originalRequest) throw new Error('The local authority contract does not match the task request.');
     const timestamp = this.timestamp();
     const snapshot = TaskSnapshotSchema.parse({
       taskId: options.taskId,
       request: request.text,
       phase: 'ready',
       goal,
-      messages: [
-        {
-          messageId: randomUUID(),
-          taskId: options.taskId,
-          role: 'user',
-          kind: 'request',
-          text: request.text,
-          timestamp,
-        },
-      ],
+      messages: [{ messageId: randomUUID(), taskId: options.taskId, role: 'user', kind: 'request', text: request.text, timestamp }],
       pendingInteraction: null,
-      progress: {
-        kind: 'tool_calls',
-        completed: 0,
-        limit: goal.limits.maxToolCalls,
-      },
-      outcomes: null,
+      progress: { kind: 'tool_calls', completed: 0, limit: goal.limits.maxToolCalls },
       queuedSteering: [],
-      runtimeResume: null,
+      runtimeResume: { kind: 'local_agents_sdk', threadId: options.taskId, runtimeVersion: '0.17.0', checkpointRevision: null },
       createdAt: timestamp,
       updatedAt: timestamp,
       lastEvent: null,
     });
-    return this.commit(snapshot, {
-      summary: 'Task authority received from the Rust runtime.',
-      nextActions: ['Wait for the hosted run to begin.'],
-    });
+    return this.commit(snapshot, { summary: 'Local task created.', nextActions: ['Starting the local agent.'] });
   }
 
   start(input: unknown): TaskSnapshot {
     const { taskId } = StartTaskRequestSchema.parse(input);
     const snapshot = this.getTask(taskId);
-    if (snapshot.phase !== 'ready') {
-      throw new Error(`Task ${taskId} is not ready to start.`);
-    }
-    return this.commit({ ...snapshot, phase: 'planning' }, {
-      summary: 'The Rust runtime started the task.',
-      nextActions: ['Wait for hosted task events.'],
-    });
+    if (snapshot.phase !== 'ready') throw new Error(`Task ${taskId} is not ready to start.`);
+    return this.commit({ ...snapshot, phase: 'planning' }, { summary: 'The local Agents SDK started the task.' });
   }
 
-  getSnapshot(taskId: string): TaskSnapshot {
-    return TaskSnapshotSchema.parse(this.getTask(taskId));
-  }
-
-  projectHostedSnapshot(input: unknown): TaskSnapshot {
+  restore(input: unknown): TaskSnapshot {
     const snapshot = TaskSnapshotSchema.parse(input);
     this.tasks.set(snapshot.taskId, snapshot);
-    if (snapshot.lastEvent) {
-      this.emit(
-        'task-update',
-        TaskUpdateSchema.parse({ event: snapshot.lastEvent, snapshot }),
-      );
-    }
     return snapshot;
   }
 
-  synchronizeHostedAuthority(
+  getSnapshot(taskId: string): TaskSnapshot { return TaskSnapshotSchema.parse(this.getTask(taskId)); }
+
+  applyRuntimeEvent(
     taskId: string,
-    authority: HostedTaskAuthorityContractV10,
+    event: LocalTurnEventKind,
+    summary: string,
+    data: Record<string, unknown> | null,
   ): TaskSnapshot {
     const snapshot = this.getTask(taskId);
-    const workspace =
-      snapshot.goal?.schemaVersion === 10 ? snapshot.goal.workspace : null;
-    if (authority.workspaceSelectionId !== (workspace?.selectionId ?? null)) {
-      throw new Error('The revised Rust authority changed the trusted workspace.');
+    if (event === 'assistant_delta') {
+      return this.applyAssistantDelta(snapshot, summary);
     }
-    const goal = projectAuthority(authority, workspace);
-    const next = TaskSnapshotSchema.parse({
-      ...snapshot,
-      goal,
-      outcomes: null,
+    const phase = event === 'tool_requested' || event === 'tool_started'
+      ? 'acting'
+      : event === 'tool_completed'
+        ? 'verifying'
+        : snapshot.phase;
+    const tool = data && typeof data.toolId === 'string' && typeof data.operation === 'string'
+      ? { toolId: data.toolId, operation: data.operation }
+      : undefined;
+    const progress = event === 'tool_completed' && snapshot.progress?.kind === 'tool_calls'
+      ? {
+          ...snapshot.progress,
+          completed: Math.min(snapshot.progress.limit, snapshot.progress.completed + 1),
+        }
+      : snapshot.progress;
+    return this.commit({ ...snapshot, phase, progress }, {
+      summary,
+      status: event === 'tool_failed' || event === 'tool_unknown' ? 'warning' : 'success',
+      ...(tool ? { tool } : {}),
     });
-    this.tasks.set(taskId, next);
-    return next;
+  }
+
+  complete(
+    taskId: string,
+    terminal: { status: 'completed' | 'failed' | 'cancelled' | 'unknown'; finalOutput: string | null; message: string },
+  ): TaskSnapshot {
+    let snapshot = this.getTask(taskId);
+    const timestamp = this.timestamp();
+    if (terminal.finalOutput) {
+      const last = snapshot.messages.at(-1);
+      snapshot = last?.role === 'assistant' && last.kind === 'response'
+        ? {
+            ...snapshot,
+            messages: [
+              ...snapshot.messages.slice(0, -1),
+              { ...last, text: terminal.finalOutput, timestamp },
+            ],
+          }
+        : this.appendMessage(snapshot, { kind: 'response', role: 'assistant', text: terminal.finalOutput }, timestamp);
+    }
+    const phase = terminal.status === 'completed'
+      ? 'completed'
+      : terminal.status === 'cancelled'
+        ? 'cancelled'
+        : terminal.status === 'unknown'
+          ? 'blocked'
+          : 'failed';
+    return this.commit({ ...snapshot, phase, pendingInteraction: null }, {
+      summary: terminal.finalOutput ?? terminal.message,
+      status: terminal.status === 'completed' ? 'success' : 'error',
+    });
+  }
+
+  cancel(input: unknown): TaskSnapshot {
+    const request = CancelTaskRequestSchema.parse(input);
+    const snapshot = this.getTask(request.taskId);
+    if (['completed', 'failed', 'cancelled', 'blocked'].includes(snapshot.phase)) return snapshot;
+    return this.commit({ ...snapshot, phase: 'cancelled', pendingInteraction: null }, {
+      summary: 'The local task was cancelled.', status: 'warning',
+    });
+  }
+
+  steer(input: unknown): TaskSnapshot {
+    const request = SteerTaskRequestSchema.parse(input);
+    const snapshot = this.getTask(request.taskId);
+    const timestamp = this.timestamp();
+    const instruction = { id: randomUUID(), instruction: request.instruction, createdAt: timestamp, requiresGoalReview: true as const };
+    return this.commit(this.appendMessage({ ...snapshot, queuedSteering: [...snapshot.queuedSteering, instruction].slice(-50) }, {
+      kind: 'request', role: 'user', text: request.instruction,
+    }, timestamp), { summary: 'Steering was queued for the local agent.' });
   }
 
   requestInput(input: unknown): TaskSnapshot {
     const request = RequestTaskInputSchema.parse(input);
-    const snapshot = this.assertInteractionAvailable(request.taskId);
+    const snapshot = this.getTask(request.taskId);
+    if (snapshot.pendingInteraction) throw new Error('Resolve the pending interaction before creating another.');
     const timestamp = this.timestamp();
     const interaction: PendingInteraction = {
-      id: randomUUID(),
-      taskId: snapshot.taskId,
-      kind: 'clarification',
-      prompt: request.prompt,
-      createdAt: timestamp,
-      ...(request.choices ? { choices: request.choices } : {}),
+      id: randomUUID(), taskId: snapshot.taskId, kind: 'clarification', prompt: request.prompt,
+      createdAt: timestamp, ...(request.choices ? { choices: request.choices } : {}),
     };
-    return this.commit(
-      this.appendMessage(
-        { ...snapshot, pendingInteraction: interaction, phase: 'awaiting_input' },
-        { kind: 'clarification', role: 'assistant', text: request.prompt },
-        timestamp,
-      ),
-      {
-        status: 'warning',
-        summary: request.prompt,
-        nextActions: ['Answer the clarification to continue the Rust task.'],
-      },
-    );
+    return this.commit(this.appendMessage({ ...snapshot, pendingInteraction: interaction, phase: 'awaiting_input' }, {
+      kind: 'clarification', role: 'assistant', text: request.prompt,
+    }, timestamp), { summary: request.prompt, status: 'warning' });
   }
 
   respondToInteraction(input: unknown): TaskSnapshot {
     const request = RespondToInteractionRequestSchema.parse(input);
     const snapshot = this.getTask(request.taskId);
-    this.matchPending(snapshot, request.interactionId);
+    if (!snapshot.pendingInteraction || snapshot.pendingInteraction.id !== request.interactionId) {
+      throw new Error('The interaction ID does not match the pending request.');
+    }
     const timestamp = this.timestamp();
+    return this.commit(this.appendMessage({ ...snapshot, pendingInteraction: null, phase: 'planning' }, {
+      kind: 'answer', role: 'user', text: request.text,
+    }, timestamp), { summary: 'The clarification answer was sent to the local agent.' });
+  }
+
+  private applyAssistantDelta(snapshot: TaskSnapshot, delta: string): TaskSnapshot {
+    const timestamp = this.timestamp();
+    const last = snapshot.messages.at(-1);
+    const messages = last?.role === 'assistant' && last.kind === 'response'
+      ? [...snapshot.messages.slice(0, -1), { ...last, text: `${last.text}${delta}`.slice(0, 8_000), timestamp }]
+      : [...snapshot.messages, { messageId: randomUUID(), taskId: snapshot.taskId, role: 'assistant' as const, kind: 'response' as const, text: delta.slice(0, 8_000), timestamp }];
     return this.commit(
-      this.appendMessage(
-        { ...snapshot, pendingInteraction: null, phase: 'planning' },
-        { kind: 'answer', role: 'user', text: request.text },
-        timestamp,
-      ),
-      {
-        summary: 'The clarification answer was returned to the Rust runtime.',
-        nextActions: ['Wait for hosted task events.'],
-      },
+      { ...snapshot, messages: messages.slice(-MAX_TASK_MESSAGES) },
+      { summary: 'Tro is responding.' },
     );
   }
 
-  private assertInteractionAvailable(taskId: string): TaskSnapshot {
-    const snapshot = this.getTask(taskId);
-    if (snapshot.pendingInteraction) {
-      throw new Error('Resolve the pending interaction before creating another.');
-    }
-    return snapshot;
-  }
-
-  private matchPending(
-    snapshot: TaskSnapshot,
-    interactionId: string,
-  ): PendingInteraction {
-    if (!snapshot.pendingInteraction) {
-      throw new Error(`Task ${snapshot.taskId} has no pending interaction.`);
-    }
-    if (snapshot.pendingInteraction.id !== interactionId) {
-      throw new Error('The interaction ID does not match the pending request.');
-    }
-    return snapshot.pendingInteraction;
-  }
-
-  private appendMessage(
-    snapshot: TaskSnapshot,
-    details: Pick<TaskMessage, 'kind' | 'role' | 'text'>,
-    timestamp: string,
-  ): TaskSnapshot {
-    return {
-      ...snapshot,
-      messages: [
-        ...snapshot.messages,
-        {
-          messageId: randomUUID(),
-          taskId: snapshot.taskId,
-          ...details,
-          timestamp,
-        },
-      ].slice(-MAX_TASK_MESSAGES),
-    };
+  private appendMessage(snapshot: TaskSnapshot, details: Pick<TaskMessage, 'kind' | 'role' | 'text'>, timestamp: string): TaskSnapshot {
+    return { ...snapshot, messages: [...snapshot.messages, { messageId: randomUUID(), taskId: snapshot.taskId, ...details, timestamp }].slice(-MAX_TASK_MESSAGES) };
   }
 
   private commit(snapshot: TaskSnapshot, details: LocalEvent): TaskSnapshot {
     const timestamp = this.timestamp();
     const event: TaskEvent = {
-      eventId: randomUUID(),
-      taskId: snapshot.taskId,
-      phase: snapshot.phase,
-      timestamp,
-      status: details.status ?? 'success',
-      summary: details.summary,
-      nextActions: details.nextActions ?? [],
-      artifacts: [],
+      eventId: randomUUID(), taskId: snapshot.taskId, phase: snapshot.phase, timestamp,
+      status: details.status ?? 'success', summary: details.summary,
+      nextActions: details.nextActions ?? [], artifacts: [], ...(details.tool ? { tool: details.tool } : {}),
     };
-    const next = TaskSnapshotSchema.parse({
-      ...snapshot,
-      updatedAt: timestamp,
-      lastEvent: event,
-    });
+    const next = TaskSnapshotSchema.parse({ ...snapshot, updatedAt: timestamp, lastEvent: event });
     this.tasks.set(next.taskId, next);
     this.emit('task-update', TaskUpdateSchema.parse({ event, snapshot: next }));
     return next;
@@ -267,8 +216,5 @@ export class TaskRuntime extends EventEmitter {
     if (!snapshot) throw new Error(`Task ${taskId} does not exist.`);
     return snapshot;
   }
-
-  private timestamp(): string {
-    return this.now().toISOString();
-  }
+  private timestamp(): string { return this.now().toISOString(); }
 }

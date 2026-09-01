@@ -14,6 +14,10 @@ function cuaStub() {
       status: 'confirmed' as const,
       summary: 'The native command completed.',
     })),
+    executeCuaTool: vi.fn(async () => ({
+      status: 'confirmed' as const,
+      summary: 'The dynamic CUA command completed.',
+    })),
     executeSurfaceCommand: vi.fn(async () => ({
       status: 'confirmed' as const,
       summary: 'The semantic command completed.',
@@ -50,7 +54,7 @@ function controlInvocation(): ResolvedToolInvocation {
   };
 }
 
-describe('TaskExecutionCoordinator hosted dispatch', () => {
+describe('TaskExecutionCoordinator local dispatch', () => {
   it('opens and always closes the desktop-control indicator around dispatch', async () => {
     const taskId = randomUUID();
     const cua = cuaStub();
@@ -66,7 +70,7 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
       toolDispatcher: { dispatch },
     });
 
-    await expect(coordinator.dispatchHostedTool(controlInvocation(), {
+    await expect(coordinator.dispatchTool(controlInvocation(), {
       signal: new AbortController().signal,
       taskId,
     })).rejects.toThrow('Native dispatch failed.');
@@ -75,7 +79,7 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
     expect(changes).toEqual([true, false]);
   });
 
-  it('presents hosted guidance after pointing at the requested target', async () => {
+  it('presents local guidance after pointing at the requested target', async () => {
     const taskId = randomUUID();
     const cua = cuaStub();
     const presentGuidance = vi.fn(async () => undefined);
@@ -97,7 +101,7 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
       toolId: 'task.guidance',
     };
 
-    const result = await coordinator.dispatchHostedTool(invocation, {
+    const result = await coordinator.dispatchTool(invocation, {
       signal: new AbortController().signal,
       taskId,
     });
@@ -124,7 +128,7 @@ describe('TaskExecutionCoordinator hosted dispatch', () => {
     });
     const taskIds = [randomUUID(), randomUUID()];
     for (const taskId of taskIds) {
-      await coordinator.dispatchHostedTool(controlInvocation(), {
+      await coordinator.dispatchTool(controlInvocation(), {
         signal: new AbortController().signal,
         taskId,
       });

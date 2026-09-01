@@ -1,97 +1,67 @@
-import {
-  Agent,
-  OpenAIResponsesCompactionSession,
-  Runner,
-} from '@openai/agents';
+import { Agent, OpenAIResponsesCompactionSession, Runner } from '@openai/agents';
 
-import { BrokeredOpenAIClientFactory } from './brokered-openai-client.js';
-import { AGENT_INSTRUCTIONS, type RuntimeConfig } from './config.js';
-import type { RunLease } from './control-plane-client.js';
-import type { ClaimedRun } from './protocol.js';
+import { AGENT_INSTRUCTIONS, ROOT_AGENT_DEFINITION, graphVersion, modelSettings } from './config.js';
 import {
   AtomicCompactionDelegate,
-  RustSession,
-  type AgentRunContext,
-} from './rust-session.js';
+  HostBackedSession,
+  type LocalAgentRunContext,
+} from './host-backed-session.js';
+import type { LocalRuntimeToolSpec } from './protocol.js';
 import { ToolSurfaceFactory, type ToolSurface } from './tool-adapter.js';
+import type { UserOpenAIClientFactory } from './user-openai-client.js';
 
 export interface AgentGraph {
-  readonly agent: Agent<AgentRunContext, 'text'>;
+  readonly agent: Agent<LocalAgentRunContext, 'text'>;
   readonly session: OpenAIResponsesCompactionSession;
   readonly toolSurface: ToolSurface;
 }
 
+export interface AgentGraphInput {
+  readonly agentTurnId: string;
+  readonly model: string;
+  readonly graphVersion: string;
+  readonly taskId: string;
+  readonly toolCatalogDigest: string;
+  readonly tools: readonly LocalRuntimeToolSpec[];
+}
+
+/** The sole TroCode harness around public Agents SDK primitives. */
 export class AgentGraphFactory {
-  readonly runner: Runner;
+  readonly runner = new Runner({
+    modelSettings: modelSettings(),
+    traceIncludeSensitiveData: false,
+    tracingDisabled: true,
+  });
+  private readonly tools = new ToolSurfaceFactory();
 
-  private readonly clients: BrokeredOpenAIClientFactory;
+  constructor(
+    private readonly clients: UserOpenAIClientFactory,
+    private readonly compactionItemThreshold = 80,
+  ) {}
 
-  private readonly tools: ToolSurfaceFactory;
-
-  constructor(private readonly config: RuntimeConfig) {
-    this.clients = new BrokeredOpenAIClientFactory(config);
-    this.tools = new ToolSurfaceFactory(config);
-    this.runner = new Runner({
-      modelSettings: modelSettings(),
-      traceIncludeSensitiveData: false,
-      tracingDisabled: true,
-    });
-  }
-
-  async create(
-    claim: ClaimedRun,
-    lease: RunLease,
-    client: AgentRunContext['client'],
-    signal: AbortSignal,
-  ): Promise<AgentGraph> {
-    if (
-      claim.sdkVersion !== this.config.sdkVersion ||
-      claim.graphVersion !== this.config.graphVersion ||
-      claim.protocolDigest !== this.config.publicProtocolDigest
-    ) {
+  async create(input: AgentGraphInput, context: LocalAgentRunContext): Promise<AgentGraph> {
+    if (input.graphVersion !== graphVersion(input.tools, input.model)) {
       throw new Error('graph_version_mismatch');
     }
-    const brokered = this.clients.create({ runId: claim.runId, workerId: lease.workerId });
-    const model = await brokered.provider.getModel(claim.model);
-    const toolSurface = this.tools.create(claim.tools, claim.toolCatalogDigest);
-    const agent = new Agent<AgentRunContext, 'text'>({
-      name: 'Tro',
+    const clients = this.clients.create({ agentTurnId: input.agentTurnId, taskId: input.taskId });
+    const model = await clients.provider.getModel(input.model);
+    const toolSurface = this.tools.create(input.tools, input.toolCatalogDigest);
+    const agent = new Agent<LocalAgentRunContext, 'text'>({
+      name: ROOT_AGENT_DEFINITION.displayName,
       instructions: AGENT_INSTRUCTIONS,
       model,
       modelSettings: modelSettings(),
       tools: toolSurface.tools as never,
     });
-    const underlying = new RustSession(
-      client,
-      lease,
-      claim.sessionRevision,
-      signal,
-    );
-    const atomic = new AtomicCompactionDelegate(underlying);
+    const underlying = new HostBackedSession(context);
     const session = new OpenAIResponsesCompactionSession({
-      client: brokered.openai,
+      client: clients.openai,
       compactionMode: 'input',
-      model: claim.model as never,
+      model: input.model as never,
       shouldTriggerCompaction: ({ sessionItems }) =>
-        sessionItems.length >= this.config.compactionItemThreshold,
-      underlyingSession: atomic,
+        sessionItems.length >= this.compactionItemThreshold,
+      underlyingSession: new AtomicCompactionDelegate(underlying),
     });
     return { agent, session, toolSurface };
   }
-}
-
-function modelSettings(): {
-  readonly maxTokens: number;
-  readonly parallelToolCalls: false;
-  readonly retry: { readonly maxRetries: 0 };
-  readonly store: false;
-  readonly toolChoice: 'auto';
-} {
-  return {
-    maxTokens: 4_000,
-    parallelToolCalls: false,
-    retry: { maxRetries: 0 },
-    store: false,
-    toolChoice: 'auto',
-  };
 }

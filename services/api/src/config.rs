@@ -3,12 +3,10 @@ use std::{collections::BTreeSet, env};
 use anyhow::{Context, bail};
 
 const MIN_SECRET_LENGTH: usize = 32;
-const SUPPORTED_AGENT_SDK_VERSION: &str = "0.17.0";
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub admin: AdminConfig,
-    pub agent_runtime: AgentRuntimeConfig,
     pub connectors: ConnectorConfig,
     pub cost_guard: CostGuardConfig,
     pub database_pool_max: u32,
@@ -82,24 +80,6 @@ pub struct ObjectStoreConfig {
     pub secret_access_key: String,
 }
 
-#[derive(Clone, Debug)]
-pub struct AgentRuntimeConfig {
-    pub canary_users: BTreeSet<String>,
-    pub current_encryption_key_version: u32,
-    pub enabled: bool,
-    pub encryption_keys: Option<String>,
-    pub heartbeat_ttl_ms: u64,
-    pub lease_ms: u64,
-    pub max_active_runs_per_user: i64,
-    pub max_queue_depth: i64,
-    pub orchestrator_model: String,
-    pub orchestrator_sdk_version: String,
-    pub orchestrator_service_token: Option<String>,
-    pub payload_ttl_ms: u64,
-    pub protocol_version: u32,
-    pub rollout_percent: u8,
-}
-
 trait Environment {
     fn get(&self, key: &str) -> Option<String>;
 }
@@ -127,38 +107,6 @@ impl Config {
 
         let primary_model = optional(environment, "TROCODE_AGENT_MODEL")
             .unwrap_or_else(|| "gpt-5.6-luna".to_owned());
-        let backend_agent_enabled = boolean(environment, "TROCODE_BACKEND_AGENT_ENABLED", false)?;
-        let encryption_keys = optional(environment, "TROCODE_AGENT_STATE_ENCRYPTION_KEYS");
-        if backend_agent_enabled && encryption_keys.is_none() {
-            bail!(
-                "TROCODE_AGENT_STATE_ENCRYPTION_KEYS is required when the backend agent is enabled."
-            );
-        }
-        let orchestrator_service_token =
-            optional(environment, "TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN");
-        if backend_agent_enabled
-            && orchestrator_service_token
-                .as_ref()
-                .is_none_or(|token| token.len() < MIN_SECRET_LENGTH)
-        {
-            bail!(
-                "TROCODE_AGENT_ORCHESTRATOR_SERVICE_TOKEN must be at least {MIN_SECRET_LENGTH} characters when the backend agent is enabled."
-            );
-        }
-        let orchestrator_sdk_version = optional(environment, "TROCODE_AGENT_SDK_VERSION")
-            .unwrap_or_else(|| SUPPORTED_AGENT_SDK_VERSION.to_owned());
-        if orchestrator_sdk_version != SUPPORTED_AGENT_SDK_VERSION {
-            bail!(
-                "TROCODE_AGENT_SDK_VERSION must be {SUPPORTED_AGENT_SDK_VERSION} for this release."
-            );
-        }
-        let orchestrator_model = optional(environment, "TROCODE_AGENT_SDK_MODEL")
-            .unwrap_or_else(|| "gpt-5.6-sol".to_owned());
-        let protocol_version =
-            positive_u32(environment, "TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION", 5)?;
-        if protocol_version != 5 {
-            bail!("TROCODE_AGENT_RUNTIME_PROTOCOL_VERSION must be 5.");
-        }
         let knowledge_access_key_id = optional(environment, "TROCODE_KNOWLEDGE_S3_ACCESS_KEY_ID");
         let knowledge_bucket = optional(environment, "TROCODE_KNOWLEDGE_S3_BUCKET");
         let knowledge_endpoint = optional(environment, "TROCODE_KNOWLEDGE_S3_ENDPOINT");
@@ -207,9 +155,6 @@ impl Config {
             environment,
             "TROCODE_AGENT_MODEL_ALLOWLIST",
         ));
-        if !openai_models.contains(&orchestrator_model) {
-            bail!("TROCODE_AGENT_SDK_MODEL must be present in TROCODE_AGENT_MODEL_ALLOWLIST.");
-        }
 
         let cost_mode = match optional(environment, "TROCODE_COST_GUARD_MODE").as_deref() {
             None | Some("enforce") => CostGuardMode::Enforce,
@@ -274,46 +219,6 @@ impl Config {
         Ok(Self {
             admin: AdminConfig {
                 access_token: admin_access_token,
-            },
-            agent_runtime: AgentRuntimeConfig {
-                canary_users: comma_separated(environment, "TROCODE_BACKEND_AGENT_CANARY_USERS"),
-                current_encryption_key_version: positive_u32(
-                    environment,
-                    "TROCODE_AGENT_STATE_KEY_VERSION",
-                    1,
-                )?,
-                enabled: backend_agent_enabled,
-                encryption_keys,
-                heartbeat_ttl_ms: positive_u64(
-                    environment,
-                    "TROCODE_DESKTOP_WORKER_TTL_MS",
-                    35_000,
-                )?,
-                lease_ms: positive_u64(environment, "TROCODE_AGENT_LEASE_MS", 30_000)?,
-                max_active_runs_per_user: i64::from(positive_u32(
-                    environment,
-                    "TROCODE_AGENT_MAX_ACTIVE_RUNS_PER_USER",
-                    2,
-                )?),
-                max_queue_depth: i64::from(positive_u32(
-                    environment,
-                    "TROCODE_AGENT_MAX_QUEUE_DEPTH",
-                    1_000,
-                )?),
-                orchestrator_model,
-                orchestrator_sdk_version,
-                orchestrator_service_token,
-                payload_ttl_ms: positive_u64(
-                    environment,
-                    "TROCODE_AGENT_PAYLOAD_TTL_MS",
-                    7 * 24 * 60 * 60 * 1_000,
-                )?,
-                protocol_version,
-                rollout_percent: percentage(
-                    environment,
-                    "TROCODE_BACKEND_AGENT_ROLLOUT_PERCENT",
-                    0,
-                )?,
             },
             connectors: ConnectorConfig {
                 callback_url: connector_callback_url,
@@ -522,39 +427,7 @@ mod tests {
     fn loads_defaults() {
         let config = Config::from_source(&environment()).expect("valid config");
         assert_eq!(config.port, 8080);
-        assert_eq!(config.agent_runtime.protocol_version, 5);
-        assert_eq!(config.agent_runtime.orchestrator_model, "gpt-5.6-sol");
         assert!(config.openai_models.contains("gpt-5.6-luna"));
-    }
-
-    #[test]
-    fn requires_encryption_key_when_runtime_is_enabled() {
-        let mut values = environment();
-        values.insert(
-            "TROCODE_BACKEND_AGENT_ENABLED".to_owned(),
-            "true".to_owned(),
-        );
-        assert!(Config::from_source(&values).is_err());
-    }
-
-    #[test]
-    fn pins_the_agents_sdk_release_and_model_allowlist() {
-        let mut unsupported_sdk = environment();
-        unsupported_sdk.insert("TROCODE_AGENT_SDK_VERSION".to_owned(), "0.18.0".to_owned());
-        assert!(Config::from_source(&unsupported_sdk).is_err());
-
-        let mut unlisted_model = environment();
-        unlisted_model.insert(
-            "TROCODE_AGENT_SDK_MODEL".to_owned(),
-            "custom-model".to_owned(),
-        );
-        assert!(Config::from_source(&unlisted_model).is_err());
-
-        unlisted_model.insert(
-            "TROCODE_AGENT_MODEL_ALLOWLIST".to_owned(),
-            "custom-model".to_owned(),
-        );
-        assert!(Config::from_source(&unlisted_model).is_ok());
     }
 
     #[test]

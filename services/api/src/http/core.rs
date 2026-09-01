@@ -312,7 +312,39 @@ pub async fn handle(
         );
         return Ok(response);
     }
-    if method == Method::POST && path == "/v1/openai/responses" {
+    if method == Method::GET && path == "/v1/legacy-agent-history" {
+        let current = session(state, headers).await?;
+        let _membership = access(state, &current).await?;
+        let rows = sqlx::query(
+            "SELECT task_id,state,execution_profile,public_summary,created_at,updated_at \
+             FROM agent_runs WHERE user_id=$1 \
+             AND state IN('completed','blocked','failed','cancelled','expired') \
+             ORDER BY updated_at DESC LIMIT 50",
+        )
+        .bind(&current.user.id)
+        .fetch_all(&state.pool)
+        .await?;
+        let items = rows
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "taskId": row.get::<Uuid, _>("task_id"),
+                    "state": row.get::<String, _>("state"),
+                    "executionProfile": row.get::<String, _>("execution_profile"),
+                    "summary": row.get::<String, _>("public_summary"),
+                    "createdAt": format_time(row.get("created_at")),
+                    "updatedAt": format_time(row.get("updated_at")),
+                })
+            })
+            .collect::<Vec<_>>();
+        return json_response(StatusCode::OK, json!({"items":items}));
+    }
+    if method == Method::POST
+        && matches!(
+            path,
+            "/v1/openai/responses" | "/v1/openai/responses/compact"
+        )
+    {
         let current = session(state, headers).await?;
         let membership = access(state, &current).await?;
         let plan = plan_for(membership.plan.as_deref().unwrap_or("free"))?;
@@ -325,22 +357,28 @@ pub async fn handle(
         )
         .await?;
         let mut input = read_json(headers, bytes, 25_000_000)?;
-        validate_responses(state, &mut input)?;
+        if path.ends_with("/compact") {
+            validate_responses_compact(state, &input)?;
+        } else {
+            validate_responses(state, &mut input)?;
+        }
         let header_request = uuid_header(headers, "x-trocode-request-id")?;
         let task = uuid_header(headers, "x-trocode-task-id")?;
         let turn = uuid_header(headers, "x-trocode-agent-turn-id")?;
-        let upstream = state
-            .responses
-            .execute(ResponsesInput {
-                body: input,
-                agent_turn_id: turn,
-                request_id: header_request,
-                safety_identifier: &safety(&current.user.id),
-                task_id: task,
-                user_id: &current.user.id,
-                plan_id: plan.id,
-            })
-            .await?;
+        let provider_input = ResponsesInput {
+            body: input,
+            agent_turn_id: turn,
+            request_id: header_request,
+            safety_identifier: &safety(&current.user.id),
+            task_id: task,
+            user_id: &current.user.id,
+            plan_id: plan.id,
+        };
+        let upstream = if path.ends_with("/compact") {
+            state.responses.execute_compact(provider_input).await?
+        } else {
+            state.responses.execute(provider_input).await?
+        };
         let mut response = match upstream.body {
             ProviderBody::Buffered(body) => {
                 bytes_response(upstream.status, &upstream.content_type, body)?
@@ -540,7 +578,7 @@ fn validate_responses(state: &AppState, input: &mut Value) -> ApiResult<()> {
         && object
             .get("tools")
             .and_then(Value::as_array)
-            .is_some_and(|items| items.len() <= 24)
+            .is_some_and(|items| items.len() <= 128)
         && object.get("tool_choice").and_then(Value::as_str) == Some("auto")
         && object.get("parallel_tool_calls").and_then(Value::as_bool) == Some(false)
         && object.get("store").and_then(Value::as_bool) == Some(false)
@@ -554,6 +592,29 @@ fn validate_responses(state: &AppState, input: &mut Value) -> ApiResult<()> {
         Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "Responses request is invalid.",
+        ))
+    }
+}
+
+fn validate_responses_compact(state: &AppState, input: &Value) -> ApiResult<()> {
+    let valid_input = input.get("input").is_some_and(|value| match value {
+        Value::String(text) => text.len() <= 2_000_000,
+        Value::Array(items) => items.len() <= 256,
+        _ => false,
+    });
+    let valid = input
+        .get("model")
+        .and_then(Value::as_str)
+        .is_some_and(|model| state.config.openai_models.contains(model))
+        && valid_input
+        && input.get("stream").and_then(Value::as_bool) != Some(true)
+        && input.get("tools").is_none();
+    if valid {
+        Ok(())
+    } else {
+        Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "Responses compact request is invalid.",
         ))
     }
 }

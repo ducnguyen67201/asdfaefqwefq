@@ -1,0 +1,16 @@
+package(default_visibility = ["//visibility:public"])
+
+# Bazel owns the packaged source inventory even though npm/tsc performs the
+# JavaScript compilation. This keeps package/review dependencies explicit.
+filegroup(
+    name = "local_agent_runtime_sources",
+    srcs = glob([
+        "src/**/*.ts",
+        "test/**/*.ts",
+    ]) + [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.build.json",
+        "tsconfig.json",
+    ],
+)

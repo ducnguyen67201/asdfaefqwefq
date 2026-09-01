@@ -7,7 +7,7 @@ import type { EventMessage, IdentifyMessage } from 'posthog-node';
 import { describe, expect, it } from 'vitest';
 
 import {
-  type HostedTaskAuthorityContractV10,
+  type AgentTaskContractV10,
   type WorkspaceIdentity,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
@@ -86,15 +86,15 @@ function createService(
 
 function authority(
   request: string,
-  workspaceSelectionId: string | null = null,
-): HostedTaskAuthorityContractV10 {
+  workspace: WorkspaceIdentity | null = null,
+): AgentTaskContractV10 {
   return {
     schemaVersion: 10,
     id: randomUUID(),
     originalRequest: request,
     runtimeKind: 'openai_agents_sdk',
-    executionProfile: workspaceSelectionId ? 'workspace' : 'everyday',
-    workspaceSelectionId,
+    executionProfile: workspace ? 'workspace' : 'everyday',
+    workspace,
     activity: null,
     limits: {
       maxImages: 20,
@@ -118,9 +118,8 @@ function submitProjection(
       workspaceSelectionId: workspace?.selectionId ?? null,
     },
     {
-      authority: authority(request, workspace?.selectionId ?? null),
+      authority: authority(request, workspace),
       taskId: randomUUID(),
-      workspace,
     },
   );
 }

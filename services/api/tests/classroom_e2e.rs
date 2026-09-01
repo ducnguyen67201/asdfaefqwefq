@@ -12,11 +12,9 @@ use sha2::Sha256;
 use tower::ServiceExt;
 use trocode_api::{
     PgPool,
-    agent::protocol,
     app::AppState,
     config::{
-        AdminConfig, AgentRuntimeConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode,
-        KnowledgeConfig,
+        AdminConfig, Config, ConnectorConfig, CostGuardConfig, CostGuardMode, KnowledgeConfig,
     },
     postgres::PgPoolOptions,
     query, query_scalar,
@@ -281,70 +279,8 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     assert_eq!(work_session.status, StatusCode::CREATED);
     assert_eq!(work_session.body["purpose"], "help");
 
-    let client_task_id = Uuid::new_v4();
-    let classroom_task = call(
-        &router,
-        Method::POST,
-        "/v1/agent-runtime/v4/tasks",
-        Some(&fixture.student_token),
-        Some(json!({
-            "protocolVersion":4,
-            "protocolDigest":protocol::protocol_digest(),
-            "toolCatalogDigest":protocol::tool_catalog_digest(),
-            "clientTaskId":client_task_id,
-            "taskId":task_id,
-            "request":"Help me understand the next step.",
-            "executionProfile":"everyday",
-            "workspaceSelectionId":null,
-            "activityAttemptId":attempt_id,
-            "activityIntent":"help"
-        })),
-    )
-    .await;
-    assert_eq!(classroom_task.status, StatusCode::CREATED);
-    assert_eq!(
-        classroom_task.body["authorityContract"]["activity"]["attemptId"],
-        attempt_id.to_string()
-    );
-    assert_eq!(
-        classroom_task.body["authorityContract"]["activity"]["purpose"],
-        "help"
-    );
-    assert_eq!(
-        classroom_task.body["authorityContract"]["activity"]["currentDirective"]["id"],
-        directive_id.to_string()
-    );
-    assert_eq!(
-        classroom_task.body["authorityContract"]["activity"]["priorProgress"]["sessionCount"],
-        1
-    );
-
-    let replayed_task = call(
-        &router,
-        Method::POST,
-        "/v1/agent-runtime/v4/tasks",
-        Some(&fixture.student_token),
-        Some(json!({
-            "protocolVersion":4,
-            "protocolDigest":protocol::protocol_digest(),
-            "toolCatalogDigest":protocol::tool_catalog_digest(),
-            "clientTaskId":client_task_id,
-            "taskId":task_id,
-            "request":"Help me understand the next step.",
-            "executionProfile":"everyday",
-            "workspaceSelectionId":null,
-            "activityAttemptId":attempt_id,
-            "activityIntent":"help"
-        })),
-    )
-    .await;
-    assert_eq!(replayed_task.status, StatusCode::OK);
-    assert_eq!(replayed_task.body["id"], classroom_task.body["id"]);
-    assert_eq!(
-        replayed_task.body["authorityContract"]["activity"],
-        classroom_task.body["authorityContract"]["activity"]
-    );
-
+    // Local agent lifecycle is owned by the desktop; classroom HTTP keeps only
+    // the work-session/activity boundary exercised above.
     let dashboard_response = dashboard(&router, &fixture).await;
     assert_eq!(
         dashboard_response["participants"][0]["status"],
@@ -745,22 +681,6 @@ async fn reset_database(database_url: &str) {
 fn test_config(database_url: String) -> Config {
     Config {
         admin: AdminConfig { access_token: None },
-        agent_runtime: AgentRuntimeConfig {
-            canary_users: BTreeSet::new(),
-            current_encryption_key_version: 1,
-            enabled: true,
-            encryption_keys: Some("1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned()),
-            heartbeat_ttl_ms: 35_000,
-            lease_ms: 30_000,
-            max_active_runs_per_user: 10,
-            max_queue_depth: 1_000,
-            orchestrator_model: "gpt-5.6-sol".to_owned(),
-            orchestrator_sdk_version: "0.17.0".to_owned(),
-            orchestrator_service_token: Some("o".repeat(32)),
-            payload_ttl_ms: 7 * 24 * 60 * 60 * 1_000,
-            protocol_version: 4,
-            rollout_percent: 100,
-        },
         connectors: ConnectorConfig {
             callback_url: None,
             canary_users: BTreeSet::new(),

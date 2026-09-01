@@ -343,7 +343,6 @@ function LiveTaskRail({
   isStarting,
   lastEvent,
   onRetry,
-  outcomes,
   phase,
   progress,
   request,
@@ -358,38 +357,22 @@ function LiveTaskRail({
   isStarting: boolean;
   lastEvent: TaskEvent | null;
   onRetry: () => void;
-  outcomes: TaskSnapshot['outcomes'];
   phase: TaskSnapshot['phase'];
   progress: TaskSnapshot['progress'];
   request: string;
   streamingDraft: string;
 }) {
   const t = (message: string) => translate(appLanguage, message);
-  const isAgentProgress = Boolean(progress && 'kind' in progress);
-  const completedToolCalls =
-    progress && 'kind' in progress ? progress.completed : 0;
+  const completedToolCalls = progress?.completed ?? 0;
   const progressLabel = progress
-    ? 'kind' in progress
-      ? translate(
-          appLanguage,
-          progress.completed === 1 ? '{count} tool call' : '{count} tool calls',
-          { count: progress.completed },
-        )
-      : `${progress.currentStep} / ${progress.maxSteps}`
+    ? translate(
+        appLanguage,
+        progress.completed === 1 ? '{count} tool call' : '{count} tool calls',
+        { count: progress.completed },
+      )
     : t('Not started');
-  const progressPercentage =
-    progress && !('kind' in progress)
-      ? Math.min(
-          100,
-          Math.round((progress.currentStep / progress.maxSteps) * 100),
-        )
-      : 0;
-  const taskTitle = goal
-    ? goal.schemaVersion !== 2
-      ? goal.originalRequest
-      : goal.objective
-    : request;
-  const showProgress = !isAgentProgress || completedToolCalls > 0;
+  const taskTitle = goal?.originalRequest ?? request;
+  const showProgress = completedToolCalls > 0;
   const activityText =
     activity?.kind === 'text_delta'
       ? streamingDraft.slice(-500)
@@ -422,29 +405,17 @@ function LiveTaskRail({
               className="live-task-rail__progress"
             >
               <span>{progressLabel}</span>
-              {!isAgentProgress && (
-                <i aria-hidden="true">
-                  <span style={{ width: `${progressPercentage}%` }} />
-                </i>
-              )}
             </div>
           )}
         </div>
 
         <div className="live-task-rail__summary">
           <span>
-            {goal?.schemaVersion === 2
-              ? formatLabel(goal.behavior, appLanguage)
-              : goal?.schemaVersion === 5 ||
-                  goal?.schemaVersion === 6 ||
-                  goal?.schemaVersion === 7 ||
-                  goal?.schemaVersion === 8
-                ? goal.executionProfile === 'workspace'
-                  ? t('Workspace agent')
-                  : t('Everyday agent')
-                : goal
-                  ? t('Agent')
-                  : t('Understanding request')}
+            {goal
+              ? goal.executionProfile === 'workspace'
+                ? t('Workspace agent')
+                : t('Everyday agent')
+              : t('Understanding request')}
           </span>
           <span aria-hidden="true">·</span>
           <span>
@@ -459,47 +430,6 @@ function LiveTaskRail({
           >
             {activityText}
           </p>
-        )}
-
-        {outcomes && (
-          <section
-            aria-label={t('Outcome verification')}
-            aria-live="polite"
-            className="outcome-checklist"
-          >
-            <strong>
-              {phase === 'completed'
-                ? t('Completed and verified')
-                : t('Verifying outcomes')}
-            </strong>
-            <ul>
-              {outcomes.criterionResults.map((result) => {
-                const description =
-                  goal && (goal.schemaVersion === 7 || goal.schemaVersion === 8)
-                    ? goal.outcomeContract.criteria.find(
-                        (criterion) => criterion.id === result.criterionId,
-                      )?.description
-                    : undefined;
-                return (
-                  <li key={result.criterionId} data-status={result.status}>
-                    <span aria-hidden="true">
-                      {result.status === 'passed'
-                        ? '✓'
-                        : result.status === 'failed'
-                          ? '×'
-                          : result.status === 'unknown'
-                            ? '?'
-                            : '…'}
-                    </span>
-                    <span>{formatLabel(result.status, appLanguage)}</span>
-                    <span>
-                      {description ?? result.criterionId.replaceAll('-', ' ')}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
         )}
 
         {visibleActivities.length > 0 && (
@@ -528,11 +458,7 @@ function LiveTaskRail({
           <details className="live-task-details">
             <summary>{t('Task details')}</summary>
             <div className="live-task-details__content">
-              {(goal.schemaVersion === 6 ||
-                goal.schemaVersion === 7 ||
-                goal.schemaVersion === 8 ||
-                goal.schemaVersion === 9) &&
-                goal.activity && (
+              {goal.activity && (
                   <div className="activity-context-chip">
                     <span>{goal.activity.space.name}</span>
                     <strong>{goal.activity.activity.title}</strong>
@@ -542,25 +468,16 @@ function LiveTaskRail({
                 <span className="field-label">{t('Execution')}</span>
                 <p>
                   {t(
-                    goal.schemaVersion === 9
-                      ? 'Tro executes the requested goal within the selected workspace and available capabilities. It pauses only when it needs clarification, an operating-system permission, or account authorization.'
-                      : 'Tro chooses from the tools currently available and stays within the task authority it received.',
+                    'Tro executes the requested goal within the selected workspace and available capabilities. It pauses only when it needs clarification, an operating-system permission, or account authorization.',
                   )}
                 </p>
               </div>
               <div>
                 <span className="field-label">{t('Success looks like')}</span>
                 <p>
-                  {goal.schemaVersion === 7 || goal.schemaVersion === 8 || goal.schemaVersion === 9
-                    ? goal.outcomeContract.criteria
-                        .filter((criterion) => criterion.required)
-                        .map((criterion) => criterion.description)
-                        .join(' · ')
-                    : goal.schemaVersion !== 2
-                      ? t(
-                          'A useful assistant answer or an evidence-backed tool result.',
-                        )
-                      : goal.successCriteria[0]?.description}
+                  {t(
+                    'A useful assistant answer or an evidence-backed tool result.',
+                  )}
                 </p>
               </div>
             </div>
@@ -3230,7 +3147,6 @@ export function App({
                   isStarting={isSubmitting}
                   lastEvent={snapshot.lastEvent}
                   onRetry={() => void startTask(snapshot.taskId)}
-                  outcomes={snapshot.outcomes}
                   phase={snapshot.phase}
                   progress={snapshot.progress}
                   request={snapshot.request}

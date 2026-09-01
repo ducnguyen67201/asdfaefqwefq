@@ -44,8 +44,6 @@ jobs:
           --test_env=TEST_DATABASE_URL
           --test_arg=--ignored
           --test_arg=--test-threads=1
-          //services/api:agent_orchestrator_compat_test
-          //services/api:agent_runtime_compat_test
           //services/api:postgres_compat_test
           //services/api:provider_budget_compat_test
       - name: Run Rust HTTP compatibility test with Bazel
@@ -83,7 +81,6 @@ jobs:
       - uses: dopplerhq/cli-action@v4
       - run: npm ci
       - run: npm ci --prefix services/agent-runtime
-      - run: npm run agent:protocol:check
       - run: npm audit --omit=dev
       - run: npm audit --prefix services/agent-runtime --omit=dev
       - run: npm run check

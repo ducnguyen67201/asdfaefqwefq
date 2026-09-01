@@ -2,18 +2,18 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { HostedTaskAuthorityContractV10 } from '../../shared/contracts';
+import type { AgentTaskContractV10 } from '../../shared/contracts';
 
 import { TaskRuntime } from './task-runtime';
 
-function authority(request: string): HostedTaskAuthorityContractV10 {
+function authority(request: string): AgentTaskContractV10 {
   return {
     schemaVersion: 10,
     id: randomUUID(),
     originalRequest: request,
     runtimeKind: 'openai_agents_sdk',
     executionProfile: 'everyday',
-    workspaceSelectionId: null,
+    workspace: null,
     activity: null,
     limits: {
       maxImages: 20,
@@ -28,27 +28,21 @@ function authority(request: string): HostedTaskAuthorityContractV10 {
 function submit(runtime: TaskRuntime, request = 'Send the message.') {
   return runtime.submit(
     { text: request },
-    { authority: authority(request), taskId: randomUUID(), workspace: null },
+    { authority: authority(request), taskId: randomUUID() },
   );
 }
 
-describe('TaskRuntime Rust projection', () => {
-  it('requires an exact Rust authority contract', () => {
+describe('TaskRuntime local projection', () => {
+  it('requires the local authority contract to match the request', () => {
     const runtime = new TaskRuntime();
 
-    expect(() =>
-      runtime.submit(
-        { text: 'Different request.' },
-        {
-          authority: authority('Canonical request.'),
-          taskId: randomUUID(),
-          workspace: null,
-        },
-      ),
-    ).toThrow('does not match the task request');
+    expect(() => runtime.submit(
+      { text: 'Different request.' },
+      { authority: authority('Canonical request.'), taskId: randomUUID() },
+    )).toThrow('does not match the task request');
   });
 
-  it('keeps clarification as the only local pending interaction', () => {
+  it('owns clarification as a local lifecycle transition', () => {
     const runtime = new TaskRuntime();
     const task = submit(runtime);
     const waiting = runtime.requestInput({
@@ -66,30 +60,46 @@ describe('TaskRuntime Rust projection', () => {
       kind: 'answer',
       text: 'Use my work account.',
     });
+
     expect(answered).toMatchObject({ pendingInteraction: null, phase: 'planning' });
+    expect(answered.messages.at(-1)).toMatchObject({ role: 'user', kind: 'answer' });
   });
 
-  it('forwards canonical hosted snapshots to renderer subscribers', () => {
+  it('streams assistant deltas and publishes normalized updates', () => {
     const runtime = new TaskRuntime();
     const task = submit(runtime);
+    runtime.start({ taskId: task.taskId });
     const listener = vi.fn();
     runtime.on('task-update', listener);
-    const event = {
-      eventId: randomUUID(),
-      taskId: task.taskId,
-      phase: 'completed' as const,
-      timestamp: new Date().toISOString(),
-      status: 'success' as const,
-      summary: 'Rust completed the task.',
-      nextActions: [],
-      artifacts: [],
-    };
 
-    runtime.projectHostedSnapshot({ ...task, phase: 'completed', lastEvent: event });
-
-    expect(listener).toHaveBeenCalledWith({
-      event,
-      snapshot: expect.objectContaining({ phase: 'completed' }),
+    runtime.applyRuntimeEvent(task.taskId, 'assistant_delta', 'Hello', null);
+    runtime.applyRuntimeEvent(task.taskId, 'assistant_delta', ' world', null);
+    const completed = runtime.complete(task.taskId, {
+      status: 'completed',
+      finalOutput: null,
+      message: 'Done.',
     });
+
+    expect(completed.phase).toBe('completed');
+    expect(completed.messages.at(-1)).toMatchObject({
+      kind: 'response',
+      role: 'assistant',
+      text: 'Hello world',
+    });
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it('projects unknown external effects as blocked', () => {
+    const runtime = new TaskRuntime();
+    const task = submit(runtime);
+
+    const blocked = runtime.complete(task.taskId, {
+      status: 'unknown',
+      finalOutput: null,
+      message: 'The external action may have completed.',
+    });
+
+    expect(blocked.phase).toBe('blocked');
+    expect(blocked.lastEvent?.summary).toContain('may have completed');
   });
 });

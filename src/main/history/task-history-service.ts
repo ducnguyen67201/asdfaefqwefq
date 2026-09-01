@@ -10,7 +10,7 @@ const SESSION_ONLY_HISTORY: TaskHistory = TaskHistorySchema.parse({
   events: [],
   persistence: {
     mode: 'session_only',
-    summary: 'Hosted Rust task history is unavailable for this session.',
+    summary: 'Encrypted local task history is unavailable for this session.',
   },
   snapshots: [],
 });
@@ -73,7 +73,7 @@ export class TaskHistoryService {
         ...SESSION_ONLY_HISTORY,
         persistence: {
           mode: 'session_only',
-          summary: 'Hosted Rust task history is unavailable; this session is not durable.',
+          summary: 'Encrypted local task history is unavailable; this session is not durable.',
         },
       });
     }

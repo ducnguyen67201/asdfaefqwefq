@@ -86,6 +86,146 @@ describe('CUA shutdown', () => {
   });
 });
 
+describe('CUA catalog startup admission', () => {
+  function serviceWithInventory(inventory: unknown) {
+    const driver = {
+      listToolsJson: vi.fn(async () => JSON.stringify(inventory)),
+      metadata: vi.fn(async () => ({
+        capabilityVersion: '3',
+        contractVersion: '0.8.0',
+        driverVersion: '0.21.0',
+        toolsListSchemaVersion: '2',
+      })),
+      shutdown: vi.fn(async () => undefined),
+      uniffiDestroy: vi.fn(),
+    };
+    const service = new CuaService({ platform: 'linux' });
+    Reflect.set(service, 'cuaModule', {
+      CuaDriver: { create: vi.fn(() => driver) },
+    });
+    return { driver, service };
+  }
+
+  it('reports and skips an incompatible optional tool during startup discovery', async () => {
+    const { service } = serviceWithInventory({
+      capability_version: '3',
+      schema_version: '2',
+      requiredTools: [],
+      tools: [
+        {
+          name: 'valid_action',
+          description: 'Valid action.',
+          capabilities: [],
+          audience: 'model',
+          schemaDialect: 'openai.function.strict',
+          schemaVersion: '1',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {},
+            required: [],
+          },
+          modelInputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'future_action',
+          description: 'Future dialect action.',
+          capabilities: [],
+          audience: 'model',
+          schemaDialect: 'future.provider.schema',
+          schemaVersion: '1',
+          inputSchema: {},
+          modelInputSchema: {},
+        },
+      ],
+    });
+
+    await expect(service.discoverToolCatalog()).resolves.toMatchObject({
+      tools: [{ name: 'valid_action' }],
+    });
+    expect(service.cuaToolCatalogReport()).toMatchObject({
+      state: 'degraded',
+      quarantinedTools: [
+        expect.objectContaining({
+          name: 'future_action',
+          code: 'unsupported_schema_dialect',
+        }),
+      ],
+    });
+  });
+
+  it('marks discovery unavailable before a task when required tools are missing', async () => {
+    const { service } = serviceWithInventory({
+      capability_version: '3',
+      schema_version: '2',
+      requiredTools: ['required_action'],
+      tools: [],
+    });
+
+    await expect(service.discoverToolCatalog()).rejects.toThrow(
+      'Required CUA model tool required_action is missing',
+    );
+    expect(service.cuaToolCatalogReport()).toMatchObject({
+      state: 'unavailable',
+      requiredToolFailures: [
+        expect.objectContaining({ name: 'required_action' }),
+      ],
+    });
+  });
+
+  it('marks the catalog unavailable when a required admitted tool cannot register', async () => {
+    const { service } = serviceWithInventory({
+      capability_version: '3',
+      schema_version: '2',
+      requiredTools: ['required_action'],
+      tools: [{
+        name: 'required_action',
+        description: 'Required action.',
+        capabilities: [],
+        audience: 'model',
+        schemaDialect: 'openai.function.strict',
+        schemaVersion: '1',
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {},
+          required: [],
+        },
+        modelInputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {},
+          required: [],
+        },
+      }],
+    });
+    await service.discoverToolCatalog();
+
+    service.reportToolCatalogRegistrationFailures([
+      { name: 'required_action', message: 'Model name is already registered.' },
+    ]);
+    Reflect.set(service, 'driver', { isAvailable: () => true });
+
+    expect(service.cuaToolCatalog()).toBeNull();
+    expect(service.cuaToolCatalogReport()).toMatchObject({
+      state: 'unavailable',
+      requiredToolFailures: [
+        expect.objectContaining({ name: 'required_action' }),
+      ],
+    });
+    await expect(service.getStatus()).resolves.toMatchObject({
+      state: 'error',
+      available: false,
+      summary: expect.stringContaining('required_action'),
+    });
+  });
+});
+
 function recordFactory<T extends object>() {
   return { new: (value: T) => value };
 }

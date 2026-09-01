@@ -115,17 +115,12 @@ export function HistoryPage({
         <ol className="history-trail" aria-label={t('Finished task history')}>
           {entries.map((entry, index) => {
             const progress = entry.progress
-              ? 'kind' in entry.progress
-                ? t(
-                    entry.progress.completed === 1
-                      ? '{count} tool call'
-                      : '{count} tool calls',
-                    { count: entry.progress.completed },
-                  )
-                : t('{current} of {maximum} steps', {
-                    current: entry.progress.currentStep,
-                    maximum: entry.progress.maxSteps,
-                  })
+              ? t(
+                  entry.progress.completed === 1
+                    ? '{count} tool call'
+                    : '{count} tool calls',
+                  { count: entry.progress.completed },
+                )
               : t('No tool calls');
             return (
               <li
@@ -162,15 +157,10 @@ export function HistoryPage({
 
                   <div className="history-entry__facts">
                     <span>
-                      <small>
-                        {entry.behavior ? t('Legacy mode') : t('Tools used')}
-                      </small>
-                      {entry.behavior
-                        ? formatLabel(entry.behavior, appLanguage)
-                        :
-                        (entry.toolsUsed.length > 0
-                          ? entry.toolsUsed.join(', ')
-                          : t('Assistant only'))}
+                      <small>{t('Tools used')}</small>
+                      {entry.toolsUsed.length > 0
+                        ? entry.toolsUsed.join(', ')
+                        : t('Assistant only')}
                     </span>
                     <span>
                       <small>{t('Progress')}</small>

@@ -123,7 +123,7 @@ fn route_inventory_is_unique_and_covers_every_family() {
             "usage"
         ])
     );
-    assert_eq!(value["sse"].as_array().expect("sse").len(), 4);
+    assert_eq!(value["sse"].as_array().expect("sse").len(), 1);
 }
 
 #[test]

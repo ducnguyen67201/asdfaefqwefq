@@ -1,5 +1,5 @@
 import type { TaskUpdate } from '../../shared/contracts';
-import { isLegacyTaskPhaseTerminal } from '../../shared/legacy-agent-runtime-v2';
+import { isTaskPhaseTerminal } from '../../shared/task-lifecycle';
 
 import type { KnowledgeSpaceClient } from './knowledge-space-client';
 
@@ -30,7 +30,7 @@ export class ActivityProgressReporter {
     if (!session) return;
     const terminal =
       update.snapshot.lifecycle?.terminal ??
-      isLegacyTaskPhaseTerminal(update.snapshot.phase);
+      isTaskPhaseTerminal(update.snapshot.phase);
     const now = this.now();
     if (!terminal && now - session.lastSentAt < 10_000) return;
     session.lastSentAt = now;

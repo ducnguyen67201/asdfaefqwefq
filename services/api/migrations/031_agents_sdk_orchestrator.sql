@@ -95,6 +95,14 @@ ALTER TABLE agent_run_checkpoints
     )
   );
 
+-- Legacy checkpoints were versioned by run_version. Preserve that ordering when
+-- introducing the SDK checkpoint revision; otherwise every existing row keeps
+-- the column default of 1 and runs with multiple checkpoints violate the new
+-- unique index below.
+UPDATE agent_run_checkpoints
+SET checkpoint_revision = run_version
+WHERE runtime_kind = 'rust_responses_v2';
+
 CREATE UNIQUE INDEX IF NOT EXISTS agent_run_checkpoints_revision_idx
   ON agent_run_checkpoints(run_id, checkpoint_revision);
 

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { cp, mkdir } from 'node:fs/promises';
+import { access, cp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -28,6 +28,11 @@ import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
 
 const CUA_RUNTIME_DIRECTORY = 'cua-runtime';
+const AGENT_RUNTIME_STAGE_DIRECTORY = path.resolve(
+  __dirname,
+  '.generated',
+  'agent-runtime',
+);
 const APP_ICON_BASENAME = path.resolve(
   __dirname,
   'src/assets/trocode-app-icon',
@@ -67,6 +72,20 @@ const RUST_DESKTOP_ENGINE_BINARY = path.resolve(
   process.platform === 'win32' ? 'trocode-api.exe' : 'trocode-api',
 );
 
+function executeNpm(args: string[], cwd: string) {
+  const configuredExecutable = process.env.NPM?.trim();
+  const npmExecPath = process.env.npm_execpath?.trim();
+  if (!configuredExecutable && npmExecPath) {
+    return executeFile(process.execPath, [npmExecPath, ...args], { cwd });
+  }
+  return executeFile(configuredExecutable || 'npm', args, {
+    cwd,
+    // npm is installed as npm.cmd on Windows and therefore needs cmd.exe when
+    // no npm CLI JavaScript entry point was inherited from the parent process.
+    shell: process.platform === 'win32',
+  });
+}
+
 async function compileRustDesktopEngine(
   platform: ForgePlatform,
   arch: ForgeArch,
@@ -85,6 +104,36 @@ async function compileRustDesktopEngine(
     '--bin',
     'trocode-api',
   ], { cwd: __dirname });
+}
+
+async function stageAgentRuntime(): Promise<void> {
+  const packageRoot = path.resolve(__dirname, 'services/agent-runtime');
+  await executeNpm(['run', 'build'], packageRoot);
+  await rm(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true, force: true });
+  await mkdir(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true });
+  await Promise.all([
+    cp(path.join(packageRoot, 'dist'), path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'dist'), { recursive: true }),
+    cp(path.join(packageRoot, 'package.json'), path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'package.json')),
+  ]);
+  const { stdout } = await executeNpm([
+    'ls', '--omit=dev', '--parseable', '--all',
+  ], packageRoot);
+  const dependencyRoot = path.join(packageRoot, 'node_modules');
+  const dependencies = stdout.split(/\r?\n/u).filter((candidate) =>
+    candidate.startsWith(`${dependencyRoot}${path.sep}`),
+  );
+  for (const source of dependencies) {
+    const relative = path.relative(dependencyRoot, source);
+    const destination = path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'node_modules', relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(source, destination, { recursive: true, force: true });
+  }
+  await Promise.all([
+    access(path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'dist', 'process-entry.js')),
+    access(path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'node_modules', '@openai', 'agents', 'package.json')),
+    access(path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'node_modules', 'openai', 'package.json')),
+    access(path.join(AGENT_RUNTIME_STAGE_DIRECTORY, 'node_modules', 'zod', 'package.json')),
+  ]);
 }
 
 async function compileMacOSNativeHelpers(
@@ -154,6 +203,7 @@ const config: ForgeConfig = {
     extraResource: [
       APP_ICON_PNG,
       RUST_DESKTOP_ENGINE_BINARY,
+      AGENT_RUNTIME_STAGE_DIRECTORY,
       ...(process.platform === 'darwin'
         ? [MACOS_VOICE_SHORTCUT_BINARY]
         : []),
@@ -207,7 +257,10 @@ const config: ForgeConfig = {
       await compileMacOSNativeHelpers(platform, arch);
     },
     prePackage: async (_forgeConfig, platform, arch) => {
-      await compileRustDesktopEngine(platform, arch);
+      await Promise.all([
+        compileRustDesktopEngine(platform, arch),
+        stageAgentRuntime(),
+      ]);
     },
     packageAfterCopy: async (_forgeConfig, buildPath, _version, platform, arch) => {
       await stageCuaRuntime(buildPath, platform, arch);

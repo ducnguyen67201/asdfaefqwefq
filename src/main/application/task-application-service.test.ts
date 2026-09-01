@@ -1,147 +1,114 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-  HostedTaskAuthorityContractV10,
-  HostedTaskRecord,
-} from '../../shared/contracts';
+import type { TaskSnapshot } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
-import { HostedTaskOutcomeUnknownError } from './hosted-task-client';
 import { TaskApplicationService } from './task-application-service';
 
-function hostedRecord(
-  taskId: string,
-  overrides: Partial<HostedTaskRecord> = {},
-): HostedTaskRecord {
-  const request = overrides.request ?? 'Create a calendar event.';
-  const contract: HostedTaskAuthorityContractV10 = {
-    schemaVersion: 10,
-    id: '55555555-5555-4555-8555-555555555555',
-    originalRequest: request,
-    runtimeKind: 'openai_agents_sdk',
-    executionProfile: 'everyday',
-    workspaceSelectionId: null,
-    activity: null,
-    limits: {
-      maxImages: 20,
-      maxMicroUsd: 5_000_000,
-      maxMinutes: 30,
-      maxModelSamples: 40,
-      maxToolCalls: 30,
-    },
+function localDependencies() {
+  const localRuntime = {
+    kind: 'local' as const,
+    cancel: vi.fn(),
+    health: vi.fn(() => null),
+    initialize: vi.fn(async () => undefined),
+    resume: vi.fn(async () => undefined),
+    shutdown: vi.fn(async () => undefined),
+    start: vi.fn(async () => undefined),
+    steer: vi.fn(),
   };
-  return {
-    activity: null,
-    clientTaskId: '44444444-4444-4444-8444-444444444444',
-    contractSchemaVersion: 10,
-    createdAt: '2026-08-25T00:00:00.000Z',
-    executionProfile: 'everyday',
-    id: '33333333-3333-4333-8333-333333333333',
-    contract,
-    protocolVersion: 5,
-    publicSummary: 'Waiting for the OpenAI Agents SDK worker.',
-    request,
-    runVersion: 1,
-    state: 'planning',
-    taskId,
-    updatedAt: '2026-08-25T00:00:00.000Z',
-    workspaceSelectionId: null,
-    ...overrides,
+  const state = {
+    create: vi.fn(async (ownerId: string, snapshot: TaskSnapshot) => {
+      void ownerId;
+      void snapshot;
+    }),
+    listActive: vi.fn(async (): Promise<Array<{ snapshot: TaskSnapshot }>> => []),
   };
+  return { localRuntime, state };
 }
 
 describe('TaskApplicationService', () => {
-  it('fails closed when the Rust backend is not configured', async () => {
-    const runtime = new TaskRuntime();
-    const service = new TaskApplicationService(runtime);
+  it('fails closed when the local Agents SDK runtime is not configured', async () => {
+    const service = new TaskApplicationService(new TaskRuntime());
 
     await expect(service.submitAndStart({ text: 'Open Chrome.' })).rejects.toThrow(
-      'Rust agent runtime is not configured',
+      'local Agents SDK runtime is not configured',
     );
-    expect(() => runtime.getSnapshot('11111111-1111-4111-8111-111111111111'))
-      .toThrow();
   });
 
-  it('uses the backend v10 projection as the only local execution context', async () => {
+  it('persists local authority before starting the SDK turn', async () => {
     const runtime = new TaskRuntime();
-    const submit = vi.fn(async (input: { taskId: string }) =>
-      hostedRecord(input.taskId));
+    const { localRuntime, state } = localDependencies();
+    const order: string[] = [];
+    state.create.mockImplementation(async () => { order.push('persist'); });
+    localRuntime.start.mockImplementation(async () => { order.push('start'); });
     const service = new TaskApplicationService(runtime, {
-      hostedTaskClient: {
-        submit,
-        subscribe: vi.fn(async () => undefined),
-      } as never,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
     });
 
     const snapshot = await service.submitAndStart({
+      executionProfile: 'everyday',
       text: 'Create a calendar event.',
     });
 
-    expect(submit).toHaveBeenCalledOnce();
-    expect(snapshot.goal).toMatchObject({
-      runtimeKind: 'openai_agents_sdk',
-      schemaVersion: 10,
+    expect(order).toEqual(['persist', 'start']);
+    expect(snapshot).toMatchObject({
+      phase: 'planning',
+      goal: { runtimeKind: 'openai_agents_sdk', schemaVersion: 10 },
+      runtimeResume: { kind: 'local_agents_sdk' },
     });
-    expect(snapshot.outcomes).toBeNull();
-    expect(service.start({ taskId: snapshot.taskId })).toEqual(snapshot);
+    expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: snapshot.taskId,
+      request: 'Create a calendar event.',
+    }));
   });
 
-  it('does not mark a Work Session failed when hosted submission is unknown', async () => {
-    const fail = vi.fn(async () => undefined);
-    const service = new TaskApplicationService(
-      new TaskRuntime(),
-      {
-        activityContextService: {
-          create: vi.fn(async () => ({
-            workSessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-          })),
-          inspect: vi.fn(async () => ({
-            attemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            definition: { launchTarget: 'current_surface' as const },
-          })),
-        } as never,
-        activityProgressReporter: { bind: vi.fn(), fail },
-        hostedTaskClient: {
-          submit: vi.fn(async () => {
-            throw new HostedTaskOutcomeUnknownError(new Error('offline'));
-          }),
-        } as never,
-      },
-    );
-
-    await expect(service.submitAndStart({
-      activityAttemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      text: 'Check my work.',
-    })).rejects.toBeInstanceOf(HostedTaskOutcomeUnknownError);
-    expect(fail).not.toHaveBeenCalled();
-  });
-
-  it('restores and steers only hosted Rust runs', async () => {
+  it('routes steer and cancel directly to the local runtime', async () => {
     const runtime = new TaskRuntime();
-    const taskId = '11111111-1111-4111-8111-111111111111';
-    let record = hostedRecord(taskId);
-    const get = vi.fn(async () => record);
+    const { localRuntime, state } = localDependencies();
     const service = new TaskApplicationService(runtime, {
-      hostedTaskClient: {
-        get,
-        list: vi.fn(async () => [record]),
-        steer: vi.fn(async () => undefined),
-        subscribe: vi.fn(async () => undefined),
-      } as never,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+    const task = await service.submitAndStart({
+      executionProfile: 'everyday',
+      text: 'Draft a short note.',
     });
 
-    await expect(service.restoreHostedRuns()).resolves.toBe(1);
-    const revised = await service.steer({
-      instruction: 'Also create a document.',
-      taskId,
-    });
-    record = { ...record, state: 'recovering' };
+    await service.steer({ taskId: task.taskId, instruction: 'Make it warmer.' });
+    await service.cancel({ taskId: task.taskId, source: 'stop_button' });
 
-    expect(get).toHaveBeenCalledWith(record.id);
-    expect(revised.goal).toMatchObject({
-      runtimeKind: 'openai_agents_sdk',
-      schemaVersion: 10,
+    expect(localRuntime.steer).toHaveBeenCalledWith(task.taskId, 'Make it warmer.');
+    expect(localRuntime.cancel).toHaveBeenCalledWith(task.taskId, 'stop_button');
+    expect(runtime.getSnapshot(task.taskId).phase).toBe('cancelled');
+  });
+
+  it('restores durable local v10 tasks', async () => {
+    const runtime = new TaskRuntime();
+    const { localRuntime, state } = localDependencies();
+    const seedService = new TaskApplicationService(runtime, {
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
     });
-    expect(revised.outcomes).toBeNull();
+    const snapshot = await seedService.submitAndStart({
+      executionProfile: 'everyday',
+      text: 'Continue the task.',
+    });
+    state.listActive.mockResolvedValue([{ snapshot }]);
+    const restoredRuntime = new TaskRuntime();
+    const restoredService = new TaskApplicationService(restoredRuntime, {
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+
+    await expect(restoredService.restoreLocalTasks()).resolves.toBe(1);
+    expect(localRuntime.resume).toHaveBeenCalledWith(
+      snapshot.taskId,
+      expect.objectContaining({ taskId: snapshot.taskId }),
+    );
   });
 });

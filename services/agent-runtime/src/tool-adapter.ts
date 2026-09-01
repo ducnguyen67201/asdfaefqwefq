@@ -1,18 +1,8 @@
-import {
-  tool,
-  toolNamespace,
-  toolSearchTool,
-  type FunctionTool,
-  type RunToolApprovalItem,
-} from '@openai/agents';
+import { tool, type FunctionTool, type RunToolApprovalItem } from '@openai/agents';
 
-import type { RuntimeConfig } from './config.js';
-import type {
-  RunLease,
-  ToolCheckpointControlPlane,
-} from './control-plane-client.js';
-import type { OrchestratorToolSpec, ToolCallResult } from './protocol.js';
-import type { AgentRunContext } from './rust-session.js';
+import { turnMessageIdentity, type LocalAgentRunContext } from './host-backed-session.js';
+import { childRequestId } from './host-bridge.js';
+import type { LocalRuntimeToolSpec, LocalToolExecutionResult } from './protocol.js';
 import { digest } from './serialization.js';
 
 export class ToolOutcomeUnknownError extends Error {
@@ -27,121 +17,104 @@ export interface PendingToolCall {
   readonly callId: string;
   readonly catalogDigest: string;
   readonly driverCatalogDigest: string | null;
-  readonly graphVersion: string;
   readonly idempotencyDigest: string;
+  readonly modelName: string;
   readonly operation: string;
-  readonly sdkVersion: string;
   readonly toolId: string;
 }
 
 export interface ToolSurface {
   readonly tools: readonly unknown[];
+  markCheckpointed(call: PendingToolCall): void;
   resolve(interruption: RunToolApprovalItem): PendingToolCall;
 }
 
-export class ToolExecutionCheckpoint {
-  constructor(
-    private readonly client: ToolCheckpointControlPlane,
-    private readonly lease: RunLease,
-    private readonly config: RuntimeConfig,
-  ) {}
-
-  async commit(
-    expectedCheckpointRevision: number,
-    appliedControlSequence: number,
-    serializedState: string,
-    pending: PendingToolCall,
-    signal?: AbortSignal,
-  ): Promise<number> {
-    const revision = await this.client.putCheckpoint(
-      this.lease,
-      {
-        expectedCheckpointRevision,
-        appliedControlSequence,
-        sdkVersion: this.config.sdkVersion,
-        graphVersion: this.config.graphVersion,
-        pendingCallId: pending.callId,
-        state: serializedState,
-      },
-      signal,
-    );
-    await this.client.queueToolCall(this.lease, pending, signal);
-    return revision;
-  }
+export interface ToolSurfaceAdmission {
+  readonly acceptedModelNames: string[];
+  readonly rejected: Array<{
+    readonly message: string;
+    readonly modelName: string;
+    readonly toolId: string;
+  }>;
 }
 
 export class ToolSurfaceFactory {
-  constructor(private readonly config: RuntimeConfig) {}
-
-  create(
-    specs: readonly OrchestratorToolSpec[],
+  inspect(
+    specs: readonly LocalRuntimeToolSpec[],
     catalogDigest: string,
-  ): ToolSurface {
-    const byQualifiedName = new Map<string, OrchestratorToolSpec>();
-    const byBareName = new Map<string, OrchestratorToolSpec | null>();
-    const groups = new Map<string, FunctionTool<AgentRunContext, never, unknown>[]>();
-
+  ): ToolSurfaceAdmission {
+    const acceptedModelNames: string[] = [];
+    const rejected: ToolSurfaceAdmission['rejected'] = [];
     for (const spec of specs) {
-      const qualified = key(spec.namespace, spec.modelName);
-      if (byQualifiedName.has(qualified)) throw new Error('duplicate_qualified_tool_name');
-      byQualifiedName.set(qualified, spec);
-      const prior = byBareName.get(spec.modelName);
-      byBareName.set(spec.modelName, prior === undefined ? spec : null);
+      try {
+        this.create([spec], catalogDigest);
+        acceptedModelNames.push(spec.modelName);
+      } catch (error) {
+        rejected.push({
+          message:
+            error instanceof Error
+              ? error.message.slice(0, 1_000)
+              : 'The Agents SDK rejected this tool schema.',
+          modelName: spec.modelName,
+          toolId: spec.toolId,
+        });
+      }
+    }
+    return { acceptedModelNames, rejected };
+  }
 
-      const remoteTool = tool({
+  create(specs: readonly LocalRuntimeToolSpec[], catalogDigest: string): ToolSurface {
+    const byName = new Map<string, LocalRuntimeToolSpec>();
+    const checkpointed = new Map<string, PendingToolCall>();
+    const tools = specs.map((spec) => {
+      if (byName.has(spec.modelName)) throw new Error('duplicate_model_tool_name');
+      byName.set(spec.modelName, spec);
+      const sdkTool = tool({
         name: spec.modelName,
         description: spec.description,
         parameters: spec.inputSchema as never,
         strict: true,
-        deferLoading: spec.deferred,
         needsApproval: true,
-        execute: async (input: Record<string, unknown>, context, details) => {
+        execute: async (_input: Record<string, unknown>, context, details) => {
           const callId = details?.toolCall?.callId;
           if (!callId || !context) throw new Error('missing_sdk_tool_context');
-          const runtime = context.context;
-          for (;;) {
-            const result = await runtime.client.getToolResult(
-              runtime.lease,
-              callId,
-              details.signal ?? runtime.signal,
-            );
-            if (result.status === 'pending') {
-              await abortableDelay(this.config.resultPollMs, details.signal ?? runtime.signal);
-              continue;
-            }
-            if (result.status === 'unknown') throw new ToolOutcomeUnknownError(callId);
-            return modelToolResult(result);
-          }
+          const pending = checkpointed.get(callId);
+          if (!pending) throw new Error('tool_effect_without_durable_checkpoint');
+          checkpointed.delete(callId);
+          const runtime = context.context as LocalAgentRunContext;
+          const requestId = childRequestId();
+          const response = await runtime.bridge.request({
+            ...turnMessageIdentity(runtime.bridge, runtime.identity),
+            requestId,
+            kind: 'tool.execute',
+            callId: pending.callId,
+            toolId: pending.toolId,
+            modelName: pending.modelName,
+            operation: pending.operation,
+            arguments: pending.arguments,
+            catalogDigest: pending.catalogDigest,
+            driverCatalogDigest: pending.driverCatalogDigest,
+            idempotencyDigest: pending.idempotencyDigest,
+          }, { signal: runtime.signal, timeoutMs: 180_000 });
+          if (response.kind !== 'tool.execute.result') throw new Error('unexpected_tool_execute_response');
+          return modelToolResult(response.result, pending.callId);
         },
-      }) as FunctionTool<AgentRunContext, never, unknown>;
-      const group = groups.get(spec.namespace) ?? [];
-      group.push(remoteTool);
-      groups.set(spec.namespace, group);
-    }
-
-    const tools: unknown[] = [];
-    for (const [namespace, group] of [...groups].sort(([left], [right]) =>
-      left.localeCompare(right),
-    )) {
-      group.sort((left, right) => left.name.localeCompare(right.name));
-      tools.push(
-        ...toolNamespace({
-          name: namespace,
-          description: `Tools provided by the ${namespace} execution surface.`,
-          tools: group,
-        }),
-      );
-    }
-    if (specs.some((spec) => spec.deferred)) tools.push(toolSearchTool());
+      }) as FunctionTool<LocalAgentRunContext, never, unknown>;
+      if (digest(sdkTool.parameters) !== digest(spec.inputSchema)) {
+        throw new Error(
+          `The Agents SDK rewrote model schema for ${spec.modelName}; publish an exact provider-compatible schema instead.`,
+        );
+      }
+      return sdkTool;
+    });
 
     return {
       tools,
+      markCheckpointed: (call) => checkpointed.set(call.callId, call),
       resolve: (interruption) => {
         const raw = interruption.rawItem;
         if (raw.type !== 'function_call') throw new Error('unsupported_sdk_interruption');
-        const spec = raw.namespace
-          ? byQualifiedName.get(key(raw.namespace, raw.name))
-          : byBareName.get(raw.name);
+        const spec = byName.get(raw.name);
         if (!spec) throw new Error('unknown_sdk_tool_interruption');
         const parsed: unknown = JSON.parse(raw.arguments);
         if (!isRecord(parsed)) throw new Error('invalid_sdk_tool_arguments');
@@ -151,9 +124,8 @@ export class ToolSurfaceFactory {
           callId: raw.callId,
           catalogDigest,
           driverCatalogDigest: spec.driverCatalogDigest,
-          graphVersion: this.config.graphVersion,
+          modelName: spec.modelName,
           operation,
-          sdkVersion: this.config.sdkVersion,
           toolId: spec.toolId,
         };
         return { ...value, idempotencyDigest: digest(value) };
@@ -162,84 +134,25 @@ export class ToolSurfaceFactory {
   }
 }
 
-export function modelToolResult(result: ToolCallResult): unknown {
-  const text = JSON.stringify({
-    status: result.status,
-    summary: result.summary,
-    data: result.data,
-  });
-  if (!result.visual) return text;
-  return [
-    { type: 'text', text },
-    {
-      type: 'image',
-      image: {
-        data: result.visual.dataBase64,
-        mediaType: result.visual.mimeType,
-      },
-      detail: 'high',
-    },
-  ];
+function modelToolResult(result: LocalToolExecutionResult, callId: string): unknown {
+  if (result.status === 'unknown') throw new ToolOutcomeUnknownError(callId);
+  if (result.status === 'cancelled') {
+    const error = new Error(result.summary);
+    error.name = 'AbortError';
+    throw error;
+  }
+  const text = JSON.stringify({ status: result.status, summary: result.summary, data: result.data });
+  if (!result.imageDataUrl) return text;
+  return [{ type: 'text', text }, { type: 'image', image: result.imageDataUrl, detail: 'high' }];
 }
 
-function resolveOperation(
-  spec: OrchestratorToolSpec,
-  input: Record<string, unknown>,
-): string {
-  if (spec.operation !== null) return spec.operation;
-  const selector = spec.operationSelector;
-  if (!selector) throw new Error('missing_operation_selector');
-  const kind = selector.kind;
-  if (kind === 'constant' && typeof selector.value === 'string') return selector.value;
-  if (kind !== 'json_pointer' || typeof selector.pointer !== 'string') {
-    throw new Error('invalid_operation_selector');
-  }
-  const value = jsonPointer(input, selector.pointer);
-  if ((value === null || value === undefined) && typeof selector.nullValue === 'string') {
-    return selector.nullValue;
-  }
-  if (value !== undefined && typeof selector.presentValue === 'string') {
-    return selector.presentValue;
-  }
-  if (typeof value === 'string') return value;
+function resolveOperation(spec: LocalRuntimeToolSpec, input: Record<string, unknown>): string {
+  if (spec.operations.length === 1) return spec.operations[0] as string;
+  const candidate = input.kind ?? input.operation ?? input.action;
+  if (typeof candidate === 'string' && spec.operations.includes(candidate)) return candidate;
   throw new Error('unresolved_tool_operation');
-}
-
-function jsonPointer(root: unknown, pointer: string): unknown {
-  if (pointer === '') return root;
-  if (!pointer.startsWith('/')) return undefined;
-  return pointer
-    .slice(1)
-    .split('/')
-    .map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'))
-    .reduce<unknown>((value, part) => {
-      if (Array.isArray(value)) {
-        const index = Number(part);
-        return Number.isInteger(index) ? value[index] : undefined;
-      }
-      return isRecord(value) ? value[part] : undefined;
-    }, root);
-}
-
-function key(namespace: string, name: string): string {
-  return `${namespace}:${name}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
-    const onAbort = (): void => {
-      clearTimeout(timeout);
-      reject(signal?.reason);
-    };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 }
