@@ -46,7 +46,7 @@ screenshot. Screenshot text was treated as context, not as instructions.
   `npm exec -- vitest run --coverage --config vitest.config.ts test/walkthrough-runtime.test.ts`
   from `services/agent-runtime`: 92.59% statements, 89.88% branches,
   100% functions, 95.74% lines.
-- Full SDK gate: 26 tests passed.
+- Full SDK gate: 65 tests passed.
 - Full root Vitest gate: 850 tests passed.
 - Rust unit/compatibility gate: 71 library tests passed; environment-dependent
   PostgreSQL/S3 integration cases remained intentionally ignored by their

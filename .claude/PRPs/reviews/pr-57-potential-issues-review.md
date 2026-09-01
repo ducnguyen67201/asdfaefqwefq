@@ -44,3 +44,36 @@ The repository and installed skills do not define a workflow named “ponytail r
 ## Open Items
 
 No code-level blocker remains. A packaged build passed; the real Scratch foreground flow, semantic-disabled desktop fallback, and macOS permission denial should still be exercised manually.
+
+---
+
+## Follow-up Potential-Issues Pass: Narrated teacher walkthrough
+
+No release-blocking code issue remains after the correction-budget fix.
+
+### Non-blocking risks to verify
+
+1. Native Scratch smoke testing still depends on macOS Screen Recording and
+   Accessibility permissions plus live ElevenLabs credentials; CI cannot prove
+   those integrations end to end.
+2. If ElevenLabs fails, the existing system-speech fallback is used. If both
+   speech backends fail, the pointer, marker, and callout remain visible, but
+   the lesson is silent.
+3. The classifier deliberately requires visible/deictic how-to language to
+   avoid turning ordinary explanation requests into screen capture. Monitor
+   real requests for false positives and false negatives.
+4. The current model sample ceiling supports roughly twenty observation / show
+   cycles. That covers the requested approximately eleven steps, but much
+   longer lessons will need an explicit continuation strategy.
+5. The CUA pointer moves first, then the companion glides to the target, then
+   the marker and narration appear. This preserves the existing cursor-buddy
+   ownership model and avoids speaking before arrival, but perceived pacing
+   should be tuned with a real Scratch walkthrough.
+
+### Safety properties rechecked
+
+- Teacher mode points and explains; it does not click or mutate the learner's app.
+- Only one target is revealed per fresh observation.
+- Reduced Motion eliminates the glide without changing the teaching sequence.
+- Walkthrough phase is schema-validated and survives encrypted checkpoint resume.
+- Unknown tool outcomes retain the existing no-replay rule.

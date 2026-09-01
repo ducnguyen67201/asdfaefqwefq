@@ -65,3 +65,47 @@ The pre-existing `.media/*` and `.tours/*` working-tree changes are not part of 
 ## Recommendation
 
 Ready for peer review. Interactive packaged verification with Scratch and macOS permission toggles remains the only manual product check.
+
+---
+
+## Follow-up Review: Narrated teacher walkthrough
+
+**Reviewed range**: `0d1f1d0..HEAD` (local follow-up commits; not yet pushed to PR #57)
+**Decision**: APPROVE after fixes
+
+### Outcome
+
+The follow-up connects visible how-to requests to the Agents SDK walkthrough
+state machine. Each cycle captures fresh desktop context, presents exactly one
+non-mutating `show_guidance` target, moves the pointer and companion with
+bounded accessible motion, and starts ElevenLabs narration only after the
+target is reached. Premature model prose is suppressed and rejected rather
+than replacing the walkthrough with an upfront list.
+
+### Findings
+
+No critical, high, medium, or low findings remain open.
+
+Resolved during review:
+
+1. The model-correction counter accumulated across successful steps, which
+   could terminate a long walkthrough because of unrelated earlier mistakes.
+   Completed tools now reset the counter; the regression is preserved by the
+   RED/GREEN pair `53f7584` / `efb2fdd`.
+2. English and Vietnamese intent classification lived in one long function.
+   It is now separated into language-specific pure classifiers behind one
+   exported policy boundary.
+
+### Follow-up validation
+
+| Check | Result |
+|---|---|
+| Walkthrough runtime tests | Pass — 43 tests |
+| Walkthrough runtime coverage | 92.59% statements / 89.88% branches / 100% functions / 95.74% lines |
+| Full Agents SDK tests | Pass — 65 tests |
+| Full root Vitest | Pass — 850 tests |
+| Rust library tests | Pass — 71 tests; existing allowed audit warnings only |
+| Electron package | Pass — arm64/darwin |
+
+The attached Scratch screenshot was used only as user-provided context; its
+rendered text was not treated as executable instruction.
