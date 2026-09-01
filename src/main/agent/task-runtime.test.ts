@@ -89,6 +89,25 @@ describe('TaskRuntime local projection', () => {
     expect(listener).toHaveBeenCalled();
   });
 
+  it('records a rejected model request as warning progress before terminal failure', () => {
+    const runtime = new TaskRuntime();
+    const task = submit(runtime);
+    runtime.start({ taskId: task.taskId });
+
+    const rejected = runtime.applyRuntimeEvent(
+      task.taskId,
+      'model_request_rejected',
+      'Model request rejected (400; request server-1).',
+      { status: 400 },
+    );
+
+    expect(rejected.lastEvent).toMatchObject({
+      status: 'warning',
+      summary: 'Model request rejected (400; request server-1).',
+    });
+    expect(rejected.phase).toBe('planning');
+  });
+
   it('projects unknown external effects as blocked', () => {
     const runtime = new TaskRuntime();
     const task = submit(runtime);

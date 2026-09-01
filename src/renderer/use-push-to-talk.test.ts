@@ -6,6 +6,7 @@ import {
   beginPushToTalkAttemptIfValid,
   handleVoiceShortcutEvent,
   logVoiceConnectionFailure,
+  shouldCancelVoiceTurnForAvailability,
   shouldFinishVoiceOnLocalRelease,
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
@@ -498,6 +499,21 @@ describe('segmented push-to-talk lifecycle', () => {
 });
 
 describe('push-to-talk helpers', () => {
+  it('does not cancel a finalizing voice turn during Task submission', () => {
+    expect(shouldCancelVoiceTurnForAvailability({
+      disabled: true,
+      enabled: true,
+      finalizing: true,
+      platform: 'macos',
+    })).toBe(false);
+    expect(shouldCancelVoiceTurnForAvailability({
+      disabled: true,
+      enabled: true,
+      finalizing: false,
+      platform: 'macos',
+    })).toBe(true);
+  });
+
   it('starts only valid attempts', () => {
     const start = vi.fn();
     expect(

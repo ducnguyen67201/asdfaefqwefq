@@ -141,4 +141,30 @@ describe('local agent protocol and graph', () => {
         .success,
     ).toBe(true);
   });
+
+  it('admits bounded model-request diagnostics across the process protocol', () => {
+    const parsed = LocalAgentChildMessageSchema.parse({
+      kind: 'turn.event',
+      requestId: randomUUID(),
+      threadId: randomUUID(),
+      turnId: randomUUID(),
+      agentId: LOCAL_AGENT_ROOT_ID,
+      parentAgentId: null,
+      delegationId: null,
+      graphVersion: digest,
+      sequence: 1,
+      event: 'model_request_rejected',
+      summary: 'The model request was rejected before inference.',
+      data: {
+        clientRequestId: randomUUID(),
+        serverRequestId: randomUUID(),
+        status: 400,
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      event: 'model_request_rejected',
+      data: { status: 400 },
+    });
+  });
 });

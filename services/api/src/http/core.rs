@@ -918,3 +918,56 @@ fn format_time(value: time::OffsetDateTime) -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::json;
+
+    use super::*;
+
+    fn allowed_models() -> BTreeSet<String> {
+        BTreeSet::from(["gpt-5.6-luna".to_owned()])
+    }
+
+    fn responses_request(tool_choice: Value, tools: Value) -> Value {
+        json!({
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "private"}]}],
+            "max_output_tokens": 128,
+            "model": "gpt-5.6-luna",
+            "parallel_tool_calls": false,
+            "store": false,
+            "tool_choice": tool_choice,
+            "tools": tools,
+        })
+    }
+
+    #[test]
+    fn responses_validation_accepts_a_named_function_present_in_the_catalog() {
+        let mut input = responses_request(
+            json!({"type": "function", "name": "observe_context"}),
+            json!([{"type": "function", "name": "observe_context"}]),
+        );
+
+        let summary = validate_responses_payload(&allowed_models(), &mut input)
+            .expect("the named function is present in the submitted catalog");
+
+        assert_eq!(summary.model, "gpt-5.6-luna");
+        assert_eq!(summary.tool_choice, "function:observe_context");
+        assert_eq!(summary.tool_count, 1);
+    }
+
+    #[test]
+    fn responses_validation_rejects_a_named_function_missing_from_the_catalog() {
+        let mut input = responses_request(
+            json!({"type": "function", "name": "observe_context"}),
+            json!([{"type": "function", "name": "different_tool"}]),
+        );
+
+        let error = validate_responses_payload(&allowed_models(), &mut input)
+            .expect_err("an unavailable named function must fail closed");
+
+        assert_eq!(error.code, "responses_invalid_tool_choice");
+    }
+}
