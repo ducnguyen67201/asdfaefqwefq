@@ -35,10 +35,10 @@ The two additional files were existing analytics/contract test fixtures updated 
 
 | Level | Status | Notes |
 |---|---|---|
-| Focused feature tests | Pass | 12 files, 145 tests |
+| Focused feature tests | Pass | 12 files, 147 tests |
 | Agents SDK runtime | Pass | Lint, typecheck, 5 files / 16 tests |
 | Repository static analysis | Pass | ESLint, TypeScript, Cargo fmt, Cargo clippy |
-| Repository unit tests | Pass | 126 Vitest files / 840 tests; 69 Rust unit tests plus available integration contracts |
+| Repository unit tests | Pass | 126 Vitest files / 842 tests; 69 Rust unit tests plus available integration contracts |
 | Security audit | Pass | Root and runtime npm audits: 0 vulnerabilities; Cargo audit reported only 3 repository-allowed warnings |
 | Package | Pass | Electron Forge packaged arm64/darwin successfully |
 | Diff hygiene | Pass | `git diff --check` clean; unrelated `.media/*` and `.tours/*` changes preserved |
@@ -78,6 +78,7 @@ The two additional files were existing analytics/contract test fixtures updated 
 - Root lint found one import-order error; the import was reordered and the gate rerun successfully.
 - Root typecheck found an argument-less Vitest mock whose calls were inspected; the mock boundary was typed with its input and the gate rerun successfully.
 - Cargo audit emitted the repository's three allowed dependency warnings (`ttf-parser`, `lru`, and a yanked `chacha20`); no new high-severity npm vulnerability was found.
+- Post-PR review found that desktop preparation defaulted to a no-op and that Workspace isolation lacked a task-boundary regression test. Desktop capture now fails closed without the trusted guard, and both cases are covered.
 
 ## Tests Written
 

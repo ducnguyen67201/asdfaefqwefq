@@ -151,6 +151,20 @@ describe('TaskExecutionCoordinator local dispatch', () => {
     expect(cleanup).toHaveBeenCalledOnce();
   });
 
+  it('fails closed before desktop capture when trusted preparation is absent', async () => {
+    const taskId = randomUUID();
+    const cua = cuaStub();
+    cua.observe.mockResolvedValue(observation(taskId, 'desktop_vision'));
+    const coordinator = new TaskExecutionCoordinator({ cua });
+
+    await expect(coordinator.dispatchTool(observeInvocation('desktop'), {
+      signal: new AbortController().signal,
+      taskId,
+    })).rejects.toThrow('Desktop observation preparation is not configured.');
+
+    expect(cua.observe).not.toHaveBeenCalled();
+  });
+
   it('opens and always closes the desktop-control indicator around dispatch', async () => {
     const taskId = randomUUID();
     const cua = cuaStub();

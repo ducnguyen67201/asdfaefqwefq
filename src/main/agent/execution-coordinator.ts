@@ -94,7 +94,9 @@ export class TaskExecutionCoordinator {
       throw new Error('URL navigation is not configured.');
     },
     onDesktopControlChange = async () => undefined,
-    prepareDesktopObservation = () => undefined,
+    prepareDesktopObservation = () => {
+      throw new Error('Desktop observation preparation is not configured.');
+    },
     presentGuidance = async () => undefined,
     toolDispatcher,
   }: ExecutionCoordinatorOptions) {
