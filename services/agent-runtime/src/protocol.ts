@@ -98,6 +98,7 @@ const TurnResumeSchema = TurnStartSchema.omit({
 }).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
+  pendingToolDisposition: z.enum(['recheck', 'replay']).nullable(),
 }).strict();
 const TurnSteerSchema = TurnIdentitySchema.extend({ kind: z.literal('turn.steer'), instruction: BoundedMessageSchema }).strict();
 const TurnCancelSchema = TurnIdentitySchema.extend({
@@ -221,6 +222,10 @@ export type LocalAgentChildMessage = z.infer<typeof LocalAgentChildMessageSchema
 export type LocalRuntimeCapabilities = z.infer<typeof LocalRuntimeCapabilitiesSchema>;
 export type LocalRuntimeCatalogValidation = z.infer<typeof RuntimeCatalogValidatedSchema>;
 export type LocalRuntimeToolSpec = z.infer<typeof LocalRuntimeToolSpecSchema>;
+export type PendingToolResumeDisposition = Extract<
+  z.infer<typeof TurnResumeSchema>['pendingToolDisposition'],
+  string
+>;
 export type RequiredInitialToolCall = z.infer<typeof RequiredInitialToolCallSchema>;
 export type LocalToolExecutionResult = z.infer<typeof LocalToolExecutionResultSchema>;
 export type LocalTurnEventKind = z.infer<typeof LocalTurnEventKindSchema>;

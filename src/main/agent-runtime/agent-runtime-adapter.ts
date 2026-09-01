@@ -26,6 +26,7 @@ import {
   type LocalRuntimeCatalogValidation,
   type LocalRuntimeToolSpec,
   type LocalToolExecutionResult,
+  type PendingToolResumeDisposition,
   type RequiredInitialToolCall,
 } from '../../../services/agent-runtime/src/protocol';
 import { digest } from '../../../services/agent-runtime/src/serialization';
@@ -39,6 +40,7 @@ import type {
 } from '../agent/runtime-tool-registry';
 
 import type { EncryptedAgentStateStore } from './encrypted-agent-state-store';
+import type { LocalInvocation } from './local-agent-state';
 
 const AgentTurnResponseSchema = z.object({ id: z.string().uuid() }).passthrough();
 const RUNTIME_READY_TIMEOUT_MS = 15_000;
@@ -215,6 +217,11 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     const state = await this.options.state.readThread(threadId);
     const checkpoint = state.checkpoint;
     if (!checkpoint) throw new Error('Local task has no durable SDK checkpoint.');
+    const pendingToolDisposition = checkpoint.pendingCallId
+      ? pendingToolResumeDisposition(
+          await this.options.state.invocation(threadId, checkpoint.pendingCallId),
+        )
+      : null;
     const groundedExecutionContext = { ...executionContext };
     const catalog = this.options.tools.freeze(groundedExecutionContext);
     const version = graphVersion(catalog.tools, checkpoint.model);
@@ -244,6 +251,7 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         checkpoint: checkpoint.state,
         checkpointRevision: checkpoint.revision,
         pendingCallId: checkpoint.pendingCallId,
+        pendingToolDisposition,
         requiredInitialTool: checkpoint.requiredInitialTool,
       });
     } catch (error) {
@@ -772,6 +780,16 @@ export function executionContextAfterToolResult(
   return result.observation
     ? { ...context, latestObservation: result.observation }
     : context;
+}
+
+export function pendingToolResumeDisposition(
+  invocation: LocalInvocation | null,
+): PendingToolResumeDisposition {
+  return !invocation
+    || invocation.status === 'checkpointed'
+    || invocation.status === 'cancelled-before-dispatch'
+    ? 'recheck'
+    : 'replay';
 }
 
 function modelObservationData(observation: DesktopObservation) {

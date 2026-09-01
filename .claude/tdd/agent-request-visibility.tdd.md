@@ -48,6 +48,13 @@ The follow-up journeys were derived from the repeated `400 "Responses request is
 - GREEN command: the same Vitest target.
 - GREEN evidence: 1 file and 4 tests passed. A checkpointed tool that is known not to have run is rejected after process restart, so the model re-checks current state instead of dispatching it against missing observation bindings.
 
+### Pending invocation journal reconciliation
+
+- RED checkpoint: `f424245 test: distinguish pending tool replay from re-grounding`
+- RED commands: `npm --prefix services/agent-runtime test -- --run test/local-runtime-server.test.ts` and `npx vitest run src/main/agent-runtime/agent-runtime-adapter.test.ts`.
+- RED evidence: both new tests failed because journal-aware disposition and replay helpers did not exist.
+- GREEN evidence: Electron now classifies a pending call from its durable invocation journal. Calls with no record or only `checkpointed` state re-check current context; `executing` and terminal journal records replay through the existing idempotent host path, preserving completed results and converting uncertain effects to `unknown` without redispatch.
+
 ## Test specification
 
 | # | What is guaranteed | Test target | Type | Result |
@@ -59,6 +66,7 @@ The follow-up journeys were derived from the repeated `400 "Responses request is
 | 5 | A proxy rejection is visible as warning progress before terminal failure | `src/main/agent/task-runtime.test.ts` | Projection | PASS |
 | 6 | `isSubmitting` does not cancel a voice turn already finalizing | `src/renderer/use-push-to-talk.test.ts` | Race regression | PASS |
 | 7 | A pre-restart pending tool is not auto-approved against reconstructed host context | `services/agent-runtime/test/local-runtime-server.test.ts` | Restart/replay safety | PASS |
+| 8 | Dispatched or completed pending effects reconcile through their durable journal instead of being rejected and duplicated | `src/main/agent-runtime/agent-runtime-adapter.test.ts`, `services/agent-runtime/test/local-runtime-server.test.ts` | Idempotency/restart safety | PASS |
 
 ## Coverage and validation
 
@@ -74,4 +82,4 @@ Known non-blocking gap: there is no single-process fixture that runs the complet
 
 ## Merge evidence
 
-Preserve RED checkpoints `74e15a3` and `264ca19` plus their GREEN fix commits, or retain this report and its RED/GREEN summary if the PR is squash-merged.
+Preserve RED checkpoints `74e15a3`, `264ca19`, and `f424245` plus their GREEN fix commits, or retain this report and its RED/GREEN summary if the PR is squash-merged.

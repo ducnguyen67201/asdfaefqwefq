@@ -22,6 +22,7 @@ import {
   LOCAL_AGENT_SDK_VERSION,
   type LocalAgentHostMessage,
   type LocalTurnEventKind,
+  type PendingToolResumeDisposition,
 } from './protocol.js';
 import { ToolOutcomeUnknownError, ToolSurfaceFactory } from './tool-adapter.js';
 import {
@@ -35,7 +36,8 @@ interface ActiveTurn {
   readonly steering: string[];
 }
 
-interface PendingToolRejectionState {
+interface PendingToolResumeState {
+  approve(interruption: RunToolApprovalItem): void;
   reject(
     interruption: RunToolApprovalItem,
     options: { message: string },
@@ -47,10 +49,24 @@ const RESTARTED_PENDING_TOOL_MESSAGE =
 
 /** A pre-restart interruption is known not to have run, but its host context is stale. */
 export function rejectPendingToolAfterRestart(
-  state: PendingToolRejectionState,
+  state: PendingToolResumeState,
   interruption: RunToolApprovalItem,
 ): void {
   state.reject(interruption, { message: RESTARTED_PENDING_TOOL_MESSAGE });
+}
+
+export function applyPendingToolResume(
+  state: PendingToolResumeState,
+  interruption: RunToolApprovalItem,
+  disposition: PendingToolResumeDisposition,
+  markForReplay: () => void,
+): void {
+  if (disposition === 'recheck') {
+    rejectPendingToolAfterRestart(state, interruption);
+    return;
+  }
+  markForReplay();
+  state.approve(interruption);
 }
 
 export class LocalRuntimeServer {
@@ -204,16 +220,36 @@ export class LocalRuntimeServer {
           new RunContext(context),
         );
         if (message.pendingCallId) {
+          if (!message.pendingToolDisposition) {
+            throw new Error('pending_tool_disposition_missing');
+          }
           const interruption = restored.getInterruptions().find((candidate) =>
             candidate.rawItem.type === 'function_call' && candidate.rawItem.callId === message.pendingCallId,
           );
           if (!interruption) throw new Error('pending_checkpoint_interruption_missing');
-          rejectPendingToolAfterRestart(restored, interruption);
+          applyPendingToolResume(
+            restored,
+            interruption,
+            message.pendingToolDisposition,
+            () => {
+              const pending = graph.toolSurface.resolve(interruption);
+              graph.toolSurface.markCheckpointed(pending);
+            },
+          );
+          if (message.pendingToolDisposition === 'replay') {
+            active.steering.push(
+              'The application restarted. Use the durable pending tool result, then observe current state before requesting another computer action.',
+            );
+          }
           this.event(
             identity,
             'lifecycle',
-            'The app restarted before a pending tool ran; the agent must re-check current state.',
+            message.pendingToolDisposition === 'replay'
+              ? 'The app is reconciling a pending tool with its durable invocation journal.'
+              : 'The app restarted before a pending tool ran; the agent must re-check current state.',
           );
+        } else if (message.pendingToolDisposition) {
+          throw new Error('unexpected_pending_tool_disposition');
         }
         nextInput = restored;
       } else {
