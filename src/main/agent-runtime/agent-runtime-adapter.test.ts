@@ -116,6 +116,17 @@ describe('LocalAgentRuntime process supervision', () => {
       },
       status: 'completed',
     })).toBe('replay');
+    expect(pendingToolResumeDisposition({
+      ...invocation,
+      result: {
+        status: 'completed',
+        summary: 'Captured an observation.',
+        data: null,
+        imageDataUrl: 'data:image/png;base64,aW1hZ2U=',
+      },
+      status: 'completed',
+      toolId: 'computer.observe',
+    })).toBe('reobserve');
   });
 
   it('sends credentials only after a compatible runtime handshake', async () => {

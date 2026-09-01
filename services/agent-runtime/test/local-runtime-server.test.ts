@@ -66,6 +66,26 @@ describe('LocalRuntimeServer', () => {
     expect(reject).not.toHaveBeenCalled();
   });
 
+  it('requires a fresh observation instead of replaying a stale observation binding', () => {
+    const approve = vi.fn();
+    const markForReplay = vi.fn();
+    const reject = vi.fn();
+    const interruption = { rawItem: { type: 'function_call', callId: 'observe-1' } };
+
+    applyPendingToolResume(
+      { approve, reject } as never,
+      interruption as never,
+      'reobserve' as never,
+      markForReplay,
+    );
+
+    expect(reject).toHaveBeenCalledWith(interruption, {
+      message: expect.stringMatching(/fresh observation/i),
+    });
+    expect(markForReplay).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it('releases process lifetime only after an explicit runtime shutdown', async () => {
     const bridge = new FakeBridge();
     const onShutdown = vi.fn();
