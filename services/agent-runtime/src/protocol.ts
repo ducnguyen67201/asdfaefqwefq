@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 /** Local-only protocol between Electron main and the bundled SDK process. */
-export const LOCAL_AGENT_PROTOCOL_VERSION = 3 as const;
+export const LOCAL_AGENT_PROTOCOL_VERSION = 6 as const;
 export const LOCAL_AGENT_SDK_VERSION = '0.17.0' as const;
 export const LOCAL_AGENT_ROOT_ID = 'tro.root' as const;
 
@@ -50,6 +50,13 @@ export const RequiredInitialToolCallSchema = z.object({
   arguments: JsonObjectSchema,
 }).strict();
 
+export const LocalToolExecutionResultSchema = z.object({
+  status: z.enum(['completed', 'failed', 'unknown', 'cancelled']),
+  summary: z.string().trim().min(1).max(1_000),
+  data: JsonObjectSchema.nullable().default(null),
+  imageDataUrl: z.string().max(40_000_000).nullable().default(null),
+}).strict();
+
 export const LocalRuntimeCapabilitiesSchema = z
   .object({
     protocolVersion: z.literal(LOCAL_AGENT_PROTOCOL_VERSION),
@@ -89,12 +96,14 @@ const CredentialClearSchema = RequestIdentitySchema.extend({ kind: z.literal('ru
 const TurnStartSchema = TurnIdentitySchema.extend({
   kind: z.literal('turn.start'), agentTurnId: UuidSchema, request: BoundedMessageSchema,
   requiredInitialTool: RequiredInitialToolCallSchema.nullable(),
+  prefetchedInitialToolResult: LocalToolExecutionResultSchema.nullable().default(null),
   model: z.string().trim().min(1).max(100), maxTurns: z.number().int().positive().max(100),
   toolCatalogDigest: DigestSchema, tools: z.array(LocalRuntimeToolSpecSchema).max(128),
 }).strict();
 const TurnResumeSchema = TurnStartSchema.omit({
   kind: true,
   request: true,
+  prefetchedInitialToolResult: true,
 }).extend({
   kind: z.literal('turn.resume'), checkpoint: z.string().min(2).max(10_000_000),
   checkpointRevision: z.number().int().positive(), pendingCallId: z.string().trim().min(1).max(255).nullable(),
@@ -120,11 +129,6 @@ const SessionReplaceResultSchema = TurnIdentitySchema.extend({
 const CheckpointCommitResultSchema = TurnIdentitySchema.extend({
   kind: z.literal('checkpoint.commit.result'), responseTo: UuidSchema,
   checkpointRevision: z.number().int().positive(), replayed: z.boolean(),
-}).strict();
-export const LocalToolExecutionResultSchema = z.object({
-  status: z.enum(['completed', 'failed', 'unknown', 'cancelled']),
-  summary: z.string().trim().min(1).max(1_000), data: JsonObjectSchema.nullable().default(null),
-  imageDataUrl: z.string().max(40_000_000).nullable().default(null),
 }).strict();
 const ToolExecuteResultSchema = TurnIdentitySchema.extend({
   kind: z.literal('tool.execute.result'), responseTo: UuidSchema, result: LocalToolExecutionResultSchema,

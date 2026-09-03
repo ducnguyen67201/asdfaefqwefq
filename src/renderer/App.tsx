@@ -104,6 +104,7 @@ import {
 } from './voice-draft';
 import {
   shouldRetainVoiceTerminalActivity,
+  voiceTaskScreenContext,
   voiceTurnRoute,
   type VoiceTerminalDisposition,
 } from './voice-route';
@@ -1692,7 +1693,10 @@ export function App({
   }, []);
 
   const sendInput = useCallback(
-    async (requestText = input): Promise<boolean> => {
+    async (
+      requestText = input,
+      options: { screenContext?: 'auto' | 'required' | 'disabled' } = {},
+    ): Promise<boolean> => {
       const normalizedRequest = requestText.trim();
       const minimumLength = pendingClarification || isSteering ? 1 : 2;
       if (
@@ -1735,6 +1739,8 @@ export function App({
             activityAttemptId: null,
             activityIntent: 'work',
             executionProfile,
+            requestedMode: 'auto',
+            screenContext: options.screenContext ?? 'auto',
             text: normalizedRequest,
             workspaceSelectionId:
               executionProfile === 'workspace'
@@ -2036,7 +2042,9 @@ export function App({
         voiceDestinationsRef.current.get(context.turnId) ?? voiceDestination;
       const route = voiceTurnRoute(context);
       if (route === 'task') {
-        if (!(await sendInput(transcript))) {
+        if (!(await sendInput(transcript, {
+          screenContext: voiceTaskScreenContext(context),
+        }))) {
           throw new Error('The task could not accept that voice input.');
         }
         recordVoiceOutcome(context, transcript, 'task', 'task_submitted');
@@ -2044,12 +2052,11 @@ export function App({
           {
             appLanguage: appLanguageDraft,
             destination,
-            message: t('Voice task sent.'),
             mode: 'task',
             phase: 'complete',
-            transcript: '',
+            transcript,
           },
-          800,
+          12_000,
           'task_submitted',
         );
         return 'task_submitted';

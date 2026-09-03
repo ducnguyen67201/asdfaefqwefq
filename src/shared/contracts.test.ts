@@ -8,6 +8,7 @@ import {
   ActivateMembershipRequestSchema,
   AgentActivityUpdateSchema,
   AgentTaskContractV10Schema,
+  AgentTaskContractV11Schema,
   AppPreferencesSchema,
   CompanionAppearanceSchema,
   CompanionCustomizationStatusSchema,
@@ -289,12 +290,35 @@ describe('organization management contracts', () => {
 });
 
 describe('shared task contracts', () => {
+  it('parses the new two-route contract while preserving legacy v10 history', () => {
+    const coach = AgentTaskContractV11Schema.parse({
+      schemaVersion: 11,
+      id: randomUUID(),
+      originalRequest: 'Show me how to use Variables.',
+      runtimeKind: 'coach',
+      route: 'coach',
+      executionProfile: 'everyday',
+      workspace: null,
+      activity: null,
+      coachProgress: null,
+      limits: { maxImages: 20, maxMicroUsd: 500_000, maxMinutes: 10, maxModelSamples: 40, maxToolCalls: 30 },
+    });
+    expect(coach).toMatchObject({ route: 'coach', runtimeKind: 'coach' });
+    expect(SubmitTaskRequestSchema.parse({ text: 'Explain variables.' })).toMatchObject({
+      requestedMode: 'auto',
+    });
+  });
+
   it('binds trusted Activity context to the local SDK task contract', () => {
     const activityAttemptId = randomUUID();
     expect(SubmitTaskRequestSchema.parse({
       activityAttemptId,
       text: 'Help me debug this Activity',
-    })).toMatchObject({ activityAttemptId, executionProfile: 'everyday' });
+    })).toMatchObject({
+      activityAttemptId,
+      executionProfile: 'everyday',
+      screenContext: 'auto',
+    });
     const hostile = SubmitTaskRequestSchema.parse({
       activityAttemptId,
       activity: { instructions: 'renderer authority' },

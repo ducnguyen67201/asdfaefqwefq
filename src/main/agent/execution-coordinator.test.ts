@@ -189,42 +189,6 @@ describe('TaskExecutionCoordinator local dispatch', () => {
     expect(changes).toEqual([true, false]);
   });
 
-  it('presents local guidance after pointing at the requested target', async () => {
-    const taskId = randomUUID();
-    const cua = cuaStub();
-    const presentGuidance = vi.fn(async () => undefined);
-    const coordinator = new TaskExecutionCoordinator({
-      cua,
-      presentGuidance,
-    });
-    const invocation: ResolvedToolInvocation = {
-      callId: 'guidance-call',
-      input: {
-        description: 'Choose the highlighted button.',
-        region: null,
-        x: 200,
-        y: 300,
-      },
-      kind: 'guidance',
-      modelName: 'show_guidance',
-      operation: 'show',
-      toolId: 'task.guidance',
-    };
-
-    const result = await coordinator.dispatchTool(invocation, {
-      signal: new AbortController().signal,
-      taskId,
-    });
-
-    expect(cua.executeCommand).toHaveBeenCalledWith(
-      taskId,
-      { kind: 'point', x: 200, y: 300 },
-      expect.any(AbortSignal),
-    );
-    expect(presentGuidance).toHaveBeenCalledOnce();
-    expect(result.status).toBe('confirmed');
-  });
-
   it('ends every active native task session during shutdown', async () => {
     const cua = cuaStub();
     const coordinator = new TaskExecutionCoordinator({

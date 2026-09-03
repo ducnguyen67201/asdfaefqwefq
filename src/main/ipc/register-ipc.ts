@@ -8,7 +8,8 @@ import {
   BeginDictationRequestSchema,
   BeginDictationResultSchema,
   CancelDictationRequestSchema,
-  CompanionPositionSchema,
+  CompanionGuidanceActionRequestSchema,
+  CursorBuddySnapshotSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
   CompanionStateSchema,
@@ -30,7 +31,8 @@ import {
   UpdateAppPreferencesRequestSchema,
   VoiceDiagnosticSchema,
   type AuthUser,
-  type CompanionPosition,
+  type CursorBuddySnapshot,
+  type CompanionGuidanceActionRequest,
   type CompanionState,
   type CompanionResponseActionRequest,
   type CompanionVoiceActivity,
@@ -126,10 +128,13 @@ interface IpcServices {
     'continueWithout' | 'openSettings' | 'refresh'
   >;
   getCompanionInteractionWindow(): BrowserWindow | null;
-  getCursorBuddyPosition(): CompanionPosition;
+  getCursorBuddySnapshot(): CursorBuddySnapshot;
   getCursorBuddyWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
+  ): Promise<void> | void;
+  handleCompanionGuidanceAction(
+    request: CompanionGuidanceActionRequest,
   ): Promise<void> | void;
   membershipService: MembershipService;
   organizationClient: OrganizationClient;
@@ -289,6 +294,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.companionActivateCandidate,
     IPC_CHANNELS.companionCustomizationStatus,
     IPC_CHANNELS.companionGenerateImage,
+    IPC_CHANNELS.companionGuidanceAction,
     IPC_CHANNELS.companionResponseAction,
     IPC_CHANNELS.companionRevealMainWindow,
     IPC_CHANNELS.companionUseDefault,
@@ -296,7 +302,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.getAppPreferences,
     IPC_CHANNELS.getAppUpdateStatus,
     IPC_CHANNELS.getComputerStatus,
-    IPC_CHANNELS.getCursorBuddyPosition,
+    IPC_CHANNELS.getCursorBuddySnapshot,
     IPC_CHANNELS.getConnectorAttempt,
     IPC_CHANNELS.listConnectors,
     IPC_CHANNELS.getAuthStatus,
@@ -1024,11 +1030,21 @@ export function registerIpcHandlers(
     services.revealMainWindow();
   });
 
-  ipcMain.handle(IPC_CHANNELS.getCursorBuddyPosition, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.getCursorBuddySnapshot, async (event) => {
     assertTrustedCursorBuddySender(event, services);
     await services.authService.assertSignedIn();
-    return CompanionPositionSchema.parse(services.getCursorBuddyPosition());
+    return CursorBuddySnapshotSchema.parse(services.getCursorBuddySnapshot());
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.companionGuidanceAction,
+    async (event, input: unknown) => {
+      assertTrustedCompanionSender(event, services);
+      await services.authService.assertSignedIn();
+      const request = CompanionGuidanceActionRequestSchema.parse(input);
+      await services.handleCompanionGuidanceAction(request);
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.companionResponseAction,

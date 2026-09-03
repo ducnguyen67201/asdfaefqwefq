@@ -17,6 +17,7 @@ import type { ZodType } from 'zod';
 import {
   TaskHistorySchema,
   TaskUpdateSchema,
+  type CoachProgress,
   type TaskHistory,
   type TaskSnapshot,
   type TaskUpdate,
@@ -191,6 +192,29 @@ export class EncryptedAgentStateStore implements TaskHistoryStore {
     const index = await this.readIndex();
     const states = await Promise.all(index.threads.filter((entry) => entry.ownerId === ownerId).map((entry) => this.readThread(entry.threadId)));
     return states.filter((state) => !['completed', 'failed', 'cancelled', 'blocked'].includes(state.snapshot.phase));
+  }
+
+  async findLatestCoachProgress(
+    ownerId: string,
+    attemptId: string,
+    activityVersionId: string,
+  ): Promise<CoachProgress | null> {
+    await this.queue;
+    const index = await this.readIndex();
+    const entries = index.threads
+      .filter((entry) => entry.ownerId === ownerId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    for (const entry of entries) {
+      const state = await this.readThread(entry.threadId);
+      const goal = state.snapshot.goal;
+      if (
+        goal?.schemaVersion === 11 &&
+        goal.route === 'coach' &&
+        goal.coachProgress?.attemptId === attemptId &&
+        goal.coachProgress.activityVersionId === activityVersionId
+      ) return goal.coachProgress;
+    }
+    return null;
   }
 
   async readThread(threadId: string): Promise<LocalThreadState> {

@@ -190,12 +190,15 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
     };
     this.active.set(input.threadId, active);
     try {
+      const prefetchedInitialToolResult =
+        await this.prefetchInitialObservation(input.threadId, active);
       this.post({
         ...this.turnIdentity(input.threadId, active),
         kind: 'turn.start',
         agentTurnId,
         request: input.request,
-        requiredInitialTool: input.requiredInitialTool ?? null,
+        requiredInitialTool: active.requiredInitialTool,
+        prefetchedInitialToolResult,
         model,
         maxTurns: input.maxTurns,
         toolCatalogDigest: catalog.digest,
@@ -206,6 +209,97 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       this.options.tools.endTask(input.threadId);
       throw error;
     }
+  }
+
+  private async prefetchInitialObservation(
+    threadId: string,
+    active: ActiveTurn,
+  ): Promise<LocalToolExecutionResult | null> {
+    const required = active.requiredInitialTool;
+    if (required?.modelName !== 'observe_context') return null;
+
+    const callId = `host-observe-${randomUUID()}`;
+    this.emitPrefetchedToolLifecycle(
+      threadId,
+      active,
+      'tool_started',
+      'Capturing the required initial screen context.',
+      callId,
+      'computer.observe',
+      'observe',
+    );
+    try {
+      const invocation = this.options.tools.resolve(
+        {
+          arguments: JSON.stringify(required.arguments),
+          callId,
+          name: required.modelName,
+        },
+        active.executionContext,
+      );
+      if (invocation.toolId !== 'computer.observe') return null;
+      const result = await this.options.coordinator.dispatchTool(invocation, {
+        signal: active.controller.signal,
+        taskId: threadId,
+      });
+      const normalized = normalizeLocalToolResult(result);
+      if (normalized.status !== 'completed') {
+        this.emitPrefetchedToolLifecycle(
+          threadId,
+          active,
+          'tool_failed',
+          normalized.summary,
+          callId,
+          invocation.toolId,
+          invocation.operation,
+        );
+        return null;
+      }
+      active.executionContext = executionContextAfterToolResult(
+        active.executionContext,
+        result,
+      );
+      active.requiredInitialTool = null;
+      this.emitPrefetchedToolLifecycle(
+        threadId,
+        active,
+        'tool_completed',
+        normalized.summary,
+        callId,
+        invocation.toolId,
+        invocation.operation,
+      );
+      return normalized;
+    } catch (error) {
+      this.emitPrefetchedToolLifecycle(
+        threadId,
+        active,
+        'tool_failed',
+        safeError(error),
+        callId,
+        'computer.observe',
+        'observe',
+      );
+      return null;
+    }
+  }
+
+  private emitPrefetchedToolLifecycle(
+    threadId: string,
+    active: ActiveTurn,
+    event: 'tool_started' | 'tool_completed' | 'tool_failed',
+    summary: string,
+    callId: string,
+    toolId: string,
+    operation: string,
+  ): void {
+    this.options.onEvent?.({
+      ...this.turnIdentity(threadId, active),
+      kind: 'turn.event',
+      event,
+      summary: summary.slice(0, 2_000),
+      data: { callId, operation, toolId },
+    });
   }
 
   async resume(threadId: string, executionContext: TrustedToolExecutionContext): Promise<void> {

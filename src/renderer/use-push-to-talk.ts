@@ -60,8 +60,6 @@ export type VoiceTurnEndReason =
 
 export type VoiceCommitDisposition = 'completed' | 'task_submitted';
 
-export const VOICE_TASK_CONFIRMATION_MS = 1_000;
-
 export interface UsePushToTalkOptions {
   disabled?: boolean;
   enabled?: boolean;
@@ -90,7 +88,6 @@ interface ActiveVoiceTurn {
   attempt: number;
   cancelled: boolean;
   capture: VoiceCapturePipeline | null;
-  completionTimer: ReturnType<typeof setTimeout> | null;
   context: VoiceTurnContext;
   endNotified: boolean;
   expectedSegmentCount: number | null;
@@ -317,8 +314,6 @@ export function usePushToTalk({
 
   const resetTurnState = useCallback(
     (turn: ActiveVoiceTurn): void => {
-      if (turn.completionTimer) clearTimeout(turn.completionTimer);
-      turn.completionTimer = null;
       if (activeTurnRef.current === turn) activeTurnRef.current = null;
       activationModeRef.current = null;
       chordHeldRef.current = false;
@@ -459,25 +454,17 @@ export function usePushToTalk({
         return;
       }
 
-      const confirmationMs =
-        turn.context.mode === 'task' ? VOICE_TASK_CONFIRMATION_MS : 0;
       voiceTurnDiagnostic('transcript-ready', {
         activation: turn.context.activation,
         attempt: turn.attempt,
         characters: transcript.length,
-        confirmationMs,
+        confirmationMs: 0,
         mode: turn.context.mode,
         releaseToFinalMs,
         segmentCount: turn.expectedSegmentCount,
       });
       onTranscriptChangeRef.current(turn.context, transcript);
-      if (confirmationMs === 0) {
-        void commitTranscript(turn, transcript, releaseToFinalMs);
-        return;
-      }
-      turn.completionTimer = setTimeout(() => {
-        void commitTranscript(turn, transcript, releaseToFinalMs);
-      }, confirmationMs);
+      void commitTranscript(turn, transcript, releaseToFinalMs);
     },
     [commitTranscript, finishTerminalTurn, platform],
   );
@@ -653,7 +640,6 @@ export function usePushToTalk({
         attempt,
         cancelled: false,
         capture: null,
-        completionTimer: null,
         context,
         endNotified: false,
         expectedSegmentCount: null,

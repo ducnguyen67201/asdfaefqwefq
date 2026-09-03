@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   clampCompanionPosition,
   getVirtualDisplayBounds,
+  guidanceGlideDuration,
   interpolateCompanionPosition,
+  interpolateGuidancePosition,
   interpolateCompanionWanderPosition,
   placeCompanionAtRest,
   placeCompanionForBrowserNavigation,
@@ -251,6 +253,33 @@ describe('desktop companion placement', () => {
     expect(
       interpolateCompanionPosition({ x: 100, y: 200 }, { x: 500, y: 600 }, 2),
     ).toEqual({ x: 500, y: 600 });
+  });
+
+  it('uses a gentle teaching arc with distance-aware timing', () => {
+    expect(
+      guidanceGlideDuration(
+        { x: 100, y: 200 },
+        { x: 900, y: 600 },
+        { prefersReducedMotion: false, shouldRenderRichAnimation: true },
+      ),
+    ).toBe(620);
+    expect(
+      interpolateGuidancePosition(
+        { x: 100, y: 200 },
+        { x: 900, y: 600 },
+        0.5,
+      ),
+    ).toEqual({ x: 478, y: 344 });
+  });
+
+  it('snaps teacher guidance into place when reduced motion is requested', () => {
+    expect(
+      guidanceGlideDuration(
+        { x: 100, y: 200 },
+        { x: 900, y: 600 },
+        { prefersReducedMotion: true, shouldRenderRichAnimation: true },
+      ),
+    ).toBe(0);
   });
 
   it('wanders with a smooth start and finish', () => {

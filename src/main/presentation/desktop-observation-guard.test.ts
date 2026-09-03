@@ -65,6 +65,23 @@ describe('DesktopObservationGuard', () => {
     expect(window.showInactive).not.toHaveBeenCalled();
   });
 
+  it('does not restore an overlay for a different coaching session', async () => {
+    const { window } = windowStub();
+    let taskId = 'task-a';
+    const guard = new DesktopObservationGuard({
+      settle: async () => undefined,
+      surfaces: [{
+        getWindow: () => window,
+        restoreIdentity: () => taskId,
+        shouldRestore: () => true,
+      }],
+    });
+    const release = await guard.prepare();
+    taskId = 'task-b';
+    await release();
+    expect(window.showInactive).not.toHaveBeenCalled();
+  });
+
   it('ignores a window destroyed while the desktop capture is active', async () => {
     const { destroy, window } = windowStub();
     const guard = new DesktopObservationGuard({

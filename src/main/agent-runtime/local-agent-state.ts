@@ -8,6 +8,12 @@ const RequiredInitialToolCallSchema = z.object({
   modelName: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/u),
   arguments: z.record(z.string().min(1).max(200), z.unknown()),
 }).strict();
+const LegacyWalkthroughStateSchema = z.object({
+  completedSteps: z.number().int().nonnegative(),
+  enabled: z.boolean(),
+  expectedOutcome: z.string().max(160).optional(),
+  phase: z.enum(['needs_observation', 'needs_guidance']),
+}).passthrough();
 
 export const LocalCheckpointSchema = z.object({
   revision: z.number().int().positive(),
@@ -20,6 +26,8 @@ export const LocalCheckpointSchema = z.object({
   graphVersion: DigestSchema,
   protocolDigest: DigestSchema,
   requiredInitialTool: RequiredInitialToolCallSchema.nullable().default(null),
+  /** Legacy protocol v5 field. New Agent checkpoints never write it. */
+  walkthroughState: LegacyWalkthroughStateSchema.optional(),
 }).strict();
 
 export const LocalSessionSchema = z.object({

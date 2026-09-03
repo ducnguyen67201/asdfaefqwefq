@@ -13,6 +13,11 @@ export interface Size {
   width: number;
 }
 
+export interface GuidanceAnimationSettings {
+  prefersReducedMotion: boolean;
+  shouldRenderRichAnimation: boolean;
+}
+
 function clampUnit(value: number): number {
   return clamp(value, 0, 1);
 }
@@ -62,6 +67,46 @@ export function interpolateCompanionPosition(
   return {
     x: Math.round(from.x + (to.x - from.x) * easedProgress),
     y: Math.round(from.y + (to.y - from.y) * easedProgress),
+  };
+}
+
+export function guidanceGlideDuration(
+  from: Point,
+  to: Point,
+  settings: GuidanceAnimationSettings,
+): number {
+  if (settings.prefersReducedMotion) return 0;
+  if (!settings.shouldRenderRichAnimation) return 180;
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  return clamp(Math.round((260 + distance * 0.4) / 20) * 20, 300, 720);
+}
+
+/** A restrained upward arc makes the companion read as a teacher pointer. */
+export function interpolateGuidancePosition(
+  from: Point,
+  to: Point,
+  progress: number,
+): Point {
+  const normalized = clampUnit(progress);
+  const eased = normalized * normalized * (3 - 2 * normalized);
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const horizontalDirection = to.x >= from.x ? -1 : 1;
+  const control = {
+    x: (from.x + to.x) / 2 + horizontalDirection * Math.min(44, distance * 0.05),
+    y: (from.y + to.y) / 2 - Math.min(112, distance * 0.125),
+  };
+  const inverse = 1 - eased;
+  return {
+    x: Math.round(
+      inverse * inverse * from.x +
+        2 * inverse * eased * control.x +
+        eased * eased * to.x,
+    ),
+    y: Math.round(
+      inverse * inverse * from.y +
+        2 * inverse * eased * control.y +
+        eased * eased * to.y,
+    ),
   };
 }
 

@@ -140,6 +140,8 @@ export function AttemptLaunchPage({
       await onLaunch({
         activityAttemptId: attemptId,
         activityIntent: intent,
+        requestedMode: intent === 'work' ? 'auto' : 'coach',
+        screenContext: 'auto',
         executionProfile:
           attempt.definition.launchTarget === 'workspace'
             ? 'workspace'

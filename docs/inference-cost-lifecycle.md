@@ -1,6 +1,6 @@
 # Inference cost lifecycle
 
-Local Agents SDK model calls use the authenticated Responses proxy and its
+Coach and local Agents SDK model calls use the authenticated Responses proxy and its
 transactional reservation ledger. The host selects Luna, Terra, or Sol;
 the model cannot escalate itself. Estimates use conservative text and image
 token counts, and settlement uses provider usage including cache reads/writes.
@@ -15,6 +15,16 @@ policies. The local SDK decides what it needs to ask; the hosted API is the only
 authority that can price, reserve, dispatch, and settle a paid production call.
 
 ## Text to model to screen
+
+`TaskApplicationService` routes locally without an LLM call. Coach makes one
+structured Responses request for the first answer/visible step. After a visible
+step, normal idle performs zero captures and zero model calls. Content-free
+learner activity wakes a debounce, produces one fresh observation, and produces
+at most one next/correction/completion request. Replay and Pause are local.
+Heavy Agent retains the multi-turn SDK tool loop only for explicit execution.
+
+`TROCODE_FAST_COACH_ENABLED=false` is the single rollback switch; it sends new
+requests to Heavy Agent and never shadow-runs both lanes.
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +42,8 @@ sequenceDiagram
 
     User->>UI: Typed text or finalized voice transcript
     UI->>App: submitTask(validated text)
-    App->>Agent: start one SDK run
+    App->>App: pure Coach/Agent route
+    App->>Agent: start the selected runtime
     Agent->>Turn: reserve user message UUID + task UUID
     Turn->>DB: atomic monthly turn check + idempotent insert
     Agent->>Session: SDK-owned conversation continuity

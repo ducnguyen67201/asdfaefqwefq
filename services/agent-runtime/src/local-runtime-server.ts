@@ -218,7 +218,10 @@ export class LocalRuntimeServer {
         (diagnostic) => this.modelRequestEvent(identity, diagnostic),
       );
       this.event(identity, 'lifecycle', 'The local Agents SDK started the turn.');
-      let nextInput: string | RunState<LocalAgentRunContext, typeof graph.agent>;
+      let nextInput:
+        | string
+        | AgentInputItem[]
+        | RunState<LocalAgentRunContext, typeof graph.agent>;
       if (message.kind === 'turn.resume') {
         const restored = await RunState.fromStringWithContext(
           graph.agent,
@@ -261,13 +264,18 @@ export class LocalRuntimeServer {
         }
         nextInput = restored;
       } else {
-        nextInput = message.request;
+        nextInput = message.prefetchedInitialToolResult
+          ? prefetchedInitialTurnInput(
+              message.request,
+              message.prefetchedInitialToolResult,
+            )
+          : message.request;
       }
 
       for (;;) {
         const result = await factory.runner.run(graph.agent, nextInput, {
           callModelInputFilter: async ({ modelData }) =>
-            injectSteering(modelData, active.steering.splice(0)),
+            injectRuntimeInstructions(modelData, active.steering.splice(0)),
           context,
           maxTurns: message.maxTurns,
           session: graph.session,
@@ -275,21 +283,24 @@ export class LocalRuntimeServer {
           stream: true,
         });
         for await (const event of result) {
-          if (event.type !== 'raw_model_stream_event' || event.data.type !== 'output_text_delta') continue;
+          if (
+            event.type !== 'raw_model_stream_event' ||
+            event.data.type !== 'output_text_delta'
+          ) continue;
           for (let offset = 0; offset < event.data.delta.length; offset += 2_000) {
             this.event(identity, 'assistant_delta', event.data.delta.slice(offset, offset + 2_000));
           }
         }
         await result.completed;
         if (result.interruptions.length === 0) {
+          const output = boundedFinalOutput(result.finalOutput);
           checkpointRevision = await this.commitCheckpoint(
             identity,
             checkpointRevision,
             result.state.toString(),
             null,
           );
-          const finalOutput = boundedFinalOutput(result.finalOutput);
-          this.terminal(identity, 'completed', finalOutput, null, 'The local agent completed the turn.');
+          this.terminal(identity, 'completed', output, null, 'The local agent completed the turn.');
           return;
         }
         if (result.interruptions.length !== 1) throw new Error('parallel_tool_interruption_not_supported');
@@ -369,13 +380,16 @@ export class LocalRuntimeServer {
     const requestId = diagnostic.serverRequestId ?? diagnostic.clientRequestId;
     const status = diagnostic.status === null ? '' : `${diagnostic.status}; `;
     const choice = diagnostic.toolChoice ? `${diagnostic.toolChoice}; ` : '';
+    const elapsed = diagnostic.durationMs === null
+      ? ''
+      : ` in ${Math.round(diagnostic.durationMs)} ms`;
     const summary = diagnostic.event === 'model_request_started'
       ? `Model request started (${choice}request ${requestId}).`
       : diagnostic.event === 'model_request_completed'
-        ? `Model request completed (${status}request ${requestId}).`
-        : diagnostic.event === 'model_request_rejected'
-          ? `Model request rejected (${status}request ${requestId}).`
-          : `Model request failed before a response was received (request ${requestId}).`;
+        ? `Model request completed${elapsed} (${status}request ${requestId}).`
+      : diagnostic.event === 'model_request_rejected'
+          ? `Model request rejected${elapsed} (${status}request ${requestId}).`
+        : `Model request failed before a response was received (request ${requestId}).`;
     this.event(identity, diagnostic.event, summary, {
       agentTurnId: diagnostic.agentTurnId,
       clientRequestId: diagnostic.clientRequestId,
@@ -421,14 +435,50 @@ export class LocalRuntimeServer {
   }
 }
 
-function injectSteering(modelData: ModelInputData, instructions: readonly string[]): ModelInputData {
+export function prefetchedInitialTurnInput(
+  request: string,
+  result: NonNullable<
+    Extract<LocalAgentHostMessage, { kind: 'turn.start' }>['prefetchedInitialToolResult']
+  >,
+): AgentInputItem[] {
+  const content: Array<
+    | { type: 'input_text'; text: string }
+    | { type: 'input_image'; image: string; detail: 'high' }
+  > = [
+    { type: 'input_text', text: request },
+    {
+      type: 'input_text',
+      text: [
+        'Trusted host initial observation:',
+        JSON.stringify({
+          status: result.status,
+          summary: result.summary,
+          data: result.data,
+        }),
+      ].join('\n'),
+    },
+  ];
+  if (result.imageDataUrl) {
+    content.push({
+      type: 'input_image',
+      image: result.imageDataUrl,
+      detail: 'high',
+    });
+  }
+  return [{ role: 'user', content }];
+}
+
+function injectRuntimeInstructions(
+  modelData: ModelInputData,
+  instructions: readonly string[],
+): ModelInputData {
+  const boundedInput = modelData.input as AgentInputItem[];
   if (instructions.length === 0) return modelData;
-  const input = modelData.input as AgentInputItem[];
   const steering: AgentInputItem[] = instructions.map((instruction) => ({
     role: 'user',
     content: [{ type: 'input_text', text: instruction }],
   }));
-  return { ...modelData, input: [...input, ...steering] };
+  return { ...modelData, input: [...boundedInput, ...steering] };
 }
 
 function boundedFinalOutput(value: unknown): string {

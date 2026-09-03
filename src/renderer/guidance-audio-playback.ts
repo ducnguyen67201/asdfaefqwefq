@@ -53,6 +53,8 @@ export interface GuidanceAudioPlayback {
   setPaused(paused: boolean): void;
 }
 
+export const GUIDANCE_AUDIO_STARTUP_TIMEOUT_MS = 1_500;
+
 export function createGuidanceAudioPlayback({
   audioFactory = () => new Audio() as AudioLike,
   clearTimer = (timer) => window.clearTimeout(timer as number),
@@ -66,7 +68,7 @@ export function createGuidanceAudioPlayback({
     'speechSynthesis' in window
       ? (window.speechSynthesis as unknown as SpeechSynthesisLike)
       : null,
-  startupTimeoutMs = 4_000,
+  startupTimeoutMs = GUIDANCE_AUDIO_STARTUP_TIMEOUT_MS,
   utteranceFactory = (text) =>
     new SpeechSynthesisUtterance(text) as unknown as UtteranceLike,
 }: GuidanceAudioPlaybackOptions): GuidanceAudioPlayback {

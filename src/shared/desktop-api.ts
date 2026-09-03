@@ -13,6 +13,7 @@ import type {
   CompanionAppearance,
   CompanionCustomizationStatus,
   CompanionGuidance,
+  CompanionGuidanceActionRequest,
   CompanionGuidanceVisual,
   CompanionHover,
   CompanionInteraction,
@@ -24,6 +25,7 @@ import type {
   CompanionSpeechPlaybackReport,
   CompanionState,
   CompanionVoiceActivity,
+  CursorBuddySnapshot,
   GenerateCompanionImageRequest,
   ConfigureVoiceRequest,
   CommitDictationRequest,
@@ -127,8 +129,8 @@ export const IPC_CHANNELS = {
   appUpdateStatusChanged: 'update:status-changed',
   cancelTask: 'task:cancel',
   checkForAppUpdates: 'update:check',
-  getCursorBuddyPosition: 'cursor-buddy:get-position',
-  cursorBuddyPositionChanged: 'cursor-buddy:position-changed',
+  getCursorBuddySnapshot: 'cursor-buddy:get-snapshot',
+  cursorBuddySnapshotChanged: 'cursor-buddy:snapshot-changed',
   companionPositionChanged: 'companion:position-changed',
   companionAppearanceChanged: 'companion:appearance-changed',
   companionActivateCandidate: 'companion-customization:activate-candidate',
@@ -137,6 +139,7 @@ export const IPC_CHANNELS = {
   companionGenerateImage: 'companion-customization:generate',
   companionUseDefault: 'companion-customization:use-default',
   companionGuidanceChanged: 'companion:guidance-changed',
+  companionGuidanceAction: 'companion:guidance-action',
   companionGuidanceVisualChanged: 'companion:guidance-visual-changed',
   companionHoverChanged: 'companion:hover-changed',
   companionInteractionChanged: 'companion:interaction-changed',
@@ -432,7 +435,7 @@ export interface DesktopApi {
 }
 
 export interface CompanionApi {
-  getCursorBuddyPosition(): Promise<CompanionPosition>;
+  getCursorBuddySnapshot(): Promise<CursorBuddySnapshot>;
   onAppearanceChange(
     listener: (appearance: CompanionAppearance) => void,
   ): () => void;
@@ -442,12 +445,13 @@ export interface CompanionApi {
   onGuidanceVisualChange(
     listener: (visual: CompanionGuidanceVisual | null) => void,
   ): () => void;
+  performGuidanceAction(request: CompanionGuidanceActionRequest): Promise<void>;
   onInteractionChange(
     listener: (interaction: CompanionInteraction | null) => void,
   ): () => void;
   onHoverChange(listener: (hovered: CompanionHover) => void): () => void;
-  onCursorBuddyPositionChange(
-    listener: (position: CompanionPosition) => void,
+  onCursorBuddySnapshotChange(
+    listener: (snapshot: CursorBuddySnapshot) => void,
   ): () => void;
   onPositionChange(listener: (position: CompanionPosition) => void): () => void;
   onPetNudgeChange(

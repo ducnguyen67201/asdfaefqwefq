@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   shouldRetainVoiceTerminalActivity,
+  voiceTaskScreenContext,
   voiceTurnRoute,
 } from './voice-route';
 
@@ -15,6 +16,11 @@ describe('voiceTurnRoute', () => {
     ).toBe('task');
   });
 
+  it('requires initial screen context for every voice Task transcript', () => {
+    expect(voiceTaskScreenContext({ mode: 'task' })).toBe('required');
+    expect(voiceTaskScreenContext({ mode: 'dictation' })).toBe('auto');
+  });
+
   it('routes Dictation by activation without inspecting transcript text', () => {
     expect(
       voiceTurnRoute({ activation: 'local_hold', mode: 'dictation' }),
@@ -24,13 +30,13 @@ describe('voiceTurnRoute', () => {
     ).toBe('global_dictation');
   });
 
-  it('hands accepted Tasks to task presentation but retains Dictation feedback', () => {
+  it('retains the accepted transcript through the task handoff', () => {
     expect(
       shouldRetainVoiceTerminalActivity({
         disposition: 'task_submitted',
         mode: 'task',
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldRetainVoiceTerminalActivity({
         disposition: 'feedback',

@@ -247,6 +247,24 @@ describe('ElectronPresentationPresenter', () => {
     const task = createTask({
       phase: 'completed',
       request: 'Circle each question, explain it, then continue.',
+      goal: {
+        schemaVersion: 11,
+        id: 'f15fc9be-960f-4b65-a146-3acafb9bc682',
+        originalRequest: 'Circle each question, explain it, then continue.',
+        runtimeKind: 'coach',
+        route: 'coach',
+        executionProfile: 'everyday',
+        workspace: null,
+        activity: null,
+        coachProgress: null,
+        limits: {
+          maxImages: 20,
+          maxMicroUsd: 5_000_000,
+          maxMinutes: 30,
+          maxModelSamples: 40,
+          maxToolCalls: 30,
+        },
+      },
     });
 
     presenter.apply('done', task);

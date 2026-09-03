@@ -74,8 +74,15 @@ export function guidanceStatusLabel(
   audioStatus: GuidanceAudioStatus | null,
 ): string {
   const vietnamese = guidance.language === 'vi';
-  if (guidance.playback === 'paused' || audioStatus === 'paused') {
+  if (
+    guidance.phase === 'paused' ||
+    guidance.playback === 'paused' ||
+    audioStatus === 'paused'
+  ) {
     return vietnamese ? 'Tạm dừng' : 'Paused';
+  }
+  if (guidance.phase === 'checking') {
+    return vietnamese ? 'Đang kiểm tra' : 'Checking';
   }
   if (audioStatus === 'loading') {
     return vietnamese ? 'Đang tải giọng nói' : 'Loading voice';
@@ -86,13 +93,55 @@ export function guidanceStatusLabel(
   if (audioStatus === 'speaking') {
     return vietnamese ? 'Đang nói' : 'Speaking';
   }
+  if (guidance.phase === 'waiting') {
+    return vietnamese ? 'Đến lượt em' : 'Your turn';
+  }
   if (guidance.kind === 'result') {
     return vietnamese ? 'Hoàn tất' : 'Completed';
+  }
+  if (guidance.kind === 'thinking') {
+    return vietnamese ? 'Đang suy nghĩ' : 'Thinking';
   }
   if (guidance.kind === 'action_preview') {
     return vietnamese ? 'Sắp thực hiện' : 'Up next';
   }
   return vietnamese ? 'Đang hướng dẫn' : 'Guiding';
+}
+
+export function GuidanceResponseTimer({
+  guidance,
+}: {
+  guidance: CompanionGuidance;
+}) {
+  const active = Boolean(
+    guidance.taskId &&
+    guidance.kind === 'guidance' &&
+    guidance.phase === 'waiting' &&
+    guidance.responseWindowSeconds,
+  );
+  const duration = guidance.responseWindowSeconds ?? 0;
+  const [remaining, setRemaining] = useState(duration);
+  useEffect(() => {
+    if (!active) return undefined;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1_000);
+      setRemaining(Math.max(0, duration - elapsed));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [active, duration, guidance.taskId]);
+  if (!active) return null;
+  const vietnamese = guidance.language === 'vi';
+  return (
+    <div className="guidance-callout__timer" aria-hidden="true">
+      <span>
+        {remaining > 0
+          ? `${vietnamese ? 'Em thử ngay nhé' : 'Try it now'} · ${remaining}s`
+          : vietnamese ? 'Em cứ làm nhé' : 'Keep going'}
+      </span>
+      <progress max={duration} value={remaining} />
+    </div>
+  );
 }
 
 export function GuidanceCallout() {
@@ -374,9 +423,12 @@ export function GuidanceCallout() {
         </aside>
       ) : calloutKind === 'guidance' && guidance ? (
         <aside
+          aria-label={guidance.taskId
+            ? guidance.language === 'vi' ? 'Bước hướng dẫn của Tro' : 'Tro coaching step'
+            : undefined}
           aria-live="polite"
-          className={`guidance-callout guidance-callout--${guidance.kind} guidance-callout--${guidance.side}`}
-          role="status"
+          className={`guidance-callout guidance-callout--${guidance.kind} guidance-callout--${guidance.side}${guidance.taskId ? ' guidance-callout--coach' : ''}`}
+          role={guidance.taskId ? 'region' : 'status'}
         >
           <div className="guidance-callout__header" aria-hidden="true">
             <span className="guidance-callout__avatar">T</span>
@@ -391,21 +443,29 @@ export function GuidanceCallout() {
               <span className="guidance-callout__target">
                 {guidance.target ?? 'Look here'}
               </span>
-              <div className="guidance-callout__controls">
-                {guidance.shortcuts?.back.available ? (
-                  <span><kbd>{guidance.shortcuts.back.label}</kbd> Back</span>
-                ) : null}
-                {guidance.shortcuts?.pause.available ? (
-                  <span>
-                    <kbd>{guidance.shortcuts.pause.label}</kbd>{' '}
-                    {guidance.playback === 'paused' ? 'Resume' : 'Pause'}
-                  </span>
-                ) : null}
-                {guidance.shortcuts?.next.available ? (
-                  <span><kbd>{guidance.shortcuts.next.label}</kbd> Next</span>
-                ) : null}
-                <span className="guidance-callout__ask">⌘⌃ Ask</span>
-              </div>
+              {guidance.taskId ? (
+                <GuidanceResponseTimer
+                  guidance={guidance}
+                  key={`${guidance.taskId}:${guidance.phase}:${guidance.message}`}
+                />
+              ) : (
+                <div className="guidance-callout__controls">
+                  {guidance.shortcuts?.back.available ? (
+                    <span><kbd>{guidance.shortcuts.back.label}</kbd> Back</span>
+                  ) : null}
+                  {guidance.shortcuts?.pause.available ? (
+                    <span>
+                      <kbd>{guidance.shortcuts.pause.label}</kbd>{' '}
+                      {guidance.playback === 'paused' ? 'Resume' : 'Pause'}
+                    </span>
+                  ) : null}
+                  {guidance.shortcuts?.next.available ? (
+                    <span><kbd>{guidance.shortcuts.next.label}</kbd> Next</span>
+                  ) : null}
+                  <span className="guidance-callout__ask">⌘⌃ Ask</span>
+                </div>
+              )}
+              {error ? <p className="guidance-callout__error">{error}</p> : null}
             </>
           ) : null}
         </aside>

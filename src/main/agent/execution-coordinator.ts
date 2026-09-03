@@ -21,7 +21,6 @@ import {
 } from './runtime-tool-dispatcher';
 import type {
   DesktopControlToolInput,
-  GuidanceToolInput,
   OpenApplicationToolInput,
   OpenUrlToolInput,
 } from './runtime-tool-registry';
@@ -55,10 +54,6 @@ interface ExecutionCoordinatorOptions {
     | Promise<DesktopObservationCleanup | undefined>
     | DesktopObservationCleanup
     | undefined;
-  presentGuidance?: (
-    input: GuidanceToolInput,
-    context: { signal: AbortSignal; taskId: string },
-  ) => Promise<void>;
   toolDispatcher?: Pick<RuntimeToolDispatcher, 'dispatch'>;
 }
 
@@ -97,7 +92,6 @@ export class TaskExecutionCoordinator {
     prepareDesktopObservation = () => {
       throw new Error('Desktop observation preparation is not configured.');
     },
-    presentGuidance = async () => undefined,
     toolDispatcher,
   }: ExecutionCoordinatorOptions) {
     this.cua = cua;
@@ -237,19 +231,6 @@ export class TaskExecutionCoordinator {
               input.observationId,
               context.signal,
             );
-          },
-        },
-        {
-          id: 'task.guidance',
-          execute: async (invocation, context) => {
-            const input = invocation.input as GuidanceToolInput;
-            const result = await cua.executeCommand(
-              context.taskId,
-              { kind: 'point', x: input.x, y: input.y },
-              context.signal,
-            );
-            await presentGuidance(input, context);
-            return result;
           },
         },
         ...additionalToolAdapters,
