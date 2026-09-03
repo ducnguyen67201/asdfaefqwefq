@@ -114,7 +114,6 @@ import {
   startCompletionNarration,
   type CompanionResponsePresentationOptions,
 } from './main/presentation/electron-presentation-presenter';
-import { LearnerActionGate } from './main/presentation/learner-action-gate';
 import { PresentationCoordinator } from './main/presentation/presentation-coordinator';
 import { registerScreenRecordingHost } from './main/screen-recording-registration';
 import {
@@ -158,7 +157,6 @@ import {
   TROCODE_COMPANION_SCHEME,
   type AuthUser,
   type CompanionGuidance,
-  type CompanionGuidanceActionRequest,
   type CompanionAppearance,
   type CompanionInteraction,
   type CompanionPetNudge,
@@ -405,7 +403,6 @@ const companionNarrationService = new CompanionNarrationService({
   publish: publishCompanionSpeech,
   ttsService: elevenLabsTtsService,
 });
-const learnerActionGate = new LearnerActionGate();
 const cursorBuddyController = new CursorBuddyController({
   animationSettings: () =>
     process.platform === 'darwin' || process.platform === 'win32'
@@ -424,7 +421,6 @@ const cursorBuddyController = new CursorBuddyController({
   getUserCursor: () => screen.getCursorScreenPoint(),
   hideCallout: hideGuidanceCallout,
   hideHighlight: hideGuidanceTargetMarker,
-  learnerGate: learnerActionGate,
   log: (event, metadata) => console.info(`[cursor-buddy] ${event}`, metadata),
   moveCallout: moveCursorBuddyCallout,
   now: Date.now,
@@ -435,17 +431,6 @@ const cursorBuddyController = new CursorBuddyController({
   showHighlight: showGuidanceTargetMarker,
   speak: (text, signal, taskId) =>
     companionNarrationService.begin(text, signal, taskId),
-  subscribeToLearnerActivity: (onActivity) => {
-    let previous = screen.getCursorScreenPoint();
-    const timer = setInterval(() => {
-      const current = screen.getCursorScreenPoint();
-      if (current.x !== previous.x || current.y !== previous.y) {
-        previous = current;
-        onActivity('pointer');
-      }
-    }, 120);
-    return () => clearInterval(timer);
-  },
   toRendererPosition: toCursorBuddyRendererPosition,
 });
 const executionCoordinator = new TaskExecutionCoordinator({
@@ -1510,14 +1495,6 @@ function cursorBuddyCalloutSize(guidance: CompanionGuidance | null) {
   return CURSOR_BUDDY_COACH_CALLOUT_SIZE;
 }
 
-function handleCompanionGuidanceAction(
-  request: CompanionGuidanceActionRequest,
-): void {
-  if (!cursorBuddyController.handleAction(request)) {
-    throw new Error('Tro is not waiting for a learner action yet.');
-  }
-}
-
 async function identifyAnalyticsUser(user: AuthUser): Promise<void> {
   taskHistoryService.setCurrentOwner(user.id);
   await prepareLocalAgentRuntime();
@@ -2371,7 +2348,6 @@ const createWindow = (): void => {
     getCompanionInteractionWindow: () => guidanceWindow,
     getCursorBuddySnapshot,
     getCursorBuddyWindow: () => cursorBuddyWindow,
-    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,

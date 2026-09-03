@@ -7,7 +7,6 @@ import {
   type CompanionGuidance,
   type CursorBuddySnapshot,
 } from '../../shared/contracts';
-import type { LearnerActionOutcome } from '../presentation/learner-action-gate';
 
 import {
   CursorBuddyController,
@@ -31,7 +30,6 @@ function setup() {
   vi.useFakeTimers();
   const events: string[] = [];
   const snapshots: CursorBuddySnapshot[] = [];
-  const gate = deferred<LearnerActionOutcome>();
   const getUserCursor = vi.fn(() => ({ x: 100, y: 120 }));
   const showHighlight = vi.fn(() => {
     events.push('highlight:show');
@@ -51,11 +49,6 @@ function setup() {
     getUserCursor,
     hideCallout: () => events.push('callout:hide'),
     hideHighlight: () => events.push('highlight:hide'),
-    learnerGate: {
-      handleAction: vi.fn(() => true),
-      wait: vi.fn(() => gate.promise) as unknown as
-        CursorBuddyControllerDependencies['learnerGate']['wait'],
-    },
     log: vi.fn(),
     moveCallout: () => events.push('callout:move'),
     now: Date.now,
@@ -76,7 +69,6 @@ function setup() {
   };
   const controller = new CursorBuddyController(dependencies);
   const step: CursorBuddyStep = {
-    baselineFingerprint: 'a'.repeat(64),
     copy: {
       expectedOutcome: 'The Variables palette is visible.',
       hook: 'Ready?',
@@ -87,115 +79,110 @@ function setup() {
     screenPoint: { x: 500, y: 100 },
     taskId: randomUUID(),
   };
+  const secondStep: CursorBuddyStep = {
+    copy: {
+      expectedOutcome: 'The variable dialog is visible.',
+      hook: 'Next!',
+      instruction: 'Choose Make a Variable.',
+      reason: 'This creates the score holder.',
+    },
+    language: 'en',
+    screenPoint: { x: 900, y: 300 },
+    target: 'Make a Variable button',
+    taskId: step.taskId,
+  };
   return {
     controller,
     dependencies,
     events,
-    gate,
     getUserCursor,
     showHighlight,
     snapshots,
+    secondStep,
     step,
   };
 }
 
 describe('CursorBuddyController', () => {
-  it('owns the complete non-mutating teaching sequence', async () => {
+  it('presents every step serially without returning to the real cursor between them', async () => {
     const {
       controller,
-      dependencies,
       events,
-      gate,
       getUserCursor,
       showHighlight,
       snapshots,
+      secondStep,
       step,
     } = setup();
     controller.start();
     expect(getUserCursor).toHaveBeenCalledTimes(1);
 
-    const presentation = controller.presentStep(step, {
-      observe: vi.fn(async () => ({ fingerprint: 'b'.repeat(64) })),
+    const presentation = controller.presentSequence([step, secondStep], {
       signal: new AbortController().signal,
     });
-    await vi.advanceTimersByTimeAsync(240);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await presentation;
 
     expect(events).toEqual(expect.arrayContaining([
       'callout:presenting:Ready? Open Variables. It stores changing numbers.',
       'speak:Ready? Open Variables. It stores changing numbers.',
+      'callout:presenting:Next! Choose Make a Variable. This creates the score holder.',
+      'speak:Next! Choose Make a Variable. This creates the score holder.',
       'highlight:show',
-      'callout:waiting:Open Variables. It stores changing numbers.',
+      'highlight:hide',
     ]));
     expect(snapshots.map((snapshot) => snapshot.phase)).toEqual(
       expect.arrayContaining([
         'following',
         'gliding',
         'demonstrating',
-        'waiting',
+        'explaining',
       ]),
     );
+    expect(snapshots.map((snapshot) => snapshot.phase)).not.toContain('waiting');
+    expect(snapshots.map((snapshot) => snapshot.phase)).not.toContain('checking');
     expect(getUserCursor).toHaveBeenCalledTimes(1);
-    expect(showHighlight).toHaveBeenCalledWith(step.screenPoint, undefined);
-    expect(dependencies.learnerGate.wait).toHaveBeenCalledWith(
-      expect.objectContaining({ timeoutMs: null }),
-    );
-
-    gate.resolve({ kind: 'confirmed' });
-    await expect(presentation).resolves.toEqual({ learnerActivity: 'confirmed' });
-    expect(events).not.toContain('highlight:hide');
-    expect(snapshots.at(-1)).toMatchObject({ busy: true, phase: 'checking' });
-    expect(events).toContain("callout:checking:Let's check what changed…");
+    expect(showHighlight).toHaveBeenNthCalledWith(1, step.screenPoint, undefined);
+    expect(showHighlight).toHaveBeenNthCalledWith(2, secondStep.screenPoint, undefined);
+    await expect(Promise.resolve(presentation)).resolves.toEqual({ outcome: 'presented' });
     controller.finishSession(step.taskId);
-    expect(events).toContain('highlight:hide');
-    expect(events).toContain('callout:hide');
+    await vi.advanceTimersByTimeAsync(260);
+    expect(getUserCursor.mock.calls.length).toBeGreaterThan(1);
     controller.stop();
   });
 
-  it('returns the stable full observation and stays pinned between model decisions', async () => {
-    const { controller, gate, getUserCursor, snapshots, step } = setup();
+  it('does not expose a learner wait or checking phase', async () => {
+    const { controller, snapshots, step } = setup();
     controller.start();
-    const presentation = controller.presentStep(step, {
-      observe: vi.fn(async () => ({ fingerprint: 'b'.repeat(64), marker: 'full evidence' })),
+    const presentation = controller.presentSequence([step], {
       signal: new AbortController().signal,
     });
     await vi.advanceTimersByTimeAsync(240);
-    gate.resolve({
-      kind: 'changed',
-      observation: { fingerprint: 'b'.repeat(64), marker: 'full evidence' },
-    } as LearnerActionOutcome);
-    await expect(presentation).resolves.toEqual({
-      learnerActivity: 'changed',
-      observation: { fingerprint: 'b'.repeat(64), marker: 'full evidence' },
-    });
-    expect(snapshots.at(-1)?.phase).toBe('checking');
-    expect(getUserCursor).toHaveBeenCalledTimes(1);
-    controller.finishSession(step.taskId);
+    await expect(presentation).resolves.toEqual({ outcome: 'presented' });
+
+    expect(snapshots.map((snapshot) => snapshot.phase)).not.toContain('waiting');
+    expect(snapshots.map((snapshot) => snapshot.phase)).not.toContain('checking');
   });
 
-  it('starts the learner timer only after narration finishes', async () => {
-    const { controller, dependencies, gate, step } = setup();
-    const narration = deferred<void>();
-    dependencies.speak = vi.fn(() => ({
-      cancel: vi.fn(),
-      completion: narration.promise,
-    }));
+  it('starts the next step only after the current narration finishes', async () => {
+    const { controller, dependencies, secondStep, step } = setup();
+    const firstNarration = deferred<void>();
+    const secondNarration = deferred<void>();
+    dependencies.speak = vi.fn()
+      .mockReturnValueOnce({ cancel: vi.fn(), completion: firstNarration.promise })
+      .mockReturnValueOnce({ cancel: vi.fn(), completion: secondNarration.promise });
     controller.start();
-    const presentation = controller.presentStep(step, {
-      observe: vi.fn(async () => ({ fingerprint: 'b'.repeat(64) })),
+    const presentation = controller.presentSequence([step, secondStep], {
       signal: new AbortController().signal,
     });
     await vi.advanceTimersByTimeAsync(240);
 
-    expect(dependencies.learnerGate.wait).not.toHaveBeenCalled();
-    narration.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(dependencies.learnerGate.wait).toHaveBeenCalledWith(
-      expect.objectContaining({ timeoutMs: null }),
-    );
-
-    gate.resolve({ kind: 'timed_out' });
-    await presentation;
+    expect(dependencies.speak).toHaveBeenCalledTimes(1);
+    firstNarration.resolve();
+    await vi.advanceTimersByTimeAsync(420);
+    expect(dependencies.speak).toHaveBeenCalledTimes(2);
+    secondNarration.resolve();
+    await expect(presentation).resolves.toEqual({ outcome: 'presented' });
     controller.stop();
   });
 
@@ -213,6 +200,63 @@ describe('CursorBuddyController', () => {
     expect(snapshots.at(-1)).toMatchObject({ busy: true, phase: 'thinking' });
     expect(events).toContain('callout:presenting:Mình đang nhìn bài của em…');
     expect(events.some((event) => event.startsWith('speak:'))).toBe(false);
+  });
+
+  it('keeps following the user cursor while thinking', async () => {
+    const { controller, events, getUserCursor } = setup();
+    controller.start();
+    const initialPosition = controller.currentSnapshot.position;
+    getUserCursor.mockReturnValue({ x: 420, y: 360 });
+
+    controller.handleActivity({
+      appLanguage: 'en',
+      destination: { kind: 'task', label: 'Scratch' },
+      mode: 'task',
+      phase: 'processing',
+      transcript: 'Help with Scratch',
+    });
+    await vi.advanceTimersByTimeAsync(125);
+
+    expect(getUserCursor.mock.calls.length).toBeGreaterThan(1);
+    expect(controller.currentSnapshot).toMatchObject({
+      busy: true,
+      phase: 'thinking',
+    });
+    expect(controller.currentSnapshot.position).not.toEqual(initialPosition);
+    expect(events).toContain('callout:move');
+    controller.stop();
+  });
+
+  it('keeps an existing thinking callout anchored when presentation becomes unavailable', async () => {
+    const { controller, dependencies, events } = setup();
+    dependencies.canShowThinking = vi.fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+    controller.start();
+    controller.handleWorkState('processing');
+
+    await vi.advanceTimersByTimeAsync(16);
+
+    expect(events).toContain('callout:presenting:I\'m looking at your work…');
+    expect(events).toContain('callout:move');
+    expect(controller.currentSnapshot).toMatchObject({
+      busy: true,
+      phase: 'thinking',
+    });
+    controller.stop();
+  });
+
+  it('resumes following with only one scheduled follow tick', async () => {
+    const { controller, getUserCursor } = setup();
+    controller.start();
+    controller.handleWorkState('processing');
+
+    controller.handleWorkState('idle');
+    expect(getUserCursor).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(16);
+    expect(getUserCursor).toHaveBeenCalledTimes(3);
+    controller.stop();
   });
 
   it('keeps thinking continuous across an accepted voice Task handoff', () => {
@@ -238,21 +282,4 @@ describe('CursorBuddyController', () => {
     controller.stop();
   });
 
-  it('routes learner controls only to the active step', async () => {
-    const { controller, dependencies, gate, step } = setup();
-    controller.start();
-    const presentation = controller.presentStep(step, {
-      observe: vi.fn(async () => ({ fingerprint: 'b'.repeat(64) })),
-      signal: new AbortController().signal,
-    });
-    await vi.advanceTimersByTimeAsync(240);
-
-    expect(controller.handleAction({ action: 'repeat', taskId: randomUUID() })).toBe(false);
-    expect(controller.handleAction({ action: 'repeat', taskId: step.taskId })).toBe(true);
-    expect(dependencies.learnerGate.handleAction).toHaveBeenCalledOnce();
-
-    gate.resolve({ kind: 'timed_out' });
-    await presentation;
-    controller.stop();
-  });
 });

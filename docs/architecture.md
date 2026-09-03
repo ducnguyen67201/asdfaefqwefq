@@ -2,8 +2,8 @@
 
 Tro has one task entry point and two deliberately different runtimes. A pure
 `TaskRequestRouter` selects `coach` for teaching/answers and `agent` for explicit
-execution. `CoachRuntime` is non-mutating and presents one grounded step through
-Cursor Buddy. Heavy Agent is the pinned OpenAI Agents SDK `Agent` and `Runner` in
+execution. `CoachRuntime` is non-mutating and presents one bounded, screen-grounded
+sequence through Cursor Buddy. Heavy Agent is the pinned OpenAI Agents SDK `Agent` and `Runner` in
 a bundled Electron utility process. Electron main remains the trusted host for
 both lanes; Rust authenticates, reserves budget, and proxies Responses.
 
@@ -67,7 +67,7 @@ required cursor API there; lifecycle animation remains available.
 
 `CursorBuddyController` is the single public owner of follow, immediate thinking
 feedback, teaching glide, visual click, target highlight, compact callout,
-narration, learner controls, and return-to-follow. It uses full-rate updates
+narration, sequence progress, and return-to-follow. It uses full-rate updates
 only while the student's pointer is moving and low-frequency polling while
 stationary. During guidance it stops sampling the student's pointer, so the
 virtual buddy can move without moving or chasing the real cursor. macOS and
@@ -78,29 +78,30 @@ analytics, task history, or network calls.
 
 One Coach task is also one Cursor Buddy session. The controller owns the
 session task id across step boundaries, keeps the buddy and compact callout at
-the last grounded target while Coach evaluates learner evidence, and
-glides directly from that anchor to the next target. A terminal, cancelled, or
+the last grounded target while the current narration finishes, and glides
+directly from that anchor to the next target. A terminal, cancelled, or
 failed task ends the session and returns the buddy beside the student's real
 cursor. Observation-window restoration is tied to the same session identity so
 an overlapping capture cannot resurrect stale coaching UI.
 
 Teacher walkthrough motion belongs to Cursor Buddy presentation, not the model
-or CUA. Coach returns one validated structured decision containing the semantic
-target label, its normalized center point, and short copy; model output never
-controls overlay dimensions. The host maps normalized image coordinates to
-screenshot pixels and then desktop DIPs, then constructs a fixed-size,
-display-clamped marker. Cursor Buddy and
-its callout glide from one shared anchor, reveal the marker on arrival, perform
-a visual-only click pulse, explain the reason aloud, and wait for the learner.
-No native pointer or click command is dispatched. Operating-system Reduce
-Motion snaps the virtual buddy and CSS provides static presentation cues.
-`LearnerActionGate` waits for content-free pointer activity and captures only
-after a debounce; idle, Replay, Pause, and the visible timer make no screen or
-model request. The resulting fresh observation drives exactly one next Coach
-decision. Coach screenshots, coordinates, and input activity are never persisted.
-This point-only geometry requires no repair model request. Semantic element
-bounds remain a future grounding source only after their platform-specific
-screen units can be converted explicitly into Electron desktop DIPs.
+or CUA. Coach captures one observation and makes one model request for a strict
+`coach_sequence` of one to eight steps. Every semantic target label, normalized
+center point, and piece of short copy is bound to that same observation id and
+fingerprint. The host validates and maps all points to desktop DIPs before the
+presentation begins; model output never controls overlay dimensions.
+
+`CursorBuddyController.presentSequence()` owns the local serial playback. For
+each step the buddy and callout glide from their current anchor, reveal a
+fixed-size display-clamped marker, perform a visual-only click pulse, and explain
+the reason aloud. Narration completion releases the next short local transition.
+There is no learner countdown, learner activity polling, intermediate screen
+capture, intermediate model request, or native pointer/click dispatch. The buddy
+does not return to the student's cursor between steps. A sequence may therefore
+contain only targets visible in the initial observation; a changed screen requires
+a new learner request and a new sequence. Operating-system Reduce Motion snaps
+the virtual buddy and CSS provides static presentation cues. Coach screenshots
+and coordinates are never persisted.
 
 Coach and Heavy Agent share `TaskRuntime`, `ActivityContext`, classroom authority,
 encrypted task history, and the authenticated Responses accounting boundary.

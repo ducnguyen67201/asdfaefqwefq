@@ -78,15 +78,11 @@ export class TaskRuntime extends EventEmitter {
 
   applyCoachStatus(
     taskId: string,
-    coachPhase: 'observing' | 'planning' | 'presenting' | 'waiting',
+    coachPhase: 'observing' | 'planning' | 'presenting',
     summary: string,
   ): TaskSnapshot {
     const snapshot = this.getTask(taskId);
-    const phase = coachPhase === 'presenting'
-      ? 'acting'
-      : coachPhase === 'waiting'
-        ? 'paused'
-        : coachPhase;
+    const phase = coachPhase === 'presenting' ? 'acting' : coachPhase;
     return this.commit({ ...snapshot, phase }, { summary });
   }
 

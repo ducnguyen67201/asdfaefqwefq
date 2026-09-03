@@ -1,20 +1,14 @@
 import {
   CompanionGuidanceSchema,
   CursorBuddySnapshotSchema,
+  MAX_COACH_SEQUENCE_STEPS,
   type AppLanguage,
   type CompanionCoachCopy,
   type CompanionGuidance,
-  type CompanionGuidanceActionRequest,
   type CompanionState,
   type CompanionVoiceActivity,
   type CursorBuddySnapshot,
 } from '../../shared/contracts';
-import type {
-  LearnerActionGate,
-  LearnerActionOutcome,
-  LearnerActivitySubscription,
-  LearnerObservation,
-} from '../presentation/learner-action-gate';
 
 import { nextCursorBuddyFollowSchedule } from './cursor-buddy-follow-policy';
 import {
@@ -35,7 +29,6 @@ export interface CursorBuddySpeechHandle {
 }
 
 export interface CursorBuddyStep {
-  baselineFingerprint: string;
   copy: CompanionCoachCopy;
   language: AppLanguage;
   screenPoint: Point;
@@ -44,14 +37,17 @@ export interface CursorBuddyStep {
   taskId: string;
 }
 
-export interface CursorBuddyStepContext<TObservation extends LearnerObservation> {
-  observe(signal: AbortSignal): Promise<TObservation>;
+export interface CursorBuddySequenceContext {
+  onStepStart?(
+    step: CursorBuddyStep,
+    index: number,
+    total: number,
+  ): Promise<void> | void;
   signal: AbortSignal;
 }
 
-export interface CursorBuddyPresentationResult<TObservation extends LearnerObservation> {
-  learnerActivity: 'changed' | 'confirmed' | 'timed_out';
-  observation?: TObservation;
+export interface CursorBuddyPresentationResult {
+  outcome: 'presented' | 'unavailable';
 }
 
 export interface CursorBuddyControllerDependencies {
@@ -65,8 +61,6 @@ export interface CursorBuddyControllerDependencies {
   getUserCursor(): Point;
   hideCallout(): void;
   hideHighlight(): void;
-  learnerGate: Pick<LearnerActionGate, 'handleAction' | 'wait'>;
-  subscribeToLearnerActivity?: LearnerActivitySubscription;
   log(event: string, metadata: { phase: string; taskId: string }): void;
   moveCallout(anchor: Point, side: 'left' | 'right'): void;
   publishSnapshot(snapshot: CursorBuddySnapshot): void;
@@ -80,13 +74,12 @@ export interface CursorBuddyControllerDependencies {
 }
 
 const CLICK_PULSE_MS = 240;
-const LEARNER_RESPONSE_WINDOW_MS = 15_000;
+const BETWEEN_STEPS_MS = 180;
 const RETURN_RICH_MS = 260;
 
 export class CursorBuddyController {
   private activeAbort: AbortController | null = null;
   private activeGeneration = 0;
-  private activeTaskId: string | null = null;
   private sessionTaskId: string | null = null;
   private currentPosition: Point = { x: 0, y: 0 };
   private followActiveUntil = 0;
@@ -156,7 +149,6 @@ export class CursorBuddyController {
   }
 
   private showThinking(language: AppLanguage): void {
-    this.clearFollowTimer();
     this.publish('thinking', true);
     if (!this.dependencies.canShowThinking()) return;
     const guidance = CompanionGuidanceSchema.parse({
@@ -180,13 +172,8 @@ export class CursorBuddyController {
     this.dependencies.showCallout(guidance, this.currentPosition, side);
   }
 
-  handleAction(request: CompanionGuidanceActionRequest): boolean {
-    if (request.taskId !== this.activeTaskId) return false;
-    return this.dependencies.learnerGate.handleAction(request);
-  }
-
   cancelGuidance(): void {
-    if (!this.sessionTaskId && !this.activeTaskId) return;
+    if (!this.sessionTaskId && !this.activeAbort) return;
     this.sessionTaskId = null;
     this.cancelActive();
     this.dependencies.hideHighlight();
@@ -210,25 +197,78 @@ export class CursorBuddyController {
     void this.returnToUserCursor();
   }
 
-  async presentStep<TObservation extends LearnerObservation>(
-    step: CursorBuddyStep,
-    context: CursorBuddyStepContext<TObservation>,
-  ): Promise<CursorBuddyPresentationResult<TObservation>> {
+  async presentSequence(
+    steps: readonly CursorBuddyStep[],
+    context: CursorBuddySequenceContext,
+  ): Promise<CursorBuddyPresentationResult> {
+    if (steps.length < 1 || steps.length > MAX_COACH_SEQUENCE_STEPS) {
+      throw new Error(
+        `Cursor Buddy requires a sequence of 1 to ${MAX_COACH_SEQUENCE_STEPS} steps.`,
+      );
+    }
+    const taskId = steps[0]!.taskId;
+    if (steps.some((step) => step.taskId !== taskId)) {
+      throw new Error('Every Cursor Buddy sequence step must belong to one task.');
+    }
     if (!this.running || !this.dependencies.canPresent()) {
-      return { learnerActivity: 'timed_out' };
+      return { outcome: 'unavailable' };
     }
 
-    this.beginSession(step.taskId);
+    this.beginSession(taskId);
     this.cancelActive();
     this.clearFollowTimer();
     const generation = ++this.activeGeneration;
     const abort = new AbortController();
     this.activeAbort = abort;
-    this.activeTaskId = step.taskId;
     const onContextAbort = (): void => abort.abort();
     context.signal.addEventListener('abort', onContextAbort, { once: true });
     if (context.signal.aborted) abort.abort();
 
+    try {
+      for (const [index, step] of steps.entries()) {
+        this.assertActive(generation, abort.signal);
+        await context.onStepStart?.(step, index, steps.length);
+        this.assertActive(generation, abort.signal);
+        const outcome = await this.presentSequenceStep(
+          step,
+          generation,
+          abort.signal,
+          index,
+          steps.length,
+        );
+        if (outcome === 'unavailable') return { outcome };
+        if (index < steps.length - 1) {
+          await this.delay(BETWEEN_STEPS_MS, abort.signal);
+        }
+      }
+      return { outcome: 'presented' };
+    } catch (error) {
+      this.dependencies.log(
+        error instanceof Error && error.name === 'AbortError'
+          ? 'guidance.cancelled'
+          : 'guidance.failed',
+        {
+          phase: this.snapshot.phase,
+          taskId,
+        },
+      );
+      throw error;
+    } finally {
+      context.signal.removeEventListener('abort', onContextAbort);
+      if (this.isActive(generation)) {
+        this.activeAbort = null;
+        this.dependencies.hideHighlight();
+      }
+    }
+  }
+
+  private async presentSequenceStep(
+    step: CursorBuddyStep,
+    generation: number,
+    signal: AbortSignal,
+    index: number,
+    total: number,
+  ): Promise<'presented' | 'unavailable'> {
     const targetDisplay = this.dependencies.getDisplayBounds(step.screenPoint);
     const targetPosition = placeCursorBuddyAtTarget(
       step.screenPoint,
@@ -241,185 +281,64 @@ export class CursorBuddyController {
       this.dependencies.calloutSize,
       this.dependencies.cursorSize,
     );
-    const explanation = `${step.copy.instruction} ${step.copy.reason}`;
-    const narration = `${step.copy.hook} ${explanation}`;
-    const presentingGuidance = this.guidanceFor(
-      step,
-      narration,
-      'presenting',
-      side,
-    );
-    const waitingMessage = explanation;
+    const narration = `${step.copy.hook} ${step.copy.instruction} ${step.copy.reason}`;
+    const guidance = this.guidanceFor(step, narration, side, index, total);
     let speech: CursorBuddySpeechHandle | null = null;
-    let sessionContinues = false;
     this.dependencies.log('guidance.started', {
-      phase: 'gliding',
+      phase: `step_${index + 1}_of_${total}`,
       taskId: step.taskId,
     });
 
     try {
-      this.assertActive(generation, abort.signal);
-      if (!this.dependencies.showCallout(
-        presentingGuidance,
-        this.currentPosition,
-        side,
-      )) {
-        return { learnerActivity: 'timed_out' };
+      this.dependencies.hideHighlight();
+      if (!this.dependencies.showCallout(guidance, this.currentPosition, side)) {
+        return 'unavailable';
       }
       this.publish('gliding', true);
-      speech = this.dependencies.speak(narration, abort.signal, step.taskId);
-      const highlightShown = await this.animateTo(
-        targetPosition,
-        abort.signal,
-        (position) => {
-          this.dependencies.moveCallout(position, side);
-        },
-      ).then(async () => {
-        this.assertActive(generation, abort.signal);
-        if (!this.dependencies.showHighlight(step.screenPoint, step.screenRegion)) {
-          return false;
-        }
-        this.publish('demonstrating', true);
-        await this.delay(CLICK_PULSE_MS, abort.signal);
-        return true;
+      await this.animateTo(targetPosition, signal, (position) => {
+        this.dependencies.moveCallout(position, side);
       });
-      this.assertActive(generation, abort.signal);
-      if (!highlightShown) {
-        return { learnerActivity: 'timed_out' };
+      this.assertActive(generation, signal);
+      if (!this.dependencies.showHighlight(step.screenPoint, step.screenRegion)) {
+        return 'unavailable';
       }
-
+      this.publish('demonstrating', true);
+      await this.delay(CLICK_PULSE_MS, signal);
+      this.assertActive(generation, signal);
+      this.publish('explaining', true);
+      speech = this.dependencies.speak(narration, signal, step.taskId);
       await speech.completion;
-      this.assertActive(generation, abort.signal);
-
-      this.dependencies.showCallout(
-        this.guidanceFor(step, waitingMessage, 'waiting', side),
-        this.currentPosition,
-        side,
-      );
-      this.publish('waiting', false);
-      const outcome = await this.dependencies.learnerGate.wait({
-        baselineFingerprint: step.baselineFingerprint,
-        observe: () => context.observe(abort.signal),
-        onPauseChange: (paused) => {
-          if (!this.isActive(generation)) return;
-          const phase = paused ? 'paused' : 'waiting';
-          this.dependencies.showCallout(
-            this.guidanceFor(step, waitingMessage, phase, side),
-            this.currentPosition,
-            side,
-          );
-          this.publish(phase, false);
-        },
-        onRepeat: async () => {
-          this.assertActive(generation, abort.signal);
-          this.dependencies.showCallout(
-            this.guidanceFor(step, explanation, 'presenting', side),
-            this.currentPosition,
-            side,
-          );
-          this.publish('explaining', true);
-          const replay = this.dependencies.speak(
-            `${step.copy.hook} ${explanation}`,
-            abort.signal,
-            step.taskId,
-          );
-          await replay.completion;
-          this.assertActive(generation, abort.signal);
-          this.dependencies.showCallout(
-            this.guidanceFor(step, waitingMessage, 'waiting', side),
-            this.currentPosition,
-            side,
-          );
-          this.publish('waiting', false);
-        },
-        signal: abort.signal,
-        subscribeToActivity: this.dependencies.subscribeToLearnerActivity,
-        timeoutMs: null,
-        taskId: step.taskId,
-      });
-      speech.cancel();
-      const result = this.toResult(outcome);
-      if (outcome.kind !== 'timed_out') this.showChecking(step, side);
-      sessionContinues = true;
+      this.assertActive(generation, signal);
       this.dependencies.log('guidance.completed', {
-        phase: outcome.kind,
+        phase: `step_${index + 1}_of_${total}`,
         taskId: step.taskId,
       });
-      return result;
-    } catch (error) {
-      this.dependencies.log(
-        error instanceof Error && error.name === 'AbortError'
-          ? 'guidance.cancelled'
-          : 'guidance.failed',
-        {
-          phase: this.snapshot.phase,
-          taskId: step.taskId,
-        },
-      );
-      throw error;
+      return 'presented';
     } finally {
-      context.signal.removeEventListener('abort', onContextAbort);
       speech?.cancel();
-      if (this.isActive(generation)) {
-        this.activeAbort = null;
-        this.activeTaskId = null;
-        if (!sessionContinues) this.dependencies.hideHighlight();
-        if (!sessionContinues && this.sessionTaskId === step.taskId) {
-          this.sessionTaskId = null;
-        }
-        if (this.sessionTaskId !== step.taskId) {
-          this.dependencies.hideCallout();
-          await this.returnToUserCursor();
-        }
-      }
+      this.dependencies.hideHighlight();
     }
   }
 
   private guidanceFor(
     step: CursorBuddyStep,
     message: string,
-    phase: 'presenting' | 'waiting' | 'paused',
     side: 'left' | 'right',
+    index: number,
+    total: number,
   ): CompanionGuidance {
     return CompanionGuidanceSchema.parse({
       coach: step.copy,
       kind: 'guidance',
       language: step.language,
       message,
-      phase,
-      playback: phase === 'paused' ? 'paused' : 'playing',
-      ...(phase === 'waiting'
-        ? { responseWindowSeconds: LEARNER_RESPONSE_WINDOW_MS / 1_000 }
-        : {}),
+      phase: 'presenting',
+      playback: 'playing',
+      sequence: { current: index + 1, total },
       side,
       taskId: step.taskId,
       ...(step.target ? { target: step.target.slice(0, 80) } : {}),
     });
-  }
-
-  private showChecking(step: CursorBuddyStep, side: 'left' | 'right'): void {
-    const guidance = CompanionGuidanceSchema.parse({
-      kind: 'thinking',
-      language: step.language,
-      message:
-        step.language === 'vi'
-          ? 'Để Tro xem em vừa làm gì nhé…'
-          : "Let's check what changed…",
-      phase: 'checking',
-      playback: 'playing',
-      side,
-      taskId: step.taskId,
-    });
-    this.dependencies.showCallout(guidance, this.currentPosition, side);
-    this.publish('checking', true);
-  }
-
-  private toResult<TObservation extends LearnerObservation>(
-    outcome: LearnerActionOutcome<TObservation>,
-  ): CursorBuddyPresentationResult<TObservation> {
-    return outcome.kind === 'changed'
-      ? { learnerActivity: 'changed', observation: outcome.observation }
-      : { learnerActivity: outcome.kind };
   }
 
   private async returnToUserCursor(): Promise<void> {
@@ -438,13 +357,14 @@ export class CursorBuddyController {
 
   private resumeFollowing(): void {
     if (!this.running) return;
+    this.clearFollowTimer();
     this.dependencies.hideCallout();
     this.publish('following', false);
     this.followOnce();
   }
 
   private followOnce(): void {
-    if (!this.running || this.sessionTaskId || this.snapshot.phase === 'thinking') return;
+    if (!this.running || this.sessionTaskId) return;
     const cursor = this.dependencies.getUserCursor();
     const moved =
       this.lastObservedCursor?.x !== cursor.x ||
@@ -456,7 +376,21 @@ export class CursorBuddyController {
       display,
       this.dependencies.cursorSize,
     );
-    this.setPosition(position, 'following', false);
+    const isThinking = this.snapshot.phase === 'thinking';
+    this.setPosition(
+      position,
+      isThinking ? 'thinking' : 'following',
+      isThinking,
+    );
+    if (isThinking) {
+      const side = chooseCursorBuddyCalloutSide(
+        position,
+        display,
+        this.dependencies.calloutSize,
+        this.dependencies.cursorSize,
+      );
+      this.dependencies.moveCallout(position, side);
+    }
     const now = this.dependencies.now();
     const schedule = nextCursorBuddyFollowSchedule({
       activeUntil: this.followActiveUntil,
@@ -545,7 +479,6 @@ export class CursorBuddyController {
   private cancelActive(): void {
     this.activeAbort?.abort();
     this.activeAbort = null;
-    this.activeTaskId = null;
     this.activeGeneration += 1;
   }
 
