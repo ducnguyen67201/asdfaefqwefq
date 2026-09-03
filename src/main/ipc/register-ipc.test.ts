@@ -94,7 +94,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   requestScreenRecordingAccess: ReturnType<typeof vi.fn>;
   recordVoiceTranscript: ReturnType<typeof vi.fn>;
   reportCompanionSpeechPlayback: ReturnType<typeof vi.fn>;
-  handleCompanionGuidanceAction: ReturnType<typeof vi.fn>;
   handleCompanionResponseAction: ReturnType<typeof vi.fn>;
   revealMainWindow: ReturnType<typeof vi.fn>;
   taskRuntime: {
@@ -309,7 +308,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   const setVoiceAudioDucking = vi.fn(async () => undefined);
   const revealMainWindow = vi.fn();
   const reportCompanionSpeechPlayback = vi.fn();
-  const handleCompanionGuidanceAction = vi.fn();
   const handleCompanionResponseAction = vi.fn();
   const workspaceAvailability = vi.fn(async () => ({
     available: true,
@@ -466,7 +464,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     getCompanionInteractionWindow: () => interactionWindow,
     getCursorBuddySnapshot,
     getCursorBuddyWindow: () => cursorBuddyWindow,
-    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     knowledgeSpaceClient: {
@@ -535,7 +532,6 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     getAppPreferences,
     getCursorBuddySnapshot,
     getTaskHistory,
-    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
@@ -930,26 +926,6 @@ describe('registerIpcHandlers auth boundary', () => {
       }),
     ).rejects.toThrow();
     expect(handleCompanionResponseAction).toHaveBeenCalledOnce();
-    unregister();
-  });
-
-  it('lets only the signed-in companion control the active learner gate', async () => {
-    const { handleCompanionGuidanceAction, interactionEvent, unregister } =
-      setup(true);
-    const handler = electronMock.handlers.get(
-      IPC_CHANNELS.companionGuidanceAction,
-    );
-    const request = {
-      action: 'repeat',
-      taskId: '00000000-0000-4000-8000-000000000001',
-    } as const;
-
-    await expect(handler?.(interactionEvent, request)).resolves.toBeUndefined();
-    expect(handleCompanionGuidanceAction).toHaveBeenCalledWith(request);
-    await expect(
-      handler?.(interactionEvent, { ...request, action: 'skip_forever' }),
-    ).rejects.toThrow();
-    expect(handleCompanionGuidanceAction).toHaveBeenCalledOnce();
     unregister();
   });
 

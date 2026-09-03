@@ -39,7 +39,7 @@ function observation(overrides: Partial<DesktopObservation> = {}): DesktopObserv
 function setup(
   decide: CoachRuntimeDependencies['decide'],
   presenterResult: Awaited<
-    ReturnType<CoachRuntimeDependencies['presenter']['presentStep']>
+    ReturnType<CoachRuntimeDependencies['presenter']['presentSequence']>
   > | null = null,
 ) {
   const current = observation();
@@ -48,11 +48,16 @@ function setup(
   const startObservationSession = vi.fn(async () => undefined);
   const releaseObservationSession = vi.fn();
   const observe = vi.fn(async () => current);
-  const presentStep = vi.fn((
-    _step: Parameters<CoachRuntimeDependencies['presenter']['presentStep']>[0],
-    context: Parameters<CoachRuntimeDependencies['presenter']['presentStep']>[1],
+  const presentSequence = vi.fn(async (
+    steps: Parameters<CoachRuntimeDependencies['presenter']['presentSequence']>[0],
+    context: Parameters<CoachRuntimeDependencies['presenter']['presentSequence']>[1],
   ) => {
-    if (presenterResult) return Promise.resolve(presenterResult);
+    if (presenterResult) {
+      for (const [index, step] of steps.entries()) {
+        await context.onStepStart?.(step, index, steps.length);
+      }
+      return presenterResult;
+    }
     return new Promise((_, reject) => {
       context.signal.addEventListener('abort', () => {
         const error = new Error('cancelled');
@@ -65,7 +70,7 @@ function setup(
     beginSession: vi.fn(),
     cancelGuidance: vi.fn(),
     finishSession: vi.fn(),
-    presentStep,
+    presentSequence,
   } as unknown as CoachRuntimeDependencies['presenter'];
   const dependencies: CoachRuntimeDependencies = {
     decide: vi.fn(decide),
@@ -81,7 +86,7 @@ function setup(
     current,
     dependencies,
     observe,
-    presentStep,
+    presentSequence,
     releaseObservationSession,
     runtime: new CoachRuntime(dependencies),
     startObservationSession,
@@ -90,19 +95,30 @@ function setup(
   };
 }
 
-function stepFor(current: DesktopObservation) {
+function sequenceFor(current: DesktopObservation) {
   return {
-    kind: 'coach_step' as const,
-    stepNumber: 1,
-    hook: 'Ready?',
-    instruction: 'Open Variables.',
-    reason: 'It stores a changing score.',
-    expectedOutcome: 'The Variables palette appears.',
-    target: 'Variables button',
+    kind: 'coach_sequence' as const,
     language: 'en' as const,
     observationId: current.observationId,
     observationFingerprint: current.fingerprint,
-    point: { x: 200, y: 400 },
+    steps: [
+      {
+        hook: 'Ready?',
+        instruction: 'Open Variables.',
+        reason: 'It stores a changing score.',
+        expectedOutcome: 'The Variables palette appears.',
+        target: 'Variables button',
+        point: { x: 200, y: 400 },
+      },
+      {
+        hook: 'Next!',
+        instruction: 'Choose Make a Variable.',
+        reason: 'This creates a place for the score.',
+        expectedOutcome: 'The variable dialog opens.',
+        target: 'Make a Variable button',
+        point: { x: 800, y: 200 },
+      },
+    ],
   };
 }
 
@@ -111,15 +127,31 @@ describe('Coach decision contract', () => {
     const current = observation();
 
     expect(CoachDecisionSchema.safeParse({
-      ...stepFor(current),
-      region: { x: 150, y: 350, width: 100, height: 100 },
+      ...sequenceFor(current),
+      steps: [{
+        ...sequenceFor(current).steps[0],
+        region: { x: 150, y: 350, width: 100, height: 100 },
+      }],
+    }).success).toBe(false);
+  });
+
+  it('bounds a sequence to eight visible targets', () => {
+    const current = observation();
+    const sequence = sequenceFor(current);
+
+    expect(CoachDecisionSchema.safeParse({
+      ...sequence,
+      steps: Array.from({ length: 9 }, () => sequence.steps[0]),
     }).success).toBe(false);
   });
 });
 
 describe('CoachRuntime', () => {
-  it('uses one capture and one model call for the first visible step, then idles', async () => {
-    const setupResult = setup(async ({ observation: current }) => stepFor(current!));
+  it('uses one capture and one model call for the complete visible sequence', async () => {
+    const setupResult = setup(
+      async ({ observation: current }) => sequenceFor(current!),
+      { outcome: 'presented' },
+    );
     const taskId = randomUUID();
 
     await setupResult.runtime.start({
@@ -129,7 +161,7 @@ describe('CoachRuntime', () => {
       requiresObservation: true,
       priorProgress: null,
     });
-    await vi.waitFor(() => expect(setupResult.dependencies.presenter.presentStep).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(setupResult.dependencies.presenter.presentSequence).toHaveBeenCalledOnce());
 
     expect(setupResult.dependencies.observe).toHaveBeenCalledOnce();
     expect(setupResult.startObservationSession).toHaveBeenCalledOnce();
@@ -140,25 +172,23 @@ describe('CoachRuntime', () => {
     expect(setupResult.startObservationSession.mock.invocationCallOrder[0])
       .toBeLessThan(setupResult.observe.mock.invocationCallOrder[0]!);
     expect(setupResult.dependencies.decide).toHaveBeenCalledOnce();
-    expect(setupResult.dependencies.presenter.presentStep).toHaveBeenCalledOnce();
-    const presentedStep = setupResult.presentStep.mock.calls[0]?.[0];
-    expect(presentedStep).toMatchObject({ screenPoint: { x: 240, y: 320 } });
-    expect(presentedStep).not.toHaveProperty('screenRegion');
-    expect(setupResult.terminal).not.toHaveBeenCalled();
-    setupResult.runtime.cancel(taskId);
+    expect(setupResult.dependencies.presenter.presentSequence).toHaveBeenCalledOnce();
+    const presentedSteps = setupResult.presentSequence.mock.calls[0]?.[0];
+    expect(presentedSteps).toHaveLength(2);
+    expect(presentedSteps?.[0]).toMatchObject({ screenPoint: { x: 240, y: 320 } });
+    expect(presentedSteps?.[1]).toMatchObject({ screenPoint: { x: 960, y: 160 } });
+    expect(presentedSteps?.[0]).not.toHaveProperty('screenRegion');
+    expect(setupResult.terminal).toHaveBeenCalledWith(taskId, expect.objectContaining({
+      finalOutput: '1. Open Variables.\n2. Choose Make a Variable.',
+      status: 'completed',
+    }));
+    expect(setupResult.dependencies.onProgress).toHaveBeenCalledTimes(2);
     expect(setupResult.releaseObservationSession).toHaveBeenCalledOnce();
   });
 
-  it('uses the post-action observation for exactly one next decision', async () => {
-    const changed = observation({ fingerprint: 'b'.repeat(64) });
-    const decisions = vi.fn(async ({ observation: current }) =>
-      decisions.mock.calls.length === 1
-        ? stepFor(current!)
-        : { kind: 'complete' as const, recap: 'Great work — the Variables palette is open.' });
-    const setupResult = setup(decisions, {
-      learnerActivity: 'changed',
-      observation: changed,
-    });
+  it('does not observe again or ask for another decision after presentation', async () => {
+    const decisions = vi.fn(async ({ observation: current }) => sequenceFor(current!));
+    const setupResult = setup(decisions, { outcome: 'presented' });
     await setupResult.runtime.start({
       taskId: randomUUID(),
       request: 'Show me how',
@@ -170,15 +200,12 @@ describe('CoachRuntime', () => {
 
     expect(setupResult.dependencies.observe).toHaveBeenCalledOnce();
     expect(setupResult.startObservationSession).toHaveBeenCalledOnce();
-    expect(setupResult.dependencies.decide).toHaveBeenCalledTimes(2);
-    expect(decisions.mock.calls[1]?.[0]).toMatchObject({
-      observation: { fingerprint: changed.fingerprint },
-    });
+    expect(setupResult.dependencies.decide).toHaveBeenCalledOnce();
   });
 
   it('rejects stale model coordinates instead of displaying them', async () => {
     const setupResult = setup(async () => ({
-      ...stepFor(setupResult.current),
+      ...sequenceFor(setupResult.current),
       observationId: randomUUID(),
     }));
     await setupResult.runtime.start({
@@ -190,7 +217,7 @@ describe('CoachRuntime', () => {
     });
     await vi.waitFor(() => expect(setupResult.terminal).toHaveBeenCalledOnce());
 
-    expect(setupResult.dependencies.presenter.presentStep).not.toHaveBeenCalled();
+    expect(setupResult.dependencies.presenter.presentSequence).not.toHaveBeenCalled();
     expect(setupResult.terminal).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ status: 'failed', message: 'Coach returned a stale screen target.' }),
@@ -199,8 +226,8 @@ describe('CoachRuntime', () => {
 
   it('fails and releases the session when presentation cannot remain active', async () => {
     const setupResult = setup(
-      async ({ observation: current }) => stepFor(current!),
-      { learnerActivity: 'timed_out' },
+      async ({ observation: current }) => sequenceFor(current!),
+      { outcome: 'unavailable' },
     );
     const taskId = randomUUID();
 
@@ -254,15 +281,9 @@ describe('authenticated Coach decision client', () => {
           kind: 'answer',
           text: 'A variable stores a value.',
           language: 'en',
-          stepNumber: null,
-          hook: null,
-          instruction: null,
-          reason: null,
-          expectedOutcome: null,
-          target: null,
           observationId: null,
           observationFingerprint: null,
-          point: null,
+          steps: null,
           recap: null,
         }),
       }), { status: 200 }))
@@ -307,18 +328,19 @@ describe('authenticated Coach decision client', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: randomUUID() }), { status: 201 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         output_text: JSON.stringify({
-          kind: 'coach_step',
+          kind: 'coach_sequence',
           text: null,
           language: 'vi',
-          stepNumber: 1,
-          hook: 'h'.repeat(50),
-          instruction: 'i'.repeat(90),
-          reason: 'r'.repeat(90),
-          expectedOutcome: 'Bảng Biến số xuất hiện.',
-          target: 'Nút Biến số',
           observationId: current.observationId,
           observationFingerprint: current.fingerprint,
-          point: { x: 200, y: 400 },
+          steps: [{
+            hook: 'h'.repeat(50),
+            instruction: 'i'.repeat(90),
+            reason: 'r'.repeat(90),
+            expectedOutcome: 'Bảng Biến số xuất hiện.',
+            target: 'Nút Biến số',
+            point: { x: 200, y: 400 },
+          }],
           recap: null,
         }),
       }), { status: 200 }));
@@ -336,23 +358,26 @@ describe('authenticated Coach decision client', () => {
       taskId,
     }, new AbortController().signal);
 
-    expect(decision.kind).toBe('coach_step');
-    if (decision.kind !== 'coach_step') throw new Error('Expected a Coach step.');
-    expect([decision.hook, decision.instruction, decision.reason].join(' ').length)
+    expect(decision.kind).toBe('coach_sequence');
+    if (decision.kind !== 'coach_sequence') throw new Error('Expected a Coach sequence.');
+    const step = decision.steps[0]!;
+    expect([step.hook, step.instruction, step.reason].join(' ').length)
       .toBeLessThanOrEqual(160);
-    expect(decision.hook).toHaveLength(36);
-    expect(decision.instruction).toHaveLength(76);
-    expect(decision.reason).toHaveLength(46);
+    expect(step.hook).toHaveLength(36);
+    expect(step.instruction).toHaveLength(76);
+    expect(step.reason).toHaveLength(46);
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
-      text: { format: { schema: { properties: Record<string, { anyOf: Array<{ maxLength?: number }> }> } } };
+      text: { format: { schema: { properties: { steps: { anyOf: Array<{ items?: { properties: Record<string, { maxLength?: number }> }; maxItems?: number }> } } } } };
     };
     const properties = requestBody.text.format.schema.properties;
-    expect(properties.hook?.anyOf[0]?.maxLength).toBe(36);
-    expect(properties.instruction?.anyOf[0]?.maxLength).toBe(76);
-    expect(properties.reason?.anyOf[0]?.maxLength).toBe(46);
-    expect(properties).toHaveProperty('point');
-    expect(properties).not.toHaveProperty('region');
+    const stepProperties = properties.steps.anyOf[0]?.items?.properties;
+    expect(properties.steps.anyOf[0]?.maxItems).toBe(8);
+    expect(stepProperties?.hook?.maxLength).toBe(36);
+    expect(stepProperties?.instruction?.maxLength).toBe(76);
+    expect(stepProperties?.reason?.maxLength).toBe(46);
+    expect(stepProperties).toHaveProperty('point');
+    expect(stepProperties).not.toHaveProperty('region');
   });
 });

@@ -1834,9 +1834,6 @@ export const CursorBuddySnapshotSchema = z
       'gliding',
       'demonstrating',
       'explaining',
-      'waiting',
-      'paused',
-      'checking',
     ]),
     position: CursorBuddyPositionSchema,
     busy: z.boolean(),
@@ -1898,6 +1895,7 @@ export const CompanionGuidanceShortcutsSchema = z.object({
 });
 
 export const MAX_COACH_SPEECH_CHARACTERS = 160;
+export const MAX_COACH_SEQUENCE_STEPS = 8;
 
 export const CompanionCoachCopySchema = z
   .object({
@@ -1924,27 +1922,20 @@ export const CompanionGuidanceSchema = z.object({
     .default('guidance'),
   language: AppLanguageSchema.optional(),
   message: z.string().trim().min(1).max(240),
-  phase: z.enum(['presenting', 'waiting', 'paused', 'checking']).default('presenting'),
+  phase: z.enum(['presenting', 'paused']).default('presenting'),
   playback: z.enum(['playing', 'paused']).default('playing'),
-  responseWindowSeconds: z.number().int().min(5).max(120).optional(),
+  sequence: z.object({
+    current: z.number().int().min(1).max(MAX_COACH_SEQUENCE_STEPS),
+    total: z.number().int().min(1).max(MAX_COACH_SEQUENCE_STEPS),
+  }).strict().refine(
+    ({ current, total }) => current <= total,
+    { message: 'The current Coach step cannot exceed the sequence total.' },
+  ).optional(),
   shortcuts: CompanionGuidanceShortcutsSchema.optional(),
   side: z.enum(['left', 'right']),
   taskId: z.string().uuid().optional(),
   target: z.string().trim().min(1).max(80).optional(),
 });
-
-export const CompanionGuidanceActionSchema = z.enum([
-  'continue',
-  'repeat',
-  'toggle_pause',
-]);
-
-export const CompanionGuidanceActionRequestSchema = z
-  .object({
-    action: CompanionGuidanceActionSchema,
-    taskId: z.string().uuid(),
-  })
-  .strict();
 
 export const CompanionPetMoodSchema = z.enum([
   'encouraging',
@@ -2398,12 +2389,6 @@ export type CompanionVoiceActivity = z.infer<
 export type VoiceMode = z.infer<typeof VoiceModeSchema>;
 export type CompanionGuidance = z.infer<typeof CompanionGuidanceSchema>;
 export type CompanionCoachCopy = z.infer<typeof CompanionCoachCopySchema>;
-export type CompanionGuidanceAction = z.infer<
-  typeof CompanionGuidanceActionSchema
->;
-export type CompanionGuidanceActionRequest = z.infer<
-  typeof CompanionGuidanceActionRequestSchema
->;
 export type CompanionPetMood = z.infer<typeof CompanionPetMoodSchema>;
 export type CompanionPetNudgeDraft = z.infer<
   typeof CompanionPetNudgeDraftSchema

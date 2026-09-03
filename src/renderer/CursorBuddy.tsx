@@ -24,9 +24,6 @@ const CURSOR_PHASE_LABELS: Readonly<Record<CursorBuddySnapshot['phase'], string>
   gliding: 'Tro teaching cursor: Moving to the next step',
   demonstrating: 'Tro teaching cursor: Showing where to click',
   explaining: 'Tro teaching cursor: Explaining',
-  waiting: 'Tro teaching cursor: Waiting for you',
-  paused: 'Tro teaching cursor: Paused',
-  checking: 'Tro teaching cursor: Checking your work',
 };
 
 export function CursorBuddyView({

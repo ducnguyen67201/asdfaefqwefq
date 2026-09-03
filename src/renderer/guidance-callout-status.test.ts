@@ -1,15 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { CompanionGuidanceSchema } from '../shared/contracts';
 
 import {
-  GuidanceResponseTimer,
   guidanceStatusLabel,
+  guidanceTargetLabel,
 } from './GuidanceCallout';
 
 describe('guidance callout status', () => {
@@ -49,49 +44,18 @@ describe('guidance callout status', () => {
     });
 
     expect(guidanceStatusLabel(guidance, null)).toBe('Đang suy nghĩ');
-    expect(
-      renderToStaticMarkup(
-        createElement(GuidanceResponseTimer, { guidance }),
-      ),
-    ).toBe('');
   });
 
-  it('shows a localized timed learner turn without confirmation controls', () => {
+  it('shows deterministic sequence progress beside the visible target', () => {
     const guidance = CompanionGuidanceSchema.parse({
       kind: 'guidance',
       language: 'vi',
-      message: 'Mở mục Biến số để tạo nơi lưu điểm.',
-      phase: 'waiting',
-      responseWindowSeconds: 20,
+      message: 'Mở mục Biến số.',
+      sequence: { current: 2, total: 4 },
       side: 'right',
-      taskId: '00000000-0000-4000-8000-000000000001',
+      target: 'Nút Biến số',
     });
 
-    expect(guidanceStatusLabel(guidance, null)).toBe('Đến lượt em');
-    const markup = renderToStaticMarkup(
-      createElement(GuidanceResponseTimer, { guidance }),
-    );
-    expect(markup).toContain('Em thử ngay nhé');
-    expect(markup).toContain('20s');
-    expect(markup).not.toContain('Em làm xong');
-    expect(markup).not.toContain('button');
-    const css = readFileSync(resolve(__dirname, '../index.css'), 'utf8');
-    expect(css).toContain('.guidance-callout--coach');
-    expect(css).toContain('pointer-events: none;');
-  });
-
-  it('shows checking feedback without stale learner controls', () => {
-    const guidance = CompanionGuidanceSchema.parse({
-      kind: 'thinking',
-      language: 'en',
-      message: "Let's check what changed…",
-      phase: 'checking',
-      side: 'right',
-      taskId: '00000000-0000-4000-8000-000000000001',
-    });
-    expect(guidanceStatusLabel(guidance, null)).toBe('Checking');
-    expect(renderToStaticMarkup(createElement(GuidanceResponseTimer, {
-      guidance,
-    }))).toBe('');
+    expect(guidanceTargetLabel(guidance)).toBe('Bước 2/4 · Nút Biến số');
   });
 });

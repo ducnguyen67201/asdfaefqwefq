@@ -13,7 +13,6 @@ import type {
   CompanionAppearance,
   CompanionCustomizationStatus,
   CompanionGuidance,
-  CompanionGuidanceActionRequest,
   CompanionGuidanceVisual,
   CompanionHover,
   CompanionInteraction,
@@ -139,7 +138,6 @@ export const IPC_CHANNELS = {
   companionGenerateImage: 'companion-customization:generate',
   companionUseDefault: 'companion-customization:use-default',
   companionGuidanceChanged: 'companion:guidance-changed',
-  companionGuidanceAction: 'companion:guidance-action',
   companionGuidanceVisualChanged: 'companion:guidance-visual-changed',
   companionHoverChanged: 'companion:hover-changed',
   companionInteractionChanged: 'companion:interaction-changed',
@@ -445,7 +443,6 @@ export interface CompanionApi {
   onGuidanceVisualChange(
     listener: (visual: CompanionGuidanceVisual | null) => void,
   ): () => void;
-  performGuidanceAction(request: CompanionGuidanceActionRequest): Promise<void>;
   onInteractionChange(
     listener: (interaction: CompanionInteraction | null) => void,
   ): () => void;

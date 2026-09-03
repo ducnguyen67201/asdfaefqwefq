@@ -24,13 +24,6 @@ describe('desktop companion state', () => {
       position: { x: -420, y: 80 },
     });
     expect(
-      CursorBuddySnapshotSchema.parse({
-        busy: true,
-        phase: 'checking',
-        position: { x: 10, y: 20 },
-      }),
-    ).toMatchObject({ busy: true, phase: 'checking' });
-    expect(
       CursorBuddySnapshotSchema.safeParse({
         busy: false,
         phase: 'teleporting',
@@ -79,11 +72,11 @@ describe('desktop companion state', () => {
           reason: 'It stores the score.',
         },
         message: 'Ready for points? Open Variables. It stores the score.',
-        phase: 'waiting',
+        phase: 'presenting',
         side: 'right',
         taskId: '00000000-0000-4000-8000-000000000001',
       }),
-    ).toMatchObject({ phase: 'waiting', taskId: expect.any(String) });
+    ).toMatchObject({ phase: 'presenting', taskId: expect.any(String) });
     expect(CompanionGuidanceSchema.safeParse({
       coach: {
         expectedOutcome: 'Visible result',

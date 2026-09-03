@@ -16,7 +16,6 @@ import {
   CompanionPositionSchema,
   CancelTaskRequestSchema,
   CompanionGuidanceSchema,
-  CompanionGuidanceActionRequestSchema,
   CompanionGuidanceVisualSchema,
   CursorBuddySnapshotSchema,
   CompanionHoverSchema,
@@ -984,11 +983,6 @@ const companionApi: CompanionApi = {
   async performResponseAction(input) {
     const request = CompanionResponseActionRequestSchema.parse(input);
     await ipcRenderer.invoke(IPC_CHANNELS.companionResponseAction, request);
-  },
-
-  async performGuidanceAction(input) {
-    const request = CompanionGuidanceActionRequestSchema.parse(input);
-    await ipcRenderer.invoke(IPC_CHANNELS.companionGuidanceAction, request);
   },
 
   onGuidanceChange(listener) {

@@ -16,12 +16,13 @@ authority that can price, reserve, dispatch, and settle a paid production call.
 
 ## Text to model to screen
 
-`TaskApplicationService` routes locally without an LLM call. Coach makes one
-structured Responses request for the first answer/visible step. After a visible
-step, normal idle performs zero captures and zero model calls. Content-free
-learner activity wakes a debounce, produces one fresh observation, and produces
-at most one next/correction/completion request. Replay and Pause are local.
-Heavy Agent retains the multi-turn SDK tool loop only for explicit execution.
+`TaskApplicationService` routes locally without an LLM call. Coach uses one
+observation and one structured Responses request to produce either a concise
+answer or a sequence of one to eight targets that are all visible in that same
+observation. The entire sequence then runs as local animation plus one TTS
+request per step. It performs no learner polling, intermediate capture, or
+intermediate model request. Heavy Agent retains the multi-turn SDK tool loop
+only for explicit execution.
 
 `TROCODE_FAST_COACH_ENABLED=false` is the single rollback switch; it sends new
 requests to Heavy Agent and never shadow-runs both lanes.

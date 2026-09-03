@@ -26,17 +26,20 @@ work use the Agents SDK runtime. The two lanes never run in parallel for one
 request.
 
 Coach captures the desktop once when the request needs visible context and asks
-for one structured, non-mutating decision. The host validates the observation
-identity and normalized center point, then constructs the fixed-size marker;
-the model never controls overlay width or height. `CursorBuddyController` glides
-only the virtual Cursor Buddy and its compact callout, reveals the marker, and
-speaks bounded copy through ElevenLabs (with system speech fallback). The
-learner's real cursor is never moved by Coach. The instruction stays mounted
-while the learner works. Point grounding adds no repair or retry model call.
-Coarse local input activity triggers one debounced fresh observation and one
-next decision; idle, Repeat, Pause, and timer expiry make no model call and do
-not poll screenshots. The new observation is authoritative, so a changed site
-or application cannot reuse stale coordinates.
+for one structured, non-mutating decision. That decision contains one to eight
+ordered steps whose targets must all be visible in the same observation. The
+host validates the shared observation identity and maps every normalized center
+point before presentation begins; the model never controls overlay dimensions.
+`CursorBuddyController.presentSequence()` then glides only the virtual buddy and
+its compact callout from target to target, reveals a fixed-size marker, and
+speaks each bounded explanation through ElevenLabs (with system speech fallback).
+The learner's real cursor is never moved by Coach.
+
+There is no learner countdown, input-activity gate, intermediate observation, or
+intermediate model call. Each narration completion releases the next short local
+transition, and the buddy returns beside the learner's cursor only after the
+sequence terminates. A site or application change requires a new learner request;
+Tro does not reuse the old sequence or secretly poll the screen.
 
 Heavy Agent has no teacher walkthrough prompt or `show_guidance` tool. It keeps
 the existing SDK session, policy, approval, checkpoint, journal, budget,

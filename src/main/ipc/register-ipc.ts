@@ -8,7 +8,6 @@ import {
   BeginDictationRequestSchema,
   BeginDictationResultSchema,
   CancelDictationRequestSchema,
-  CompanionGuidanceActionRequestSchema,
   CursorBuddySnapshotSchema,
   CompanionResponseActionRequestSchema,
   CompanionSpeechPlaybackReportSchema,
@@ -32,7 +31,6 @@ import {
   VoiceDiagnosticSchema,
   type AuthUser,
   type CursorBuddySnapshot,
-  type CompanionGuidanceActionRequest,
   type CompanionState,
   type CompanionResponseActionRequest,
   type CompanionVoiceActivity,
@@ -132,9 +130,6 @@ interface IpcServices {
   getCursorBuddyWindow(): BrowserWindow | null;
   handleCompanionResponseAction(
     request: CompanionResponseActionRequest,
-  ): Promise<void> | void;
-  handleCompanionGuidanceAction(
-    request: CompanionGuidanceActionRequest,
   ): Promise<void> | void;
   membershipService: MembershipService;
   organizationClient: OrganizationClient;
@@ -294,7 +289,6 @@ export function registerIpcHandlers(
     IPC_CHANNELS.companionActivateCandidate,
     IPC_CHANNELS.companionCustomizationStatus,
     IPC_CHANNELS.companionGenerateImage,
-    IPC_CHANNELS.companionGuidanceAction,
     IPC_CHANNELS.companionResponseAction,
     IPC_CHANNELS.companionRevealMainWindow,
     IPC_CHANNELS.companionUseDefault,
@@ -1035,16 +1029,6 @@ export function registerIpcHandlers(
     await services.authService.assertSignedIn();
     return CursorBuddySnapshotSchema.parse(services.getCursorBuddySnapshot());
   });
-
-  ipcMain.handle(
-    IPC_CHANNELS.companionGuidanceAction,
-    async (event, input: unknown) => {
-      assertTrustedCompanionSender(event, services);
-      await services.authService.assertSignedIn();
-      const request = CompanionGuidanceActionRequestSchema.parse(input);
-      await services.handleCompanionGuidanceAction(request);
-    },
-  );
 
   ipcMain.handle(
     IPC_CHANNELS.companionResponseAction,

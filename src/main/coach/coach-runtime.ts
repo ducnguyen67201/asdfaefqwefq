@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { z } from 'zod';
 
-import { MAX_COACH_SPEECH_CHARACTERS } from '../../shared/contracts';
+import {
+  MAX_COACH_SEQUENCE_STEPS,
+  MAX_COACH_SPEECH_CHARACTERS,
+} from '../../shared/contracts';
 import {
   mapNormalizedPointToScreenshot,
   mapScreenshotPointToDesktop,
@@ -35,17 +38,17 @@ export interface CoachRuntimeDependencies {
   onProgress(taskId: string, progress: CoachProgress): Promise<void> | void;
   onStatus(
     taskId: string,
-    phase: 'observing' | 'planning' | 'presenting' | 'waiting',
+    phase: 'observing' | 'planning' | 'presenting',
     summary: string,
   ): Promise<void> | void;
   onTerminal(
     taskId: string,
     terminal: { status: 'completed' | 'failed' | 'cancelled'; finalOutput: string | null; message: string },
   ): Promise<void> | void;
-  presenter: Pick<CursorBuddyController, 'beginSession' | 'cancelGuidance' | 'finishSession' | 'presentStep'>;
+  presenter: Pick<CursorBuddyController, 'beginSession' | 'cancelGuidance' | 'finishSession' | 'presentSequence'>;
 }
 
-/** Non-mutating, activity-gated teacher loop. */
+/** Non-mutating teacher presentation planned once from one screen observation. */
 export class CoachRuntime {
   private readonly active = new Map<string, AbortController>();
 
@@ -95,8 +98,8 @@ export class CoachRuntime {
       observation = await this.dependencies.observe(input.taskId, controller.signal);
     }
 
-    while (!controller.signal.aborted) {
-      await this.dependencies.onStatus(input.taskId, 'planning', 'Tro is preparing one clear next step.');
+    if (!controller.signal.aborted) {
+      await this.dependencies.onStatus(input.taskId, 'planning', 'Tro is preparing a short walkthrough.');
       const modelStartedAt = Date.now();
       const decision = CoachDecisionSchema.parse(await this.dependencies.decide({
         activity: input.activity,
@@ -132,40 +135,58 @@ export class CoachRuntime {
         return;
       }
 
-      const grounded = requireGroundedStep(decision, observation);
-      progress = progressFrom(input, decision.stepNumber, decision.expectedOutcome, null);
-      await this.dependencies.onProgress(input.taskId, progress);
-      await this.dependencies.onStatus(input.taskId, 'presenting', decision.instruction);
-      const result = await this.dependencies.presenter.presentStep(
-        {
-          baselineFingerprint: grounded.observation.fingerprint,
+      const groundedSteps = requireGroundedSequence(decision, observation);
+      const priorStepNumber = progress?.stepNumber ?? 0;
+      const result = await this.dependencies.presenter.presentSequence(
+        groundedSteps.map(({ decision: step, screenPoint }) => ({
           copy: {
-            expectedOutcome: decision.expectedOutcome,
-            hook: decision.hook,
-            instruction: decision.instruction,
-            reason: decision.reason,
+            expectedOutcome: step.expectedOutcome,
+            hook: step.hook,
+            instruction: step.instruction,
+            reason: step.reason,
           },
           language: decision.language,
-          screenPoint: grounded.screenPoint,
-          target: decision.target,
+          screenPoint,
+          target: step.target,
           taskId: input.taskId,
-        },
+        })),
         {
-          observe: (signal) => this.dependencies.observe(input.taskId, signal),
+          onStepStart: async (_step, index) => {
+            const plannedStep = decision.steps[index]!;
+            progress = progressFrom(
+              input,
+              priorStepNumber + index + 1,
+              plannedStep.expectedOutcome,
+              null,
+            );
+            await this.dependencies.onProgress(input.taskId, progress);
+            await this.dependencies.onStatus(
+              input.taskId,
+              'presenting',
+              plannedStep.instruction,
+            );
+          },
           signal: controller.signal,
         },
       );
-      if (result.learnerActivity === 'timed_out') {
+      if (result.outcome === 'unavailable') {
         await this.dependencies.onTerminal(input.taskId, {
           status: 'failed',
           finalOutput: null,
-          message: 'Coach presentation ended before the learner could continue.',
+          message: 'Coach presentation was not available.',
         });
         this.finish(input.taskId, controller);
         return;
       }
-      await this.dependencies.onStatus(input.taskId, 'observing', 'Tro is checking the learner’s change.');
-      observation = result.observation ?? await this.dependencies.observe(input.taskId, controller.signal);
+      const summary = decision.steps
+        .map((step, index) => `${index + 1}. ${step.instruction}`)
+        .join('\n');
+      await this.dependencies.onTerminal(input.taskId, {
+        status: 'completed',
+        finalOutput: summary,
+        message: summary,
+      });
+      this.finish(input.taskId, controller);
     }
   }
 
@@ -193,13 +214,13 @@ function progressFrom(
   };
 }
 
-function requireGroundedStep(
-  decision: Extract<CoachDecision, { kind: 'coach_step' }>,
+function requireGroundedSequence(
+  decision: Extract<CoachDecision, { kind: 'coach_sequence' }>,
   observation: DesktopObservation | null,
-): {
-  observation: DesktopObservation;
+): Array<{
+  decision: Extract<CoachDecision, { kind: 'coach_sequence' }>['steps'][number];
   screenPoint: { x: number; y: number };
-} {
+}> {
   if (!observation || !observation.coordinateSpace) {
     throw new Error('Coach returned a visible step without coordinate evidence.');
   }
@@ -209,9 +230,11 @@ function requireGroundedStep(
   ) {
     throw new Error('Coach returned a stale screen target.');
   }
-  const screenshotPoint = mapNormalizedPointToScreenshot(decision.point, observation.coordinateSpace);
-  const screenPoint = mapScreenshotPointToDesktop(screenshotPoint, observation.coordinateSpace);
-  return { observation, screenPoint };
+  return decision.steps.map((step) => {
+    const screenshotPoint = mapNormalizedPointToScreenshot(step.point, observation.coordinateSpace!);
+    const screenPoint = mapScreenshotPointToDesktop(screenshotPoint, observation.coordinateSpace!);
+    return { decision: step, screenPoint };
+  });
 }
 
 const AgentTurnResponseSchema = z.object({ id: z.string().uuid() }).passthrough();
@@ -221,19 +244,25 @@ const COACH_GENERATED_COPY_LIMITS = {
   reason: 46,
 } as const;
 
+const RawCoachSequenceStepSchema = z.object({
+  hook: z.string().max(50),
+  instruction: z.string().max(90),
+  reason: z.string().max(90),
+  expectedOutcome: z.string().max(160),
+  target: z.string().max(80),
+  point: z.object({ x: z.number().int(), y: z.number().int() }).strict(),
+}).strict();
+
 const RawCoachDecisionSchema = z.object({
-  kind: z.enum(['answer', 'coach_step', 'complete']),
+  kind: z.enum(['answer', 'coach_sequence', 'complete']),
   text: z.string().max(1_200).nullable(),
   language: z.enum(['en', 'vi']).nullable(),
-  stepNumber: z.number().int().min(1).max(100).nullable(),
-  hook: z.string().max(50).nullable(),
-  instruction: z.string().max(90).nullable(),
-  reason: z.string().max(90).nullable(),
-  expectedOutcome: z.string().max(160).nullable(),
-  target: z.string().max(80).nullable(),
   observationId: z.string().uuid().nullable(),
   observationFingerprint: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
-  point: z.object({ x: z.number().int(), y: z.number().int() }).nullable(),
+  steps: z.array(RawCoachSequenceStepSchema)
+    .min(1)
+    .max(MAX_COACH_SEQUENCE_STEPS)
+    .nullable(),
   recap: z.string().max(240).nullable(),
 }).strict();
 
@@ -320,13 +349,13 @@ function coachResponseRequest(input: CoachDecisionInput, model: string): Record<
     store: false,
     parallel_tool_calls: false,
     tools: [],
-    max_output_tokens: 1_200,
+    max_output_tokens: 3_200,
     input: [
       {
         role: 'system',
         content: [{
           type: 'input_text',
-          text: `You are Tro, a warm primary-school teacher. Return exactly one JSON decision. Never click, type, or claim an unobserved result. With screen evidence, choose one tight visible control, return its exact center point, and give one short learner action; never estimate overlay size. Complete only when the evidence proves completion. Use normalized 0-1000 screenshot coordinates. Keep spoken copy lively and brief: hook at most ${COACH_GENERATED_COPY_LIMITS.hook} characters, instruction at most ${COACH_GENERATED_COPY_LIMITS.instruction}, reason at most ${COACH_GENERATED_COPY_LIMITS.reason}, and all three together at most ${MAX_COACH_SPEECH_CHARACTERS}. Without screen evidence, answer concisely.`,
+          text: `You are Tro, a warm primary-school teacher. Return exactly one JSON decision. Never click, type, or claim an unobserved result. With screen evidence, return one ordered coach_sequence containing 1-${MAX_COACH_SEQUENCE_STEPS} useful steps whose targets are all visible in this exact screenshot. Do not include a step that depends on a future screen state. For each step choose one tight visible control and return its exact center point; never estimate overlay size. Complete only when the evidence proves completion. Use normalized 0-1000 screenshot coordinates. Keep every step lively and brief: hook at most ${COACH_GENERATED_COPY_LIMITS.hook} characters, instruction at most ${COACH_GENERATED_COPY_LIMITS.instruction}, reason at most ${COACH_GENERATED_COPY_LIMITS.reason}, and all three together at most ${MAX_COACH_SPEECH_CHARACTERS}. Without screen evidence, answer concisely.`,
         }],
       },
       {
@@ -376,22 +405,29 @@ function coachDecisionJsonSchema(): Record<string, unknown> {
   const nullable = (schema: Record<string, unknown>) => ({
     anyOf: [schema, { type: 'null' }],
   });
+  const sequenceStep = closed({
+    hook: { type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.hook },
+    instruction: { type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.instruction },
+    reason: { type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.reason },
+    expectedOutcome: { type: 'string', maxLength: 160 },
+    target: { type: 'string', maxLength: 80 },
+    point,
+  }, ['hook', 'instruction', 'reason', 'expectedOutcome', 'target', 'point']);
   const properties = {
-    kind: { type: 'string', enum: ['answer', 'coach_step', 'complete'] },
+    kind: { type: 'string', enum: ['answer', 'coach_sequence', 'complete'] },
     text: nullable({ type: 'string', maxLength: 1_200 }),
     language: nullable({ type: 'string', enum: ['en', 'vi'] }),
-    stepNumber: nullable({ type: 'integer', minimum: 1, maximum: 100 }),
-    hook: nullable({ type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.hook }),
-    instruction: nullable({ type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.instruction }),
-    reason: nullable({ type: 'string', maxLength: COACH_GENERATED_COPY_LIMITS.reason }),
-    expectedOutcome: nullable({ type: 'string', maxLength: 160 }),
-    target: nullable({ type: 'string', maxLength: 80 }),
     observationId: nullable({
       type: 'string',
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
     }),
     observationFingerprint: nullable({ type: 'string', pattern: '^[a-f0-9]{64}$' }),
-    point: nullable(point),
+    steps: nullable({
+      type: 'array',
+      items: sequenceStep,
+      minItems: 1,
+      maxItems: MAX_COACH_SEQUENCE_STEPS,
+    }),
     recap: nullable({ type: 'string', maxLength: 240 }),
   };
   return closed(properties, Object.keys(properties));
@@ -409,24 +445,20 @@ function normalizeRawDecision(value: unknown): CoachDecision {
   if (raw.kind === 'complete') {
     return CoachDecisionSchema.parse({ kind: raw.kind, recap: raw.recap });
   }
-  const copy = normalizeGeneratedCoachCopy(raw);
   return CoachDecisionSchema.parse({
     kind: raw.kind,
-    stepNumber: raw.stepNumber,
-    hook: copy.hook,
-    instruction: copy.instruction,
-    reason: copy.reason,
-    expectedOutcome: raw.expectedOutcome,
-    target: raw.target,
     language: raw.language,
     observationId: raw.observationId,
     observationFingerprint: raw.observationFingerprint,
-    point: raw.point,
+    steps: raw.steps?.map((step) => ({
+      ...step,
+      ...normalizeGeneratedCoachCopy(step),
+    })),
   });
 }
 
 function normalizeGeneratedCoachCopy(
-  raw: Pick<z.infer<typeof RawCoachDecisionSchema>, 'hook' | 'instruction' | 'reason'>,
+  raw: Pick<z.infer<typeof RawCoachSequenceStepSchema>, 'hook' | 'instruction' | 'reason'>,
 ): typeof raw {
   return {
     hook: fitCoachCopyField(raw.hook, COACH_GENERATED_COPY_LIMITS.hook),
@@ -438,8 +470,7 @@ function normalizeGeneratedCoachCopy(
   };
 }
 
-function fitCoachCopyField(value: string | null, maxLength: number): string | null {
-  if (value === null) return null;
+function fitCoachCopyField(value: string, maxLength: number): string {
   const normalized = value.trim().replace(/\s+/gu, ' ');
   if (normalized.length <= maxLength) return normalized;
 

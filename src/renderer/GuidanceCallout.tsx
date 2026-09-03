@@ -81,9 +81,6 @@ export function guidanceStatusLabel(
   ) {
     return vietnamese ? 'Tạm dừng' : 'Paused';
   }
-  if (guidance.phase === 'checking') {
-    return vietnamese ? 'Đang kiểm tra' : 'Checking';
-  }
   if (audioStatus === 'loading') {
     return vietnamese ? 'Đang tải giọng nói' : 'Loading voice';
   }
@@ -92,9 +89,6 @@ export function guidanceStatusLabel(
   }
   if (audioStatus === 'speaking') {
     return vietnamese ? 'Đang nói' : 'Speaking';
-  }
-  if (guidance.phase === 'waiting') {
-    return vietnamese ? 'Đến lượt em' : 'Your turn';
   }
   if (guidance.kind === 'result') {
     return vietnamese ? 'Hoàn tất' : 'Completed';
@@ -108,40 +102,11 @@ export function guidanceStatusLabel(
   return vietnamese ? 'Đang hướng dẫn' : 'Guiding';
 }
 
-export function GuidanceResponseTimer({
-  guidance,
-}: {
-  guidance: CompanionGuidance;
-}) {
-  const active = Boolean(
-    guidance.taskId &&
-    guidance.kind === 'guidance' &&
-    guidance.phase === 'waiting' &&
-    guidance.responseWindowSeconds,
-  );
-  const duration = guidance.responseWindowSeconds ?? 0;
-  const [remaining, setRemaining] = useState(duration);
-  useEffect(() => {
-    if (!active) return undefined;
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1_000);
-      setRemaining(Math.max(0, duration - elapsed));
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [active, duration, guidance.taskId]);
-  if (!active) return null;
-  const vietnamese = guidance.language === 'vi';
-  return (
-    <div className="guidance-callout__timer" aria-hidden="true">
-      <span>
-        {remaining > 0
-          ? `${vietnamese ? 'Em thử ngay nhé' : 'Try it now'} · ${remaining}s`
-          : vietnamese ? 'Em cứ làm nhé' : 'Keep going'}
-      </span>
-      <progress max={duration} value={remaining} />
-    </div>
-  );
+export function guidanceTargetLabel(guidance: CompanionGuidance): string {
+  const target = guidance.target ?? 'Look here';
+  if (!guidance.sequence) return target;
+  const prefix = guidance.language === 'vi' ? 'Bước' : 'Step';
+  return `${prefix} ${guidance.sequence.current}/${guidance.sequence.total} · ${target}`;
 }
 
 export function GuidanceCallout() {
@@ -441,14 +406,9 @@ export function GuidanceCallout() {
           {guidance.kind === 'guidance' ? (
             <>
               <span className="guidance-callout__target">
-                {guidance.target ?? 'Look here'}
+                {guidanceTargetLabel(guidance)}
               </span>
-              {guidance.taskId ? (
-                <GuidanceResponseTimer
-                  guidance={guidance}
-                  key={`${guidance.taskId}:${guidance.phase}:${guidance.message}`}
-                />
-              ) : (
+              {!guidance.taskId ? (
                 <div className="guidance-callout__controls">
                   {guidance.shortcuts?.back.available ? (
                     <span><kbd>{guidance.shortcuts.back.label}</kbd> Back</span>
@@ -464,7 +424,7 @@ export function GuidanceCallout() {
                   ) : null}
                   <span className="guidance-callout__ask">⌘⌃ Ask</span>
                 </div>
-              )}
+              ) : null}
               {error ? <p className="guidance-callout__error">{error}</p> : null}
             </>
           ) : null}
