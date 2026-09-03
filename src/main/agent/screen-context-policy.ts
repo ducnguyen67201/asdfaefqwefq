@@ -36,7 +36,10 @@ export function requestReferencesVisibleContext(request: string): boolean {
 /** Selects tasks whose first model turn must be grounded in the current screen. */
 export function shouldObserveInitialScreenContext(
   request: string,
+  preference: 'auto' | 'required' | 'disabled' = 'auto',
 ): boolean {
+  if (preference === 'disabled') return false;
+  if (preference === 'required') return true;
   if (requestReferencesVisibleContext(request)) return true;
   const normalized = normalizeRequest(request);
   if (NAVIGATION_FIRST_PATTERN.test(normalized)) return false;

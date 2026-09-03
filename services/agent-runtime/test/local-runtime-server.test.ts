@@ -8,6 +8,7 @@ import type { HostBridge } from '../src/host-bridge.js';
 import {
   applyPendingToolResume,
   LocalRuntimeServer,
+  prefetchedInitialTurnInput,
   rejectPendingToolAfterRestart,
 } from '../src/local-runtime-server.js';
 import {
@@ -129,15 +130,11 @@ describe('LocalRuntimeServer', () => {
       agentTurnId: randomUUID(),
       request: 'Inspect the current application.',
       requiredInitialTool: null,
+      prefetchedInitialToolResult: null,
       model: DEFAULT_AGENT_MODEL,
       maxTurns: 4,
       toolCatalogDigest: 'a'.repeat(64),
       tools: [],
-      walkthroughState: {
-        completedSteps: 0,
-        enabled: false,
-        phase: 'needs_observation',
-      },
     } satisfies LocalAgentHostMessage);
 
     await vi.waitFor(() => {
@@ -147,6 +144,33 @@ describe('LocalRuntimeServer', () => {
         message: 'graph_version_mismatch',
       }));
     });
+  });
+
+  it('places a trusted prefetched observation in the first model input', () => {
+    const input = prefetchedInitialTurnInput('Help with this Scratch task.', {
+      status: 'completed',
+      summary: 'Captured the current screen.',
+      data: {
+        observation: {
+          observationId: '0f157354-9ed4-4dc8-a1fa-9020f13a7710',
+          text: 'Scratch tutorial is visible.',
+        },
+      },
+      imageDataUrl: 'data:image/png;base64,aW1hZ2U=',
+    });
+
+    expect(input).toEqual([expect.objectContaining({
+      role: 'user',
+      content: expect.arrayContaining([
+        { type: 'input_text', text: 'Help with this Scratch task.' },
+        expect.objectContaining({
+          type: 'input_image',
+          image: 'data:image/png;base64,aW1hZ2U=',
+        }),
+      ]),
+    })]);
+    expect(JSON.stringify(input)).toContain('Trusted host initial observation');
+    expect(JSON.stringify(input)).toContain('0f157354-9ed4-4dc8-a1fa-9020f13a7710');
   });
 
   it('quarantines SDK-incompatible tools individually during catalog startup validation', async () => {

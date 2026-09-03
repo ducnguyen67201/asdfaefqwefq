@@ -19,18 +19,15 @@ import path from 'node:path';
 import { AgentActivityService } from './main/agent/agent-activity-service';
 import { createCuaDriverToolDefinitions } from './main/agent/cua-driver-agent-tools';
 import { createCuaSemanticToolDefinitions } from './main/agent/cua-semantic-agent-tools';
-import type { DesktopCommand } from './main/agent/execution-contracts';
 import {
   TaskExecutionCoordinator,
 } from './main/agent/execution-coordinator';
 import {
   defaultRuntimeToolDefinitions,
   RuntimeToolRegistry,
-  type GuidanceToolInput,
   type InteractionToolInput,
 } from './main/agent/runtime-tool-registry';
 import { TaskRuntime } from './main/agent/task-runtime';
-import { requestsGuidedWalkthrough } from './main/agent/walkthrough-policy';
 import { createWorkspaceRuntimeToolAdapters } from './main/agent/workspace-runtime-tool-adapters';
 import { LocalAgentRuntime } from './main/agent-runtime/agent-runtime-adapter';
 import { EncryptedAgentStateStore } from './main/agent-runtime/encrypted-agent-state-store';
@@ -48,6 +45,10 @@ import {
   registerBackgroundTrayActivation,
 } from './main/background-app-lifecycle';
 import { UsageBudgetService } from './main/budget/usage-budget-service';
+import {
+  CoachRuntime,
+  createAuthenticatedCoachDecisionClient,
+} from './main/coach/coach-runtime';
 import { ClassroomPetService } from './main/companion/classroom-pet-service';
 import { CompanionCustomizationService } from './main/companion/companion-customization-service';
 import { CompanionHoverTracker } from './main/companion/companion-hover-tracker';
@@ -58,12 +59,8 @@ import {
 import {
   clampCompanionPosition,
   getVirtualDisplayBounds,
-  guidanceGlideDuration,
-  interpolateCompanionPosition,
-  interpolateGuidancePosition,
   interpolateCompanionWanderPosition,
   placeCompanionAtRest,
-  placeCompanionNearCursor,
   placeCompanionWanderTarget,
   placeGuidanceCallout,
   placeGuidanceTargetMarker,
@@ -77,7 +74,8 @@ import {
   selectCompanionOverlayMode,
 } from './main/companion/companion-response-controller';
 import { broadcastCompanionState } from './main/companion/companion-state-broadcast';
-import { nextCursorBuddyFollowSchedule } from './main/companion/cursor-buddy-follow-policy';
+import { CursorBuddyController } from './main/companion/cursor-buddy-controller';
+import { placeCursorBuddyCallout } from './main/companion/cursor-buddy-geometry';
 import {
   registerGlobalNumberedChoiceShortcuts,
   type GlobalNumberedChoiceShortcuts,
@@ -116,6 +114,7 @@ import {
   startCompletionNarration,
   type CompanionResponsePresentationOptions,
 } from './main/presentation/electron-presentation-presenter';
+import { LearnerActionGate } from './main/presentation/learner-action-gate';
 import { PresentationCoordinator } from './main/presentation/presentation-coordinator';
 import { registerScreenRecordingHost } from './main/screen-recording-registration';
 import {
@@ -151,7 +150,7 @@ import {
   CompanionGuidanceSchema,
   CompanionGuidanceVisualSchema,
   CompanionHoverSchema,
-  CompanionPositionSchema,
+  CursorBuddySnapshotSchema,
   CompanionPetNudgeSchema,
   CompanionResponseCardSchema,
   TaskUpdateSchema,
@@ -159,6 +158,7 @@ import {
   TROCODE_COMPANION_SCHEME,
   type AuthUser,
   type CompanionGuidance,
+  type CompanionGuidanceActionRequest,
   type CompanionAppearance,
   type CompanionInteraction,
   type CompanionPetNudge,
@@ -168,6 +168,7 @@ import {
   type CompanionSpeech,
   type CompanionState,
   type CompanionVoiceActivity,
+  type CursorBuddySnapshot,
   type PendingInteraction,
   type TaskSnapshot,
   type VoiceMode,
@@ -404,6 +405,49 @@ const companionNarrationService = new CompanionNarrationService({
   publish: publishCompanionSpeech,
   ttsService: elevenLabsTtsService,
 });
+const learnerActionGate = new LearnerActionGate();
+const cursorBuddyController = new CursorBuddyController({
+  animationSettings: () =>
+    process.platform === 'darwin' || process.platform === 'win32'
+      ? systemPreferences.getAnimationSettings()
+      : { prefersReducedMotion: false, shouldRenderRichAnimation: true },
+  calloutSize: { height: 160, width: 320 },
+  canPresent: () => auxiliaryWindowsEnabled && !activeCompanionInteraction,
+  canShowThinking: () =>
+    auxiliaryWindowsEnabled &&
+    !activeCompanionInteraction &&
+    !activeCompanionGuidance &&
+    !activeCompanionResponse,
+  clearTimer: clearTimeout,
+  cursorSize: { height: 44, width: 44 },
+  getDisplayBounds: (point) => screen.getDisplayNearestPoint(point).bounds,
+  getUserCursor: () => screen.getCursorScreenPoint(),
+  hideCallout: hideGuidanceCallout,
+  hideHighlight: hideGuidanceTargetMarker,
+  learnerGate: learnerActionGate,
+  log: (event, metadata) => console.info(`[cursor-buddy] ${event}`, metadata),
+  moveCallout: moveCursorBuddyCallout,
+  now: Date.now,
+  publishSnapshot: publishCursorBuddySnapshot,
+  setCursorPosition: applyCursorBuddyScreenPosition,
+  setTimer: setTimeout,
+  showCallout: showCursorBuddyCallout,
+  showHighlight: showGuidanceTargetMarker,
+  speak: (text, signal, taskId) =>
+    companionNarrationService.begin(text, signal, taskId),
+  subscribeToLearnerActivity: (onActivity) => {
+    let previous = screen.getCursorScreenPoint();
+    const timer = setInterval(() => {
+      const current = screen.getCursorScreenPoint();
+      if (current.x !== previous.x || current.y !== previous.y) {
+        previous = current;
+        onActivity('pointer');
+      }
+    }, 120);
+    return () => clearInterval(timer);
+  },
+  toRendererPosition: toCursorBuddyRendererPosition,
+});
 const executionCoordinator = new TaskExecutionCoordinator({
   additionalToolAdapters: [
     ...createActivityToolAdapters(knowledgeSpaceClient),
@@ -431,24 +475,49 @@ const executionCoordinator = new TaskExecutionCoordinator({
   onDesktopControlChange: updateDesktopControlIndicator,
   openExternal: async (url) => shell.openExternal(url, { activate: true }),
   prepareDesktopObservation,
-  presentGuidance: async (
-    input: GuidanceToolInput,
-    context: { signal: AbortSignal; taskId: string },
-  ) => {
-    const handle = await presentCompanionAction(
-      { kind: 'point', x: input.x, y: input.y },
-      context.signal,
-      {
-        kind: 'guidance',
-        message: input.description,
-        screenPoint: { x: input.x, y: input.y },
-        screenRegion: input.region,
-        taskId: context.taskId,
-        ...(input.target ? { target: input.target } : {}),
-      },
-    );
-    await handle?.completion;
+});
+const observeForCoach = async (taskId: string, signal: AbortSignal) => {
+  const cleanup = await prepareDesktopObservation();
+  try {
+    return await cuaService.observe(taskId, signal);
+  } finally {
+    await cleanup();
+  }
+};
+const coachDecisionClient = createAuthenticatedCoachDecisionClient({
+  accessTokenProvider: async () => {
+    const token = await authService.getAccessToken();
+    if (!token) throw new Error('Sign in before starting Tro Coach.');
+    return token;
   },
+  apiBaseUrl: trocodeApiBaseUrl,
+});
+const coachRuntime = new CoachRuntime({
+  ...coachDecisionClient,
+  startObservationSession: (taskId, signal) =>
+    cuaService.startTaskSession(taskId, signal),
+  releaseObservationSession: (taskId) => {
+    void cuaService.endTaskSession(taskId).catch((error: unknown) => {
+      console.error('[coach] CUA session cleanup failed.', error);
+    });
+  },
+  observe: observeForCoach,
+  onProgress: (taskId, progress) => {
+    taskRuntime.updateCoachProgress(taskId, progress);
+  },
+  onStatus: (taskId, phase, summary) => {
+    taskRuntime.applyCoachStatus(taskId, phase, summary);
+    agentActivityService.publish(taskId, { kind: 'status', summary });
+  },
+  onTerminal: (taskId, terminal) => {
+    taskRuntime.complete(taskId, terminal);
+    agentActivityService.publish(taskId, {
+      kind: terminal.status === 'completed' ? 'run_completed' : 'run_failed',
+      summary: terminal.finalOutput ?? terminal.message,
+    });
+    taskApplicationService.finish(taskId);
+  },
+  presenter: cursorBuddyController,
 });
 const localAgentRuntime = new LocalAgentRuntime({
   accessTokenProvider: async () => {
@@ -515,6 +584,7 @@ const taskApplicationService = new TaskApplicationService(
     activityContextService,
     activityProgressReporter,
     classroomSessionService,
+    coachRuntime,
     currentOwnerId: async () => (await authService.assertSignedIn()).id,
     localRuntime: localAgentRuntime,
     state: localAgentStateStore,
@@ -553,14 +623,14 @@ const appUpdateService = new AppUpdateService({
   updater: autoUpdater,
 });
 const COMPANION_SIZE = { height: 112, width: 112 } as const;
-const COMPANION_GAP = 14;
-const COMPANION_GLIDE_DURATION_MS = 360;
 const COMPANION_WANDER_DURATION_MS = 3_200;
 const COMPANION_WANDER_MIN_PAUSE_MS = 9_000;
 const COMPANION_WANDER_PAUSE_RANGE_MS = 7_000;
 const CURSOR_BUDDY_SIZE = { height: 44, width: 44 } as const;
-const CURSOR_BUDDY_GAP = 8;
-const GUIDANCE_CALLOUT_SIZE = { height: 176, width: 380 } as const;
+const GUIDANCE_CALLOUT_SIZE = { height: 196, width: 380 } as const;
+const CURSOR_BUDDY_COACH_CALLOUT_SIZE = { height: 160, width: 320 } as const;
+const CURSOR_BUDDY_HOOK_CALLOUT_SIZE = { height: 106, width: 260 } as const;
+const CURSOR_BUDDY_THINKING_CALLOUT_SIZE = { height: 94, width: 250 } as const;
 const PET_NUDGE_CALLOUT_SIZE = { height: 92, width: 300 } as const;
 const GUIDANCE_TARGET_MARKER_SIZE = { height: 76, width: 76 } as const;
 const RESPONSE_CALLOUT_SIZE = { height: 360, width: 420 } as const;
@@ -573,18 +643,6 @@ const DESKTOP_OBSERVATION_SETTLE_MS = 120;
 const SHUTDOWN_GRACE_PERIOD_MS = 2_000;
 const MAX_TRACKED_PRESENTATION_TASKS = 128;
 
-interface CompanionGlide {
-  abortListener: () => void;
-  from: Point;
-  guidance: boolean;
-  durationMs: number;
-  reject: (error: Error) => void;
-  resolve: () => void;
-  signal: AbortSignal;
-  startedAt: number;
-  to: Point;
-}
-
 interface CompanionWander {
   from: Point;
   startedAt: number;
@@ -593,21 +651,6 @@ interface CompanionWander {
 
 interface CompanionMotionActivity {
   nextFrameDelayMs: number | null;
-}
-
-interface DesktopPresentation {
-  kind?: 'guidance';
-  language?: 'en' | 'vi';
-  message?: string;
-  screenPoint?: Point;
-  screenRegion?: Rectangle;
-  taskId?: string;
-  target?: string;
-}
-
-interface GuidancePresentationHandle {
-  cancel(): void;
-  completion: Promise<unknown>;
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -623,13 +666,8 @@ const activeDesktopControlTasks = new Set<string>();
 const desktopControlStartedAt = new Map<string, number>();
 let companionMovementTimer: ReturnType<typeof setTimeout> | null = null;
 let companionWanderTimer: ReturnType<typeof setTimeout> | null = null;
-let cursorBuddyFollowTimer: ReturnType<typeof setTimeout> | null = null;
-let companionGlide: CompanionGlide | null = null;
 let companionWander: CompanionWander | null = null;
-let companionPinnedPosition: Point | null = null;
 let companionUserPosition: Point | null = null;
-let cursorBuddyFollowActiveUntil = 0;
-let lastObservedCursor: Point | null = null;
 let activeGuidanceTargetBounds: Rectangle | null = null;
 let activeCompanionGuidance: CompanionGuidance | null = null;
 let activeCompanionInteraction: CompanionInteraction | null = null;
@@ -638,9 +676,8 @@ let activeCompanionPetNudgeOwner: 'classroom' | 'task' | null = null;
 let activeCompanionResponse: CompanionResponseCard | null = null;
 let activeCompanionSpeech: CompanionSpeech | null = null;
 let activeCompanionAppearance: CompanionAppearance = { kind: 'default' };
-let companionGuidancePreviousState: CompanionState | null = null;
 let lastCompanionPosition: Point | null = null;
-let lastCursorBuddyPosition: Point | null = null;
+let lastCursorBuddySnapshot: CursorBuddySnapshot | null = null;
 let forcedExitTimer: ReturnType<typeof setTimeout> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let unregisterAppPreferencesChange: (() => void) | null = null;
@@ -680,8 +717,20 @@ function prepareDesktopObservation(): Promise<() => Promise<void>> {
         getWindow: () => cursorBuddyWindow,
         shouldRestore: () => auxiliaryWindowsEnabled,
       },
-      { getWindow: () => guidanceWindow, shouldRestore: () => false },
-      { getWindow: () => guidanceTargetWindow, shouldRestore: () => false },
+      {
+        getWindow: () => guidanceWindow,
+        shouldRestore: () =>
+          cursorBuddyController.hasActiveGuidance &&
+          activeCompanionGuidance !== null,
+        restoreIdentity: () => cursorBuddyController.activeSessionTaskId,
+      },
+      {
+        getWindow: () => guidanceTargetWindow,
+        shouldRestore: () =>
+          cursorBuddyController.hasActiveGuidance &&
+          activeGuidanceTargetBounds !== null,
+        restoreIdentity: () => cursorBuddyController.activeSessionTaskId,
+      },
       {
         getWindow: () => desktopControlIndicatorWindow,
         shouldRestore: () =>
@@ -730,25 +779,17 @@ function stopCompanionMovement(): void {
   if (companionWanderTimer) clearTimeout(companionWanderTimer);
   companionMovementTimer = null;
   companionWanderTimer = null;
-  cancelCompanionGlide(isShuttingDown ? createAbortError() : undefined);
   companionWander = null;
-  companionPinnedPosition = null;
   lastCompanionPosition = null;
 }
 
 function stopCursorBuddyFollowing(): void {
-  if (cursorBuddyFollowTimer) clearTimeout(cursorBuddyFollowTimer);
-  cursorBuddyFollowTimer = null;
-  cursorBuddyFollowActiveUntil = 0;
-  lastObservedCursor = null;
-  lastCursorBuddyPosition = null;
+  cursorBuddyController.stop();
+  lastCursorBuddySnapshot = null;
 }
 
 function sendCompanionState(): void {
-  broadcastCompanionState(companionState, [
-    companionWindow,
-    cursorBuddyWindow,
-  ]);
+  broadcastCompanionState(companionState, [companionWindow]);
 }
 
 function sendCompanionHover(): void {
@@ -781,6 +822,10 @@ function updateCompanionState(state: CompanionState): void {
   if (state !== 'idle') interruptPetNudges();
   if (state !== 'idle') pauseCompanionWandering();
   companionState = state;
+  cursorBuddyController.handleWorkState(
+    state,
+    activeCompanionVoiceActivity?.appLanguage ?? 'en',
+  );
   sendCompanionState();
   companionHoverTracker.synchronizeEligibility();
   if (state === 'idle') scheduleCompanionWander();
@@ -799,6 +844,16 @@ function updateCompanionVoiceActivity(
 ): void {
   if (activity) interruptPetNudges();
   activeCompanionVoiceActivity = activity;
+  cursorBuddyController.handleActivity(activity);
+  if (
+    !activity ||
+    (activity.phase !== 'processing' && activity.phase !== 'committing')
+  ) {
+    cursorBuddyController.handleWorkState(
+      companionState,
+      activity?.appLanguage ?? 'en',
+    );
+  }
   presentationCoordinator.handleVoiceActivity(activity);
   if (!auxiliaryWindowsEnabled) return;
   if (!activity) {
@@ -888,36 +943,7 @@ function sendCompanionPosition(position: Point): void {
   );
 }
 
-function createAbortError(): Error {
-  const error = new Error('Companion movement was cancelled.');
-  error.name = 'AbortError';
-  return error;
-}
-
-function settleCompanionGlide(error?: Error): void {
-  const glide = companionGlide;
-  if (!glide) return;
-
-  companionGlide = null;
-  glide.signal.removeEventListener('abort', glide.abortListener);
-  if (error) {
-    companionPinnedPosition = null;
-    glide.reject(error);
-    return;
-  }
-
-  companionPinnedPosition = glide.to;
-  sendCompanionGuidanceVisual(glide.to);
-  glide.resolve();
-}
-
-function cancelCompanionGlide(error?: Error): void {
-  settleCompanionGlide(error);
-}
-
 function resetCompanionPresentation(): void {
-  cancelCompanionGlide();
-  companionPinnedPosition = null;
   dismissCompanionGuidance();
   positionCompanion();
   scheduleCompanionWander();
@@ -959,7 +985,7 @@ function sendCompanionGuidanceVisual(companionPosition?: Point): void {
         Math.round(position.y - overlay.y + COMPANION_SIZE.height / 2),
       ),
     },
-    moving: Boolean(companionGlide),
+    moving: false,
     target: {
       height: activeGuidanceTargetBounds.height,
       width: activeGuidanceTargetBounds.width,
@@ -1357,6 +1383,7 @@ function showCompanionInteraction(interaction: PendingInteraction): void {
 
   interruptPetNudges();
   cancelBackgroundCompletionPresentation();
+  cursorBuddyController.cancelGuidance();
   dismissCompanionGuidance();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) createGuidanceWindow();
   if (!guidanceWindow || guidanceWindow.isDestroyed()) {
@@ -1410,23 +1437,16 @@ function hideGuidanceCallout(): void {
 
 function dismissCompanionGuidance(): void {
   hideGuidanceCallout();
-  if (
-    companionGuidancePreviousState !== null &&
-    companionState === 'guiding'
-  ) {
-    updateCompanionState(companionGuidancePreviousState);
-  }
-  companionGuidancePreviousState = null;
 }
 
-function showGuidanceCallout(
-  target: Point,
-  presentation: DesktopPresentation,
+function showCursorBuddyCallout(
+  guidance: CompanionGuidance,
+  anchor: Point,
+  side: 'left' | 'right',
 ): boolean {
   if (
     !auxiliaryWindowsEnabled ||
-    activeCompanionInteraction ||
-    !presentation.message
+    activeCompanionInteraction
   ) {
     return false;
   }
@@ -1436,171 +1456,66 @@ function showGuidanceCallout(
   }
   if (!guidanceWindow || guidanceWindow.isDestroyed()) return false;
 
-  const display = screen.getDisplayNearestPoint(target);
-  const position = placeGuidanceCallout(
-    target,
+  const display = screen.getDisplayNearestPoint(anchor);
+  const calloutSize = cursorBuddyCalloutSize(guidance);
+  const position = placeCursorBuddyCallout(
+    anchor,
     display.bounds,
-    GUIDANCE_CALLOUT_SIZE,
-    COMPANION_SIZE,
+    calloutSize,
+    CURSOR_BUDDY_SIZE,
+    side,
   );
-  activeCompanionGuidance = CompanionGuidanceSchema.parse({
-    kind: presentation.kind ?? 'guidance',
-    ...(presentation.language ? { language: presentation.language } : {}),
-    message: presentation.message,
-    playback: 'playing',
-    side: position.x < target.x ? 'left' : 'right',
-    ...(presentation.target
-      ? { target: presentation.target.slice(0, 80) }
-      : {}),
-  });
+  activeCompanionGuidance = CompanionGuidanceSchema.parse({ ...guidance, side });
   globalNumberedChoiceShortcuts?.deactivate();
-  guidanceWindow.setBounds({ ...position, ...GUIDANCE_CALLOUT_SIZE }, false);
+  guidanceWindow.setBounds({ ...position, ...calloutSize }, false);
   setGuidanceWindowInteractive(false);
   sendCompanionGuidance();
   guidanceWindow.showInactive();
   return true;
 }
 
-function companionTargetForCommand(
-  command: DesktopCommand,
-  presentation?: DesktopPresentation,
-): Point | null {
-  if (
-    command.kind !== 'click' &&
-    command.kind !== 'point' &&
-    command.kind !== 'scroll'
-  ) {
-    return null;
-  }
-  const pointerPosition = presentation?.screenPoint ?? {
-    x: command.x,
-    y: command.y,
-  };
-  const display = screen.getDisplayNearestPoint(pointerPosition);
-  return placeCompanionNearCursor(
-    pointerPosition,
-    display.bounds,
-    COMPANION_SIZE,
-    COMPANION_GAP,
+function moveCursorBuddyCallout(
+  anchor: Point,
+  side: 'left' | 'right',
+): void {
+  if (!guidanceWindow || guidanceWindow.isDestroyed()) return;
+  const display = screen.getDisplayNearestPoint(anchor);
+  const calloutSize = cursorBuddyCalloutSize(activeCompanionGuidance);
+  guidanceWindow.setBounds(
+    {
+      ...placeCursorBuddyCallout(
+        anchor,
+        display.bounds,
+        calloutSize,
+        CURSOR_BUDDY_SIZE,
+        side,
+      ),
+      ...calloutSize,
+    },
+    false,
   );
 }
 
-async function presentCompanionAction(
-  command: DesktopCommand,
-  signal: AbortSignal,
-  presentation?: DesktopPresentation,
-): Promise<GuidancePresentationHandle | void> {
-  const isPointPresentation = command.kind === 'point';
-  const isGuidancePoint = isPointPresentation;
-  if (isPointPresentation) {
-    hideGuidanceCallout();
-    prepareGuidanceTargetMarker(
-      presentation?.screenPoint ?? { x: command.x, y: command.y },
-      presentation?.screenRegion,
-    );
+function cursorBuddyCalloutSize(guidance: CompanionGuidance | null) {
+  if (guidance?.kind === 'thinking') {
+    return CURSOR_BUDDY_THINKING_CALLOUT_SIZE;
   }
-  const previousCompanionState = companionState;
-  const to = companionTargetForCommand(command, presentation);
-  if (!to) return;
-  if (!companionWindow || companionWindow.isDestroyed()) {
-    if (isPointPresentation) {
-      return showGuidancePresentation(command, presentation, signal);
-    }
-    return;
+  if (
+    guidance?.coach &&
+    guidance.phase === 'presenting' &&
+    guidance.message === guidance.coach.hook
+  ) {
+    return CURSOR_BUDDY_HOOK_CALLOUT_SIZE;
   }
-  if (command.kind === 'point') {
-    console.info(
-      '[companion] point.presentation',
-      JSON.stringify({
-        cuaScreenshotPoint: { x: command.x, y: command.y },
-        overlayScreenPoint: presentation?.screenPoint ?? null,
-        companionWindowPosition: to,
-      }),
-    );
-  }
-  if (signal.aborted) throw createAbortError();
-  pauseCompanionWandering();
-  if (isGuidancePoint) {
-    if (companionGuidancePreviousState === null) {
-      companionGuidancePreviousState = previousCompanionState;
-    }
-    updateCompanionState('guiding');
-  }
-
-  const from = getCurrentCompanionScreenPosition();
-  const animationSettings =
-    process.platform === 'darwin' || process.platform === 'win32'
-      ? systemPreferences.getAnimationSettings()
-      : { prefersReducedMotion: false, shouldRenderRichAnimation: true };
-  const durationMs = isGuidancePoint
-    ? guidanceGlideDuration(from, to, animationSettings)
-    : COMPANION_GLIDE_DURATION_MS;
-  if (pointEqual(from, to)) {
-    companionPinnedPosition = to;
-    positionCompanion();
-    if (isPointPresentation) {
-      return showGuidancePresentation(command, presentation, signal);
-    }
-    return;
-  }
-
-  if (durationMs === 0) {
-    companionPinnedPosition = to;
-    applyCompanionScreenPosition(to);
-    return showGuidancePresentation(command as Extract<DesktopCommand, { kind: 'point' }>, presentation, signal);
-  }
-
-  cancelCompanionGlide();
-  await new Promise<void>((resolve, reject) => {
-    const abortListener = (): void => settleCompanionGlide(createAbortError());
-    companionGlide = {
-      abortListener,
-      durationMs,
-      from,
-      guidance: isGuidancePoint,
-      reject,
-      resolve,
-      signal,
-      startedAt: Date.now(),
-      to,
-    };
-    signal.addEventListener('abort', abortListener, { once: true });
-    positionCompanion();
-    wakeCompanionMovement();
-  });
-
-  if (isPointPresentation) {
-    return showGuidancePresentation(command, presentation, signal);
-  }
+  return CURSOR_BUDDY_COACH_CALLOUT_SIZE;
 }
 
-function showGuidancePresentation(
-  command: Extract<DesktopCommand, { kind: 'point' }>,
-  presentation: DesktopPresentation | undefined,
-  signal: AbortSignal,
-): GuidancePresentationHandle | undefined {
-  if (presentation?.message) {
-    const shown = showGuidanceCallout(
-      presentation.screenPoint ?? { x: command.x, y: command.y },
-      presentation,
-    );
-    if (shown) {
-      const markerShown = showGuidanceTargetMarker(
-        presentation.screenPoint ?? { x: command.x, y: command.y },
-        presentation.screenRegion,
-      );
-      if (!markerShown) {
-        hideGuidanceCallout();
-        return undefined;
-      }
-      return companionNarrationService.begin(
-        presentation.message,
-        signal,
-        presentation.taskId,
-      );
-    }
+function handleCompanionGuidanceAction(
+  request: CompanionGuidanceActionRequest,
+): void {
+  if (!cursorBuddyController.handleAction(request)) {
+    throw new Error('Tro is not waiting for a learner action yet.');
   }
-  return undefined;
 }
 
 async function identifyAnalyticsUser(user: AuthUser): Promise<void> {
@@ -1725,6 +1640,7 @@ function enableAuthenticatedAuxiliaryWindows(): void {
   taskPetService.start();
   createCompanionWindow();
   createCursorBuddyWindow();
+  cursorBuddyController.start();
   companionHoverTracker.synchronizeEligibility();
   ensureGlobalVoiceShortcut();
 }
@@ -1755,7 +1671,6 @@ function disableAuthenticatedAuxiliaryWindows(): void {
   cancelBackgroundCompletionPresentation();
   companionState = 'idle';
   activeCompanionVoiceActivity = null;
-  companionGuidancePreviousState = null;
   clearCompanionInteraction();
   dismissCompanionGuidance();
   clearCompanionResponse();
@@ -1861,6 +1776,7 @@ function prepareApplicationShutdown(): Promise<void> {
     await dictationService.shutdown();
     await Promise.allSettled([
       cuaService.shutdown(),
+      coachRuntime.shutdown(),
       localAgentRuntime.shutdown(),
       rustDesktopEngine.stop(),
       taskHistoryService.shutdown(),
@@ -1944,6 +1860,9 @@ function coordinateTaskPresentation(value: unknown): void {
       companionResponseController.startRun(update.snapshot.taskId),
     );
     knownPresentationTaskIds.add(update.snapshot.taskId);
+    if (update.snapshot.goal?.schemaVersion === 11 && update.snapshot.goal.route === 'coach') {
+      cursorBuddyController.beginSession(update.snapshot.taskId);
+    }
     while (knownPresentationTaskIds.size > MAX_TRACKED_PRESENTATION_TASKS) {
       const oldestTaskId = knownPresentationTaskIds.values().next().value as
         | string
@@ -1965,16 +1884,19 @@ function coordinateTaskPresentation(value: unknown): void {
   }
 
   if (update.snapshot.phase === 'completed') {
+    cursorBuddyController.finishSession(update.snapshot.taskId);
     syncCompanionResponse(
-      requestsGuidedWalkthrough(update.snapshot.request)
+      update.snapshot.goal?.schemaVersion === 11 && update.snapshot.goal.route === 'coach'
         ? companionResponseController.cancelRun(update.snapshot.taskId)
         : companionResponseController.complete(update.snapshot),
     );
   } else if (update.snapshot.phase === 'failed') {
+    cursorBuddyController.finishSession(update.snapshot.taskId);
     syncCompanionResponse(
       companionResponseController.failRun(update.snapshot.taskId),
     );
   } else if (update.snapshot.phase === 'cancelled') {
+    cursorBuddyController.finishSession(update.snapshot.taskId);
     syncCompanionResponse(
       companionResponseController.cancelRun(update.snapshot.taskId),
     );
@@ -2447,8 +2369,9 @@ const createWindow = (): void => {
     computerPermissionCoordinator,
     fileSelectionService,
     getCompanionInteractionWindow: () => guidanceWindow,
-    getCursorBuddyPosition: getCurrentCursorBuddyPosition,
+    getCursorBuddySnapshot,
     getCursorBuddyWindow: () => cursorBuddyWindow,
+    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
@@ -2465,6 +2388,7 @@ const createWindow = (): void => {
       disableAuthenticatedAuxiliaryWindows();
       taskHistoryService.setCurrentOwner(null);
       localAgentRuntime.clearCredential();
+      await coachRuntime.shutdown();
       await localAgentRuntime.shutdown();
       await systemAudioDuckingService.setActive(false).catch((error: unknown) => {
         console.error('[voice] Could not restore system audio after sign-out.', error);
@@ -2543,16 +2467,34 @@ const createWindow = (): void => {
   if (!app.isPackaged) nextMainWindow.webContents.openDevTools({ mode: 'detach' });
 };
 
-function sendCursorBuddyPosition(position: Point): void {
+function publishCursorBuddySnapshot(snapshot: CursorBuddySnapshot): void {
   if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return;
-  if (pointEqual(lastCursorBuddyPosition, position)) return;
-
-  const parsedPosition = CompanionPositionSchema.parse(position);
-  lastCursorBuddyPosition = parsedPosition;
+  const parsedSnapshot = CursorBuddySnapshotSchema.parse(snapshot);
+  if (
+    lastCursorBuddySnapshot?.phase === parsedSnapshot.phase &&
+    lastCursorBuddySnapshot.busy === parsedSnapshot.busy &&
+    pointEqual(lastCursorBuddySnapshot.position, parsedSnapshot.position)
+  ) {
+    return;
+  }
+  lastCursorBuddySnapshot = parsedSnapshot;
   cursorBuddyWindow.webContents.send(
-    IPC_CHANNELS.cursorBuddyPositionChanged,
-    parsedPosition,
+    IPC_CHANNELS.cursorBuddySnapshotChanged,
+    parsedSnapshot,
   );
+}
+
+function getCursorBuddySnapshot(): CursorBuddySnapshot {
+  return CursorBuddySnapshotSchema.parse(cursorBuddyController.currentSnapshot);
+}
+
+function toCursorBuddyRendererPosition(position: Point): Point {
+  if (!shouldUseCompanionOverlay(process.platform)) return position;
+  const overlayBounds = getCompanionOverlayBounds();
+  return {
+    x: position.x - overlayBounds.x,
+    y: position.y - overlayBounds.y,
+  };
 }
 
 function applyCursorBuddyScreenPosition(position: Point): void {
@@ -2571,70 +2513,8 @@ function applyCursorBuddyScreenPosition(position: Point): void {
 
   if (!boundsEqual(cursorBuddyWindow.getBounds(), overlayBounds)) {
     cursorBuddyWindow.setBounds(overlayBounds, false);
-    lastCursorBuddyPosition = null;
+    lastCursorBuddySnapshot = null;
   }
-  sendCursorBuddyPosition({
-    x: position.x - overlayBounds.x,
-    y: position.y - overlayBounds.y,
-  });
-}
-
-function positionCursorBuddy(): boolean {
-  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return false;
-
-  const cursor = screen.getCursorScreenPoint();
-  const cursorMoved = !pointEqual(lastObservedCursor, cursor);
-  lastObservedCursor = cursor;
-  const display = screen.getDisplayNearestPoint(cursor);
-  applyCursorBuddyScreenPosition(
-    placeCompanionNearCursor(
-      cursor,
-      display.bounds,
-      CURSOR_BUDDY_SIZE,
-      CURSOR_BUDDY_GAP,
-    ),
-  );
-  return cursorMoved;
-}
-
-function getCurrentCursorBuddyPosition(): Point {
-  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) {
-    throw new Error('Cursor buddy position is unavailable.');
-  }
-
-  positionCursorBuddy();
-  if (shouldUseCompanionOverlay(process.platform)) {
-    if (!lastCursorBuddyPosition) {
-      throw new Error('Cursor buddy overlay position is unavailable.');
-    }
-    return lastCursorBuddyPosition;
-  }
-
-  const [x = 0, y = 0] = cursorBuddyWindow.getPosition();
-  return { x, y };
-}
-
-function scheduleCursorBuddyFollow(delayMs: number): void {
-  if (!cursorBuddyWindow || cursorBuddyWindow.isDestroyed()) return;
-  cursorBuddyFollowTimer = setTimeout(runCursorBuddyFollowLoop, delayMs);
-}
-
-function runCursorBuddyFollowLoop(): void {
-  cursorBuddyFollowTimer = null;
-  const now = Date.now();
-  const schedule = nextCursorBuddyFollowSchedule({
-    activeUntil: cursorBuddyFollowActiveUntil,
-    cursorMoved: positionCursorBuddy(),
-    now,
-  });
-  cursorBuddyFollowActiveUntil = schedule.activeUntil;
-  scheduleCursorBuddyFollow(schedule.delayMs);
-}
-
-function wakeCursorBuddyFollowing(): void {
-  if (cursorBuddyFollowTimer) clearTimeout(cursorBuddyFollowTimer);
-  cursorBuddyFollowTimer = null;
-  scheduleCursorBuddyFollow(0);
 }
 
 function getCurrentCompanionScreenPosition(): Point {
@@ -2710,22 +2590,6 @@ function positionCompanion(now = Date.now()): CompanionMotionActivity {
     return { nextFrameDelayMs: null };
   }
 
-  const glide = companionGlide;
-  if (glide) {
-    const progress = (now - glide.startedAt) / glide.durationMs;
-    const position = glide.guidance
-      ? interpolateGuidancePosition(glide.from, glide.to, progress)
-      : interpolateCompanionPosition(glide.from, glide.to, progress);
-    applyCompanionScreenPosition(position);
-    if (progress >= 1) settleCompanionGlide();
-    return { nextFrameDelayMs: progress < 1 ? 16 : null };
-  }
-
-  if (companionPinnedPosition) {
-    applyCompanionScreenPosition(companionPinnedPosition);
-    return { nextFrameDelayMs: null };
-  }
-
   const wander = companionWander;
   if (wander) {
     const progress =
@@ -2783,8 +2647,6 @@ function rememberCompanionUserPosition(bounds: Rectangle): void {
   if (companionMovementTimer) clearTimeout(companionMovementTimer);
   companionMovementTimer = null;
   pauseCompanionWandering();
-  companionPinnedPosition = null;
-
   const display = screen.getDisplayMatching(bounds);
   companionUserPosition = clampCompanionPosition(
     { x: bounds.x, y: bounds.y },
@@ -2797,8 +2659,6 @@ function scheduleCompanionWander(): void {
   if (
     companionWanderTimer ||
     companionWander ||
-    companionGlide ||
-    companionPinnedPosition ||
     companionUserPosition ||
     activeCompanionHover ||
     companionState !== 'idle' ||
@@ -2820,8 +2680,6 @@ function scheduleCompanionWander(): void {
 function startCompanionWander(): void {
   companionWanderTimer = null;
   if (
-    companionGlide ||
-    companionPinnedPosition ||
     companionUserPosition ||
     activeCompanionHover ||
     companionState !== 'idle' ||
@@ -2953,10 +2811,8 @@ const createCursorBuddyWindow = (): void => {
   });
   cursorBuddyWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   cursorBuddyWindow.webContents.on('did-finish-load', () => {
-    sendCompanionState();
-    lastCursorBuddyPosition = null;
-    positionCursorBuddy();
-    wakeCursorBuddyFollowing();
+    lastCursorBuddySnapshot = null;
+    publishCursorBuddySnapshot(cursorBuddyController.currentSnapshot);
   });
   cursorBuddyWindow.webContents.on('will-navigate', (event) => {
     event.preventDefault();
@@ -2971,9 +2827,8 @@ const createCursorBuddyWindow = (): void => {
 
   cursorBuddyWindow.once('ready-to-show', () => {
     if (!auxiliaryWindowsEnabled) return;
-    positionCursorBuddy();
     cursorBuddyWindow?.showInactive();
-    wakeCursorBuddyFollowing();
+    cursorBuddyController.start();
   });
   cursorBuddyWindow.on('closed', () => {
     cursorBuddyWindow = null;
@@ -2981,7 +2836,6 @@ const createCursorBuddyWindow = (): void => {
   });
 
   void cursorBuddyWindow.loadURL(cursorBuddyUrl.toString());
-  positionCursorBuddy();
 };
 
 const createCompanionWindow = (): void => {

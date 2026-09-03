@@ -95,7 +95,7 @@ export function VoiceIslandContent({
     activity.phase === 'mode_selected' ||
     activity.phase === 'complete' ||
     activity.phase === 'error';
-  const transcript = terminal ? '' : activity.transcript.trim();
+  const transcript = activity.transcript.trim();
   const detail =
     activity.message?.trim() ||
     transcript ||

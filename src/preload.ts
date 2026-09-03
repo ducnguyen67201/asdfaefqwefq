@@ -16,7 +16,9 @@ import {
   CompanionPositionSchema,
   CancelTaskRequestSchema,
   CompanionGuidanceSchema,
+  CompanionGuidanceActionRequestSchema,
   CompanionGuidanceVisualSchema,
+  CursorBuddySnapshotSchema,
   CompanionHoverSchema,
   CompanionInteractionSchema,
   CompanionPetNudgeSchema,
@@ -948,11 +950,11 @@ const desktopApi: DesktopApi = {
 };
 
 const companionApi: CompanionApi = {
-  async getCursorBuddyPosition() {
+  async getCursorBuddySnapshot() {
     const response: unknown = await ipcRenderer.invoke(
-      IPC_CHANNELS.getCursorBuddyPosition,
+      IPC_CHANNELS.getCursorBuddySnapshot,
     );
-    return CompanionPositionSchema.parse(response);
+    return CursorBuddySnapshotSchema.parse(response);
   },
 
   async reportSpeechPlayback(input) {
@@ -982,6 +984,11 @@ const companionApi: CompanionApi = {
   async performResponseAction(input) {
     const request = CompanionResponseActionRequestSchema.parse(input);
     await ipcRenderer.invoke(IPC_CHANNELS.companionResponseAction, request);
+  },
+
+  async performGuidanceAction(input) {
+    const request = CompanionGuidanceActionRequestSchema.parse(input);
+    await ipcRenderer.invoke(IPC_CHANNELS.companionGuidanceAction, request);
   },
 
   onGuidanceChange(listener) {
@@ -1048,18 +1055,18 @@ const companionApi: CompanionApi = {
       );
   },
 
-  onCursorBuddyPositionChange(listener) {
+  onCursorBuddySnapshotChange(listener) {
     const eventHandler = (
       _event: Electron.IpcRendererEvent,
       value: unknown,
     ): void => {
-      listener(CompanionPositionSchema.parse(value));
+      listener(CursorBuddySnapshotSchema.parse(value));
     };
 
-    ipcRenderer.on(IPC_CHANNELS.cursorBuddyPositionChanged, eventHandler);
+    ipcRenderer.on(IPC_CHANNELS.cursorBuddySnapshotChanged, eventHandler);
     return () =>
       ipcRenderer.removeListener(
-        IPC_CHANNELS.cursorBuddyPositionChanged,
+        IPC_CHANNELS.cursorBuddySnapshotChanged,
         eventHandler,
       );
   },

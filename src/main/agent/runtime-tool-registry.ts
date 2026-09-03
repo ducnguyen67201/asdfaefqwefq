@@ -28,12 +28,10 @@ import {
 import {
   DesktopCommandSchema,
   NORMALIZED_COORDINATE_MAX,
-  mapNormalizedRegionToScreenshot,
   mapNormalizedPointToScreenshot,
   tableRowsToTsv,
   type DesktopCommand,
   type DesktopObservation,
-  type DesktopRegion,
 } from './execution-contracts';
 
 export interface TrustedToolExecutionContext {
@@ -102,16 +100,6 @@ export interface DesktopControlToolInput {
   target?: string;
 }
 
-export interface GuidanceToolInput {
-  description: string;
-  observationFingerprint: string;
-  observationId: string;
-  region?: DesktopRegion;
-  target?: string;
-  x: number;
-  y: number;
-}
-
 export interface InteractionToolInput {
   choices?: string[];
   prompt: string;
@@ -168,25 +156,6 @@ const normalizedPoint = z.object({
   x: z.number().int().min(0).max(NORMALIZED_COORDINATE_MAX),
   y: z.number().int().min(0).max(NORMALIZED_COORDINATE_MAX),
 });
-
-const normalizedRegion = z
-  .object({
-    x: z.number().int().min(0).max(NORMALIZED_COORDINATE_MAX),
-    y: z.number().int().min(0).max(NORMALIZED_COORDINATE_MAX),
-    width: z.number().int().min(1).max(NORMALIZED_COORDINATE_MAX),
-    height: z.number().int().min(1).max(NORMALIZED_COORDINATE_MAX),
-  })
-  .superRefine((region, context) => {
-    if (
-      region.x + region.width > NORMALIZED_COORDINATE_MAX ||
-      region.y + region.height > NORMALIZED_COORDINATE_MAX
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'The guidance region must stay inside normalized coordinates.',
-      });
-    }
-  });
 
 const normalizedCommand = z.discriminatedUnion('kind', [
   normalizedPoint.extend({
@@ -505,36 +474,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
     application: z.literal('chrome'),
     reason: z.string().trim().min(1).max(500),
   });
-  const guidanceSchema = normalizedPoint
-    .extend({
-      observationId: z.string().uuid(),
-      description: z.string().trim().min(1).max(240),
-      region: normalizedRegion
-        .nullish()
-        .transform((value) => value ?? undefined),
-      target: z
-        .string()
-        .trim()
-        .min(1)
-        .max(80)
-        .nullish()
-        .transform((value) => value ?? undefined),
-    })
-    .superRefine((input, context) => {
-      if (
-        input.region &&
-        (input.x < input.region.x ||
-          input.x > input.region.x + input.region.width ||
-          input.y < input.region.y ||
-          input.y > input.region.y + input.region.height)
-      ) {
-        context.addIssue({
-          code: 'custom',
-          message: 'The target region must contain the guidance point.',
-          path: ['region'],
-        });
-      }
-    });
   const interactionSchema = z.object({
     prompt: z.string().trim().min(1).max(2_000),
     choices: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
@@ -681,94 +620,6 @@ export function defaultRuntimeToolDefinitions(): RuntimeToolDefinition[] {
         operation: 'launch',
         toolId: 'application.launch',
       }),
-    }),
-    defineTool({
-      id: 'task.guidance',
-      modelName: 'show_guidance',
-      description:
-        'Point at and highlight exactly one visible target, then speak one concise instruction (240 characters maximum). All visual coordinates use normalized 0-1000 image space, never raw screenshot pixels. Supply a tight region when the target occupies an area, otherwise null. Do not click or change the application. The host waits for the narration result before continuing.',
-      operations: ['show'],
-      parameters: objectSchema(
-        {
-          observationId: { type: 'string' },
-          description: { type: 'string', maxLength: 240 },
-          target: {
-            anyOf: [{ type: 'string', maxLength: 80 }, { type: 'null' }],
-          },
-          region: {
-            anyOf: [
-              objectSchema(
-                {
-                  x: normalizedCoordinateModelSchema,
-                  y: normalizedCoordinateModelSchema,
-                  width: {
-                    ...normalizedCoordinateModelSchema,
-                    minimum: 1,
-                  },
-                  height: {
-                    ...normalizedCoordinateModelSchema,
-                    minimum: 1,
-                  },
-                },
-                ['x', 'y', 'width', 'height'],
-              ),
-              { type: 'null' },
-            ],
-          },
-          x: normalizedCoordinateModelSchema,
-          y: normalizedCoordinateModelSchema,
-        },
-        ['observationId', 'description', 'target', 'region', 'x', 'y'],
-      ),
-      parse: (value) => parseWith(guidanceSchema, value),
-      normalize: (input, call, context) => {
-        const observation = requireObservation(context, input.observationId);
-        const coordinateSpace = observation.coordinateSpace;
-        if (!coordinateSpace) {
-          throw new Error('The observation has no coordinate-space metadata.');
-        }
-        const point = mapNormalizedPointToScreenshot(input, coordinateSpace);
-        const region = input.region
-          ? mapNormalizedRegionToScreenshot(input.region, coordinateSpace)
-          : undefined;
-        const action = ProposedActionSchema.parse({
-          action: 'guide',
-          toolId: 'task.guidance',
-          operation: 'show',
-          description: input.description,
-          ...(input.target ? { target: input.target } : {}),
-          parameters: {
-            command: 'point',
-            observationFingerprint: observation.fingerprint,
-            observationId: observation.observationId,
-            x: String(point.x),
-            y: String(point.y),
-            ...(region
-              ? {
-                  regionX: String(region.x),
-                  regionY: String(region.y),
-                  regionWidth: String(region.width),
-                  regionHeight: String(region.height),
-                }
-              : {}),
-          },
-        });
-        return {
-          action,
-          callId: call.callId,
-          input: {
-            ...input,
-            x: point.x,
-            y: point.y,
-            ...(region ? { region } : {}),
-            observationFingerprint: observation.fingerprint,
-          },
-          kind: 'guidance',
-          modelName: call.name,
-          operation: 'show',
-          toolId: 'task.guidance',
-        };
-      },
     }),
     defineTool({
       id: 'knowledge.search',

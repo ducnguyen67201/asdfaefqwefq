@@ -62,7 +62,7 @@ export const ProposedActionSchema = z.object({
     .optional(),
 });
 
-export const AgentRuntimeKindSchema = z.literal('openai_agents_sdk');
+export const AgentRuntimeKindSchema = z.enum(['coach', 'openai_agents_sdk']);
 
 export const ExecutionProfileSchema = z.enum(['everyday', 'workspace']);
 
@@ -245,6 +245,17 @@ function validateWorkspaceContract(
   }
 }
 
+export const TaskRouteSchema = z.enum(['coach', 'agent']);
+export const RequestedModeSchema = z.enum(['auto', 'coach', 'agent']);
+
+export const CoachProgressSchema = z.object({
+  attemptId: z.string().uuid().nullable(),
+  activityVersionId: z.string().uuid().nullable(),
+  stepNumber: z.number().int().min(0).max(100),
+  expectedOutcome: z.string().trim().max(160).nullable(),
+  recap: z.string().trim().max(240).nullable(),
+}).strict();
+
 export const AgentTaskContractV10Schema = z
   .object({
     schemaVersion: z.literal(10),
@@ -259,7 +270,43 @@ export const AgentTaskContractV10Schema = z
   .strict()
   .superRefine(validateWorkspaceContract);
 
-export const TaskContractSchema = AgentTaskContractV10Schema;
+export const AgentTaskContractV11Schema = z
+  .object({
+    schemaVersion: z.literal(11),
+    id: z.string().uuid(),
+    originalRequest: z.string().min(2).max(8_000),
+    runtimeKind: AgentRuntimeKindSchema,
+    route: TaskRouteSchema,
+    executionProfile: ExecutionProfileSchema,
+    workspace: WorkspaceIdentitySchema.nullable(),
+    activity: ActivityContextSchema.nullable(),
+    coachProgress: CoachProgressSchema.nullable(),
+    limits: TaskLimitsSchema,
+  })
+  .strict()
+  .superRefine((contract, context) => {
+    validateWorkspaceContract(contract, context);
+    const expectedRuntime = contract.route === 'coach' ? 'coach' : 'openai_agents_sdk';
+    if (contract.runtimeKind !== expectedRuntime) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The selected route and runtime kind must agree.',
+        path: ['runtimeKind'],
+      });
+    }
+    if (contract.route === 'coach' && contract.executionProfile === 'workspace') {
+      context.addIssue({
+        code: 'custom',
+        message: 'Coach mode cannot claim Workspace execution authority.',
+        path: ['route'],
+      });
+    }
+  });
+
+export const TaskContractSchema = z.union([
+  AgentTaskContractV11Schema,
+  AgentTaskContractV10Schema,
+]);
 export const GoalSpecSchema = TaskContractSchema;
 
 export const TaskPhaseSchema = z.enum([
@@ -572,6 +619,8 @@ export const TaskSnapshotSchema = z
 export const SubmitTaskRequestSchema = z
   .object({
     text: z.string().trim().min(2).max(8_000),
+    requestedMode: RequestedModeSchema.default('auto'),
+    screenContext: z.enum(['auto', 'required', 'disabled']).default('auto'),
     executionProfile: ExecutionProfileSchema.default('everyday'),
     workspaceSelectionId: z.string().uuid().nullable().default(null),
     activityAttemptId: z.string().uuid().nullable().default(null),
@@ -1770,6 +1819,30 @@ export const CompanionPositionSchema = z.object({
   y: z.number().int().min(0).max(100_000),
 });
 
+const CursorBuddyPositionSchema = z
+  .object({
+    x: z.number().int().min(-100_000).max(100_000),
+    y: z.number().int().min(-100_000).max(100_000),
+  })
+  .strict();
+
+export const CursorBuddySnapshotSchema = z
+  .object({
+    phase: z.enum([
+      'following',
+      'thinking',
+      'gliding',
+      'demonstrating',
+      'explaining',
+      'waiting',
+      'paused',
+      'checking',
+    ]),
+    position: CursorBuddyPositionSchema,
+    busy: z.boolean(),
+  })
+  .strict();
+
 export const CompanionGuidanceVisualSchema = z
   .object({
     companion: CompanionPositionSchema,
@@ -1824,15 +1897,54 @@ export const CompanionGuidanceShortcutsSchema = z.object({
   next: CompanionGuidanceShortcutSchema,
 });
 
+export const MAX_COACH_SPEECH_CHARACTERS = 160;
+
+export const CompanionCoachCopySchema = z
+  .object({
+    expectedOutcome: z.string().trim().min(1).max(160),
+    hook: z.string().trim().min(1).max(50),
+    instruction: z.string().trim().min(1).max(90),
+    reason: z.string().trim().min(1).max(90),
+  })
+  .strict()
+  .superRefine((copy, context) => {
+    const spokenLength = [copy.hook, copy.instruction, copy.reason].join(' ').length;
+    if (spokenLength > MAX_COACH_SPEECH_CHARACTERS) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Coach speech must stay under 160 characters per step.',
+      });
+    }
+  });
+
 export const CompanionGuidanceSchema = z.object({
-  kind: z.enum(['action_preview', 'guidance', 'result']).default('guidance'),
+  coach: CompanionCoachCopySchema.optional(),
+  kind: z
+    .enum(['action_preview', 'guidance', 'result', 'thinking'])
+    .default('guidance'),
   language: AppLanguageSchema.optional(),
   message: z.string().trim().min(1).max(240),
+  phase: z.enum(['presenting', 'waiting', 'paused', 'checking']).default('presenting'),
   playback: z.enum(['playing', 'paused']).default('playing'),
+  responseWindowSeconds: z.number().int().min(5).max(120).optional(),
   shortcuts: CompanionGuidanceShortcutsSchema.optional(),
   side: z.enum(['left', 'right']),
+  taskId: z.string().uuid().optional(),
   target: z.string().trim().min(1).max(80).optional(),
 });
+
+export const CompanionGuidanceActionSchema = z.enum([
+  'continue',
+  'repeat',
+  'toggle_pause',
+]);
+
+export const CompanionGuidanceActionRequestSchema = z
+  .object({
+    action: CompanionGuidanceActionSchema,
+    taskId: z.string().uuid(),
+  })
+  .strict();
 
 export const CompanionPetMoodSchema = z.enum([
   'encouraging',
@@ -2252,6 +2364,7 @@ export type ActivateMembershipRequest = z.infer<
   typeof ActivateMembershipRequestSchema
 >;
 export type CompanionPosition = z.infer<typeof CompanionPositionSchema>;
+export type CursorBuddySnapshot = z.infer<typeof CursorBuddySnapshotSchema>;
 export type ActivateCompanionCandidateRequest = z.infer<
   typeof ActivateCompanionCandidateRequestSchema
 >;
@@ -2284,6 +2397,13 @@ export type CompanionVoiceActivity = z.infer<
 >;
 export type VoiceMode = z.infer<typeof VoiceModeSchema>;
 export type CompanionGuidance = z.infer<typeof CompanionGuidanceSchema>;
+export type CompanionCoachCopy = z.infer<typeof CompanionCoachCopySchema>;
+export type CompanionGuidanceAction = z.infer<
+  typeof CompanionGuidanceActionSchema
+>;
+export type CompanionGuidanceActionRequest = z.infer<
+  typeof CompanionGuidanceActionRequestSchema
+>;
 export type CompanionPetMood = z.infer<typeof CompanionPetMoodSchema>;
 export type CompanionPetNudgeDraft = z.infer<
   typeof CompanionPetNudgeDraftSchema
@@ -2321,8 +2441,12 @@ export type CuaStatus = z.infer<typeof CuaStatusSchema>;
 export type GoalSpec = z.infer<typeof GoalSpecSchema>;
 export type GetUsageBudgetRequest = z.infer<typeof GetUsageBudgetRequestSchema>;
 export type TaskContract = z.infer<typeof TaskContractSchema>;
-export type AgentTaskContract = z.infer<typeof AgentTaskContractV10Schema>;
-export type AgentTaskContractV10 = AgentTaskContract;
+export type AgentTaskContract = z.infer<typeof TaskContractSchema>;
+export type AgentTaskContractV10 = z.infer<typeof AgentTaskContractV10Schema>;
+export type AgentTaskContractV11 = z.infer<typeof AgentTaskContractV11Schema>;
+export type CoachProgress = z.infer<typeof CoachProgressSchema>;
+export type TaskRoute = z.infer<typeof TaskRouteSchema>;
+export type RequestedMode = z.infer<typeof RequestedModeSchema>;
 export type ExecutableAgentTaskContract = AgentTaskContract;
 export type ActivityContext = z.infer<typeof ActivityContextSchema>;
 export type ClassroomDirective = z.infer<typeof ClassroomDirectiveSchema>;

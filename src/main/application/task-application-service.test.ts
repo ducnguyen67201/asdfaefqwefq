@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { TaskSnapshot } from '../../shared/contracts';
+import type {
+  ActivityContext,
+  ClassroomSessionProjection,
+  TaskSnapshot,
+} from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
 import { TaskApplicationService } from './task-application-service';
@@ -23,9 +27,68 @@ function localDependencies() {
       void ownerId;
       void snapshot;
     }),
+    findLatestCoachProgress: vi.fn(async () => null),
     listActive: vi.fn(async (): Promise<Array<{ snapshot: TaskSnapshot }>> => []),
   };
-  return { localRuntime, state };
+  const coachRuntime = {
+    cancel: vi.fn(),
+    shutdown: vi.fn(async () => undefined),
+    start: vi.fn(async (_input: unknown) => { void _input; }),
+  };
+  return { coachRuntime, localRuntime, state };
+}
+
+const CLASSROOM_ATTEMPT_ID = '00000000-0000-4000-8000-000000000001';
+const CLASSROOM_ACTIVITY_VERSION_ID = '00000000-0000-4000-8000-000000000002';
+const CLASSROOM_ACTIVITY: ActivityContext = {
+  attemptId: CLASSROOM_ATTEMPT_ID,
+  workSessionId: '00000000-0000-4000-8000-000000000003',
+  activityVersionId: CLASSROOM_ACTIVITY_VERSION_ID,
+  runId: '00000000-0000-4000-8000-000000000004',
+  space: { id: '00000000-0000-4000-8000-000000000005', name: 'Scratch class' },
+  activity: {
+    title: 'Click to increase score',
+    objective: 'Build a score interaction.',
+    instructions: 'Follow the Scratch tutorial one step at a time.',
+    launchTarget: 'current_surface',
+    guidancePolicy: { answerReveal: 'allowed', hintMode: 'guided', maxHintLevel: 3 },
+    criteria: [],
+    completionPolicy: {
+      requiresSubmission: false,
+      requiresFacilitatorConfirmation: false,
+    },
+    sessionPolicy: { allowedOrigins: [], allowRoomJoin: true },
+  },
+  purpose: 'help',
+  currentDirective: null,
+  insightPolicy: 'explicit_and_operational',
+  insightPolicyVersion: '1',
+  policyAcknowledged: true,
+  sourceCatalog: [],
+  priorProgress: { completedCriterionIds: [], sessionCount: 0, summary: 'Just started.' },
+};
+
+function classroomDependencies() {
+  let onChange: ((session: ClassroomSessionProjection | null) => void) | null = null;
+  const classroomSessionService = {
+    activeStudentAttemptId: vi.fn(() => CLASSROOM_ATTEMPT_ID),
+    latestDirective: vi.fn(() => null),
+    onChange: vi.fn((listener: (session: ClassroomSessionProjection | null) => void) => {
+      onChange = listener;
+      return () => undefined;
+    }),
+  };
+  const activityContextService = {
+    inspect: vi.fn(async () => ({
+      definition: { launchTarget: 'current_surface' },
+    })),
+    create: vi.fn(async () => CLASSROOM_ACTIVITY),
+  };
+  return {
+    activityContextService,
+    classroomSessionService,
+    publishSession: (session: ClassroomSessionProjection | null) => onChange?.(session),
+  };
 }
 
 describe('TaskApplicationService', () => {
@@ -33,7 +96,7 @@ describe('TaskApplicationService', () => {
     const service = new TaskApplicationService(new TaskRuntime());
 
     await expect(service.submitAndStart({ text: 'Open Chrome.' })).rejects.toThrow(
-      'local Agents SDK runtime is not configured',
+      'Local task persistence is not configured',
     );
   });
 
@@ -57,7 +120,7 @@ describe('TaskApplicationService', () => {
     expect(order).toEqual(['persist', 'start']);
     expect(snapshot).toMatchObject({
       phase: 'planning',
-      goal: { runtimeKind: 'openai_agents_sdk', schemaVersion: 10 },
+      goal: { route: 'agent', runtimeKind: 'openai_agents_sdk', schemaVersion: 11 },
       runtimeResume: { kind: 'local_agents_sdk' },
     });
     expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
@@ -69,10 +132,11 @@ describe('TaskApplicationService', () => {
     );
   });
 
-  it('starts visible how-to requests as a desktop-grounded walkthrough', async () => {
+  it('starts visible how-to requests in Coach and never starts Heavy Agent', async () => {
     const runtime = new TaskRuntime();
-    const { localRuntime, state } = localDependencies();
+    const { coachRuntime, localRuntime, state } = localDependencies();
     const service = new TaskApplicationService(runtime, {
+      coachRuntime,
       currentOwnerId: async () => 'owner-1',
       localRuntime,
       state: state as never,
@@ -83,25 +147,148 @@ describe('TaskApplicationService', () => {
       text: 'Làm sao làm bài tập Scratch này?',
     });
 
-    expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
-      threadId: snapshot.taskId,
-      requiredInitialTool: {
-        modelName: 'observe_context',
-        arguments: {
-          operation: 'observe',
-          scope: 'desktop',
-          reason: 'Ground the first teacher walkthrough step in the desktop.',
-          query: null,
-          observationId: null,
-          region: null,
-        },
-      },
-      walkthroughState: {
-        completedSteps: 0,
-        enabled: true,
-        phase: 'needs_observation',
-      },
+    expect(coachRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: snapshot.taskId,
+      requiresObservation: true,
     }));
+    expect(localRuntime.start).not.toHaveBeenCalled();
+  });
+
+  it('forces screen observation for voice Task context despite an imperfect transcript', async () => {
+    const runtime = new TaskRuntime();
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const service = new TaskApplicationService(runtime, {
+      coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+
+    const snapshot = await service.submitAndStart({
+      executionProfile: 'everyday',
+      screenContext: 'required',
+      text: 'Làm sao để làm khỏi tập scratch?',
+    });
+
+    expect(coachRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: snapshot.taskId,
+      requiresObservation: true,
+    }));
+    expect(localRuntime.start).not.toHaveBeenCalled();
+  });
+
+  it('passes the same trusted classroom Activity context to either selected lane', async () => {
+    const coach = localDependencies();
+    const coachClassroom = classroomDependencies();
+    const coachService = new TaskApplicationService(new TaskRuntime(), {
+      activityContextService: coachClassroom.activityContextService as never,
+      classroomSessionService: coachClassroom.classroomSessionService as never,
+      coachRuntime: coach.coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime: coach.localRuntime,
+      state: coach.state as never,
+    });
+
+    await coachService.submitAndStart({ activityIntent: 'help', text: 'Chỉ em cách làm.' });
+    expect(coach.coachRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      activity: CLASSROOM_ACTIVITY,
+    }));
+    expect(coach.localRuntime.start).not.toHaveBeenCalled();
+
+    const agent = localDependencies();
+    const agentClassroom = classroomDependencies();
+    const agentService = new TaskApplicationService(new TaskRuntime(), {
+      activityContextService: agentClassroom.activityContextService as never,
+      classroomSessionService: agentClassroom.classroomSessionService as never,
+      coachRuntime: agent.coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime: agent.localRuntime,
+      state: agent.state as never,
+    });
+
+    await agentService.submitAndStart({
+      activityIntent: 'help',
+      requestedMode: 'agent',
+      text: 'Làm giúp em bước này.',
+    });
+    expect(agent.localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({
+      executionContext: expect.objectContaining({ activity: CLASSROOM_ACTIVITY }),
+    }));
+    expect(agent.coachRuntime.start).not.toHaveBeenCalled();
+  });
+
+  it('cancels inherited Coach work when classroom authority disappears', async () => {
+    const runtime = new TaskRuntime();
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const classroom = classroomDependencies();
+    const service = new TaskApplicationService(runtime, {
+      activityContextService: classroom.activityContextService as never,
+      classroomSessionService: classroom.classroomSessionService as never,
+      coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+    const task = await service.submitAndStart({
+      activityIntent: 'help',
+      text: 'Hướng dẫn em.',
+    });
+
+    classroom.publishSession(null);
+
+    expect(coachRuntime.cancel).toHaveBeenCalledWith(task.taskId);
+    expect(runtime.getSnapshot(task.taskId).phase).toBe('cancelled');
+  });
+
+  it('uses the kill switch to select only Heavy Agent', async () => {
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const service = new TaskApplicationService(new TaskRuntime(), {
+      coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      fastCoachEnabled: false,
+      localRuntime,
+      state: state as never,
+    });
+
+    const task = await service.submitAndStart({ text: 'Show me how to use Scratch.' });
+
+    expect(task.goal).toMatchObject({ route: 'agent', runtimeKind: 'openai_agents_sdk' });
+    expect(localRuntime.start).toHaveBeenCalledOnce();
+    expect(coachRuntime.start).not.toHaveBeenCalled();
+  });
+
+  it('drops Workspace authority when explicit Coach mode is selected', async () => {
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const selectionId = 'bc8d20ad-5a9d-40db-870f-1d0ce0bc59cd';
+    const service = new TaskApplicationService(new TaskRuntime(), {
+      coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+      workspaceSelectionService: {
+        resolve: vi.fn(async () => ({
+          canonicalPath: '/trusted/workspace',
+          displayName: 'workspace',
+          selectedAt: '2026-09-01T00:00:00.000Z',
+          selectionId,
+        })),
+      },
+    });
+
+    const task = await service.submitAndStart({
+      executionProfile: 'workspace',
+      requestedMode: 'coach',
+      text: 'Explain the idea without doing it.',
+      workspaceSelectionId: selectionId,
+    });
+
+    expect(task.goal).toMatchObject({
+      executionProfile: 'everyday',
+      route: 'coach',
+      workspace: null,
+    });
+    expect(coachRuntime.start).toHaveBeenCalledOnce();
+    expect(localRuntime.start).not.toHaveBeenCalled();
   });
 
   it('does not grant screen observation to Workspace requests', async () => {
@@ -143,6 +330,7 @@ describe('TaskApplicationService', () => {
     });
     const task = await service.submitAndStart({
       executionProfile: 'everyday',
+      requestedMode: 'agent',
       text: 'Draft a short note.',
     });
 
@@ -154,7 +342,7 @@ describe('TaskApplicationService', () => {
     expect(runtime.getSnapshot(task.taskId).phase).toBe('cancelled');
   });
 
-  it('restores durable local v10 tasks', async () => {
+  it('restores durable Heavy Agent tasks', async () => {
     const runtime = new TaskRuntime();
     const { localRuntime, state } = localDependencies();
     const seedService = new TaskApplicationService(runtime, {
@@ -164,6 +352,7 @@ describe('TaskApplicationService', () => {
     });
     const snapshot = await seedService.submitAndStart({
       executionProfile: 'everyday',
+      requestedMode: 'agent',
       text: 'Continue the task.',
     });
     state.listActive.mockResolvedValue([{ snapshot }]);

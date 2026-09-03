@@ -33,6 +33,36 @@ function submit(runtime: TaskRuntime, request = 'Send the message.') {
 }
 
 describe('TaskRuntime local projection', () => {
+  it('keeps Coach in the same lifecycle without an Agents SDK resume token', () => {
+    const runtime = new TaskRuntime();
+    const request = 'Show me how to use Variables.';
+    const task = runtime.submit({ text: request }, {
+      taskId: randomUUID(),
+      authority: {
+        schemaVersion: 11,
+        id: randomUUID(),
+        originalRequest: request,
+        runtimeKind: 'coach',
+        route: 'coach',
+        executionProfile: 'everyday',
+        workspace: null,
+        activity: null,
+        coachProgress: null,
+        limits: authority(request).limits,
+      },
+    });
+    expect(task.runtimeResume).toBeNull();
+    runtime.start({ taskId: task.taskId });
+    const updated = runtime.updateCoachProgress(task.taskId, {
+      attemptId: null,
+      activityVersionId: null,
+      stepNumber: 1,
+      expectedOutcome: 'Variables is visible.',
+      recap: null,
+    });
+    expect(updated.goal).toMatchObject({ coachProgress: { stepNumber: 1 } });
+  });
+
   it('requires the local authority contract to match the request', () => {
     const runtime = new TaskRuntime();
 

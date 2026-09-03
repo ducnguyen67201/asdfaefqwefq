@@ -1,25 +1,22 @@
 # Tro agent architecture
 
-Tro has one reasoning loop: a pinned OpenAI Agents SDK `Agent` and `Runner` in a
-bundled Electron utility process. The TroCode harness around that SDK contains
-instructions, deterministic agent definitions, SDK sessions, normal SDK tool
-callbacks, and event normalization. Electron main is the trusted local host; it
-supervises the utility process, encrypts local thread state, journals external
-effects, and executes local tools. Rust authenticates the user, reserves budget,
-and proxies Responses with server-side provider credentials. It does not own the
-local agent loop or SDK state.
+Tro has one task entry point and two deliberately different runtimes. A pure
+`TaskRequestRouter` selects `coach` for teaching/answers and `agent` for explicit
+execution. `CoachRuntime` is non-mutating and presents one grounded step through
+Cursor Buddy. Heavy Agent is the pinned OpenAI Agents SDK `Agent` and `Runner` in
+a bundled Electron utility process. Electron main remains the trusted host for
+both lanes; Rust authenticates, reserves budget, and proxies Responses.
 
 ## Execution path
 
 ```text
-renderer -> parsed DesktopApi -> Electron main -> bundled Agents SDK process
-                                  |       ^                  |
-                                  | tools |                  | Responses
-                                  v       |                  v
-                           local adapters +----------> Rust provider proxy
+renderer -> parsed DesktopApi -> TaskApplicationService -> pure route
+                                                   |-> CoachRuntime -> Cursor Buddy
+                                                   `-> Agents SDK -> local adapters
+Both model lanes ----------------------------------------------> Rust provider proxy
 ```
 
-For each turn, Electron freezes the exact currently available tool catalog and
+For each Heavy Agent turn, Electron freezes the exact currently available tool catalog and
 binds it to SDK, graph, protocol, and CUA-driver digests. The SDK decides how to
 fulfill the intent, chooses tools, consumes results, and detects completion.
 SDK Session history and serialized `RunState` checkpoints are encrypted beneath
@@ -45,12 +42,12 @@ request or consume generation quota.
 
 ## Desktop companion presentation
 
-The cursor buddy and desktop pet are separate auxiliary windows. The fixed,
-click-through cursor buddy follows the real operating-system pointer and
-therefore follows CUA-performed pointer movement. The desktop pet rests,
-wanders, can be dragged, and may move near task-guidance targets. The desktop-
-pet preference and customization flow affect only the pet; disabling the pet
-does not disable the cursor buddy.
+The cursor buddy and desktop pet are separate auxiliary windows. The desktop
+pet rests, wanders, and can be dragged. It never acts as the teacher pointer.
+The click-through Cursor Buddy follows the student's operating-system pointer
+during normal use, then pins and glides independently during a teacher step.
+The desktop-pet preference and customization flow affect only the pet;
+disabling the pet does not disable Cursor Buddy.
 
 Electron main remains authoritative for the companion's lifecycle state,
 absolute desktop position, and window behavior. The sandboxed companion
@@ -68,20 +65,48 @@ point never crosses IPC and is not logged, persisted, analyzed, or sent over
 the network. Wayland disables hover because Electron does not expose the
 required cursor API there; lifecycle animation remains available.
 
-The cursor buddy uses a bounded main-process tracker with full-rate updates
-only while the pointer is moving and low-frequency polling while stationary.
-macOS and Linux move the small native buddy window directly. Windows uses a
-click-through full-desktop overlay and sends only the parsed overlay-local buddy
-position to its sandboxed renderer. Neither pointer coordinates nor buddy
-positions enter logs, persistence, analytics, task history, or network calls.
+`CursorBuddyController` is the single public owner of follow, immediate thinking
+feedback, teaching glide, visual click, target highlight, compact callout,
+narration, learner controls, and return-to-follow. It uses full-rate updates
+only while the student's pointer is moving and low-frequency polling while
+stationary. During guidance it stops sampling the student's pointer, so the
+virtual buddy can move without moving or chasing the real cursor. macOS and
+Linux move the small native buddy window directly. Windows uses a click-through
+full-desktop overlay. One strict cursor snapshot carries phase and renderer-local
+position across IPC. Pointer coordinates never enter logs, persistence,
+analytics, task history, or network calls.
 
-Teacher walkthrough motion belongs to Electron presentation, not the model.
-The model supplies one grounded target and one short narration through
-`show_guidance`; it cannot click through that tool. Electron stages target
-preparation, a distance-aware curved companion glide, marker reveal, and voice
-playback in that order. Operating-system Reduce Motion snaps the companion to
-the target and CSS removes ambient marker animation. The Agents SDK utility
-process owns only the durable observe/show sequencing and completion guard.
+One Coach task is also one Cursor Buddy session. The controller owns the
+session task id across step boundaries, keeps the buddy and compact callout at
+the last grounded target while Coach evaluates learner evidence, and
+glides directly from that anchor to the next target. A terminal, cancelled, or
+failed task ends the session and returns the buddy beside the student's real
+cursor. Observation-window restoration is tied to the same session identity so
+an overlapping capture cannot resurrect stale coaching UI.
+
+Teacher walkthrough motion belongs to Cursor Buddy presentation, not the model
+or CUA. Coach returns one validated structured decision containing the semantic
+target label, its normalized center point, and short copy; model output never
+controls overlay dimensions. The host maps normalized image coordinates to
+screenshot pixels and then desktop DIPs, then constructs a fixed-size,
+display-clamped marker. Cursor Buddy and
+its callout glide from one shared anchor, reveal the marker on arrival, perform
+a visual-only click pulse, explain the reason aloud, and wait for the learner.
+No native pointer or click command is dispatched. Operating-system Reduce
+Motion snaps the virtual buddy and CSS provides static presentation cues.
+`LearnerActionGate` waits for content-free pointer activity and captures only
+after a debounce; idle, Replay, Pause, and the visible timer make no screen or
+model request. The resulting fresh observation drives exactly one next Coach
+decision. Coach screenshots, coordinates, and input activity are never persisted.
+This point-only geometry requires no repair model request. Semantic element
+bounds remain a future grounding source only after their platform-specific
+screen units can be converted explicitly into Electron desktop DIPs.
+
+Coach and Heavy Agent share `TaskRuntime`, `ActivityContext`, classroom authority,
+encrypted task history, and the authenticated Responses accounting boundary.
+Coach persists only bounded step number, expected outcome, and recap for the
+exact owner + Attempt + Activity version. Heavy Agent keeps task-scoped SDK
+sessions/checkpoints and has no `show_guidance` tool or walkthrough prompt loop.
 
 Long-running task encouragement is a separate deterministic timer service. It
 parses `TaskUpdate`, maps only explicit thinking/working/verifying phases to
@@ -98,8 +123,8 @@ over all pet nudges.
 - A turn's tool catalog is immutable. Recovery reconstructs the same SDK graph;
   the same durably checkpointed call can return a recorded result but is never
   dispatched twice.
-- Authority contract v10 binds the intent, execution profile, trusted workspace,
-  Activity context, and technical limits without prescribing a plan.
+- Authority contract v11 records the selected route and bounded Coach progress;
+  legacy v10 history remains readable.
 - The registry rejects unknown tools, operations, and malformed inputs. CUA
   tools are discovered from the driver's canonical `listToolsJson` contract and
   admitted independently through a versioned schema-dialect validator. Optional
@@ -133,7 +158,7 @@ system Accessibility and Screen Recording grants remain real prerequisites.
 
 ## Compatibility
 
-New work starts only as a locally authoritative authority-v10 task. Terminal
+New work starts only as a locally authoritative authority-v11 task. Terminal
 hosted rows remain readable through `/v1/legacy-agent-history`, but no hosted
 run can be started or resumed. A future cloud agent must implement a separate
 runtime adapter and explicit product mode; it is never a hidden fallback.

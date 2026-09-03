@@ -4,7 +4,6 @@ import type {
   PresentationState,
   TaskSnapshot,
 } from '../../shared/contracts';
-import { requestsGuidedWalkthrough } from '../agent/walkthrough-policy';
 import { splitSpeechText } from '../voice/speech-chunks';
 
 import type { PresentationPresenter } from './presentation-coordinator';
@@ -147,7 +146,7 @@ export class ElectronPresentationPresenter implements PresentationPresenter {
       const options: CompanionResponsePresentationOptions = {
         mode,
         narrate,
-        surface: requestsGuidedWalkthrough(task.request)
+        surface: task.goal?.schemaVersion === 11 && task.goal.route === 'coach'
           ? 'walkthrough_recap'
           : 'response',
         ...(!useBackgroundCompanion && narrate

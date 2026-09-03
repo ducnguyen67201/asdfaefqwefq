@@ -7,6 +7,12 @@ export type VoiceTurnRoute =
 
 export type VoiceTerminalDisposition = 'feedback' | 'task_submitted';
 
+export function voiceTaskScreenContext(
+  context: Pick<VoiceTurnContext, 'mode'>,
+): 'auto' | 'required' {
+  return context.mode === 'task' ? 'required' : 'auto';
+}
+
 export function voiceTurnRoute(
   context: Pick<VoiceTurnContext, 'activation' | 'mode'>,
 ): VoiceTurnRoute {
@@ -20,5 +26,6 @@ export function shouldRetainVoiceTerminalActivity(input: {
   disposition: VoiceTerminalDisposition;
   mode: VoiceTurnContext['mode'];
 }): boolean {
-  return !(input.mode === 'task' && input.disposition === 'task_submitted');
+  void input;
+  return true;
 }

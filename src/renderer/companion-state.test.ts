@@ -5,11 +5,40 @@ import {
   CompanionSpeechSchema,
   CompanionStateSchema,
   CompanionVoiceActivitySchema,
+  CursorBuddySnapshotSchema,
 } from '../shared/contracts';
 
 import { getCompanionState } from './companion-state';
 
 describe('desktop companion state', () => {
+  it('bounds strict Cursor Buddy snapshots across the sandbox boundary', () => {
+    expect(
+      CursorBuddySnapshotSchema.parse({
+        busy: true,
+        phase: 'gliding',
+        position: { x: -420, y: 80 },
+      }),
+    ).toEqual({
+      busy: true,
+      phase: 'gliding',
+      position: { x: -420, y: 80 },
+    });
+    expect(
+      CursorBuddySnapshotSchema.parse({
+        busy: true,
+        phase: 'checking',
+        position: { x: 10, y: 20 },
+      }),
+    ).toMatchObject({ busy: true, phase: 'checking' });
+    expect(
+      CursorBuddySnapshotSchema.safeParse({
+        busy: false,
+        phase: 'teleporting',
+        position: { x: 0, y: 0 },
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts only supported IPC state values', () => {
     expect(CompanionStateSchema.parse('guiding')).toBe('guiding');
     expect(CompanionStateSchema.parse('sending')).toBe('sending');
@@ -30,6 +59,7 @@ describe('desktop companion state', () => {
     ).toEqual({
       kind: 'guidance',
       message: 'Use present continuous because “now” marks an action in progress.',
+      phase: 'presenting',
       playback: 'paused',
       side: 'right',
       target: 'Question 2',
@@ -40,6 +70,30 @@ describe('desktop companion state', () => {
         side: 'right',
       }).success,
     ).toBe(false);
+    expect(
+      CompanionGuidanceSchema.parse({
+        coach: {
+          expectedOutcome: 'The Variables palette is visible.',
+          hook: 'Ready for points?',
+          instruction: 'Open Variables.',
+          reason: 'It stores the score.',
+        },
+        message: 'Ready for points? Open Variables. It stores the score.',
+        phase: 'waiting',
+        side: 'right',
+        taskId: '00000000-0000-4000-8000-000000000001',
+      }),
+    ).toMatchObject({ phase: 'waiting', taskId: expect.any(String) });
+    expect(CompanionGuidanceSchema.safeParse({
+      coach: {
+        expectedOutcome: 'Visible result',
+        hook: 'h'.repeat(50),
+        instruction: 'i'.repeat(90),
+        reason: 'r'.repeat(30),
+      },
+      message: 'Too much speech',
+      side: 'right',
+    }).success).toBe(false);
     expect(
       CompanionGuidanceSchema.parse({
         kind: 'action_preview',

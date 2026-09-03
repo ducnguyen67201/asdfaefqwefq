@@ -1,7 +1,8 @@
 import type { UtilityProcess } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   LocalAgentHostMessageSchema,
@@ -20,6 +21,8 @@ import {
 vi.mock('electron', () => ({
   utilityProcess: { fork: vi.fn() },
 }));
+
+afterEach(() => vi.unstubAllGlobals());
 
 class FakeUtilityProcess extends EventEmitter {
   readonly messages: LocalAgentHostMessage[] = [];
@@ -203,6 +206,103 @@ describe('LocalAgentRuntime observation delivery', () => {
     status: 'confirmed',
     summary: 'Captured a fresh application-surface observation.',
   };
+
+  it('prefetches mandatory screen context before the first model request', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      id: randomUUID(),
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+    const process = new FakeUtilityProcess('ready');
+    const dispatchTool = vi.fn(async () => toolResult);
+    const resolve = vi.fn(() => ({
+      callId: 'host-observe',
+      input: {
+        observationId: null,
+        operation: 'observe',
+        query: null,
+        reason: 'Ground the first teacher walkthrough step in the desktop.',
+        region: null,
+        scope: 'desktop',
+      },
+      kind: 'observe' as const,
+      modelName: 'observe_context',
+      operation: 'observe',
+      toolId: 'computer.observe' as const,
+    }));
+    const toolSpec = {
+      toolId: 'computer.observe' as const,
+      modelName: 'observe_context',
+      description: 'Observe the current desktop.',
+      inputSchema: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {},
+        required: [],
+      },
+      operations: ['observe'],
+      driverCatalogDigest: null,
+    };
+    const runtime = new LocalAgentRuntime({
+      accessTokenProvider: async () => 'user-session-credential',
+      apiBaseUrl: 'https://api.example.test',
+      coordinator: {
+        dispatchTool,
+        endTask: vi.fn(async () => undefined),
+      },
+      forkUtilityProcess: () => {
+        process.launch();
+        return process as unknown as UtilityProcess;
+      },
+      isPackaged: false,
+      repositoryRoot: '/repo',
+      resourcesPath: '/resources',
+      state: {} as never,
+      tools: {
+        endTask: vi.fn(),
+        freeze: vi.fn(() => ({
+          digest: 'b'.repeat(64),
+          tools: [toolSpec],
+        })),
+        resolve,
+      } as never,
+    });
+    await runtime.initialize();
+    await runtime.start({
+      executionContext: {
+        activity: null,
+        executionProfile: 'everyday',
+        taskId: observation.taskId,
+        workspace: null,
+      },
+      maxTurns: 8,
+      request: 'Help me with this Scratch task.',
+      requiredInitialTool: {
+        modelName: 'observe_context',
+        arguments: {
+          observationId: null,
+          operation: 'observe',
+          query: null,
+          reason: 'Ground the first teacher walkthrough step in the desktop.',
+          region: null,
+          scope: 'desktop',
+        },
+      },
+      threadId: observation.taskId,
+    });
+
+    const start = process.messages.find((message) => message.kind === 'turn.start');
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    expect(start).toMatchObject({
+      kind: 'turn.start',
+      requiredInitialTool: null,
+      prefetchedInitialToolResult: {
+        status: 'completed',
+        imageDataUrl: 'data:image/png;base64,aW1hZ2U=',
+      },
+    });
+  });
 
   it('returns observation metadata and the screenshot to the model', () => {
     expect(normalizeLocalToolResult(toolResult)).toEqual({

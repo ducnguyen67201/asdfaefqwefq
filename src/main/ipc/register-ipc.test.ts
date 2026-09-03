@@ -66,7 +66,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   };
   transcribeVoiceSegment: ReturnType<typeof vi.fn>;
   getAppPreferences: ReturnType<typeof vi.fn>;
-  getCursorBuddyPosition: ReturnType<typeof vi.fn>;
+  getCursorBuddySnapshot: ReturnType<typeof vi.fn>;
   getTaskHistory: ReturnType<typeof vi.fn>;
   membershipService: {
     activate: ReturnType<typeof vi.fn>;
@@ -94,6 +94,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   requestScreenRecordingAccess: ReturnType<typeof vi.fn>;
   recordVoiceTranscript: ReturnType<typeof vi.fn>;
   reportCompanionSpeechPlayback: ReturnType<typeof vi.fn>;
+  handleCompanionGuidanceAction: ReturnType<typeof vi.fn>;
   handleCompanionResponseAction: ReturnType<typeof vi.fn>;
   revealMainWindow: ReturnType<typeof vi.fn>;
   taskRuntime: {
@@ -278,7 +279,11 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     })),
   };
   const getAppPreferences = vi.fn(async () => ({ primaryLanguage: null }));
-  const getCursorBuddyPosition = vi.fn(() => ({ x: 31, y: 47 }));
+  const getCursorBuddySnapshot = vi.fn(() => ({
+    busy: false,
+    phase: 'following' as const,
+    position: { x: 31, y: 47 },
+  }));
   const getTaskHistory = vi.fn(async () => ({
     events: [],
     persistence: {
@@ -304,6 +309,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   const setVoiceAudioDucking = vi.fn(async () => undefined);
   const revealMainWindow = vi.fn();
   const reportCompanionSpeechPlayback = vi.fn();
+  const handleCompanionGuidanceAction = vi.fn();
   const handleCompanionResponseAction = vi.fn();
   const workspaceAvailability = vi.fn(async () => ({
     available: true,
@@ -458,8 +464,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     connectorClient,
     cancelActiveTasks,
     getCompanionInteractionWindow: () => interactionWindow,
-    getCursorBuddyPosition,
+    getCursorBuddySnapshot,
     getCursorBuddyWindow: () => cursorBuddyWindow,
+    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     knowledgeSpaceClient: {
@@ -526,8 +533,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     interactionEvent,
     executionCoordinator,
     getAppPreferences,
-    getCursorBuddyPosition,
+    getCursorBuddySnapshot,
     getTaskHistory,
+    handleCompanionGuidanceAction,
     handleCompanionResponseAction,
     membershipService,
     organizationClient,
@@ -846,21 +854,25 @@ describe('registerIpcHandlers auth boundary', () => {
     unregister();
   });
 
-  it('returns the current position only to the cursor-buddy renderer', async () => {
+  it('returns the current snapshot only to the cursor-buddy renderer', async () => {
     const {
       cursorBuddyEvent,
-      getCursorBuddyPosition,
+      getCursorBuddySnapshot,
       unregister,
     } = setup(true);
     const handler = electronMock.handlers.get(
-      IPC_CHANNELS.getCursorBuddyPosition,
+      IPC_CHANNELS.getCursorBuddySnapshot,
     );
 
-    await expect(handler?.(cursorBuddyEvent)).resolves.toEqual({ x: 31, y: 47 });
+    await expect(handler?.(cursorBuddyEvent)).resolves.toEqual({
+      busy: false,
+      phase: 'following',
+      position: { x: 31, y: 47 },
+    });
     await expect(
       handler?.({ sender: { id: 99 }, senderFrame: {} }),
     ).rejects.toThrow('untrusted renderer');
-    expect(getCursorBuddyPosition).toHaveBeenCalledOnce();
+    expect(getCursorBuddySnapshot).toHaveBeenCalledOnce();
     unregister();
   });
 
@@ -918,6 +930,26 @@ describe('registerIpcHandlers auth boundary', () => {
       }),
     ).rejects.toThrow();
     expect(handleCompanionResponseAction).toHaveBeenCalledOnce();
+    unregister();
+  });
+
+  it('lets only the signed-in companion control the active learner gate', async () => {
+    const { handleCompanionGuidanceAction, interactionEvent, unregister } =
+      setup(true);
+    const handler = electronMock.handlers.get(
+      IPC_CHANNELS.companionGuidanceAction,
+    );
+    const request = {
+      action: 'repeat',
+      taskId: '00000000-0000-4000-8000-000000000001',
+    } as const;
+
+    await expect(handler?.(interactionEvent, request)).resolves.toBeUndefined();
+    expect(handleCompanionGuidanceAction).toHaveBeenCalledWith(request);
+    await expect(
+      handler?.(interactionEvent, { ...request, action: 'skip_forever' }),
+    ).rejects.toThrow();
+    expect(handleCompanionGuidanceAction).toHaveBeenCalledOnce();
     unregister();
   });
 

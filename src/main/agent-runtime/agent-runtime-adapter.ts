@@ -30,7 +30,6 @@ import {
   type RequiredInitialToolCall,
 } from '../../../services/agent-runtime/src/protocol';
 import { digest } from '../../../services/agent-runtime/src/serialization';
-import type { WalkthroughState } from '../../../services/agent-runtime/src/walkthrough-runtime';
 import type { ToolExecutionResult } from '../agent/agent-contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
 import type { TaskExecutionCoordinator } from '../agent/execution-coordinator';
@@ -49,7 +48,6 @@ const REQUIRED_RUNTIME_CAPABILITIES = [
   'sessions',
   'compaction',
   'catalogValidation',
-  'guidedWalkthrough',
 ] as const satisfies readonly LocalAgentCapability[];
 
 export interface LocalTurnStart {
@@ -59,7 +57,6 @@ export interface LocalTurnStart {
   request: string;
   requiredInitialTool?: RequiredInitialToolCall;
   threadId: string;
-  walkthroughState: WalkthroughState;
 }
 
 export interface LocalRuntimeTerminal {
@@ -90,7 +87,6 @@ interface ActiveTurn {
   readonly model: string;
   requiredInitialTool: RequiredInitialToolCall | null;
   readonly turnId: string;
-  walkthroughState: WalkthroughState;
 }
 
 type GroundedToolExecutionContext = TrustedToolExecutionContext &
@@ -191,27 +187,119 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model,
       requiredInitialTool: input.requiredInitialTool ?? null,
       turnId,
-      walkthroughState: input.walkthroughState,
     };
     this.active.set(input.threadId, active);
     try {
+      const prefetchedInitialToolResult =
+        await this.prefetchInitialObservation(input.threadId, active);
       this.post({
         ...this.turnIdentity(input.threadId, active),
         kind: 'turn.start',
         agentTurnId,
         request: input.request,
-        requiredInitialTool: input.requiredInitialTool ?? null,
+        requiredInitialTool: active.requiredInitialTool,
+        prefetchedInitialToolResult,
         model,
         maxTurns: input.maxTurns,
         toolCatalogDigest: catalog.digest,
         tools: catalog.tools,
-        walkthroughState: input.walkthroughState,
       });
     } catch (error) {
       this.active.delete(input.threadId);
       this.options.tools.endTask(input.threadId);
       throw error;
     }
+  }
+
+  private async prefetchInitialObservation(
+    threadId: string,
+    active: ActiveTurn,
+  ): Promise<LocalToolExecutionResult | null> {
+    const required = active.requiredInitialTool;
+    if (required?.modelName !== 'observe_context') return null;
+
+    const callId = `host-observe-${randomUUID()}`;
+    this.emitPrefetchedToolLifecycle(
+      threadId,
+      active,
+      'tool_started',
+      'Capturing the required initial screen context.',
+      callId,
+      'computer.observe',
+      'observe',
+    );
+    try {
+      const invocation = this.options.tools.resolve(
+        {
+          arguments: JSON.stringify(required.arguments),
+          callId,
+          name: required.modelName,
+        },
+        active.executionContext,
+      );
+      if (invocation.toolId !== 'computer.observe') return null;
+      const result = await this.options.coordinator.dispatchTool(invocation, {
+        signal: active.controller.signal,
+        taskId: threadId,
+      });
+      const normalized = normalizeLocalToolResult(result);
+      if (normalized.status !== 'completed') {
+        this.emitPrefetchedToolLifecycle(
+          threadId,
+          active,
+          'tool_failed',
+          normalized.summary,
+          callId,
+          invocation.toolId,
+          invocation.operation,
+        );
+        return null;
+      }
+      active.executionContext = executionContextAfterToolResult(
+        active.executionContext,
+        result,
+      );
+      active.requiredInitialTool = null;
+      this.emitPrefetchedToolLifecycle(
+        threadId,
+        active,
+        'tool_completed',
+        normalized.summary,
+        callId,
+        invocation.toolId,
+        invocation.operation,
+      );
+      return normalized;
+    } catch (error) {
+      this.emitPrefetchedToolLifecycle(
+        threadId,
+        active,
+        'tool_failed',
+        safeError(error),
+        callId,
+        'computer.observe',
+        'observe',
+      );
+      return null;
+    }
+  }
+
+  private emitPrefetchedToolLifecycle(
+    threadId: string,
+    active: ActiveTurn,
+    event: 'tool_started' | 'tool_completed' | 'tool_failed',
+    summary: string,
+    callId: string,
+    toolId: string,
+    operation: string,
+  ): void {
+    this.options.onEvent?.({
+      ...this.turnIdentity(threadId, active),
+      kind: 'turn.event',
+      event,
+      summary: summary.slice(0, 2_000),
+      data: { callId, operation, toolId },
+    });
   }
 
   async resume(threadId: string, executionContext: TrustedToolExecutionContext): Promise<void> {
@@ -243,7 +331,6 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       model: checkpoint.model,
       requiredInitialTool: checkpoint.requiredInitialTool,
       turnId: randomUUID(),
-      walkthroughState: checkpoint.walkthroughState,
     };
     this.active.set(threadId, active);
     try {
@@ -260,7 +347,6 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
         pendingCallId: checkpoint.pendingCallId,
         pendingToolDisposition,
         requiredInitialTool: checkpoint.requiredInitialTool,
-        walkthroughState: checkpoint.walkthroughState,
       });
     } catch (error) {
       this.active.delete(threadId);
@@ -493,7 +579,6 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
 
   private async checkpointCommit(message: Extract<LocalAgentChildMessage, { kind: 'checkpoint.commit' }>): Promise<void> {
     const active = this.requireActive(message.threadId);
-    active.walkthroughState = message.walkthroughState;
     const result = await this.options.state.commitCheckpoint(message.threadId, message.expectedRevision, {
       agentTurnId: active.agentTurnId,
       graphVersion: active.graphVersion,
@@ -504,7 +589,6 @@ export class LocalAgentRuntime implements AgentRuntimeAdapter {
       sdkVersion: message.sdkVersion,
       state: message.checkpoint,
       toolCatalogDigest: active.catalog.digest,
-      walkthroughState: active.walkthroughState,
     });
     this.respond(message, {
       kind: 'checkpoint.commit.result', responseTo: message.requestId,

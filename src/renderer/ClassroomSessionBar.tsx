@@ -80,6 +80,8 @@ export function ClassroomSessionBar({
         activityAttemptId: session.attemptId,
         activityIntent: intent,
         executionProfile: 'everyday',
+        requestedMode: 'coach',
+        screenContext: 'auto',
         workspaceSelectionId: null,
         text:
           intent === 'help'

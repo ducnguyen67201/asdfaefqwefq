@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createGuidanceAudioPlayback } from './guidance-audio-playback';
+import {
+  createGuidanceAudioPlayback,
+  GUIDANCE_AUDIO_STARTUP_TIMEOUT_MS,
+} from './guidance-audio-playback';
 
 function audioHarness() {
   const listeners = new Map<string, () => void>();
@@ -88,6 +91,10 @@ describe('guidance audio playback', () => {
     const voice = utteranceHarness();
     const report = vi.fn();
     let timeout: () => void = () => undefined;
+    const setTimer = vi.fn((callback: () => void) => {
+      timeout = callback;
+      return 1;
+    });
     const playback = createGuidanceAudioPlayback({
       audioFactory: () => media.audio,
       clearTimer: vi.fn(),
@@ -95,10 +102,7 @@ describe('guidance audio playback', () => {
       onStatus: vi.fn(),
       paused: false,
       report,
-      setTimer: (callback) => {
-        timeout = callback;
-        return 1;
-      },
+      setTimer,
       speech: {
         id,
         mediaUrl: `trocode-audio://speech/${id}`,
@@ -110,6 +114,10 @@ describe('guidance audio playback', () => {
       utteranceFactory: () => voice.utterance,
     });
 
+    expect(setTimer).toHaveBeenCalledWith(
+      expect.any(Function),
+      GUIDANCE_AUDIO_STARTUP_TIMEOUT_MS,
+    );
     timeout();
     media.emit('error');
     expect(media.audio.pause).toHaveBeenCalled();

@@ -7,6 +7,7 @@ export interface ObservationWindow {
 
 export interface ObservationSurface {
   getWindow(): ObservationWindow | null;
+  restoreIdentity?(): string | null;
   shouldRestore(): boolean;
 }
 
@@ -16,6 +17,7 @@ interface DesktopObservationGuardOptions {
 }
 
 interface HiddenSurface {
+  restoreIdentity: string | null;
   surface: ObservationSurface;
   window: ObservationWindow;
 }
@@ -44,7 +46,11 @@ export class DesktopObservationGuard {
         if (!window || window.isDestroyed() || !window.isVisible()) return [];
         try {
           window.hide();
-          return [{ surface, window }];
+          return [{
+            restoreIdentity: surface.restoreIdentity?.() ?? null,
+            surface,
+            window,
+          }];
         } catch {
           // Electron windows can be destroyed between the visibility check and hide.
           return [];
@@ -75,10 +81,11 @@ export class DesktopObservationGuard {
   private restoreHiddenSurfaces(): void {
     const surfaces = this.hiddenSurfaces;
     this.hiddenSurfaces = [];
-    for (const { surface, window } of surfaces) {
+    for (const { restoreIdentity, surface, window } of surfaces) {
       try {
         if (
           surface.shouldRestore() &&
+          (surface.restoreIdentity?.() ?? null) === restoreIdentity &&
           !window.isDestroyed() &&
           !window.isVisible()
         ) {

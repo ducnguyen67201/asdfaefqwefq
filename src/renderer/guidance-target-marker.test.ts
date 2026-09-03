@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -16,5 +19,15 @@ describe('guidance target marker', () => {
     expect(markup).toContain('guidance-target-marker__target');
     expect(markup).not.toContain('<button');
     expect(markup).not.toContain('tabindex');
+  });
+
+  it('keeps the teaching target steady instead of blinking or shimmering', () => {
+    const css = readFileSync(resolve(__dirname, '../index.css'), 'utf8');
+
+    expect(css).toMatch(
+      /\.guidance-target-marker__highlight\s*\{[^}]*display: none;/u,
+    );
+    expect(css).not.toContain('guidance-target-pulse');
+    expect(css).not.toContain('guidance-target-highlight');
   });
 });

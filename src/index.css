@@ -916,9 +916,51 @@ html.voice-island-mode #root {
   animation: cursor-buddy-loading-spin 0.78s linear infinite;
 }
 
+.cursor-buddy--checking .cursor-buddy__loading {
+  border-color: rgba(49, 181, 139, 0.24);
+  border-top-color: #31b58b;
+}
+
+.cursor-buddy--checking .cursor-buddy__image {
+  filter:
+    drop-shadow(0 3px 4px rgba(16, 28, 64, 0.28))
+    drop-shadow(0 0 8px rgba(49, 181, 139, 0.38));
+}
+
+.cursor-buddy--gliding .cursor-buddy__image {
+  filter:
+    drop-shadow(0 3px 4px rgba(16, 28, 64, 0.32))
+    drop-shadow(0 0 7px rgba(242, 201, 76, 0.32));
+}
+
+.cursor-buddy--demonstrating .cursor-buddy__image {
+  filter:
+    drop-shadow(0 3px 4px rgba(16, 28, 64, 0.32))
+    drop-shadow(0 0 7px rgba(242, 201, 76, 0.32));
+}
+
+.cursor-buddy--waiting .cursor-buddy__image,
+.cursor-buddy--paused .cursor-buddy__image {
+  filter:
+    drop-shadow(0 2px 3px rgba(16, 28, 64, 0.32))
+    drop-shadow(0 0 6px rgba(77, 190, 155, 0.32));
+}
+
 @keyframes cursor-buddy-loading-spin {
   to {
     transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-buddy__loading,
+  .cursor-buddy--demonstrating .cursor-buddy__image {
+    animation: none;
+  }
+
+  .cursor-buddy--demonstrating .cursor-buddy__image {
+    opacity: 0.84;
+    transform: scale(0.92);
   }
 }
 
@@ -1485,7 +1527,6 @@ html.voice-island-mode #root {
     0 0 0 6px rgba(242, 201, 76, 0.1),
     0 12px 32px rgba(44, 35, 0, 0.16),
     0 0 24px rgba(242, 201, 76, 0.22);
-  animation: guidance-target-pulse 1.8s ease-in-out infinite;
   backdrop-filter: blur(4px) saturate(1.12);
 }
 
@@ -1502,9 +1543,7 @@ html.voice-island-mode #root {
     rgba(255, 255, 255, 0.68),
     transparent
   );
-  opacity: 0.34;
-  transform: rotate(18deg);
-  animation: guidance-target-highlight 2.8s ease-in-out infinite;
+  display: none;
 }
 
 .guidance-target-marker__pointer {
@@ -1544,29 +1583,6 @@ html.voice-island-mode #root {
     0 0 0 3px rgba(255, 254, 250, 0.92),
     0 0 0 7px rgba(242, 201, 76, 0.3);
   transform: translate(-50%, -50%);
-}
-
-@keyframes guidance-target-pulse {
-  0%,
-  100% {
-    opacity: 0.84;
-    transform: scale(0.992);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes guidance-target-highlight {
-  0%,
-  28% {
-    transform: translateX(0) rotate(18deg);
-  }
-  68%,
-  100% {
-    transform: translateX(420%) rotate(18deg);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1833,10 +1849,118 @@ html.voice-island-mode #root {
   white-space: nowrap;
 }
 
+.guidance-callout--coach {
+  width: calc(100% - 8px);
+  margin: 4px;
+  padding: 9px 12px 10px;
+  border-radius: 14px;
+  pointer-events: none;
+  animation: none;
+}
+
+.guidance-callout__timer {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+  color: #6f7683;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.guidance-callout__timer progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  appearance: none;
+}
+
+.guidance-callout__timer progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: rgba(111, 118, 131, 0.16);
+}
+
+.guidance-callout__timer progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: #31b58b;
+  transition: width 240ms linear;
+}
+
+.guidance-callout--coach .guidance-callout__header {
+  margin-bottom: 5px;
+}
+
+.guidance-callout--coach p {
+  font-size: 13px;
+  line-height: 1.28;
+  -webkit-line-clamp: 2;
+}
+
+.guidance-callout--coach .guidance-callout__target {
+  margin-top: 5px;
+  font-size: 9px;
+}
+
+.guidance-callout--coach .guidance-callout__controls {
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.guidance-callout--coach .guidance-callout__controls button {
+  padding: 3px 6px;
+}
+
+.guidance-callout--thinking {
+  width: calc(100% - 8px);
+  margin: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  animation: none;
+}
+
+.guidance-callout--thinking p {
+  font-size: 13px;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+}
+
 .guidance-callout__controls span {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+.guidance-callout__controls button {
+  appearance: none;
+  padding: 4px 7px;
+  border: 1px solid rgba(139, 106, 0, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #665321;
+  cursor: pointer;
+  font: inherit;
+}
+
+.guidance-callout__controls button:hover,
+.guidance-callout__controls button:focus-visible {
+  border-color: rgba(139, 106, 0, 0.58);
+  outline: none;
+  background: rgba(242, 201, 76, 0.22);
+}
+
+.guidance-callout__controls button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.guidance-callout__controls .guidance-callout__done {
+  border-color: rgba(55, 121, 87, 0.34);
+  background: rgba(226, 247, 234, 0.92);
+  color: #255c40;
 }
 
 .guidance-callout__controls kbd {

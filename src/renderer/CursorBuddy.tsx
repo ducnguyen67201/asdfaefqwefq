@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 
 import cursorBuddyUrl from '../assets/tro-cursor-buddy.png';
 import type {
-  CompanionPosition,
-  CompanionState,
+  CursorBuddySnapshot,
 } from '../shared/contracts';
 
 const usesOverlayTracking =
@@ -12,47 +11,43 @@ const usesOverlayTracking =
 
 interface CursorBuddyViewProps {
   overlayTracking: boolean;
-  position: CompanionPosition;
-  state: CompanionState;
+  snapshot: CursorBuddySnapshot;
 }
 
 interface CursorBuddyProps {
   overlayTracking?: boolean;
 }
 
-const BUSY_CURSOR_STATES: ReadonlySet<CompanionState> = new Set([
-  'sending',
-  'processing',
-  'working',
-]);
-
-const BUSY_CURSOR_LABELS: Readonly<Partial<Record<CompanionState, string>>> = {
-  sending: 'Sending',
-  processing: 'Thinking',
-  working: 'Working',
+const CURSOR_PHASE_LABELS: Readonly<Record<CursorBuddySnapshot['phase'], string>> = {
+  following: 'Tro teaching cursor',
+  thinking: 'Tro teaching cursor: Thinking',
+  gliding: 'Tro teaching cursor: Moving to the next step',
+  demonstrating: 'Tro teaching cursor: Showing where to click',
+  explaining: 'Tro teaching cursor: Explaining',
+  waiting: 'Tro teaching cursor: Waiting for you',
+  paused: 'Tro teaching cursor: Paused',
+  checking: 'Tro teaching cursor: Checking your work',
 };
 
 export function CursorBuddyView({
   overlayTracking,
-  position,
-  state,
+  snapshot,
 }: CursorBuddyViewProps) {
-  const busy = BUSY_CURSOR_STATES.has(state);
-  const label = busy
-    ? `Tro action cursor: ${BUSY_CURSOR_LABELS[state]}`
-    : 'Tro action cursor';
-
   return (
     <div
-      aria-busy={busy || undefined}
-      aria-label={label}
+      aria-busy={snapshot.busy || undefined}
+      aria-label={CURSOR_PHASE_LABELS[snapshot.phase]}
       className={`cursor-buddy${
         overlayTracking ? ' cursor-buddy--overlay' : ''
-      } cursor-buddy--${state}${busy ? ' cursor-buddy--busy' : ''}`}
+      } cursor-buddy--${snapshot.phase}${
+        snapshot.busy ? ' cursor-buddy--busy' : ''
+      }`}
       role="img"
       style={
         overlayTracking
-          ? { transform: `translate3d(${position.x}px, ${position.y}px, 0)` }
+          ? {
+              transform: `translate3d(${snapshot.position.x}px, ${snapshot.position.y}px, 0)`,
+            }
           : undefined
       }
     >
@@ -70,18 +65,20 @@ export function CursorBuddyView({
 export function CursorBuddy({
   overlayTracking = usesOverlayTracking,
 }: CursorBuddyProps) {
-  const [position, setPosition] = useState<CompanionPosition>({ x: 0, y: 0 });
-  const [state, setState] = useState<CompanionState>('idle');
+  const [snapshot, setSnapshot] = useState<CursorBuddySnapshot>({
+    busy: false,
+    phase: 'following',
+    position: { x: 0, y: 0 },
+  });
 
   useEffect(() => {
-    if (!overlayTracking) return undefined;
     let active = true;
     const unsubscribe =
-      window.troCompanion.onCursorBuddyPositionChange(setPosition);
+      window.troCompanion.onCursorBuddySnapshotChange(setSnapshot);
     void window.troCompanion
-      .getCursorBuddyPosition()
-      .then((currentPosition) => {
-        if (active) setPosition(currentPosition);
+      .getCursorBuddySnapshot()
+      .then((currentSnapshot) => {
+        if (active) setSnapshot(currentSnapshot);
       })
       .catch((error: unknown) => {
         console.error('[cursor-buddy] Could not load initial position.', error);
@@ -90,14 +87,12 @@ export function CursorBuddy({
       active = false;
       unsubscribe();
     };
-  }, [overlayTracking]);
-  useEffect(() => window.troCompanion.onStateChange(setState), []);
+  }, []);
 
   return (
     <CursorBuddyView
       overlayTracking={overlayTracking}
-      position={position}
-      state={state}
+      snapshot={snapshot}
     />
   );
 }

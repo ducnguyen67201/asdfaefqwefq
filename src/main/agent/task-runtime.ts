@@ -3,13 +3,14 @@ import { EventEmitter } from 'node:events';
 
 import type { LocalTurnEventKind } from '../../../services/agent-runtime/src/protocol';
 import {
-  AgentTaskContractV10Schema,
   CancelTaskRequestSchema,
+  CoachProgressSchema,
   RequestTaskInputSchema,
   RespondToInteractionRequestSchema,
   StartTaskRequestSchema,
   SteerTaskRequestSchema,
   SubmitTaskRequestSchema,
+  TaskContractSchema,
   TaskSnapshotSchema,
   TaskUpdateSchema,
   type PendingInteraction,
@@ -40,7 +41,7 @@ export class TaskRuntime extends EventEmitter {
 
   submit(input: unknown, options: LocalTaskSubmissionOptions): TaskSnapshot {
     const request = SubmitTaskRequestSchema.parse(input);
-    const goal = AgentTaskContractV10Schema.parse(options.authority);
+    const goal = TaskContractSchema.parse(options.authority);
     if (request.text !== goal.originalRequest) throw new Error('The local authority contract does not match the task request.');
     const timestamp = this.timestamp();
     const snapshot = TaskSnapshotSchema.parse({
@@ -50,9 +51,13 @@ export class TaskRuntime extends EventEmitter {
       goal,
       messages: [{ messageId: randomUUID(), taskId: options.taskId, role: 'user', kind: 'request', text: request.text, timestamp }],
       pendingInteraction: null,
-      progress: { kind: 'tool_calls', completed: 0, limit: goal.limits.maxToolCalls },
+      progress: goal.schemaVersion === 11 && goal.route === 'coach'
+        ? null
+        : { kind: 'tool_calls', completed: 0, limit: goal.limits.maxToolCalls },
       queuedSteering: [],
-      runtimeResume: { kind: 'local_agents_sdk', threadId: options.taskId, runtimeVersion: '0.17.0', checkpointRevision: null },
+      runtimeResume: goal.schemaVersion === 11 && goal.route === 'coach'
+        ? null
+        : { kind: 'local_agents_sdk', threadId: options.taskId, runtimeVersion: '0.17.0', checkpointRevision: null },
       createdAt: timestamp,
       updatedAt: timestamp,
       lastEvent: null,
@@ -64,7 +69,38 @@ export class TaskRuntime extends EventEmitter {
     const { taskId } = StartTaskRequestSchema.parse(input);
     const snapshot = this.getTask(taskId);
     if (snapshot.phase !== 'ready') throw new Error(`Task ${taskId} is not ready to start.`);
-    return this.commit({ ...snapshot, phase: 'planning' }, { summary: 'The local Agents SDK started the task.' });
+    const coach = snapshot.goal?.schemaVersion === 11 && snapshot.goal.route === 'coach';
+    return this.commit(
+      { ...snapshot, phase: 'planning' },
+      { summary: coach ? 'Tro Coach started the task.' : 'The local Agents SDK started the task.' },
+    );
+  }
+
+  applyCoachStatus(
+    taskId: string,
+    coachPhase: 'observing' | 'planning' | 'presenting' | 'waiting',
+    summary: string,
+  ): TaskSnapshot {
+    const snapshot = this.getTask(taskId);
+    const phase = coachPhase === 'presenting'
+      ? 'acting'
+      : coachPhase === 'waiting'
+        ? 'paused'
+        : coachPhase;
+    return this.commit({ ...snapshot, phase }, { summary });
+  }
+
+  updateCoachProgress(taskId: string, input: unknown): TaskSnapshot {
+    const progress = CoachProgressSchema.parse(input);
+    const snapshot = this.getTask(taskId);
+    const goal = snapshot.goal;
+    if (!goal || goal.schemaVersion !== 11 || goal.route !== 'coach') {
+      throw new Error('Coach progress can only be attached to a Coach task.');
+    }
+    return this.commit({
+      ...snapshot,
+      goal: { ...goal, coachProgress: progress },
+    }, { summary: `Coach prepared step ${progress.stepNumber}.` });
   }
 
   restore(input: unknown): TaskSnapshot {

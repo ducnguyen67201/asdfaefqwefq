@@ -7,7 +7,6 @@ import {
   type LocalAgentRunContext,
 } from './host-backed-session.js';
 import type {
-  LocalToolExecutionResult,
   LocalRuntimeToolSpec,
   RequiredInitialToolCall,
 } from './protocol.js';
@@ -31,10 +30,6 @@ export interface AgentGraphInput {
   readonly taskId: string;
   readonly toolCatalogDigest: string;
   readonly tools: readonly LocalRuntimeToolSpec[];
-  readonly onToolResult?: (
-    modelName: string,
-    status: LocalToolExecutionResult['status'],
-  ) => void;
 }
 
 /** The sole TroCode harness around public Agents SDK primitives. */
@@ -76,7 +71,6 @@ export class AgentGraphFactory {
       input.tools,
       input.toolCatalogDigest,
       input.requiredInitialTool,
-      input.onToolResult ? { onToolResult: input.onToolResult } : {},
     );
     const agent = new Agent<LocalAgentRunContext, 'text'>({
       name: ROOT_AGENT_DEFINITION.displayName,

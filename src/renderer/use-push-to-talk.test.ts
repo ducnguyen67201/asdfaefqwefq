@@ -10,7 +10,6 @@ import {
   shouldFinishVoiceOnLocalRelease,
   shouldMuteSystemAudioForVoice,
   usePushToTalk,
-  VOICE_TASK_CONFIRMATION_MS,
   type VoiceAttemptDecision,
   type VoiceCommitDisposition,
   type VoiceTurnContext,
@@ -48,11 +47,6 @@ vi.mock('./voice-capture', () => ({
 
 async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
-}
-
-async function finishTaskConfirmation(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(VOICE_TASK_CONFIRMATION_MS);
-  await flushMicrotasks();
 }
 
 function frame(amplitude: number): Float32Array {
@@ -202,7 +196,7 @@ describe('segmented push-to-talk lifecycle', () => {
     expect(captureHarness.open).not.toHaveBeenCalled();
   });
 
-  it('commits Dictation immediately without the Task confirmation delay', async () => {
+  it('commits Dictation immediately', async () => {
     const upload = vi.fn(async (request) => ({
       audioDurationMs: request.durationMs,
       billedSeconds: request.durationMs / 1_000,
@@ -260,7 +254,7 @@ describe('segmented push-to-talk lifecycle', () => {
     );
   });
 
-  it('shows a completed phrase before release but submits only after release', async () => {
+  it('shows a completed phrase before release and submits immediately on release', async () => {
     const diagnostic = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const upload = vi.fn(async (request) => ({
       audioDurationMs: request.durationMs,
@@ -287,8 +281,6 @@ describe('segmented push-to-talk lifecycle', () => {
 
     releaseShortcut(fakeWindow);
     await flushMicrotasks();
-    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
-    await finishTaskConfirmation();
     expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
     expect(callbacks.onTranscriptReady).toHaveBeenCalledWith(
       expect.objectContaining({ activation: 'local_hold', mode: 'task' }),
@@ -348,8 +340,6 @@ describe('segmented push-to-talk lifecycle', () => {
       expect.objectContaining({ mode: 'task' }),
       'open YouTube and search',
     );
-    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
-    await finishTaskConfirmation();
     expect(callbacks.onTranscriptReady).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'task' }),
       'open YouTube and search',
@@ -500,8 +490,6 @@ describe('segmented push-to-talk lifecycle', () => {
 
     releaseShortcut(fakeWindow);
     await flushMicrotasks();
-    expect(callbacks.onTranscriptReady).not.toHaveBeenCalled();
-    await finishTaskConfirmation();
     expect(callbacks.onTranscriptReady).toHaveBeenCalledOnce();
   });
 });

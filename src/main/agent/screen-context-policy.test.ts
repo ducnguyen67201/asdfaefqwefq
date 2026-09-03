@@ -33,4 +33,15 @@ describe('initial screen context policy', () => {
   ])('keeps self-contained or navigation-first work on the text path: %s', (request) => {
     expect(shouldObserveInitialScreenContext(request)).toBe(false);
   });
+
+  it('honors explicit host context independently of transcript wording', () => {
+    expect(shouldObserveInitialScreenContext(
+      'Làm sao để làm khỏi tập scratch?',
+      'required',
+    )).toBe(true);
+    expect(shouldObserveInitialScreenContext(
+      'Help me with this screen.',
+      'disabled',
+    )).toBe(false);
+  });
 });

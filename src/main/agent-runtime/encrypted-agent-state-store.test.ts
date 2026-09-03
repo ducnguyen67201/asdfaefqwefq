@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { AgentTaskContractV10 } from '../../shared/contracts';
+import type { AgentTaskContractV10, AgentTaskContractV11 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
 
 import {
@@ -63,6 +63,49 @@ async function fixture(options: Pick<
 }
 
 describe('EncryptedAgentStateStore', () => {
+  it('reuses Coach progress only for the exact owner, Attempt, and Activity version', async () => {
+    const { store } = await fixture();
+    const attemptId = randomUUID();
+    const activityVersionId = randomUUID();
+    const request = 'Show me how to use Variables.';
+    const authority: AgentTaskContractV11 = {
+      schemaVersion: 11,
+      id: randomUUID(),
+      originalRequest: request,
+      runtimeKind: 'coach',
+      route: 'coach',
+      executionProfile: 'everyday',
+      workspace: null,
+      activity: null,
+      coachProgress: {
+        attemptId,
+        activityVersionId,
+        stepNumber: 3,
+        expectedOutcome: 'The Score variable exists.',
+        recap: null,
+      },
+      limits: { maxImages: 20, maxMicroUsd: 5_000_000, maxMinutes: 30, maxModelSamples: 40, maxToolCalls: 30 },
+    };
+    const snapshot = new TaskRuntime().submit(
+      { text: request },
+      { authority, taskId: randomUUID() },
+    );
+    await store.create('owner-1', snapshot);
+
+    await expect(store.findLatestCoachProgress(
+      'owner-1', attemptId, activityVersionId,
+    )).resolves.toMatchObject({ stepNumber: 3 });
+    await expect(store.findLatestCoachProgress(
+      'owner-2', attemptId, activityVersionId,
+    )).resolves.toBeNull();
+    await expect(store.findLatestCoachProgress(
+      'owner-1', randomUUID(), activityVersionId,
+    )).resolves.toBeNull();
+    await expect(store.findLatestCoachProgress(
+      'owner-1', attemptId, randomUUID(),
+    )).resolves.toBeNull();
+  });
+
   it('round-trips local history without plaintext state on disk', async () => {
     const { baseDirectory, snapshot, store } = await fixture();
     if (!snapshot.lastEvent) throw new Error('missing initial task event');

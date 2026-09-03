@@ -21,7 +21,7 @@ describe('CursorBuddy', () => {
     const buddyMarkup = renderToStaticMarkup(createElement(CursorBuddy));
     const petMarkup = renderToStaticMarkup(createElement(CursorCompanion));
 
-    expect(buddyMarkup).toContain('Tro action cursor');
+    expect(buddyMarkup).toContain('Tro teaching cursor');
     expect(buddyMarkup).toContain('cursor-buddy__image');
     expect(buddyMarkup).toContain('tro-cursor-buddy');
     expect(buddyMarkup).not.toContain('tro-desktop-pet');
@@ -33,15 +33,21 @@ describe('CursorBuddy', () => {
     const overlayMarkup = renderToStaticMarkup(
       createElement(CursorBuddyView, {
         overlayTracking: true,
-        position: { x: 10, y: 20 },
-        state: 'idle',
+        snapshot: {
+          busy: false,
+          phase: 'following',
+          position: { x: 10, y: 20 },
+        },
       }),
     );
     const nativeMarkup = renderToStaticMarkup(
       createElement(CursorBuddyView, {
         overlayTracking: false,
-        position: { x: 10, y: 20 },
-        state: 'idle',
+        snapshot: {
+          busy: false,
+          phase: 'following',
+          position: { x: 10, y: 20 },
+        },
       }),
     );
 
@@ -51,27 +57,33 @@ describe('CursorBuddy', () => {
     expect(nativeMarkup).not.toContain('translate3d');
   });
 
-  it('shows an accessible loading ring while a submitted task is active', () => {
+  it('shows an accessible loading ring while Cursor Buddy is thinking', () => {
     const workingMarkup = renderToStaticMarkup(
       createElement(CursorBuddyView, {
         overlayTracking: false,
-        position: { x: 0, y: 0 },
-        state: 'working',
+        snapshot: {
+          busy: true,
+          phase: 'thinking',
+          position: { x: 0, y: 0 },
+        },
       }),
     );
     const idleMarkup = renderToStaticMarkup(
       createElement(CursorBuddyView, {
         overlayTracking: false,
-        position: { x: 0, y: 0 },
-        state: 'idle',
+        snapshot: {
+          busy: false,
+          phase: 'following',
+          position: { x: 0, y: 0 },
+        },
       }),
     );
 
-    expect(workingMarkup).toContain('Tro action cursor: Working');
-    expect(workingMarkup).toContain('cursor-buddy--working');
+    expect(workingMarkup).toContain('Tro teaching cursor: Thinking');
+    expect(workingMarkup).toContain('cursor-buddy--thinking');
     expect(workingMarkup).toContain('cursor-buddy--busy');
     expect(workingMarkup).toContain('cursor-buddy__loading');
-    expect(idleMarkup).toContain('cursor-buddy--idle');
+    expect(idleMarkup).toContain('cursor-buddy--following');
     expect(idleMarkup).not.toContain('cursor-buddy--busy');
   });
 
@@ -86,29 +98,30 @@ describe('CursorBuddy', () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.cursor-buddy__loading[^{]*\{[^}]*animation: none;/u,
     );
+    expect(css).not.toContain('cursor-buddy-visual-click');
   });
 
-  it('subscribes to overlay positions, renders updates, and cleans up', async () => {
+  it('subscribes to snapshots, renders updates, and cleans up', async () => {
     const container = document.createElement('div');
     const unsubscribe = vi.fn();
-    const unsubscribeState = vi.fn();
-    let publishPosition: ((position: { x: number; y: number }) => void) | null =
-      null;
-    let publishState: ((state: 'working') => void) | null = null;
-    const onCursorBuddyPositionChange = vi.fn((listener) => {
-      publishPosition = listener;
+    let publishSnapshot: ((snapshot: {
+      busy: boolean;
+      phase: 'demonstrating';
+      position: { x: number; y: number };
+    }) => void) | null = null;
+    const onCursorBuddySnapshotChange = vi.fn((listener) => {
+      publishSnapshot = listener;
       return unsubscribe;
-    });
-    const onStateChange = vi.fn((listener) => {
-      publishState = listener;
-      return unsubscribeState;
     });
     Object.defineProperty(window, 'troCompanion', {
       configurable: true,
       value: {
-        getCursorBuddyPosition: vi.fn(async () => ({ x: 0, y: 0 })),
-        onCursorBuddyPositionChange,
-        onStateChange,
+        getCursorBuddySnapshot: vi.fn(async () => ({
+          busy: false,
+          phase: 'following',
+          position: { x: 0, y: 0 },
+        })),
+        onCursorBuddySnapshotChange,
       } as unknown as CompanionApi,
     });
     let root: Root | null = null;
@@ -117,41 +130,43 @@ describe('CursorBuddy', () => {
       root = createRoot(container);
       root.render(createElement(CursorBuddy, { overlayTracking: true }));
     });
-    expect(onCursorBuddyPositionChange).toHaveBeenCalledOnce();
-    expect(onStateChange).toHaveBeenCalledOnce();
+    expect(onCursorBuddySnapshotChange).toHaveBeenCalledOnce();
 
     await act(async () => {
-      publishPosition?.({ x: 31, y: 47 });
+      publishSnapshot?.({
+        busy: true,
+        phase: 'demonstrating',
+        position: { x: 31, y: 47 },
+      });
     });
     expect(container.innerHTML).toContain('translate3d(31px, 47px, 0)');
-
-    await act(async () => {
-      publishState?.('working');
-    });
+    expect(container.innerHTML).toContain('cursor-buddy--demonstrating');
     expect(container.innerHTML).toContain('cursor-buddy--busy');
 
     await act(async () => root?.unmount());
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(unsubscribeState).toHaveBeenCalledOnce();
   });
 
-  it('requests the current overlay position after subscribing', async () => {
+  it('requests the current snapshot after subscribing', async () => {
     const container = document.createElement('div');
     const callOrder: string[] = [];
-    const getCursorBuddyPosition = vi.fn(async () => {
+    const getCursorBuddySnapshot = vi.fn(async () => {
       callOrder.push('request');
-      return { x: 31, y: 47 };
+      return {
+        busy: false,
+        phase: 'following' as const,
+        position: { x: 31, y: 47 },
+      };
     });
-    const onCursorBuddyPositionChange = vi.fn(() => {
+    const onCursorBuddySnapshotChange = vi.fn(() => {
       callOrder.push('subscribe');
       return vi.fn();
     });
     Object.defineProperty(window, 'troCompanion', {
       configurable: true,
       value: {
-        getCursorBuddyPosition,
-        onCursorBuddyPositionChange,
-        onStateChange: vi.fn(() => vi.fn()),
+        getCursorBuddySnapshot,
+        onCursorBuddySnapshotChange,
       } as unknown as CompanionApi,
     });
     let root: Root | null = null;

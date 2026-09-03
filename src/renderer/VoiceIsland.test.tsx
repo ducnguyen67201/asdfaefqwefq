@@ -75,4 +75,22 @@ describe('VoiceIslandContent', () => {
     expect(markup).toContain('Ready for your next voice shortcut.');
     expect(markup).not.toContain('voice-island__meter');
   });
+
+  it('keeps the accepted Task transcript visible during the agent handoff', () => {
+    const markup = renderToStaticMarkup(
+      <VoiceIslandContent
+        activity={{
+          appLanguage: 'en',
+          destination: { kind: 'task', label: 'Tro task' },
+          mode: 'task',
+          phase: 'complete',
+          transcript: 'Show me how to finish this Scratch task.',
+        }}
+      />,
+    );
+
+    expect(markup).toContain('Voice Task sent');
+    expect(markup).toContain('Show me how to finish this Scratch task.');
+    expect(markup).not.toContain('voice-island__meter');
+  });
 });
