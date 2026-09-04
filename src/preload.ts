@@ -111,6 +111,7 @@ import {
   RedeemKnowledgeInviteRequestSchema,
   RedeemKnowledgeInviteResponseSchema,
   RequestKnowledgeAttemptHelpSchema,
+  ClassroomCoachLaunchSchema,
   ClassroomDirectiveNoticeSchema,
   ClassroomDirectiveSchema,
   ClassroomSessionProjectionSchema,
@@ -126,6 +127,7 @@ import {
   ResolveKnowledgeAttemptHelpRequestSchema,
   ReviewKnowledgeAttemptRequestSchema,
   RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomCoachConsentRequestSchema,
   SetClassroomLinkConsentRequestSchema,
 } from './shared/contracts';
 import {
@@ -478,6 +480,15 @@ const desktopApi: DesktopApi = {
     return ClassroomSessionProjectionSchema.nullable().parse(response);
   },
 
+  async setClassroomCoachConsent(input) {
+    const request = SetClassroomCoachConsentRequestSchema.parse(input);
+    const response: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.setClassroomCoachConsent,
+      request,
+    );
+    return ClassroomSessionProjectionSchema.nullable().parse(response);
+  },
+
   async createClassroomDirective(input) {
     const request = CreateClassroomDirectiveRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(
@@ -490,6 +501,14 @@ const desktopApi: DesktopApi = {
   async openClassroomDirective(input) {
     const request = OpenClassroomDirectiveRequestSchema.parse(input);
     await ipcRenderer.invoke(IPC_CHANNELS.openClassroomDirective, request);
+  },
+
+  async launchClassroomCoachDirective(input) {
+    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    await ipcRenderer.invoke(
+      IPC_CHANNELS.launchClassroomCoachDirective,
+      request,
+    );
   },
 
   async dismissClassroomDirective(directiveId) {
@@ -552,6 +571,21 @@ const desktopApi: DesktopApi = {
     return () =>
       ipcRenderer.removeListener(
         IPC_CHANNELS.classroomDirectiveChanged,
+        eventHandler,
+      );
+  },
+
+  onClassroomCoachLaunchRequested(listener) {
+    const eventHandler = (
+      _event: Electron.IpcRendererEvent,
+      value: unknown,
+    ): void => {
+      listener(ClassroomCoachLaunchSchema.parse(value));
+    };
+    ipcRenderer.on(IPC_CHANNELS.classroomCoachLaunchRequested, eventHandler);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_CHANNELS.classroomCoachLaunchRequested,
         eventHandler,
       );
   },

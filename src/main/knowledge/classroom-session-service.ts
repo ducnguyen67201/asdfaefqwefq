@@ -11,6 +11,16 @@ import {
 
 import type { KnowledgeSpaceClient } from './knowledge-space-client';
 
+interface ClassroomSessionPreferences {
+  autoCoachConsent: boolean;
+  autoOpenConsent: boolean;
+}
+
+const defaultPreferences = (): ClassroomSessionPreferences => ({
+  autoCoachConsent: false,
+  autoOpenConsent: false,
+});
+
 export class ClassroomSessionService {
   private readonly events = new EventEmitter();
   private current: ClassroomSessionProjection | null = null;
@@ -37,9 +47,13 @@ export class ClassroomSessionService {
   }
 
   async join(input: JoinClassroomSessionRequest): Promise<ClassroomSessionProjection> {
-    const { autoOpenConsent = false, ...joinRequest } = input;
+    const {
+      autoCoachConsent = false,
+      autoOpenConsent = false,
+      ...joinRequest
+    } = input;
     const session = await this.client.joinRoom(joinRequest);
-    return this.activate(session, autoOpenConsent);
+    return this.activate(session, { autoCoachConsent, autoOpenConsent });
   }
 
   async restore(): Promise<ClassroomSessionProjection | null> {
@@ -48,16 +62,36 @@ export class ClassroomSessionService {
       this.clear();
       return null;
     }
-    const consent = this.current?.attemptId === session.attemptId
-      ? this.current.autoOpenConsent
-      : false;
-    return this.activate(session, consent);
+    const preferences = this.current?.attemptId === session.attemptId
+      ? {
+          autoCoachConsent: this.current.autoCoachConsent,
+          autoOpenConsent: this.current.autoOpenConsent,
+        }
+      : defaultPreferences();
+    return this.activate(session, preferences);
   }
 
-  activate(session: KnowledgeClassroomSession, autoOpenConsent = false): ClassroomSessionProjection {
-    this.current = ClassroomSessionProjectionSchema.parse({ ...session, role: 'student', autoOpenConsent });
+  activate(
+    session: KnowledgeClassroomSession,
+    preferences: ClassroomSessionPreferences = defaultPreferences(),
+  ): ClassroomSessionProjection {
+    this.current = ClassroomSessionProjectionSchema.parse({
+      ...session,
+      role: 'student',
+      ...preferences,
+    });
     this.emit();
     return this.get()!;
+  }
+
+  setAutoCoachConsent(consent: boolean): ClassroomSessionProjection | null {
+    if (!this.current) return null;
+    this.current = ClassroomSessionProjectionSchema.parse({
+      ...this.current,
+      autoCoachConsent: consent,
+    });
+    this.emit();
+    return this.get();
   }
 
   setAutoOpenConsent(consent: boolean): ClassroomSessionProjection | null {

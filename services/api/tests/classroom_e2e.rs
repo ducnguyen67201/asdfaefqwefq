@@ -249,7 +249,41 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     )
     .await;
     assert_eq!(first_claim.body["execute"], true);
+    assert_eq!(first_claim.body["kind"], "open_url");
     assert_eq!(second_claim.body, json!({"execute":false}));
+
+    let explain = call(
+        &router,
+        Method::POST,
+        &format!(
+            "/v1/spaces/{}/runs/{}/directives",
+            fixture.space_id, fixture.run_id
+        ),
+        Some(&fixture.teacher_token),
+        Some(json!({
+            "clientId":Uuid::new_v4(),
+            "directive":{
+                "kind":"explain_assignment",
+                "instruction":"Show how to begin the visible loop exercise.",
+                "criterionIds":["loop"]
+            }
+        })),
+    )
+    .await;
+    assert_eq!(explain.status, StatusCode::CREATED, "{}", explain.body);
+    assert_eq!(explain.body["delivery"], "consent_required");
+    let explain_id = Uuid::parse_str(explain.body["id"].as_str().unwrap()).unwrap();
+    let explain_claim = call(
+        &router,
+        Method::POST,
+        &format!("/v1/attempts/{attempt_id}/directives/{explain_id}/claim"),
+        Some(&fixture.student_token),
+        Some(json!({"clientId":Uuid::new_v4()})),
+    )
+    .await;
+    assert_eq!(explain_claim.body["execute"], true);
+    assert_eq!(explain_claim.body["kind"], "explain_assignment");
+    assert!(explain_claim.body.get("url").is_none());
 
     let help = call(
         &router,

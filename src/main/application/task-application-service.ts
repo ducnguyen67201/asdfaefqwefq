@@ -75,15 +75,6 @@ export class TaskApplicationService {
     const executionProfile = attempt?.definition.launchTarget === 'workspace'
       ? 'workspace'
       : activityAttemptId ? 'everyday' : request.executionProfile;
-    const workspace = request.workspaceSelectionId
-      ? await this.options.workspaceSelectionService?.resolve(request.workspaceSelectionId)
-      : null;
-    if (executionProfile === 'workspace' && !workspace) {
-      throw new Error('Select a trusted workspace before starting Workspace mode.');
-    }
-    if (executionProfile !== 'workspace' && workspace) {
-      throw new Error('This Activity does not grant Workspace authority.');
-    }
     const routeDecision = this.fastCoachEnabled()
       ? routeTaskRequest({
           activityLaunchTarget: attempt?.definition.launchTarget ?? null,
@@ -94,6 +85,15 @@ export class TaskApplicationService {
           text: request.text,
         })
       : { route: 'agent' as const, requiresObservation: false };
+    const workspace = routeDecision.route === 'agent' && request.workspaceSelectionId
+      ? await this.options.workspaceSelectionService?.resolve(request.workspaceSelectionId)
+      : null;
+    if (routeDecision.route === 'agent' && executionProfile === 'workspace' && !workspace) {
+      throw new Error('Select a trusted workspace before starting Workspace mode.');
+    }
+    if (routeDecision.route === 'agent' && executionProfile !== 'workspace' && workspace) {
+      throw new Error('This Activity does not grant Workspace authority.');
+    }
     if (routeDecision.route === 'agent' && !this.options.localRuntime) {
       throw new Error('The local Agents SDK runtime is not configured.');
     }
@@ -140,7 +140,15 @@ export class TaskApplicationService {
     });
     try {
       const snapshot = this.runtime.submit(
-        { ...request, activityAttemptId, executionProfile },
+        {
+          ...request,
+          activityAttemptId,
+          executionProfile: authorityExecutionProfile,
+          workspaceSelectionId:
+            routeDecision.route === 'coach'
+              ? null
+              : request.workspaceSelectionId,
+        },
         { authority, taskId },
       );
       await this.options.state.create(ownerId, snapshot);

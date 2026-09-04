@@ -3,13 +3,19 @@ import { EventEmitter } from 'node:events';
 
 import { validateClassroomUrl } from '../../shared/classroom-url-policy';
 import {
+  ClassroomCoachLaunchSchema,
   ClassroomDirectiveNoticeSchema,
+  type ClassroomCoachLaunch,
   type ClassroomDirective,
   type ClassroomDirectiveNotice,
 } from '../../shared/contracts';
 
 import type { ClassroomSessionService } from './classroom-session-service';
 import type { KnowledgeSpaceClient } from './knowledge-space-client';
+
+const BASE_POLL_INTERVAL_MS = 1_000;
+const MAX_POLL_BACKOFF_MS = 30_000;
+const POLL_JITTER_MS = 250;
 
 interface DirectiveDependencies {
   client: Pick<KnowledgeSpaceClient, 'claimDirective' | 'listDirectives'>;
@@ -33,6 +39,7 @@ export class ClassroomDirectiveService {
   private failures = 0;
   private polling = false;
   private notice: ClassroomDirectiveNotice | null = null;
+  private readonly pendingCoachClaims = new Set<string>();
 
   constructor(private readonly dependencies: DirectiveDependencies) {
     this.random = dependencies.random ?? Math.random;
@@ -66,6 +73,11 @@ export class ClassroomDirectiveService {
     return () => this.events.off('notice', listener);
   }
 
+  onCoachLaunch(listener: (launch: ClassroomCoachLaunch) => void): () => void {
+    this.events.on('coach-launch', listener);
+    return () => this.events.off('coach-launch', listener);
+  }
+
   async open(directive: ClassroomDirective): Promise<void> {
     if (directive.kind !== 'open_url') return;
     const session = this.dependencies.sessionService.get();
@@ -88,6 +100,21 @@ export class ClassroomDirectiveService {
       this.publish({ directive, status: 'open_failed' });
       throw error;
     }
+  }
+
+  async launchCoach(directive: ClassroomDirective): Promise<void> {
+    if (directive.kind !== 'explain_assignment') return;
+    this.assertCurrentDirective(directive);
+    await this.claimAndRequestCoachLaunch(directive);
+  }
+
+  async launchCurrentCoach(): Promise<void> {
+    const directive = this.notice?.directive;
+    if (
+      !directive || directive.kind !== 'explain_assignment' ||
+      this.notice?.status !== 'received'
+    ) return;
+    await this.launchCoach(directive);
   }
 
   dismiss(directiveId: string): void {
@@ -117,6 +144,10 @@ export class ClassroomDirectiveService {
         await this.maybeAutoOpen(expectedAttemptId, directive);
         this.sinceSequence = Math.max(this.sinceSequence, directive.sequence);
       }
+      const currentDirective = response.items.at(-1);
+      if (currentDirective) {
+        await this.maybeAutoCoach(expectedAttemptId, currentDirective);
+      }
       this.sinceSequence = Math.max(this.sinceSequence, response.maxSequence);
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) this.failures += 1;
@@ -143,7 +174,11 @@ export class ClassroomDirectiveService {
       return;
     }
     const current = this.dependencies.sessionService.get();
-    if (!claim.execute || !current?.autoOpenConsent || current.attemptId !== attemptId || current.run.state !== 'open') return;
+    if (
+      !claim.execute || claim.kind !== 'open_url' ||
+      !current?.autoOpenConsent || current.attemptId !== attemptId ||
+      current.run.state !== 'open'
+    ) return;
     const claimedUrl = validateClassroomUrl(claim.url, claim.origin);
     if (!claimedUrl || claimedUrl.origin !== url.origin || claimedUrl.toString() !== url.toString()) return;
     try {
@@ -151,6 +186,77 @@ export class ClassroomDirectiveService {
       this.publish({ directive, status: 'opened' });
     } catch {
       this.publish({ directive, status: 'open_failed' });
+    }
+  }
+
+  private async maybeAutoCoach(
+    attemptId: string,
+    directive: ClassroomDirective,
+  ): Promise<void> {
+    const session = this.dependencies.sessionService.get();
+    if (
+      directive.kind !== 'explain_assignment' ||
+      !session?.autoCoachConsent ||
+      session.attemptId !== attemptId ||
+      session.run.state !== 'open'
+    ) return;
+    await this.claimAndRequestCoachLaunch(directive).catch(() => undefined);
+  }
+
+  private async claimAndRequestCoachLaunch(
+    directive: Extract<ClassroomDirective, { kind: 'explain_assignment' }>,
+  ): Promise<void> {
+    if (this.pendingCoachClaims.has(directive.id)) return;
+    const session = this.dependencies.sessionService.get();
+    if (!session || session.leftAt || session.run.state !== 'open') {
+      throw new Error('This classroom Coach request is no longer active.');
+    }
+    this.pendingCoachClaims.add(directive.id);
+    try {
+      const claim = await this.dependencies.client.claimDirective({
+        attemptId: session.attemptId,
+        directiveId: directive.id,
+        clientId: randomUUID(),
+      });
+      const current = this.dependencies.sessionService.get();
+      if (
+        !claim.execute || claim.kind !== 'explain_assignment' ||
+        !current || current.attemptId !== session.attemptId ||
+        current.run.state !== 'open'
+      ) return;
+      const launch = ClassroomCoachLaunchSchema.parse({
+        directiveId: directive.id,
+        request: {
+          activityAttemptId: current.attemptId,
+          activityIntent: 'work',
+          executionProfile: 'everyday',
+          requestedMode: 'coach',
+          screenContext: 'required',
+          workspaceSelectionId: null,
+          text: [
+            'Teach me the assignment visible on my current screen.',
+            `Teacher direction: ${directive.instruction}`,
+            'Point to each visible target and explain what I should do, but do not click or complete the work for me.',
+          ].join(' '),
+        },
+      });
+      this.events.emit('coach-launch', launch);
+    } finally {
+      this.pendingCoachClaims.delete(directive.id);
+    }
+  }
+
+  private assertCurrentDirective(directive: ClassroomDirective): void {
+    const session = this.dependencies.sessionService.get();
+    const trusted = this.notice?.directive;
+    if (
+      !session || session.leftAt || session.run.state !== 'open' ||
+      !trusted || trusted.kind !== 'explain_assignment' ||
+      directive.kind !== 'explain_assignment' || trusted.id !== directive.id ||
+      trusted.sequence !== directive.sequence ||
+      this.notice?.status === 'dismissed'
+    ) {
+      throw new Error('This classroom Coach request is not the current trusted directive.');
     }
   }
 
@@ -166,6 +272,7 @@ export class ClassroomDirectiveService {
       : 0;
     this.failures = 0;
     this.polling = false;
+    this.pendingCoachClaims.clear();
     this.notice = null;
     this.events.emit('notice', null);
     if (attemptId) this.schedule(0);
@@ -173,8 +280,11 @@ export class ClassroomDirectiveService {
 
   private schedule(delay?: number): void {
     if (!this.attemptId || this.timer) return;
-    const backoff = Math.min(30_000, 3_000 * (2 ** Math.min(this.failures, 3)));
-    const wait = delay ?? backoff + Math.floor(this.random() * 2_000);
+    const backoff = Math.min(
+      MAX_POLL_BACKOFF_MS,
+      BASE_POLL_INTERVAL_MS * (2 ** Math.min(this.failures, 4)),
+    );
+    const wait = delay ?? backoff + Math.floor(this.random() * POLL_JITTER_MS);
     this.timer = this.setTimer(() => {
       this.timer = null;
       void this.pollNow();

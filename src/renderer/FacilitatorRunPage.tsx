@@ -53,9 +53,9 @@ export function FacilitatorRunPage({
   const [runState, setRunState] = useState<
     'archived' | 'closed' | 'draft' | 'open'
   >('draft');
-  const [directiveKind, setDirectiveKind] = useState<'exercise' | 'open_url'>(
-    'exercise',
-  );
+  const [directiveKind, setDirectiveKind] = useState<
+    'exercise' | 'explain_assignment' | 'open_url'
+  >('exercise');
   const [instruction, setInstruction] = useState('');
   const [url, setUrl] = useState('');
   const [criterionIds, setCriterionIds] = useState<string[]>([]);
@@ -223,12 +223,18 @@ export function FacilitatorRunPage({
                 instruction: instruction.trim(),
                 criterionIds,
               }
-            : {
+            : directiveKind === 'open_url'
+              ? {
                 kind: 'open_url',
                 instruction: instruction.trim(),
                 criterionIds,
                 url: url.trim(),
-              },
+              }
+              : {
+                  kind: 'explain_assignment',
+                  instruction: instruction.trim(),
+                  criterionIds,
+                },
       });
       setLastDirective(directive);
       setInstruction('');
@@ -303,7 +309,7 @@ export function FacilitatorRunPage({
     previewOrigin !== null && allowedOrigins.includes(previewOrigin);
   const canPreview =
     instruction.trim().length > 0 &&
-    (directiveKind === 'exercise' || previewOrigin !== null);
+    (directiveKind !== 'open_url' || previewOrigin !== null);
   const runEnded = runState === 'closed' || runState === 'archived';
 
   return (
@@ -498,6 +504,23 @@ export function FacilitatorRunPage({
             <span aria-hidden="true">↗</span>
             {t('Open a link')}
           </label>
+          <label
+            className={
+              directiveKind === 'explain_assignment' ? 'is-selected' : ''
+            }
+          >
+            <input
+              checked={directiveKind === 'explain_assignment'}
+              name="directive-kind"
+              onChange={() => {
+                setDirectiveKind('explain_assignment');
+                setShowPreview(false);
+              }}
+              type="radio"
+            />
+            <span aria-hidden="true">✦</span>
+            {t('Explain assignment')}
+          </label>
         </div>
         <label className="directive-instruction-field">
           {t('Instruction')}
@@ -596,7 +619,9 @@ export function FacilitatorRunPage({
                 {t(
                   directiveKind === 'open_url' && autoEligible
                     ? 'Auto-open eligible'
-                    : 'Manual delivery',
+                    : directiveKind === 'explain_assignment'
+                      ? 'Starts Tro for opted-in students'
+                      : 'Manual delivery',
                 )}
               </span>
             </div>
@@ -605,6 +630,13 @@ export function FacilitatorRunPage({
                 <span aria-hidden="true">↗</span>
                 <code>{url.trim()}</code>
               </div>
+            )}
+            {directiveKind === 'explain_assignment' && (
+              <p>
+                {t(
+                  'Each opted-in Student runs Tro Coach locally against their own current screen. Screens are never sent to the Teacher.',
+                )}
+              </p>
             )}
             {criterionIds.length > 0 && (
               <p>

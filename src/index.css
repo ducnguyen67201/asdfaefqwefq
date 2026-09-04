@@ -12095,13 +12095,18 @@ h1 {
   color: var(--subtle);
 }
 
+.classroom-consents {
+  display: grid;
+  gap: 8px;
+  grid-column: 3 / -1;
+}
+
 .classroom-consent {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
-  grid-column: 3 / -1;
 }
 
 .classroom-consent input {
@@ -12918,7 +12923,7 @@ h1 {
     grid-column: 2 / -1;
   }
 
-  .classroom-consent {
+  .classroom-consents {
     grid-column: 2 / -1;
   }
 }

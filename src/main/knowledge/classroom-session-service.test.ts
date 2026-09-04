@@ -33,11 +33,13 @@ describe('ClassroomSessionService', () => {
     service.onChange((session) => changes.push(session?.run.status ?? null));
 
     const lobby = await service.join({
+      autoCoachConsent: true,
       autoOpenConsent: true,
       clientId: '00000000-0000-4000-8000-000000000005',
       code: 'TRO-ABCD-EFGH-JKLM',
     });
     expect(lobby.autoOpenConsent).toBe(true);
+    expect(lobby.autoCoachConsent).toBe(true);
     expect(client.joinRoom).toHaveBeenCalledWith({
       clientId: '00000000-0000-4000-8000-000000000005',
       code: 'TRO-ABCD-EFGH-JKLM',
@@ -47,6 +49,7 @@ describe('ClassroomSessionService', () => {
     service.updateRunState('open');
     expect(service.activeStudentAttemptId()).toBe(firstSession.attemptId);
     expect(service.get()?.autoOpenConsent).toBe(true);
+    expect(service.get()?.autoCoachConsent).toBe(true);
 
     await service.leave();
     expect(client.leaveClassroom).toHaveBeenCalledOnce();
@@ -54,7 +57,7 @@ describe('ClassroomSessionService', () => {
     expect(changes).toEqual(['lobby', 'live', null]);
   });
 
-  it('does not carry link consent when restoring another Attempt', async () => {
+  it('does not carry session permissions when restoring another Attempt', async () => {
     const other = { ...firstSession, attemptId: '00000000-0000-4000-8000-000000000006' };
     const client = {
       getCurrentClassroomSession: vi.fn(async () => other),
@@ -62,10 +65,14 @@ describe('ClassroomSessionService', () => {
       leaveClassroom: vi.fn(),
     };
     const service = new ClassroomSessionService(client);
-    service.activate({ ...firstSession, run: { ...firstSession.run, state: 'open', status: 'live' } }, true);
+    service.activate(
+      { ...firstSession, run: { ...firstSession.run, state: 'open', status: 'live' } },
+      { autoCoachConsent: true, autoOpenConsent: true },
+    );
     const restored = await service.restore();
     expect(restored?.attemptId).toBe(other.attemptId);
     expect(restored?.autoOpenConsent).toBe(false);
+    expect(restored?.autoCoachConsent).toBe(false);
   });
 
   it('clears stale local context when the server has no current class', async () => {
@@ -75,7 +82,10 @@ describe('ClassroomSessionService', () => {
       leaveClassroom: vi.fn(),
     };
     const service = new ClassroomSessionService(client);
-    service.activate(firstSession, true);
+    service.activate(firstSession, {
+      autoCoachConsent: false,
+      autoOpenConsent: true,
+    });
     await expect(service.restore()).resolves.toBeNull();
     expect(service.get()).toBeNull();
   });

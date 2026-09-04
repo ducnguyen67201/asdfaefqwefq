@@ -20,6 +20,7 @@ const session: ClassroomSessionProjection = {
   activityVersionId: '00000000-0000-4000-8000-000000000003',
   attemptId: '00000000-0000-4000-8000-000000000004',
   attemptState: 'in_progress',
+  autoCoachConsent: false,
   autoOpenConsent: false,
   currentDirective: null,
   joinedAt: '2026-08-25T00:00:00.000Z',
@@ -134,5 +135,15 @@ describe('classroomDirectiveMessage', () => {
     expect(
       classroomDirectiveMessage({ ...exerciseNotice, status: 'open_failed' }),
     ).toBe('Could not open this link');
+    expect(
+      classroomDirectiveMessage({
+        directive: {
+          ...exerciseNotice.directive,
+          kind: 'explain_assignment',
+          delivery: 'consent_required',
+        },
+        status: 'received',
+      }),
+    ).toBe('Your teacher asked Tro to explain');
   });
 });

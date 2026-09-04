@@ -37,6 +37,7 @@ export function ClassSessionsPanel({
   const [title, setTitle] = useState('');
   const [selectedVersionIds, setSelectedVersionIds] = useState<string[]>([]);
   const [roomCode, setRoomCode] = useState('');
+  const [autoCoachConsent, setAutoCoachConsent] = useState(false);
   const [loading, setLoading] = useState(canFacilitate);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +167,7 @@ export function ClassSessionsPanel({
     try {
       const classroom: ClassroomSessionProjection =
         await window.tro.joinKnowledgeRoom({
+          autoCoachConsent,
           autoOpenConsent: false,
           clientId: randomUUID(),
           code,
@@ -226,6 +228,21 @@ export function ClassSessionsPanel({
               {t(busy === 'join' ? 'Joining…' : 'Join Session')}
             </button>
           </div>
+          <label className="classroom-join-consent">
+            <input
+              checked={autoCoachConsent}
+              onChange={(event) => setAutoCoachConsent(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{t('Let Teacher start Tro explanations')}</strong>
+              <small>
+                {t(
+                  'During this Session, Tro may look at this screen to point and explain. The Teacher never receives the screen.',
+                )}
+              </small>
+            </span>
+          </label>
         </form>
         {error && (
           <p className="form-error" role="alert">

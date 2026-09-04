@@ -49,6 +49,7 @@ const SESSION: ClassroomSessionProjection = {
   joinedAt: '2026-08-25T00:00:00.000Z',
   leftAt: null,
   role: 'student',
+  autoCoachConsent: false,
   autoOpenConsent: false,
 };
 
@@ -58,7 +59,10 @@ function classroom(session: ClassroomSessionProjection = SESSION) {
     joinRoom: vi.fn(),
     leaveClassroom: vi.fn(),
   });
-  service.activate(session, session.autoOpenConsent);
+  service.activate(session, {
+    autoCoachConsent: session.autoCoachConsent,
+    autoOpenConsent: session.autoOpenConsent,
+  });
   return service;
 }
 
@@ -260,7 +264,10 @@ describe('ClassroomPetService', () => {
     service.start();
     await flushPreferences();
     const stale = callbacks[0];
-    sessionService.activate({ ...SESSION, attemptId: SECOND_ATTEMPT_ID }, false);
+    sessionService.activate(
+      { ...SESSION, attemptId: SECOND_ATTEMPT_ID },
+      { autoCoachConsent: false, autoOpenConsent: false },
+    );
     stale?.();
 
     expect(present).not.toHaveBeenCalled();

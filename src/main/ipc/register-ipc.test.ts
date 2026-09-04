@@ -55,6 +55,13 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   callOrder: string[];
   classroomJoin: ReturnType<typeof vi.fn>;
   classroomOpenDirective: ReturnType<typeof vi.fn>;
+  classroomDirectiveService: {
+    launchCoach: ReturnType<typeof vi.fn>;
+    launchCurrentCoach: ReturnType<typeof vi.fn>;
+  };
+  classroomSessionService: {
+    setAutoCoachConsent: ReturnType<typeof vi.fn>;
+  };
   createClassroomDirective: ReturnType<typeof vi.fn>;
   checkForUpdates: ReturnType<typeof vi.fn>;
   companionCustomizationService: {
@@ -355,6 +362,7 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     joinedAt: '2026-08-25T00:00:00.000Z',
     leftAt: null,
     role: 'student' as const,
+    autoCoachConsent: false,
     autoOpenConsent: false,
   };
   const classroomJoin = vi.fn(async () => classroomSession);
@@ -367,6 +375,10 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     leave: vi.fn(async () => undefined),
     onChange: vi.fn(() => vi.fn()),
     restore: vi.fn(async () => classroomSession),
+    setAutoCoachConsent: vi.fn((consent: boolean) => ({
+      ...classroomSession,
+      autoCoachConsent: consent,
+    })),
     setAutoOpenConsent: vi.fn((consent: boolean) => ({
       ...classroomSession,
       autoOpenConsent: consent,
@@ -375,6 +387,9 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
   const classroomDirectiveService = {
     dismiss: vi.fn(),
     getNotice: vi.fn(() => null),
+    launchCoach: vi.fn(async () => undefined),
+    launchCurrentCoach: vi.fn(async () => undefined),
+    onCoachLaunch: vi.fn(() => vi.fn()),
     onNotice: vi.fn(() => vi.fn()),
     open: classroomOpenDirective,
   };
@@ -518,6 +533,8 @@ function setup(authenticated: boolean, membershipActive = authenticated): {
     callOrder,
     classroomJoin,
     classroomOpenDirective,
+    classroomDirectiveService,
+    classroomSessionService,
     checkForUpdates,
     companionCustomizationService,
     transcribeVoiceSegment,
@@ -744,8 +761,10 @@ describe('registerIpcHandlers auth boundary', () => {
 
   it('routes parsed classroom join and directive actions through trusted main services', async () => {
     const {
+      classroomDirectiveService,
       classroomJoin,
       classroomOpenDirective,
+      classroomSessionService,
       createClassroomDirective,
       event,
       unregister,
@@ -787,10 +806,32 @@ describe('registerIpcHandlers auth boundary', () => {
       event,
       { directive },
     );
+    await electronMock.handlers.get(IPC_CHANNELS.setClassroomCoachConsent)?.(
+      event,
+      { consent: true },
+    );
+    const explainDirective = {
+      ...directive,
+      kind: 'explain_assignment' as const,
+      delivery: 'consent_required' as const,
+      instruction: 'Explain the visible assignment.',
+    };
+    await electronMock.handlers.get(
+      IPC_CHANNELS.launchClassroomCoachDirective,
+    )?.(event, { directive: explainDirective });
 
     expect(classroomJoin).toHaveBeenCalledWith(joinRequest);
     expect(createClassroomDirective).toHaveBeenCalledWith(createRequest);
     expect(classroomOpenDirective).toHaveBeenCalledWith(directive);
+    expect(classroomSessionService.setAutoCoachConsent).toHaveBeenCalledWith(
+      true,
+    );
+    expect(
+      classroomDirectiveService.launchCurrentCoach,
+    ).toHaveBeenCalledOnce();
+    expect(classroomDirectiveService.launchCoach).toHaveBeenCalledWith(
+      explainDirective,
+    );
 
     await expect(
       electronMock.handlers.get(IPC_CHANNELS.joinKnowledgeRoom)?.(

@@ -60,6 +60,7 @@ import {
   AddOrganizationMemberRequestSchema,
   CancelOrganizationMemberRequestSchema,
   ClassroomDirectiveNoticeSchema,
+  ClassroomCoachLaunchSchema,
   ClassroomSessionProjectionSchema,
   CreateClassroomDirectiveRequestSchema,
   CreateKnowledgeRoomCodeRequestSchema,
@@ -70,6 +71,7 @@ import {
   ResolveKnowledgeAttemptHelpRequestSchema,
   ReviewKnowledgeAttemptRequestSchema,
   RevokeKnowledgeRoomCodeRequestSchema,
+  SetClassroomCoachConsentRequestSchema,
   SetClassroomLinkConsentRequestSchema,
   ListOrganizationMembersRequestSchema,
   UpdateOrganizationRequestSchema,
@@ -166,7 +168,12 @@ interface IpcServices {
   >;
   classroomDirectiveService: Pick<
     ClassroomDirectiveService,
-    'dismiss' | 'onNotice' | 'open'
+    | 'dismiss'
+    | 'launchCoach'
+    | 'launchCurrentCoach'
+    | 'onCoachLaunch'
+    | 'onNotice'
+    | 'open'
   >;
   classroomSessionService: Pick<
     ClassroomSessionService,
@@ -176,6 +183,7 @@ interface IpcServices {
     | 'leave'
     | 'onChange'
     | 'restore'
+    | 'setAutoCoachConsent'
     | 'setAutoOpenConsent'
   >;
 }
@@ -359,9 +367,11 @@ export function registerIpcHandlers(
     IPC_CHANNELS.restoreClassroomSession,
     IPC_CHANNELS.getClassroomSession,
     IPC_CHANNELS.leaveClassroomSession,
+    IPC_CHANNELS.setClassroomCoachConsent,
     IPC_CHANNELS.setClassroomLinkConsent,
     IPC_CHANNELS.createClassroomDirective,
     IPC_CHANNELS.openClassroomDirective,
+    IPC_CHANNELS.launchClassroomCoachDirective,
     IPC_CHANNELS.dismissClassroomDirective,
     IPC_CHANNELS.readyKnowledgeAttempt,
     IPC_CHANNELS.reviewKnowledgeAttempt,
@@ -880,6 +890,21 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.setClassroomCoachConsent,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = SetClassroomCoachConsentRequestSchema.parse(input);
+      const session = services.classroomSessionService.setAutoCoachConsent(
+        request.consent,
+      );
+      if (request.consent && session) {
+        await services.classroomDirectiveService.launchCurrentCoach();
+      }
+      return session;
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.setClassroomLinkConsent,
     async (event, input: unknown) => {
       await assertMembershipAuthorizedSender(event, mainWindow, services);
@@ -906,6 +931,15 @@ export function registerIpcHandlers(
       await assertMembershipAuthorizedSender(event, mainWindow, services);
       const request = OpenClassroomDirectiveRequestSchema.parse(input);
       await services.classroomDirectiveService.open(request.directive);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.launchClassroomCoachDirective,
+    async (event, input: unknown) => {
+      await assertMembershipAuthorizedSender(event, mainWindow, services);
+      const request = OpenClassroomDirectiveRequestSchema.parse(input);
+      await services.classroomDirectiveService.launchCoach(request.directive);
     },
   );
 
@@ -1237,6 +1271,14 @@ export function registerIpcHandlers(
         ClassroomDirectiveNoticeSchema.nullable().parse(notice),
       );
     });
+  const stopForwardingClassroomCoachLaunch =
+    services.classroomDirectiveService.onCoachLaunch((launch) => {
+      if (mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send(
+        IPC_CHANNELS.classroomCoachLaunchRequested,
+        ClassroomCoachLaunchSchema.parse(launch),
+      );
+    });
   const stopForwardingAppUpdateStatus =
     services.appUpdateService.onStatusChange((status) => {
       if (mainWindow.isDestroyed()) return;
@@ -1245,6 +1287,7 @@ export function registerIpcHandlers(
 
   return () => {
     stopForwardingClassroomDirective();
+    stopForwardingClassroomCoachLaunch();
     stopForwardingClassroomSession();
     stopForwardingAppUpdateStatus();
     services.agentActivityService.off('activity', forwardAgentActivity);

@@ -950,6 +950,10 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Could not resolve this help request.':
     'Không thể đánh dấu yêu cầu trợ giúp đã xử lý.',
   'Could not start classroom support.': 'Không thể bắt đầu hỗ trợ trong lớp.',
+  'Could not start the class explanation.':
+    'Không thể bắt đầu phần giải thích của lớp.',
+  'Could not update Coach permission.':
+    'Không thể cập nhật quyền khởi động Tro.',
   'Could not update link permission.': 'Không thể cập nhật quyền mở liên kết.',
   'Could not update the class state.': 'Không thể cập nhật trạng thái lớp.',
   'Could not update this review.': 'Không thể cập nhật kết quả xem xét.',
@@ -982,6 +986,7 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Mọi hành động tự động đều rõ ràng và có thể thu hồi',
   'Exact student preview': 'Bản xem trước chính xác cho học sinh',
   Exercise: 'Bài tập',
+  'Explain assignment': 'Giải thích bài tập',
   'Expires at {time}': 'Hết hạn lúc {time}',
   'Explicit class signals': 'Tín hiệu rõ ràng từ lớp học',
   'Explicit hand-in': 'Nộp bài chủ động',
@@ -1017,6 +1022,10 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Leaving…': 'Đang rời lớp…',
   'Links never broadcast or open until you confirm the preview.':
     'Liên kết không được gửi hoặc mở cho đến khi bạn xác nhận bản xem trước.',
+  'Let Teacher start Tro explanations':
+    'Cho phép giáo viên bắt đầu phần giải thích của Tro',
+  'During this Session, Tro may look at this screen to point and explain. The Teacher never receives the screen.':
+    'Trong Phiên này, Tro có thể xem màn hình để chỉ và giải thích. Giáo viên không bao giờ nhận được màn hình.',
   'Live class': 'Lớp trực tiếp',
   'Live classroom control': 'Điều khiển lớp học trực tiếp',
   'Live room': 'Phòng trực tiếp',
@@ -1075,6 +1084,8 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Needs help now': 'Cần trợ giúp ngay',
   'New exercise from your teacher': 'Bài tập mới từ giáo viên',
   'New link from your teacher': 'Liên kết mới từ giáo viên',
+  'Your teacher asked Tro to explain':
+    'Giáo viên yêu cầu Tro giải thích',
   'No shared material': 'Chưa có tài liệu được chia sẻ',
   'Nothing active right now': 'Hiện không có bài nào đang làm',
   'No classwork here yet': 'Chưa có bài trên lớp',
@@ -1094,6 +1105,18 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
     'Mở phòng trực tiếp cho lớp hoặc giao phiên bản này để học sinh tự làm.',
   'Open approved class links automatically':
     'Tự động mở liên kết lớp học đã duyệt',
+  'Start Teacher explanations automatically':
+    'Tự động bắt đầu phần giải thích từ giáo viên',
+  'Start explanation': 'Bắt đầu giải thích',
+  'Starting Tro…': 'Đang khởi động Tro…',
+  'Starts Tro for opted-in students':
+    'Khởi động Tro cho học sinh đã đồng ý',
+  'Tro will point and explain without controlling your cursor.':
+    'Tro sẽ chỉ và giải thích mà không điều khiển con trỏ của em.',
+  'Tro may look at this computer screen and teach the broadcast step. The Teacher never receives the screen.':
+    'Tro có thể xem màn hình máy tính này để hướng dẫn bước giáo viên gửi. Giáo viên không bao giờ nhận được màn hình.',
+  'Each opted-in Student runs Tro Coach locally against their own current screen. Screens are never sent to the Teacher.':
+    'Mỗi học sinh đã đồng ý sẽ chạy Tro Coach ngay trên màn hình hiện tại của mình. Màn hình không bao giờ được gửi cho giáo viên.',
   'Open assignment': 'Mở bài được giao',
   'Open classwork': 'Mở bài trên lớp',
   'Open link': 'Mở liên kết',

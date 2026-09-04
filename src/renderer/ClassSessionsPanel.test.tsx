@@ -36,6 +36,7 @@ describe('ClassSessionsPanel', () => {
     expect(markup).toContain('Session code');
     expect(markup).toContain('Join Session');
     expect(markup).toContain('All Activities for this Session');
+    expect(markup).toContain('Let Teacher start Tro explanations');
     expect(markup).not.toContain('Open approved class links automatically');
     expect(onJoined).not.toHaveBeenCalled();
   });

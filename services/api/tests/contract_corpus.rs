@@ -166,6 +166,7 @@ fn schema_inventory_matches_embedded_migrations() {
         include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
         include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
         include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
+        include_str!("../migrations/034_classroom_explain_assignment_directive.sql"),
     ];
     let all = migration_sources.join("\n");
     for table in tables {

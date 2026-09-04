@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AppLanguage,
@@ -29,6 +29,7 @@ export function ClassroomSessionBar({
   const [notice, setNotice] = useState<ClassroomDirectiveNotice | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const handledCoachLaunches = useRef(new Set<string>());
   const t = (message: string) => translate(appLanguage, message);
 
   useEffect(() => {
@@ -51,6 +52,34 @@ export function ClassroomSessionBar({
       stopDirective();
     };
   }, []);
+
+  useEffect(
+    () =>
+      window.tro.onClassroomCoachLaunchRequested((launch) => {
+        if (handledCoachLaunches.current.has(launch.directiveId)) return;
+        handledCoachLaunches.current.add(launch.directiveId);
+        setBusyAction('coach-launch');
+        setError(null);
+        void onLaunch(launch.request)
+          .then(() =>
+            window.tro.dismissClassroomDirective(launch.directiveId),
+          )
+          .then(() =>
+            setNotice((current) =>
+              current?.directive.id === launch.directiveId ? null : current,
+            ),
+          )
+          .catch((cause: unknown) => {
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : translate(appLanguage, 'Could not start the class explanation.'),
+            );
+          })
+          .finally(() => setBusyAction(null));
+      }),
+    [appLanguage, onLaunch],
+  );
 
   const view = useMemo(
     () => (session ? classroomSessionView(session) : null),
@@ -158,6 +187,22 @@ export function ClassroomSessionBar({
     }
   };
 
+  const setCoachConsent = async (consent: boolean) => {
+    setBusyAction('coach-consent');
+    setError(null);
+    try {
+      setSession(await window.tro.setClassroomCoachConsent({ consent }));
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : t('Could not update Coach permission.'),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const activeNotice = notice?.status === 'dismissed' ? null : notice;
 
   return (
@@ -227,22 +272,40 @@ export function ClassroomSessionBar({
       </div>
 
       {session.run.status === 'live' && (
-        <label className="classroom-consent">
-          <input
-            checked={session.autoOpenConsent}
-            disabled={busyAction === 'consent'}
-            onChange={(event) => void setConsent(event.target.checked)}
-            type="checkbox"
-          />
-          <span>
-            <strong>{t('Open approved class links automatically')}</strong>
-            <small>
-              {t(
-                'Only published HTTPS sites allowed by this Activity. You can turn this off anytime.',
-              )}
-            </small>
-          </span>
-        </label>
+        <div className="classroom-consents">
+          <label className="classroom-consent">
+            <input
+              checked={session.autoCoachConsent}
+              disabled={busyAction === 'coach-consent'}
+              onChange={(event) => void setCoachConsent(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{t('Start Teacher explanations automatically')}</strong>
+              <small>
+                {t(
+                  'Tro may look at this computer screen and teach the broadcast step. The Teacher never receives the screen.',
+                )}
+              </small>
+            </span>
+          </label>
+          <label className="classroom-consent">
+            <input
+              checked={session.autoOpenConsent}
+              disabled={busyAction === 'consent'}
+              onChange={(event) => void setConsent(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{t('Open approved class links automatically')}</strong>
+              <small>
+                {t(
+                  'Only published HTTPS sites allowed by this Activity. You can turn this off anytime.',
+                )}
+              </small>
+            </span>
+          </label>
+        </div>
       )}
 
       {activeNotice && (
@@ -251,13 +314,22 @@ export function ClassroomSessionBar({
           aria-live="polite"
         >
           <div className="classroom-directive__mark" aria-hidden="true">
-            {activeNotice.directive.kind === 'open_url' ? '↗' : '→'}
+            {activeNotice.directive.kind === 'open_url'
+              ? '↗'
+              : activeNotice.directive.kind === 'explain_assignment'
+                ? '✦'
+                : '→'}
           </div>
           <div>
             <span>{t(classroomDirectiveMessage(activeNotice))}</span>
             <strong>{activeNotice.directive.instruction}</strong>
             {activeNotice.directive.kind === 'open_url' && (
               <small>{activeNotice.directive.origin}</small>
+            )}
+            {activeNotice.directive.kind === 'explain_assignment' && (
+              <small>
+                {t('Tro will point and explain without controlling your cursor.')}
+              </small>
             )}
           </div>
           <div className="classroom-directive__actions">
@@ -283,6 +355,33 @@ export function ClassroomSessionBar({
                   {t('Open link')}
                 </button>
               )}
+            {activeNotice.directive.kind === 'explain_assignment' && (
+              <button
+                className="primary-button"
+                disabled={busyAction !== null}
+                onClick={() => {
+                  setBusyAction('coach-launch');
+                  setError(null);
+                  void window.tro
+                    .launchClassroomCoachDirective({
+                      directive: activeNotice.directive,
+                    })
+                    .catch((cause: unknown) => {
+                      setError(
+                        cause instanceof Error
+                          ? cause.message
+                          : t('Could not start the class explanation.'),
+                      );
+                    })
+                    .finally(() => setBusyAction(null));
+                }}
+                type="button"
+              >
+                {busyAction === 'coach-launch'
+                  ? t('Starting Tro…')
+                  : t('Start explanation')}
+              </button>
+            )}
             <button
               onClick={() =>
                 void window.tro

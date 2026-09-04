@@ -103,6 +103,7 @@ import type {
   RedeemKnowledgeInviteRequest,
   RedeemKnowledgeInviteResponse,
   RequestKnowledgeAttemptHelp,
+  ClassroomCoachLaunch,
   ClassroomDirective,
   ClassroomDirectiveNotice,
   ClassroomSessionProjection,
@@ -118,6 +119,7 @@ import type {
   ResolveComputerPermissionRequest,
   ReviewKnowledgeAttemptRequest,
   RevokeKnowledgeRoomCodeRequest,
+  SetClassroomCoachConsentRequest,
   SetClassroomLinkConsentRequest,
 } from './contracts';
 
@@ -227,9 +229,12 @@ export const IPC_CHANNELS = {
   getClassroomSession: 'classroom:session:get',
   classroomSessionChanged: 'classroom:session:changed',
   leaveClassroomSession: 'classroom:leave',
+  setClassroomCoachConsent: 'classroom:coach-consent:set',
   setClassroomLinkConsent: 'classroom:link-consent:set',
   createClassroomDirective: 'classroom:directive:create',
   classroomDirectiveChanged: 'classroom:directive:changed',
+  classroomCoachLaunchRequested: 'classroom:coach-launch:requested',
+  launchClassroomCoachDirective: 'classroom:directive:launch-coach',
   openClassroomDirective: 'classroom:directive:open',
   dismissClassroomDirective: 'classroom:directive:dismiss',
   readyKnowledgeAttempt: 'classroom:attempt:ready',
@@ -370,6 +375,9 @@ export interface DesktopApi {
   leaveClassroomSession(
     request: KnowledgeAttemptMutationRequest,
   ): Promise<void>;
+  setClassroomCoachConsent(
+    request: SetClassroomCoachConsentRequest,
+  ): Promise<ClassroomSessionProjection | null>;
   setClassroomLinkConsent(
     request: SetClassroomLinkConsentRequest,
   ): Promise<ClassroomSessionProjection | null>;
@@ -377,6 +385,9 @@ export interface DesktopApi {
     request: CreateClassroomDirectiveRequest,
   ): Promise<ClassroomDirective>;
   openClassroomDirective(request: OpenClassroomDirectiveRequest): Promise<void>;
+  launchClassroomCoachDirective(
+    request: OpenClassroomDirectiveRequest,
+  ): Promise<void>;
   dismissClassroomDirective(directiveId: string): Promise<void>;
   readyKnowledgeAttempt(
     request: KnowledgeAttemptMutationRequest,
@@ -392,6 +403,9 @@ export interface DesktopApi {
   ): () => void;
   onClassroomDirectiveChanged(
     listener: (notice: ClassroomDirectiveNotice | null) => void,
+  ): () => void;
+  onClassroomCoachLaunchRequested(
+    listener: (launch: ClassroomCoachLaunch) => void,
   ): () => void;
   onTaskUpdate(listener: (update: TaskUpdate) => void): () => void;
   onTaskComposerFocusRequested(listener: (taskId: string) => void): () => void;

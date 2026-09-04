@@ -175,6 +175,11 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "agent run tool snapshots",
             include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
         ),
+        migration(
+            34,
+            "classroom explain assignment directive",
+            include_str!("../migrations/034_classroom_explain_assignment_directive.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });

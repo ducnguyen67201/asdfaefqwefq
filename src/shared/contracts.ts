@@ -157,6 +157,15 @@ export const ClassroomDirectiveSchema = z.discriminatedUnion('kind', [
     origin: ClassroomOriginSchema,
     createdAt: z.string().datetime(),
   }),
+  z.object({
+    id: z.string().uuid(),
+    sequence: z.number().int().nonnegative(),
+    kind: z.literal('explain_assignment'),
+    delivery: z.literal('consent_required'),
+    instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+    createdAt: z.string().datetime(),
+  }),
 ]);
 
 export const ActivityContextSchema = z.object({
@@ -210,6 +219,7 @@ function validateWorkspaceContract(
   contract: {
     activity: z.infer<typeof ActivityContextSchema> | null;
     executionProfile: z.infer<typeof ExecutionProfileSchema>;
+    route?: 'agent' | 'coach';
     workspace: z.infer<typeof WorkspaceIdentitySchema> | null;
   },
   context: z.RefinementCtx,
@@ -225,6 +235,7 @@ function validateWorkspaceContract(
   }
   if (
     contract.activity?.activity.launchTarget === 'workspace' &&
+    contract.route !== 'coach' &&
     !workspaceProfile
   ) {
     context.addIssue({
@@ -1182,6 +1193,7 @@ export const JoinKnowledgeRoomRequestSchema = z.object({
 });
 export const JoinClassroomSessionRequestSchema =
   JoinKnowledgeRoomRequestSchema.extend({
+    autoCoachConsent: z.boolean().optional(),
     autoOpenConsent: z.boolean().optional(),
   });
 export const KnowledgeClassroomSessionSchema = z.object({
@@ -1219,6 +1231,7 @@ export const KnowledgeClassroomSessionSchema = z.object({
 export const ClassroomSessionProjectionSchema =
   KnowledgeClassroomSessionSchema.extend({
     role: z.literal('student').default('student'),
+    autoCoachConsent: z.boolean(),
     autoOpenConsent: z.boolean(),
   });
 export const ClassroomDirectiveNoticeSchema = z.object({
@@ -1245,6 +1258,11 @@ export const ClassroomDirectiveDraftSchema = z.discriminatedUnion('kind', [
     criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
     url: z.string().trim().url().max(2_000),
   }),
+  z.object({
+    kind: z.literal('explain_assignment'),
+    instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+  }),
 ]);
 export const CreateClassroomDirectiveRequestSchema = z.object({
   spaceId: z.string().uuid(),
@@ -1267,11 +1285,24 @@ export const ClassroomDirectiveClaimSchema = z.union([
   z.object({ execute: z.literal(false) }),
   z.object({
     execute: z.literal(true),
+    kind: z.literal('open_url'),
     url: ClassroomPublicUrlSchema,
     origin: ClassroomOriginSchema,
     claimedAt: z.string().datetime(),
   }),
+  z.object({
+    execute: z.literal(true),
+    kind: z.literal('explain_assignment'),
+    claimedAt: z.string().datetime(),
+  }),
 ]);
+export const ClassroomCoachLaunchSchema = z.object({
+  directiveId: z.string().uuid(),
+  request: SubmitTaskRequestSchema,
+});
+export const SetClassroomCoachConsentRequestSchema = z.object({
+  consent: z.boolean(),
+});
 export const SetClassroomLinkConsentRequestSchema = z.object({
   consent: z.boolean(),
 });
@@ -2444,6 +2475,7 @@ export type ClassroomSessionProjection = z.infer<
 export type ClassroomDirectiveNotice = z.infer<
   typeof ClassroomDirectiveNoticeSchema
 >;
+export type ClassroomCoachLaunch = z.infer<typeof ClassroomCoachLaunchSchema>;
 export type AgentRuntimeKind = z.infer<typeof AgentRuntimeKindSchema>;
 export type ExecutionProfile = z.infer<typeof ExecutionProfileSchema>;
 export type AgentActivityKind = z.infer<typeof AgentActivityKindSchema>;
@@ -2674,6 +2706,9 @@ export type ClaimClassroomDirectiveRequest = z.infer<
 >;
 export type ClassroomDirectiveClaim = z.infer<
   typeof ClassroomDirectiveClaimSchema
+>;
+export type SetClassroomCoachConsentRequest = z.infer<
+  typeof SetClassroomCoachConsentRequestSchema
 >;
 export type SetClassroomLinkConsentRequest = z.infer<
   typeof SetClassroomLinkConsentRequestSchema

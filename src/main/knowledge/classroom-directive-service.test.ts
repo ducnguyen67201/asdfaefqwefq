@@ -39,7 +39,7 @@ function sessionService(autoOpenConsent: boolean) {
   const service = new ClassroomSessionService({
     getCurrentClassroomSession: vi.fn(), joinRoom: vi.fn(), leaveClassroom: vi.fn(),
   });
-  service.activate(session, autoOpenConsent);
+  service.activate(session, { autoCoachConsent: false, autoOpenConsent });
   return service;
 }
 
@@ -47,7 +47,7 @@ describe('ClassroomDirectiveService', () => {
   it('claims then opens an eligible directive once when local consent is active', async () => {
     const classroom = sessionService(true);
     const openExternal = vi.fn(async () => undefined);
-    const claimDirective = vi.fn(async () => ({ execute: true as const, url: directive.url, origin: directive.origin, claimedAt: '2026-08-25T00:01:01.000Z' }));
+    const claimDirective = vi.fn(async () => ({ execute: true as const, kind: 'open_url' as const, url: directive.url, origin: directive.origin, claimedAt: '2026-08-25T00:01:01.000Z' }));
     const service = new ClassroomDirectiveService({
       client: {
         claimDirective,
@@ -73,7 +73,10 @@ describe('ClassroomDirectiveService', () => {
       joinRoom: vi.fn(),
       leaveClassroom: vi.fn(),
     });
-    classroom.activate({ ...session, currentDirective: directive }, true);
+    classroom.activate(
+      { ...session, currentDirective: directive },
+      { autoCoachConsent: false, autoOpenConsent: true },
+    );
     const listDirectives = vi.fn(async () => ({
       attemptState: 'in_progress' as const,
       runState: 'open' as const,
@@ -84,6 +87,7 @@ describe('ClassroomDirectiveService', () => {
       client: {
         claimDirective: vi.fn(async () => ({
           execute: true as const,
+          kind: 'open_url' as const,
           url: directive.url,
           origin: directive.origin,
           claimedAt: '2026-08-25T00:01:01.000Z',
@@ -101,6 +105,159 @@ describe('ClassroomDirectiveService', () => {
       session.attemptId,
       directive.sequence - 1,
       expect.any(AbortSignal),
+    );
+    service.stop();
+  });
+
+  it('claims an explain-assignment broadcast once and requests local Coach launch when consent is active', async () => {
+    const classroom = sessionService(false);
+    classroom.setAutoCoachConsent(true);
+    const explain: ClassroomDirective = {
+      id: '00000000-0000-4000-8000-000000000007',
+      sequence: 6,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Show students how to begin the Scratch activity.',
+      criterionIds: ['loop'],
+      createdAt: '2026-08-25T00:03:00.000Z',
+    };
+    const claimDirective = vi.fn(async () => ({
+      execute: true as const,
+      kind: 'explain_assignment' as const,
+      claimedAt: '2026-08-25T00:03:01.000Z',
+    }));
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective,
+        listDirectives: vi.fn(async () => ({
+          attemptState: 'in_progress' as const,
+          runState: 'open' as const,
+          items: [explain],
+          maxSequence: explain.sequence,
+        })),
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    const launches: unknown[] = [];
+    service.onCoachLaunch((request) => launches.push(request));
+    service.start();
+    await service.pollNow();
+
+    expect(claimDirective).toHaveBeenCalledOnce();
+    expect(launches).toEqual([
+      {
+        directiveId: explain.id,
+        request: {
+          activityAttemptId: session.attemptId,
+          activityIntent: 'work',
+          executionProfile: 'everyday',
+          requestedMode: 'coach',
+          screenContext: 'required',
+          workspaceSelectionId: null,
+          text: expect.stringContaining(explain.instruction),
+        },
+      },
+    ]);
+    service.stop();
+  });
+
+  it('waits for an explicit Student action when automatic Coach consent is off', async () => {
+    const classroom = sessionService(false);
+    const explain: ClassroomDirective = {
+      id: '00000000-0000-4000-8000-000000000008',
+      sequence: 7,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Explain the visible assignment.',
+      criterionIds: [],
+      createdAt: '2026-08-25T00:04:00.000Z',
+    };
+    const claimDirective = vi.fn(async () => ({
+      execute: true as const,
+      kind: 'explain_assignment' as const,
+      claimedAt: '2026-08-25T00:04:01.000Z',
+    }));
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective,
+        listDirectives: vi.fn(async () => ({
+          attemptState: 'in_progress' as const,
+          runState: 'open' as const,
+          items: [explain],
+          maxSequence: explain.sequence,
+        })),
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    const launch = vi.fn();
+    service.onCoachLaunch(launch);
+    service.start();
+    await service.pollNow();
+    expect(claimDirective).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+
+    await service.launchCoach(explain);
+    expect(claimDirective).toHaveBeenCalledOnce();
+    expect(launch).toHaveBeenCalledOnce();
+    service.stop();
+  });
+
+  it('auto-launches only the latest direction from a fetched batch', async () => {
+    const classroom = sessionService(false);
+    classroom.setAutoCoachConsent(true);
+    const first: ClassroomDirective = {
+      id: '00000000-0000-4000-8000-000000000010',
+      sequence: 8,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Explain the old screen.',
+      criterionIds: [],
+      createdAt: '2026-08-25T00:05:00.000Z',
+    };
+    const latest: ClassroomDirective = {
+      ...first,
+      id: '00000000-0000-4000-8000-000000000011',
+      sequence: 9,
+      instruction: 'Explain the current screen.',
+      createdAt: '2026-08-25T00:06:00.000Z',
+    };
+    const claimDirective = vi.fn(async () => ({
+      execute: true as const,
+      kind: 'explain_assignment' as const,
+      claimedAt: '2026-08-25T00:06:01.000Z',
+    }));
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective,
+        listDirectives: vi.fn(async () => ({
+          attemptState: 'in_progress' as const,
+          runState: 'open' as const,
+          items: [first, latest],
+          maxSequence: latest.sequence,
+        })),
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    const launch = vi.fn();
+    service.onCoachLaunch(launch);
+    service.start();
+    await service.pollNow();
+
+    expect(claimDirective).toHaveBeenCalledOnce();
+    expect(claimDirective).toHaveBeenCalledWith(
+      expect.objectContaining({ directiveId: latest.id }),
+    );
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ directiveId: latest.id }),
     );
     service.stop();
   });
@@ -135,7 +292,10 @@ describe('ClassroomDirectiveService', () => {
     });
     service.start();
     const polling = service.pollNow();
-    classroom.activate({ ...session, attemptId: '00000000-0000-4000-8000-000000000009' }, false);
+    classroom.activate(
+      { ...session, attemptId: '00000000-0000-4000-8000-000000000009' },
+      { autoCoachConsent: false, autoOpenConsent: false },
+    );
     resolveList({ attemptState: 'in_progress', runState: 'open', items: [directive], maxSequence: 4 });
     await polling;
     expect(service.getNotice()).toBeNull();

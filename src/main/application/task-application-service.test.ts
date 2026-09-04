@@ -291,6 +291,46 @@ describe('TaskApplicationService', () => {
     expect(localRuntime.start).not.toHaveBeenCalled();
   });
 
+  it('lets an explicit classroom Coach observe a Workspace Activity without granting filesystem authority', async () => {
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const dependencies = classroomDependencies();
+    dependencies.activityContextService.inspect.mockResolvedValue({
+      definition: { launchTarget: 'workspace' },
+    });
+    dependencies.activityContextService.create.mockResolvedValue({
+      ...CLASSROOM_ACTIVITY,
+      activity: { ...CLASSROOM_ACTIVITY.activity, launchTarget: 'workspace' },
+    });
+    const service = new TaskApplicationService(new TaskRuntime(), {
+      activityContextService: dependencies.activityContextService as never,
+      classroomSessionService: dependencies.classroomSessionService as never,
+      coachRuntime,
+      currentOwnerId: async () => 'owner-1',
+      localRuntime,
+      state: state as never,
+    });
+
+    const task = await service.submitAndStart({
+      activityAttemptId: CLASSROOM_ATTEMPT_ID,
+      activityIntent: 'work',
+      executionProfile: 'everyday',
+      requestedMode: 'coach',
+      screenContext: 'required',
+      text: 'Explain the Teacher direction visible on my screen.',
+      workspaceSelectionId: null,
+    });
+
+    expect(task.goal).toMatchObject({
+      executionProfile: 'everyday',
+      route: 'coach',
+      workspace: null,
+    });
+    expect(coachRuntime.start).toHaveBeenCalledWith(
+      expect.objectContaining({ requiresObservation: true }),
+    );
+    expect(localRuntime.start).not.toHaveBeenCalled();
+  });
+
   it('does not grant screen observation to Workspace requests', async () => {
     const runtime = new TaskRuntime();
     const { localRuntime, state } = localDependencies();

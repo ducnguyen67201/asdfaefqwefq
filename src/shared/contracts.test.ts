@@ -401,6 +401,15 @@ describe('shared task contracts', () => {
       origin: 'https://[ff02::1]',
       createdAt: '2026-08-25T00:00:00.000Z',
     }).success).toBe(false);
+    expect(ClassroomDirectiveSchema.parse({
+      id: randomUUID(),
+      sequence: 2,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Show the next visible steps.',
+      criterionIds: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }).kind).toBe('explain_assignment');
 
     expect(CreateKnowledgeRunRequestSchema.parse({
       spaceId: randomUUID(),

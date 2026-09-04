@@ -71,7 +71,13 @@ authenticated join requires an active participant membership that a Teacher
 already created, then creates or reuses exactly one assignment, Attempt, and
 participation for that Run.
 
-Teachers can broadcast only typed exercise or public-HTTPS link directives.
+Teachers can broadcast only typed exercise, public-HTTPS link, or
+**Explain assignment** directives. Explain assignment is a control-plane
+message, not a screenshot: each joined Student claims it independently and
+runs the existing Coach against that Student computer's current screen.
+Automatic Coach launch requires a separate, session-local Student permission;
+without it, the Student receives a visible **Start explanation** action. The
+Teacher never receives the observation, task conversation, or screen image.
 Automatic link opening requires both an origin published in the immutable
 Activity version and local student consent; Electron main claims and
 revalidates the directive before opening it once. Otherwise the student gets a

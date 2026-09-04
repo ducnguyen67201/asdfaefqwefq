@@ -90,6 +90,11 @@ pub enum DirectiveInput {
         criterion_ids: Vec<String>,
         url: String,
     },
+    ExplainAssignment {
+        instruction: String,
+        #[serde(rename = "criterionIds", default)]
+        criterion_ids: Vec<String>,
+    },
 }
 
 impl DirectiveInput {
@@ -103,6 +108,10 @@ impl DirectiveInput {
                 instruction,
                 criterion_ids,
                 ..
+            }
+            | Self::ExplainAssignment {
+                instruction,
+                criterion_ids,
             } => (instruction, criterion_ids),
         };
         *instruction = instruction.trim().to_owned();
@@ -131,14 +140,15 @@ impl DirectiveInput {
         match self {
             Self::Exercise { .. } => "exercise",
             Self::OpenUrl { .. } => "open_url",
+            Self::ExplainAssignment { .. } => "explain_assignment",
         }
     }
 
     pub fn criterion_ids(&self) -> &[String] {
         match self {
-            Self::Exercise { criterion_ids, .. } | Self::OpenUrl { criterion_ids, .. } => {
-                criterion_ids
-            }
+            Self::Exercise { criterion_ids, .. }
+            | Self::OpenUrl { criterion_ids, .. }
+            | Self::ExplainAssignment { criterion_ids, .. } => criterion_ids,
         }
     }
 }
@@ -268,8 +278,11 @@ pub enum DirectiveClaimResponse {
     },
     Execute {
         execute: bool,
-        url: String,
-        origin: String,
+        kind: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
         #[serde(with = "time::serde::rfc3339")]
         claimed_at: OffsetDateTime,
     },

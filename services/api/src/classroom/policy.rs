@@ -49,7 +49,11 @@ pub fn directive_delivery(
 ) -> Result<DirectiveDecision, ApiError> {
     let DirectiveInput::OpenUrl { url, .. } = directive else {
         return Ok(DirectiveDecision {
-            delivery: "manual_only",
+            delivery: match directive {
+                DirectiveInput::ExplainAssignment { .. } => "consent_required",
+                DirectiveInput::Exercise { .. } => "manual_only",
+                DirectiveInput::OpenUrl { .. } => unreachable!(),
+            },
             origin: None,
             url: None,
         });
@@ -187,5 +191,17 @@ mod tests {
                 Some("directive_url_invalid")
             );
         }
+    }
+
+    #[test]
+    fn explain_assignment_requires_student_consent_without_a_url() {
+        let directive = DirectiveInput::ExplainAssignment {
+            instruction: "Show the visible Scratch steps".to_owned(),
+            criterion_ids: vec![],
+        };
+        let decision = directive_delivery(&directive, &[]).unwrap();
+        assert_eq!(decision.delivery, "consent_required");
+        assert!(decision.origin.is_none());
+        assert!(decision.url.is_none());
     }
 }
