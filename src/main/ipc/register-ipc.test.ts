@@ -818,7 +818,7 @@ describe('registerIpcHandlers auth boundary', () => {
     };
     await electronMock.handlers.get(
       IPC_CHANNELS.launchClassroomCoachDirective,
-    )?.(event, { directive: explainDirective });
+    )?.(event, { directiveId: explainDirective.id });
 
     expect(classroomJoin).toHaveBeenCalledWith(joinRequest);
     expect(createClassroomDirective).toHaveBeenCalledWith(createRequest);
@@ -830,7 +830,7 @@ describe('registerIpcHandlers auth boundary', () => {
       classroomDirectiveService.launchCurrentCoach,
     ).toHaveBeenCalledOnce();
     expect(classroomDirectiveService.launchCoach).toHaveBeenCalledWith(
-      explainDirective,
+      explainDirective.id,
     );
 
     await expect(

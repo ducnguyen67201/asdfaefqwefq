@@ -835,6 +835,9 @@ export function App({
     null,
   );
   const voiceModeSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const knowledgeLaunchQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const taskSubmissionIdleRef = useRef<Promise<void>>(Promise.resolve());
+  const resolveTaskSubmissionIdleRef = useRef<(() => void) | null>(null);
   const autoStartAttemptedTaskIdsRef = useRef(new Set<string>());
   const isSendingRef = useRef(false);
   const isStoppingTaskRef = useRef(false);
@@ -872,6 +875,19 @@ export function App({
 
   const reportError = useCallback((message: string) => {
     dispatchTransientCursorError({ type: 'reported', message });
+  }, []);
+
+  const markTaskSubmissionBusy = useCallback(() => {
+    isSendingRef.current = true;
+    taskSubmissionIdleRef.current = new Promise<void>((resolve) => {
+      resolveTaskSubmissionIdleRef.current = resolve;
+    });
+  }, []);
+
+  const markTaskSubmissionIdle = useCallback(() => {
+    isSendingRef.current = false;
+    resolveTaskSubmissionIdleRef.current?.();
+    resolveTaskSubmissionIdleRef.current = null;
   }, []);
 
   const refreshClassSpaces = useCallback(async (): Promise<void> => {
@@ -1707,7 +1723,7 @@ export function App({
         return false;
       }
 
-      isSendingRef.current = true;
+      markTaskSubmissionBusy();
       clearError();
       setIsSubmitting(true);
 
@@ -1761,7 +1777,7 @@ export function App({
         );
         return false;
       } finally {
-        isSendingRef.current = false;
+        markTaskSubmissionIdle();
         setIsSubmitting(false);
       }
     },
@@ -1771,6 +1787,8 @@ export function App({
       input,
       isSteering,
       isSubmitting,
+      markTaskSubmissionBusy,
+      markTaskSubmissionIdle,
       pendingClarification,
       recordSnapshot,
       reportError,
@@ -1780,48 +1798,58 @@ export function App({
   );
 
   const launchKnowledgeActivity = useCallback(
-    async (request: SubmitTaskRequest) => {
-      if (isSubmitting || isSendingRef.current) return;
+    (request: SubmitTaskRequest): Promise<void> => {
+      const launch = async (): Promise<void> => {
+        await taskSubmissionIdleRef.current;
+        markTaskSubmissionBusy();
+        clearError();
+        setIsSubmitting(true);
+        try {
+          const activeSnapshot = latestSnapshotRef.current;
+          if (activeSnapshot && !isTaskTerminal(activeSnapshot)) {
+            recordSnapshot(await window.tro.cancelTask(activeSnapshot.taskId));
+          }
 
-      isSendingRef.current = true;
-      clearError();
-      setIsSubmitting(true);
-      try {
-        const activeSnapshot = latestSnapshotRef.current;
-        if (activeSnapshot && !isTaskTerminal(activeSnapshot)) {
-          recordSnapshot(await window.tro.cancelTask(activeSnapshot.taskId));
+          activeTaskIdRef.current = null;
+          setEvents([]);
+          setAgentActivities([]);
+          setAgentActivity(null);
+          setStreamingDraft('');
+          recordSnapshot(null);
+
+          const nextSnapshot = await window.tro.submitTask(request);
+          activeTaskIdRef.current = nextSnapshot.taskId;
+          recordSnapshot(nextSnapshot);
+          setActiveView('agent');
+        } catch (launchError) {
+          reportError(
+            launchError instanceof Error
+              ? launchError.message
+              : 'The Activity could not be started.',
+          );
+          throw launchError;
+        } finally {
+          markTaskSubmissionIdle();
+          setIsSubmitting(false);
         }
-
-        activeTaskIdRef.current = null;
-        setEvents([]);
-        setAgentActivities([]);
-        setAgentActivity(null);
-        setStreamingDraft('');
-        recordSnapshot(null);
-
-        const nextSnapshot = await window.tro.submitTask(request);
-        activeTaskIdRef.current = nextSnapshot.taskId;
-        recordSnapshot(nextSnapshot);
-        setActiveView('agent');
-      } catch (launchError) {
-        reportError(
-          launchError instanceof Error
-            ? launchError.message
-            : 'The Activity could not be started.',
-        );
-        throw launchError;
-      } finally {
-        isSendingRef.current = false;
-        setIsSubmitting(false);
-      }
+      };
+      const queued = knowledgeLaunchQueueRef.current.then(launch, launch);
+      knowledgeLaunchQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
-    [clearError, isSubmitting, recordSnapshot, reportError],
+    [
+      clearError,
+      markTaskSubmissionBusy,
+      markTaskSubmissionIdle,
+      recordSnapshot,
+      reportError,
+    ],
   );
 
   const resetTask = useCallback(async () => {
     if (isSendingRef.current) return;
 
-    isSendingRef.current = true;
+    markTaskSubmissionBusy();
     setIsSubmitting(true);
     const activeSnapshot = snapshot;
 
@@ -1842,10 +1870,17 @@ export function App({
           : 'The current task could not be cancelled.',
       );
     } finally {
-      isSendingRef.current = false;
+      markTaskSubmissionIdle();
       setIsSubmitting(false);
     }
-  }, [clearError, recordSnapshot, reportError, snapshot]);
+  }, [
+    clearError,
+    markTaskSubmissionBusy,
+    markTaskSubmissionIdle,
+    recordSnapshot,
+    reportError,
+    snapshot,
+  ]);
 
   const showVoiceTerminalActivity = useCallback(
     (
@@ -2461,7 +2496,7 @@ export function App({
       )
         return;
 
-      isSendingRef.current = true;
+      markTaskSubmissionBusy();
       clearError();
       setAutoStartFailedTaskId(null);
       setIsSubmitting(true);
@@ -2488,11 +2523,17 @@ export function App({
           );
         }
       } finally {
-        isSendingRef.current = false;
+        markTaskSubmissionIdle();
         setIsSubmitting(false);
       }
     },
-    [clearError, recordSnapshot, reportError],
+    [
+      clearError,
+      markTaskSubmissionBusy,
+      markTaskSubmissionIdle,
+      recordSnapshot,
+      reportError,
+    ],
   );
 
   const stopTask = useCallback(async () => {

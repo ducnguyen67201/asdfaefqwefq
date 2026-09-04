@@ -123,6 +123,7 @@ import {
   KnowledgeAttemptTransitionSchema,
   KnowledgeRoomCodeSchema,
   KnowledgeRoomRevocationSchema,
+  LaunchClassroomCoachDirectiveRequestSchema,
   OpenClassroomDirectiveRequestSchema,
   ResolveKnowledgeAttemptHelpRequestSchema,
   ReviewKnowledgeAttemptRequestSchema,
@@ -504,7 +505,7 @@ const desktopApi: DesktopApi = {
   },
 
   async launchClassroomCoachDirective(input) {
-    const request = OpenClassroomDirectiveRequestSchema.parse(input);
+    const request = LaunchClassroomCoachDirectiveRequestSchema.parse(input);
     await ipcRenderer.invoke(
       IPC_CHANNELS.launchClassroomCoachDirective,
       request,

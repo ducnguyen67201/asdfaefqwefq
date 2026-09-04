@@ -49,10 +49,10 @@ pub fn directive_delivery(
 ) -> Result<DirectiveDecision, ApiError> {
     let DirectiveInput::OpenUrl { url, .. } = directive else {
         return Ok(DirectiveDecision {
-            delivery: match directive {
-                DirectiveInput::ExplainAssignment { .. } => "consent_required",
-                DirectiveInput::Exercise { .. } => "manual_only",
-                DirectiveInput::OpenUrl { .. } => unreachable!(),
+            delivery: if matches!(directive, DirectiveInput::ExplainAssignment { .. }) {
+                "consent_required"
+            } else {
+                "manual_only"
             },
             origin: None,
             url: None,

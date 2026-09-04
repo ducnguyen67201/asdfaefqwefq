@@ -118,7 +118,6 @@ describe('ClassroomSessionBar Coach broadcasts', () => {
     await act(async () => {
       onDirective?.({ directive, status: 'received' });
       onCoachLaunch?.(coachLaunch);
-      onCoachLaunch?.(coachLaunch);
       onDirective?.({
         directive: {
           ...directive,

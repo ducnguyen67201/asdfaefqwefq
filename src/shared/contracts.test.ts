@@ -23,6 +23,7 @@ import {
   CompanionSpeechPlaybackReportSchema,
   CompanionSpeechSchema,
   ClassroomDirectiveSchema,
+  LaunchClassroomCoachDirectiveRequestSchema,
   CreateKnowledgeClassSessionRequestSchema,
   CreateKnowledgeRunRequestSchema,
   MembershipStatusSchema,
@@ -410,6 +411,12 @@ describe('shared task contracts', () => {
       criterionIds: [],
       createdAt: '2026-08-25T00:00:00.000Z',
     }).kind).toBe('explain_assignment');
+    expect(
+      LaunchClassroomCoachDirectiveRequestSchema.safeParse({
+        directiveId: randomUUID(),
+        instruction: 'Renderer-authored replacement text',
+      }).success,
+    ).toBe(false);
 
     expect(CreateKnowledgeRunRequestSchema.parse({
       spaceId: randomUUID(),

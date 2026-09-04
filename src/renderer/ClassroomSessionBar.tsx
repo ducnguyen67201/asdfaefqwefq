@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   AppLanguage,
@@ -29,7 +29,6 @@ export function ClassroomSessionBar({
   const [notice, setNotice] = useState<ClassroomDirectiveNotice | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const handledCoachLaunches = useRef(new Set<string>());
   const t = (message: string) => translate(appLanguage, message);
 
   useEffect(() => {
@@ -56,8 +55,6 @@ export function ClassroomSessionBar({
   useEffect(
     () =>
       window.tro.onClassroomCoachLaunchRequested((launch) => {
-        if (handledCoachLaunches.current.has(launch.directiveId)) return;
-        handledCoachLaunches.current.add(launch.directiveId);
         setBusyAction('coach-launch');
         setError(null);
         void onLaunch(launch.request)
@@ -364,7 +361,7 @@ export function ClassroomSessionBar({
                   setError(null);
                   void window.tro
                     .launchClassroomCoachDirective({
-                      directive: activeNotice.directive,
+                      directiveId: activeNotice.directive.id,
                     })
                     .catch((cause: unknown) => {
                       setError(

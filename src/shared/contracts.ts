@@ -1303,6 +1303,9 @@ export const ClassroomCoachLaunchSchema = z.object({
 export const SetClassroomCoachConsentRequestSchema = z.object({
   consent: z.boolean(),
 });
+export const LaunchClassroomCoachDirectiveRequestSchema = z.object({
+  directiveId: z.string().uuid(),
+}).strict();
 export const SetClassroomLinkConsentRequestSchema = z.object({
   consent: z.boolean(),
 });
@@ -2709,6 +2712,9 @@ export type ClassroomDirectiveClaim = z.infer<
 >;
 export type SetClassroomCoachConsentRequest = z.infer<
   typeof SetClassroomCoachConsentRequestSchema
+>;
+export type LaunchClassroomCoachDirectiveRequest = z.infer<
+  typeof LaunchClassroomCoachDirectiveRequestSchema
 >;
 export type SetClassroomLinkConsentRequest = z.infer<
   typeof SetClassroomLinkConsentRequestSchema

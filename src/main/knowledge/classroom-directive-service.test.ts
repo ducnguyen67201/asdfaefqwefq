@@ -202,7 +202,7 @@ describe('ClassroomDirectiveService', () => {
     expect(claimDirective).not.toHaveBeenCalled();
     expect(launch).not.toHaveBeenCalled();
 
-    await service.launchCoach(explain);
+    await service.launchCoach(explain.id);
     expect(claimDirective).toHaveBeenCalledOnce();
     expect(launch).toHaveBeenCalledOnce();
     service.stop();
@@ -232,14 +232,22 @@ describe('ClassroomDirectiveService', () => {
       kind: 'explain_assignment' as const,
       claimedAt: '2026-08-25T00:06:01.000Z',
     }));
+    const laterExercise: ClassroomDirective = {
+      ...directive,
+      id: '00000000-0000-4000-8000-000000000012',
+      sequence: 10,
+      delivery: 'manual_only',
+      kind: 'exercise',
+      instruction: 'Try the exercise after Tro explains it.',
+    };
     const service = new ClassroomDirectiveService({
       client: {
         claimDirective,
         listDirectives: vi.fn(async () => ({
           attemptState: 'in_progress' as const,
           runState: 'open' as const,
-          items: [first, latest],
-          maxSequence: latest.sequence,
+          items: [first, latest, laterExercise],
+          maxSequence: laterExercise.sequence,
         })),
       },
       sessionService: classroom,
@@ -259,6 +267,120 @@ describe('ClassroomDirectiveService', () => {
     expect(launch).toHaveBeenCalledWith(
       expect.objectContaining({ directiveId: latest.id }),
     );
+    service.stop();
+  });
+
+  it('does not auto-launch after the Student revokes Coach consent during a claim', async () => {
+    const classroom = sessionService(false);
+    classroom.setAutoCoachConsent(true);
+    const explain: ClassroomDirective = {
+      id: '00000000-0000-4000-8000-000000000013',
+      sequence: 11,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Explain the visible assignment.',
+      criterionIds: [],
+      createdAt: '2026-08-25T00:07:00.000Z',
+    };
+    let finishClaim!: () => void;
+    const claimDirective = vi.fn(
+      () =>
+        new Promise<{
+          execute: true;
+          kind: 'explain_assignment';
+          claimedAt: string;
+        }>((resolve) => {
+          finishClaim = () =>
+            resolve({
+              execute: true,
+              kind: 'explain_assignment',
+              claimedAt: '2026-08-25T00:07:01.000Z',
+            });
+        }),
+    );
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective,
+        listDirectives: vi.fn(async () => ({
+          attemptState: 'in_progress' as const,
+          runState: 'open' as const,
+          items: [explain],
+          maxSequence: explain.sequence,
+        })),
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    const launch = vi.fn();
+    service.onCoachLaunch(launch);
+    service.start();
+
+    const polling = service.pollNow();
+    await vi.waitFor(() => expect(claimDirective).toHaveBeenCalledOnce());
+    classroom.setAutoCoachConsent(false);
+    finishClaim();
+    await polling;
+
+    expect(launch).not.toHaveBeenCalled();
+    service.stop();
+  });
+
+  it('does not launch after the Student dismisses a Coach direction during a claim', async () => {
+    const classroom = sessionService(false);
+    const explain: ClassroomDirective = {
+      id: '00000000-0000-4000-8000-000000000014',
+      sequence: 12,
+      kind: 'explain_assignment',
+      delivery: 'consent_required',
+      instruction: 'Explain the visible assignment.',
+      criterionIds: [],
+      createdAt: '2026-08-25T00:08:00.000Z',
+    };
+    let finishClaim!: () => void;
+    const claimDirective = vi.fn(
+      () =>
+        new Promise<{
+          execute: true;
+          kind: 'explain_assignment';
+          claimedAt: string;
+        }>((resolve) => {
+          finishClaim = () =>
+            resolve({
+              execute: true,
+              kind: 'explain_assignment',
+              claimedAt: '2026-08-25T00:08:01.000Z',
+            });
+        }),
+    );
+    const service = new ClassroomDirectiveService({
+      client: {
+        claimDirective,
+        listDirectives: vi.fn(async () => ({
+          attemptState: 'in_progress' as const,
+          runState: 'open' as const,
+          items: [explain],
+          maxSequence: explain.sequence,
+        })),
+      },
+      sessionService: classroom,
+      openExternal: vi.fn(async () => undefined),
+      setTimer: noTimer,
+      clearTimer: noClear,
+    });
+    const launch = vi.fn();
+    service.onCoachLaunch(launch);
+    service.start();
+    await service.pollNow();
+
+    const launching = service.launchCoach(explain.id);
+    await vi.waitFor(() => expect(claimDirective).toHaveBeenCalledOnce());
+    service.dismiss(explain.id);
+    finishClaim();
+    await launching;
+
+    expect(launch).not.toHaveBeenCalled();
     service.stop();
   });
 

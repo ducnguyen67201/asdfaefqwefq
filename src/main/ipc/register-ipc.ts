@@ -67,6 +67,7 @@ import {
   DismissClassroomDirectiveRequestSchema,
   JoinClassroomSessionRequestSchema,
   KnowledgeAttemptMutationRequestSchema,
+  LaunchClassroomCoachDirectiveRequestSchema,
   OpenClassroomDirectiveRequestSchema,
   ResolveKnowledgeAttemptHelpRequestSchema,
   ReviewKnowledgeAttemptRequestSchema,
@@ -938,8 +939,8 @@ export function registerIpcHandlers(
     IPC_CHANNELS.launchClassroomCoachDirective,
     async (event, input: unknown) => {
       await assertMembershipAuthorizedSender(event, mainWindow, services);
-      const request = OpenClassroomDirectiveRequestSchema.parse(input);
-      await services.classroomDirectiveService.launchCoach(request.directive);
+      const request = LaunchClassroomCoachDirectiveRequestSchema.parse(input);
+      await services.classroomDirectiveService.launchCoach(request.directiveId);
     },
   );
 

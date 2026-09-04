@@ -114,6 +114,7 @@ import type {
   KnowledgeAttemptTransition,
   KnowledgeRoomCode,
   KnowledgeRoomRevocation,
+  LaunchClassroomCoachDirectiveRequest,
   OpenClassroomDirectiveRequest,
   ResolveKnowledgeAttemptHelpRequest,
   ResolveComputerPermissionRequest,
@@ -386,7 +387,7 @@ export interface DesktopApi {
   ): Promise<ClassroomDirective>;
   openClassroomDirective(request: OpenClassroomDirectiveRequest): Promise<void>;
   launchClassroomCoachDirective(
-    request: OpenClassroomDirectiveRequest,
+    request: LaunchClassroomCoachDirectiveRequest,
   ): Promise<void>;
   dismissClassroomDirective(directiveId: string): Promise<void>;
   readyKnowledgeAttempt(
