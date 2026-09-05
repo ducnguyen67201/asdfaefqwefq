@@ -8,7 +8,7 @@ import { ActivityContextService } from '../knowledge/activity-context-service';
 import { classroomFixture } from '../knowledge/classroom-broadcast.fixture';
 import type { KnowledgeSpaceClient } from '../knowledge/knowledge-space-client';
 
-import { CoachDecisionSchema } from './coach-contracts';
+import { CoachDecisionSchema, type CoachRuntimeStart } from './coach-contracts';
 import {
   CoachRuntime,
   coachResponseRequest,
@@ -388,6 +388,165 @@ describe('authenticated Coach decision client', () => {
 });
 
 describe('individual classroom explanations', () => {
+  function textExplanation(): CoachRuntimeStart {
+    return {
+      taskId: randomUUID(),
+      request: 'Explain this assignment',
+      activity: null,
+      requiresObservation: false,
+      priorProgress: null,
+      explanation: {
+        guidanceId: randomUUID(),
+        broadcastId: randomUUID(),
+        teacherInstruction: 'Explain assignment 1',
+        language: 'en',
+        contextMode: 'text_only',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        startedAt: new Date().toISOString(),
+        modelRequests: 0,
+        observations: 0,
+      },
+    };
+  }
+
+  it('carries displayed text into Next requests without changing prior request history', async () => {
+    const f = setup(async () => ({ kind: 'answer', text: 'A loop repeats an instruction.', language: 'en' }));
+    const input = textExplanation();
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined),
+      consume: vi.fn(async () => undefined),
+      observe: f.observe,
+      awaitContinuation: vi.fn(async () => ({
+        guidanceId: input.explanation!.guidanceId,
+        stepRevision: 1,
+        action: 'next' as const,
+        text: null,
+      })),
+    };
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    const calls = vi.mocked(f.dependencies.decide).mock.calls;
+    expect(calls).toHaveLength(8);
+    expect(calls[0]![0].presentedSteps).toEqual([]);
+    expect(calls[1]![0].presentedSteps).toEqual(['A loop repeats an instruction.']);
+    expect(calls[7]![0].presentedSteps).toHaveLength(7);
+    const body = coachResponseRequest(calls[1]![0], 'model') as {
+      input: Array<{ content: Array<{ text: string }> }>;
+    };
+    expect(JSON.parse(body.input[1]!.content[0]!.text).explanation).toMatchObject({
+      question: null,
+      presentedSteps: ['A loop repeats an instruction.'],
+    });
+    expect(f.observe).not.toHaveBeenCalled();
+  });
+
+  it('waits for Next after a known API rate limit and preserves the pending question and model turn', async () => {
+    const answer = () => new Response(JSON.stringify({ output_text: JSON.stringify({
+      kind: 'answer', text: 'A loop repeats an instruction.', language: 'en',
+      observationId: null, observationFingerprint: null, steps: null, recap: null,
+    }) }));
+    const agentTurnId = randomUUID();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: agentTurnId }), { status: 201 }))
+      .mockResolvedValueOnce(answer())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'rate_limited', retryable: true }), {
+        status: 429, headers: { 'retry-after': '1' },
+      }))
+      .mockResolvedValueOnce(answer());
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    const input = textExplanation();
+    let next!: (value: GuidanceContinue) => void;
+    const wait = vi.fn<NonNullable<CoachRuntimeDependencies['explanation']>['awaitContinuation']>(
+      () => new Promise<GuidanceContinue>((resolve) => (next = resolve)),
+    );
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: wait,
+    };
+    const continuation = (action: GuidanceContinue['action'], text: string | null = null): GuidanceContinue => ({
+      guidanceId: input.explanation!.guidanceId, stepRevision: 1, action, text,
+    });
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledOnce());
+    next(continuation('question', 'Which instruction repeats?'));
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(2));
+    expect(wait.mock.calls[1]?.[1]).toContain('Next');
+    expect(f.terminal).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    next(continuation('next'));
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(3));
+    const calls = vi.mocked(f.dependencies.decide).mock.calls;
+    expect(calls[2]![0]).toMatchObject({
+      question: 'Which instruction repeats?', presentedSteps: ['A loop repeats an instruction.'],
+    });
+    expect(new Set(calls.map(([call]) => call.requestId)).size).toBe(3);
+    expect(f.dependencies.explanation.consume).toHaveBeenCalledTimes(3);
+    expect(f.dependencies.explanation.beforeRound).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[3]?.[1]?.headers['x-trocode-agent-turn-id']).toBe(agentTurnId);
+    next(continuation('finish'));
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1].status).toBe('completed');
+  });
+
+  it.each([
+    { status: 429, body: { error: { code: 'rate_limit_exceeded' } }, retryHeader: true },
+    { status: 429, body: { code: 'rate_limited', retryable: true }, retryHeader: false },
+    { status: 429, body: { code: 'rate_limited', retryable: false }, retryHeader: true },
+    { status: 503, body: { code: 'rate_limited', retryable: true }, retryHeader: true },
+  ])('does not offer replay for an unverified model outcome ($status, $body)', async ({ status, body, retryHeader }) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: randomUUID() }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(body), {
+        status, headers: retryHeader ? { 'retry-after': '1' } : {},
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: vi.fn(),
+    };
+    await f.runtime.start(textExplanation());
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1]).toMatchObject({ status: 'failed', outcomeUnknown: true });
+    expect(f.dependencies.explanation.awaitContinuation).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps rejected requests inside the durable eight-request allowance', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: randomUUID() }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'rate_limited', retryable: true }), {
+        status: 429, headers: { 'retry-after': '1' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: vi.fn(),
+    };
+    const input = textExplanation();
+    input.explanation!.modelRequests = 7;
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1]).toMatchObject({
+      status: 'failed', message: expect.stringContaining('request limit reached'),
+    });
+    expect(f.dependencies.explanation.consume).toHaveBeenCalledOnce();
+    expect(f.dependencies.explanation.awaitContinuation).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('observes again only after continuation and sends the actual assignment context', async () => {
     const { attempt, broadcast } = classroomFixture();
     const claim = {

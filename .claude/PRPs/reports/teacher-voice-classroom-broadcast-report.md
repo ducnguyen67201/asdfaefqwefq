@@ -136,7 +136,7 @@ Follow the procedure in `docs/testing/teacher-voice-classroom-broadcast.tdd.md`:
 real EN/VI voice → preview → explicit send; editor/browser/text-only explanations;
 fresh context on Next; independent Stop; live opt-in versus busy/reconnected
 clients; no Help/completion leakage. These real-device/provider checks were not
-performed or represented as passing. No production migration, merge, publish,
+performed or represented as passing. No production migration, publish,
 classroom delivery, or paid model evaluation was performed.
 
 Deploy the API/migrations before rolling out compatible teacher/student clients.
@@ -164,3 +164,21 @@ across 142 TypeScript files, 24 SDK tests, and all enabled Rust checks/tests.
 The isolated classroom database suite and Bazel passed after the API review fix.
 `npm audit --omit=dev` reports zero runtime vulnerabilities; the full audit's
 five existing development dependency advisories are unchanged by this PR.
+
+## Automatic Codex review fixes
+
+PR #63's automatic review identified missing text-answer history and terminal
+handling of known pre-dispatch rate limits. Text and visual explanations now share
+bounded model history, with immutable snapshots for each request. A verified API
+429 keeps the existing guidance claim open for an explicit Next; it retains the
+pending question and model turn, rechecks classroom authority, and journals a new
+request ID before another dispatch. Unknown outcomes remain non-retryable.
+
+The API exposes `rate_limited` with `retryable: true` and `Retry-After`. The client
+requires all three and status 429 to distinguish this response from a forwarded
+provider error. Rejected attempts still consume the eight-request allowance.
+Both review regressions failed before the fixes and pass afterward. Follow-up
+`npm run check` passed with 903 TypeScript tests, 24 SDK tests and enabled Rust
+checks/tests. The isolated HTTP compatibility regression proves rejection before
+provider dispatch/reservation and successful continuation once the limit clears.
+The review artifact contains the detailed findings and validation record.

@@ -228,6 +228,8 @@ export class CoachRuntime {
     let mode = explanation.contextMode;
     let observationStarted = false;
     let question: string | null = null;
+    let visualSteps = 0;
+    // One entry per successful round; the eight-request limit also bounds history.
     const presentedSteps: string[] = [];
     const observe = async (): Promise<DesktopObservation | null> => {
       signal.throwIfAborted();
@@ -282,8 +284,7 @@ export class CoachRuntime {
         );
         if (continuation.action === 'finish') break;
         if (continuation.action === 'text_only') mode = 'text_only';
-        question =
-          continuation.action === 'question' ? continuation.text : null;
+        if (continuation.action === 'question') question = continuation.text;
         continue;
       }
       let observation: DesktopObservation | null = null;
@@ -310,29 +311,53 @@ export class CoachRuntime {
       const requestId = randomUUID();
       await callbacks.consume(input.taskId, 'model', requestId);
       ++modelRequests;
-      const decision = CoachDecisionSchema.parse(
-        await this.dependencies.decide(
-          {
-            activity: input.activity,
-            observation,
-            priorProgress: input.priorProgress,
-            request: input.request,
-            taskId: input.taskId,
-            explanation: { ...explanation, contextMode: mode },
-            question,
-            presentedSteps,
-            requestId,
-          },
-          signal,
-        ),
-      );
+      let decision: CoachDecision;
+      try {
+        decision = CoachDecisionSchema.parse(
+          await this.dependencies.decide(
+            {
+              activity: input.activity,
+              observation,
+              priorProgress: input.priorProgress,
+              request: input.request,
+              taskId: input.taskId,
+              explanation: { ...explanation, contextMode: mode },
+              question,
+              presentedSteps: [...presentedSteps],
+              requestId,
+            },
+            signal,
+          ),
+        );
+      } catch (error) {
+        signal.throwIfAborted();
+        if (!(error instanceof CoachRateLimitError)) throw error;
+        // Keep the claim and journal open. Only an explicit continuation may
+        // reserve a fresh request, and rejected attempts still count toward eight.
+        if (modelRequests >= 8)
+          throw new Error('Explanation request limit reached. Open the assignment to ask a new question.');
+        await this.dependencies.onStatus(input.taskId, 'waiting', error.message);
+        const continuation = await callbacks.awaitContinuation(input.taskId, error.message, signal);
+        signal.throwIfAborted();
+        if (continuation.action === 'finish') break;
+        if (continuation.action === 'text_only') {
+          mode = 'text_only';
+          this.dependencies.releaseObservationSession(input.taskId);
+          observationStarted = false;
+        }
+        if (continuation.action === 'question') question = continuation.text;
+        continue;
+      }
       signal.throwIfAborted();
       let text: string;
       if (decision.kind === 'complete') {
         recap = decision.recap;
         break;
       }
-      if (decision.kind === 'answer') text = decision.text;
+      if (decision.kind === 'answer') {
+        text = decision.text;
+        presentedSteps.push(text);
+      }
       else {
         if (decision.steps.length !== 1)
           throw new Error(
@@ -383,7 +408,7 @@ export class CoachRuntime {
             input.taskId,
             progressFrom(
               input,
-              presentedSteps.length,
+              ++visualSteps,
               step.expectedOutcome,
               null,
             ),
@@ -505,6 +530,22 @@ export class CoachModelError extends Error {
   }
 }
 
+class CoachRateLimitError extends CoachModelError {
+  constructor() {
+    super('Too many requests. Wait a moment, then select Next to retry, or Finish.', false, 429);
+  }
+}
+
+const ApiRateLimitSchema = z.object({ code: z.literal('rate_limited'), retryable: z.literal(true) });
+
+async function isPreDispatchRateLimit(response: Response): Promise<boolean> {
+  // Provider error bodies are forwarded, but their Retry-After headers are not.
+  // Require the API envelope and header, never just a provider's HTTP status.
+  return response.status === 429 &&
+    /^\d+$/u.test(response.headers.get('retry-after') ?? '') &&
+    ApiRateLimitSchema.safeParse(await response.json().catch(() => null)).success;
+}
+
 const AgentTurnResponseSchema = z.object({ id: z.string().uuid() }).passthrough();
 const COACH_GENERATED_COPY_LIMITS = {
   hook: 36,
@@ -565,6 +606,7 @@ export function createAuthenticatedCoachDecisionClient(
           signal,
         });
         if (!reservation.ok) {
+          if (await isPreDispatchRateLimit(reservation)) throw new CoachRateLimitError();
           throw new CoachModelError(`Could not reserve the Coach model turn (${reservation.status}).`,
             false,
             reservation.status,
@@ -591,8 +633,9 @@ export function createAuthenticatedCoachDecisionClient(
         );
       });
       if (!response.ok) {
+        if (await isPreDispatchRateLimit(response)) throw new CoachRateLimitError();
         throw new CoachModelError(`Coach model request failed (${response.status}).`,
-          response.status >= 500 || response.status === 408,
+          response.status >= 500 || response.status === 408 || response.status === 429,
           response.status,
         );
       }

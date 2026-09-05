@@ -64,11 +64,11 @@ async fn limit(
     if result.allowed {
         Ok(())
     } else {
-        Err(ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
+        Err(ApiError::rate_limited(
+            "rate_limited",
             "Too many requests. Please try again shortly.",
-        )
-        .retry_after(result.retry_after_seconds))
+            result.retry_after_seconds,
+        ))
     }
 }
 fn uuid_header(headers: &HeaderMap, name: &str) -> ApiResult<Uuid> {

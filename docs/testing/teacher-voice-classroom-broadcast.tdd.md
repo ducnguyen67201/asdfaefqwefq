@@ -91,3 +91,12 @@ New regressions cover a verified empty feed and consent before the first notice,
 completion during the final encrypted start write, and expired active reports
 that must leave an Attempt assigned. The CI PostgreSQL step now includes the
 classroom integration suite. Real three-device acceptance remains pending.
+
+The automatic Codex review added regressions for text-answer history in stateless
+Next requests and explicit continuation after API throttling. They failed before
+the fixes. The follow-up full check passes 903 TypeScript tests and 24 SDK tests.
+The HTTP compatibility suite also proves that a verified rate-limit rejection
+creates no provider request or budget reservation, and a fresh request succeeds
+after the limit clears. Client tests distinguish API rejections from uncertain
+provider outcomes, preserve pending questions/history and the model turn, and
+enforce the existing eight-request cap including rejected attempts.
