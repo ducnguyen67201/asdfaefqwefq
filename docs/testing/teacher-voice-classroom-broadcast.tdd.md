@@ -108,10 +108,12 @@ directives. That exact SQL and checksum are retained; the new session broadcast
 and guidance migrations are 035/036. There are now 36 registered migrations and
 61 domain tables. Earlier evidence above describes the pre-deployment numbering.
 
-The PostgreSQL compatibility suite installs the deployed SQLx history, verifies
-the pinned migration-034 checksum, upgrades twice, and checks that all previous
-history records and existing user data remain unchanged. A corrupted checksum is
-still rejected. The classroom HTTP suite also exercises the deployed legacy
+The four PostgreSQL compatibility tests cover fresh databases, unversioned
+legacy databases, the deployed PR #61 history, and PR #63 databases stopped at
+034 or 035. Both recorded histories have pinned checksums. Upgrade and restart
+preserve previous history records and existing user data. The PR #63 path adds
+the legacy directive SQL at 036; both paths reach the same schema. Corrupted 034
+is rejected, and a recognized PR #63 034 does not bypass validation of 035. The classroom HTTP suite also exercises the deployed legacy
 create/feed/claim protocol and duplicate-claim rejection alongside the new flow.
 The desktop client regression reads the legacy consent-required explanation feed
 without starting work or discarding its cursor.

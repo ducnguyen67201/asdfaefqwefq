@@ -7,7 +7,8 @@ The hosted API is running `a6161ec` (PR #61), whose migration 034 enables
 assigned 034 to session broadcasts. Railway's attempted deployment of `53191a8`
 failed with `migration 34 was previously applied but has been modified`; the
 previous healthy API remained active. Clean-database CI did not cover that
-deployed SQLx history.
+deployed SQLx history. A read-only inspection also confirmed that the local dev
+database has already applied PR #63 with broadcasts at 034 and guidance at 035.
 
 ## Change
 
@@ -16,6 +17,10 @@ deployed SQLx history.
   `e0c2f662cfed959781318f5e043a6388b967f98d`.
 - Number the new session broadcast and guidance migrations 035 and 036. Their SQL
   is unchanged. Register all 36 migrations and update the inventory.
+- Recognize the exact PR #63 034 checksum and retain its 034/035 ordering, adding
+  the deployed legacy SQL at 036. Both immutable histories reach the same schema.
+  Future migrations are shared; SQLx locking, dirty checks and full checksum
+  validation remain enabled. Unknown histories fail closed.
 - Retain the deployed Run directive create/feed/claim contract, including
   `consent_required` delivery and `kind` in claim receipts. Duplicate claims remain
   rejected; claims do not change assignment completion or start work on the server.
@@ -31,8 +36,10 @@ PR #63 migrations had not been applied by the failed hosted deployment.
 - The PostgreSQL upgrade regression installs a versioned copy of the deployed
   001–034 SQLx history and pins migration 034's SHA-384 checksum. Upgrade and restart
   preserve every previous history record and existing user data, create both new
-  tables, and retain the legacy directive constraint. Corrupt checksums still fail.
-- Three PostgreSQL compatibility tests and both classroom HTTP tests pass. The
+  tables, and retain the legacy directive constraint. A second regression installs
+  the pinned PR #63 history through 034 and 035, upgrades and restarts both, and
+  preserves their prior records. Corrupt 034 and 035 checksums still fail.
+- Four PostgreSQL compatibility tests and both classroom HTTP tests pass. The
   classroom test includes old-client create, feed and one-time claim behavior.
 - The desktop client regression reads the deployed explanation feed using only
   GET; it does not consume a claim or start a task.

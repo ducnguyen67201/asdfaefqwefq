@@ -194,6 +194,32 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
     ..Migrator::DEFAULT
 });
 
+// PR #63 was applied to local databases before the deployed PR #61 history
+// was reconciled. Preserve those exact version/checksum pairs too. Both paths
+// reach the same schema at 036; subsequent migrations come from MIGRATOR.
+static BROADCASTS_FIRST_MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| {
+    let mut migrations = MIGRATOR.migrations.to_vec();
+    migrations[33] = migration(
+        34,
+        "class session broadcasts",
+        include_str!("../migrations/035_class_session_broadcasts.sql"),
+    );
+    migrations[34] = migration(
+        35,
+        "student classroom guidance",
+        include_str!("../migrations/036_student_classroom_guidance.sql"),
+    );
+    migrations[35] = migration(
+        36,
+        "classroom explain assignment directive",
+        include_str!("../migrations/034_classroom_explain_assignment_directive.sql"),
+    );
+    Migrator {
+        migrations: Cow::Owned(migrations),
+        ..Migrator::DEFAULT
+    }
+});
+
 fn migration(version: i64, description: &'static str, sql: &'static str) -> Migration {
     Migration::new(
         version,
@@ -214,7 +240,29 @@ pub async fn connect(config: &Config) -> Result<PgPool, ApiError> {
 }
 
 pub async fn migrate(pool: &PgPool) -> Result<(), ApiError> {
-    MIGRATOR.run(pool).await.map_err(ApiError::internal)
+    let has_history: bool =
+        sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+            .fetch_one(pool)
+            .await?;
+    let checksum = if has_history {
+        sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT checksum FROM _sqlx_migrations WHERE version=34 AND success",
+        )
+        .fetch_optional(pool)
+        .await?
+    } else {
+        None
+    };
+    let migrator = if checksum.as_deref()
+        == Some(BROADCASTS_FIRST_MIGRATOR.migrations[33].checksum.as_ref())
+    {
+        &*BROADCASTS_FIRST_MIGRATOR
+    } else {
+        &*MIGRATOR
+    };
+    // SQLx retains its lock, dirty-history check and validation of every applied
+    // checksum. Unknown or concurrently changed histories fail closed.
+    migrator.run(pool).await.map_err(ApiError::internal)
 }
 
 pub async fn ready(pool: &PgPool) -> bool {
@@ -226,10 +274,15 @@ pub async fn ready(pool: &PgPool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::MIGRATOR;
+    use super::{BROADCASTS_FIRST_MIGRATOR, MIGRATOR};
     #[test]
     fn classroom_migrations_are_registered_in_order() {
         let versions: Vec<_> = MIGRATOR.iter().map(|migration| migration.version).collect();
         assert_eq!(versions, (1..=36).collect::<Vec<_>>());
+        let historical_versions: Vec<_> = BROADCASTS_FIRST_MIGRATOR
+            .iter()
+            .map(|migration| migration.version)
+            .collect();
+        assert_eq!(historical_versions, versions);
     }
 }

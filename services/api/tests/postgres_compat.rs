@@ -135,10 +135,10 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
     assert_eq!(sqlx_count, 36);
 }
 
-// Reproduce the SQLx history of deployed commit a6161ec (PR #61), rather
-// than starting every upgrade test from an empty or unversioned database.
-async fn apply_deployed_classroom_schema(pool: &trocode_api::PgPool) {
-    let sources = [
+// Reproduce both recorded SQLx histories: deployed PR #61 and local PR #63.
+// Pin their checksums so an edited fixture cannot silently redefine history.
+fn classroom_history(broadcasts_first: bool) -> Migrator {
+    let mut sources = vec![
         include_str!("../migrations/001_hosted_sessions.sql"),
         include_str!("../migrations/002_access_codes.sql"),
         include_str!("../migrations/003_model_usage_budgets.sql"),
@@ -172,8 +172,17 @@ async fn apply_deployed_classroom_schema(pool: &trocode_api::PgPool) {
         include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
         include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
         include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
-        include_str!("../migrations/034_classroom_explain_assignment_directive.sql"),
     ];
+    if broadcasts_first {
+        sources.extend([
+            include_str!("../migrations/035_class_session_broadcasts.sql"),
+            include_str!("../migrations/036_student_classroom_guidance.sql"),
+        ]);
+    } else {
+        sources.push(include_str!(
+            "../migrations/034_classroom_explain_assignment_directive.sql"
+        ));
+    }
     let migrations: Vec<_> = sources
         .iter()
         .enumerate()
@@ -187,23 +196,30 @@ async fn apply_deployed_classroom_schema(pool: &trocode_api::PgPool) {
             )
         })
         .collect();
-    assert_eq!(
-        migrations
-            .last()
-            .unwrap()
-            .checksum
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
-        "1bdfe5cdfbec5480c7f942ab8c0e03a6e2e49b853530b0b449bdc8e206dc72651a49ce658f8fda167b563320c68d652b"
-    );
+    let expected_checksums: &[&str] = if broadcasts_first {
+        &[
+            "cd6f87195d9923850e7b119720d22ac398e84f245e9184e439be3969ce524e2a0504d9d92c4af8aa18a23107978eea15",
+            "c8d5b0030c997adba3b8c6fb7cd19f814bb1b7ad77f45315b3e7f3b7d9536ca721c65ef176cd02a66e309a60f3c2c43d",
+        ]
+    } else {
+        &[
+            "1bdfe5cdfbec5480c7f942ab8c0e03a6e2e49b853530b0b449bdc8e206dc72651a49ce658f8fda167b563320c68d652b",
+        ]
+    };
+    for (migration, expected) in migrations[33..].iter().zip(expected_checksums) {
+        assert_eq!(
+            migration
+                .checksum
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            *expected
+        );
+    }
     Migrator {
         migrations: Cow::Owned(migrations),
         ..Migrator::DEFAULT
     }
-    .run(pool)
-    .await
-    .expect("install deployed PR #61 history");
 }
 
 #[tokio::test]
@@ -212,7 +228,10 @@ async fn upgrades_deployed_classroom_history_without_rewriting_checksums() {
     let _guard = DATABASE_TEST_LOCK.lock().await;
     let pool = open_pool(&disposable_database_url()).await;
     reset(&pool).await;
-    apply_deployed_classroom_schema(&pool).await;
+    classroom_history(false)
+        .run(&pool)
+        .await
+        .expect("install deployed PR #61 history");
     query(
         "INSERT INTO users(id,email,name)VALUES('upgrade-user','upgrade@example.test','Preserved')",
     )
@@ -261,4 +280,63 @@ async fn upgrades_deployed_classroom_history_without_rewriting_checksums() {
         .await
         .unwrap();
     assert!(db::migrate(&pool).await.is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn upgrades_pr63_history_without_resetting_local_databases() {
+    let _guard = DATABASE_TEST_LOCK.lock().await;
+    for applied_count in [34, 35] {
+        let pool = open_pool(&disposable_database_url()).await;
+        reset(&pool).await;
+        let mut old = classroom_history(true);
+        old.migrations.to_mut().truncate(applied_count);
+        old.run(&pool)
+            .await
+            .expect("install PR #63 migration history");
+        query("INSERT INTO users(id,email,name)VALUES('local-user','local@example.test','Local preserved')").execute(&pool).await.unwrap();
+        let history_sql = "SELECT jsonb_agg(to_jsonb(m) ORDER BY version) FROM _sqlx_migrations m WHERE version<=$1";
+        let before: serde_json::Value = query_scalar(history_sql)
+            .bind(i64::try_from(applied_count).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        db::migrate(&pool).await.expect("upgrade PR #63 database");
+        db::migrate(&pool).await.expect("restart PR #63 database");
+        let after: serde_json::Value = query_scalar(history_sql)
+            .bind(i64::try_from(applied_count).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+        let name: String = query_scalar("SELECT name FROM users WHERE id='local-user'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(name, "Local preserved");
+        let count: i64 = query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 36);
+        let constraint: String = query_scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='knowledge_run_directives'::regclass AND conname='knowledge_run_directives_kind_check'").fetch_one(&pool).await.unwrap();
+        assert!(constraint.contains("explain_assignment"));
+        let table_exists: bool =
+            query_scalar("SELECT to_regclass('knowledge_classroom_guidance_starts') IS NOT NULL")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(table_exists);
+        query("UPDATE _sqlx_migrations SET checksum=decode('0001','hex') WHERE version=35")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            db::migrate(&pool).await.is_err(),
+            "known 034 must not bypass validation of 035"
+        );
+        // A failed SQLx migration keeps its session lock until disconnect.
+        // Model the failed startup exiting before trying the next history.
+        pool.close().await;
+    }
 }
