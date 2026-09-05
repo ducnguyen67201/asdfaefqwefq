@@ -12,6 +12,7 @@ import { validatePublicHttpsUrl } from '../../shared/classroom-url-policy';
 import {
   ProposedActionSchema,
   RuntimeToolIdSchema,
+  type TeacherClassroomBinding,
   type ActivityContext,
   type ExecutionProfile,
   type ProposedAction,
@@ -35,6 +36,7 @@ import {
 } from './execution-contracts';
 
 export interface TrustedToolExecutionContext {
+  teacherClassroom?: TeacherClassroomBinding | null;
   activity: ActivityContext | null;
   executionProfile: ExecutionProfile;
   taskId: string;

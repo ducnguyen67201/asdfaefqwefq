@@ -260,3 +260,43 @@ describe('EncryptedAgentStateStore', () => {
     });
   });
 });
+
+it('isolates durable guidance intents before a task exists and retains counters', async () => {
+  const { store } = await fixture();
+  const journal = {
+    ownerId: 'owner-1',
+    anchorAttemptId: randomUUID(),
+    broadcastId: randomUUID(),
+    request: {
+      clientStartId: randomUUID(),
+      taskId: randomUUID(),
+      clientInstanceId: randomUUID(),
+      contextMode: 'text_only' as const,
+    },
+    claim: null,
+    phase: 'claiming' as const,
+    modelRequests: 0,
+    observations: 0,
+    startedAt: new Date().toISOString(),
+    report: null,
+  };
+  await store.writeGuidanceJournal(journal);
+  expect(
+    await store.readGuidanceJournal('owner-1', journal.broadcastId),
+  ).toEqual(journal);
+  expect(
+    await store.readGuidanceJournal('owner-2', journal.broadcastId),
+  ).toBeNull();
+  expect(await store.listGuidanceJournals('owner-2')).toEqual([]);
+  await store.writeGuidanceJournal({
+    ...journal,
+    phase: 'unknown',
+    modelRequests: 2,
+    observations: 4,
+  });
+  expect((await store.listGuidanceJournals('owner-1'))[0]).toMatchObject({
+    phase: 'unknown',
+    modelRequests: 2,
+    observations: 4,
+  });
+});

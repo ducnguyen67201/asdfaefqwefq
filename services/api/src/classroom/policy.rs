@@ -76,7 +76,7 @@ pub fn validated_origin(value: &str) -> Option<String> {
     (origin == value).then_some(origin)
 }
 
-fn public_https_url(value: &str) -> Option<Url> {
+pub(super) fn public_https_url(value: &str) -> Option<Url> {
     let parsed = Url::parse(value).ok()?;
     if parsed.scheme() != "https"
         || !parsed.username().is_empty()

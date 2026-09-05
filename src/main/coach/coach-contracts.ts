@@ -56,7 +56,21 @@ export const CoachDecisionSchema = z.discriminatedUnion('kind', [
 });
 
 export const CoachRuntimeStartSchema = z.object({
-  taskId: z.string().uuid(),
+    explanation: z
+      .object({
+        guidanceId: z.string().uuid(),
+        broadcastId: z.string().uuid(),
+        teacherInstruction: z.string().max(4_000),
+        language: z.enum(['en', 'vi']),
+        contextMode: z.enum(['screen_if_permitted', 'text_only']),
+        expiresAt: z.string().datetime(),
+        startedAt: z.string().datetime(),
+        modelRequests: z.number().int().min(0).max(8),
+        observations: z.number().int().min(0).max(16),
+      })
+      .strict()
+      .optional(),
+    taskId: z.string().uuid(),
   request: z.string().trim().min(2).max(8_000),
   activity: ActivityContextSchema.nullable(),
   requiresObservation: z.boolean(),

@@ -1,0 +1,71 @@
+.classroom-broadcast-cards {
+  display: grid;
+  gap: 12px;
+}
+.classroom-broadcast-card {
+  margin: 12px 24px;
+  padding: 18px 22px;
+  border: 1px solid #d4cfbd;
+  border-radius: 12px;
+  background: #fffcf0;
+  color: #292a25;
+  overflow-wrap: anywhere;
+}
+.classroom-broadcast-card h3 {
+  margin: 6px 0;
+}
+.classroom-broadcast-card p {
+  margin: 10px 0;
+}
+.classroom-broadcast-copy {
+  white-space: pre-wrap;
+}
+.classroom-broadcast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.classroom-broadcast-card button {
+  border: 1px solid #a19b84;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+.classroom-broadcast-card button.primary-button {
+  background: #f3cf4b;
+  font-weight: 700;
+}
+.classroom-broadcast-card button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.classroom-broadcast-card :focus-visible {
+  outline: 3px solid #756002;
+  outline-offset: 3px;
+}
+.classroom-explanation-pending,
+.classroom-explanation-active {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d4cfbd;
+}
+.classroom-guidance-consent {
+  display: flex;
+  align-items: start;
+  gap: 9px;
+  margin-top: 16px;
+}
+.classroom-explanation-active form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.classroom-explanation-active input {
+  display: block;
+  width: min(480px, 65vw);
+  padding: 8px;
+}

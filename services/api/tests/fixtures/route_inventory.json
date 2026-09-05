@@ -86,7 +86,16 @@
     {"method":"POST","path":"/v1/attempts/{attemptId}/work-sessions","family":"knowledge"},
     {"method":"PATCH","path":"/v1/work-sessions/{workSessionId}","family":"knowledge"},
     {"method":"POST","path":"/v1/attempts/{attemptId}/knowledge/search","family":"knowledge"},
-    {"method":"POST","path":"/v1/attempts/{attemptId}/evidence","family":"knowledge"}
+    {"method":"POST","path":"/v1/attempts/{attemptId}/evidence","family":"knowledge"},
+    {"method":"GET","path":"/v1/spaces/{spaceId}/sessions/{sessionId}/teacher-context","family":"knowledge"},
+    {"method":"POST","path":"/v1/spaces/{spaceId}/sessions/{sessionId}/broadcasts","family":"knowledge"},
+    {"method":"GET","path":"/v1/spaces/{spaceId}/sessions/{sessionId}/broadcasts/by-client/{clientId}","family":"knowledge"},
+    {"method":"GET","path":"/v1/attempts/{attemptId}/session-broadcasts","family":"knowledge"},
+    {"method":"GET","path":"/v1/attempts/{attemptId}/session-broadcasts/{broadcastId}/assignment","family":"knowledge"},
+    {"method":"POST","path":"/v1/attempts/{attemptId}/session-broadcasts/{broadcastId}/guidance-starts","family":"knowledge"},
+    {"method":"GET","path":"/v1/attempts/{attemptId}/session-broadcasts/{broadcastId}/guidance-start","family":"knowledge"},
+    {"method":"PATCH","path":"/v1/work-sessions/{workSessionId}/classroom-guidance","family":"knowledge"},
+    {"method":"GET","path":"/v1/spaces/{spaceId}/sessions/{sessionId}/broadcasts/{broadcastId}/guidance-summary","family":"knowledge"}
   ],
   "sse": [
     {"path":"/v1/openai/responses","eventId":"provider-defined","heartbeat":false,"maxBytes":5000000,"maxLineBytes":1000000}

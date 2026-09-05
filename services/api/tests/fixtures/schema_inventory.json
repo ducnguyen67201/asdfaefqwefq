@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "migrationCount": 33,
+  "migrationCount": 35,
   "tables": [
     "users",
     "device_sessions",
@@ -60,7 +60,9 @@
     "agent_session_mutations",
     "agent_orchestrator_workers",
     "agent_model_dispatches",
-    "agent_run_tool_snapshots"
+    "agent_run_tool_snapshots",
+    "knowledge_class_session_broadcasts",
+    "knowledge_classroom_guidance_starts"
   ],
   "states": {
     "budgetReservation": ["reserved", "settled", "released", "uncertain"],

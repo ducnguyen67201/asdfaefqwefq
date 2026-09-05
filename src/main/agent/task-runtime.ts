@@ -78,12 +78,23 @@ export class TaskRuntime extends EventEmitter {
 
   applyCoachStatus(
     taskId: string,
-    coachPhase: 'observing' | 'planning' | 'presenting',
+    coachPhase: 'observing' | 'planning' | 'presenting' | 'waiting',
     summary: string,
   ): TaskSnapshot {
     const snapshot = this.getTask(taskId);
-    const phase = coachPhase === 'presenting' ? 'acting' : coachPhase;
+    const phase = coachPhase === 'waiting' ? 'awaiting_input' : coachPhase === 'presenting' ? 'acting' : coachPhase;
     return this.commit({ ...snapshot, phase }, { summary });
+  }
+
+  appendCoachExplanation(taskId: string, text: string): TaskSnapshot {
+    const snapshot = this.getTask(taskId);
+    if (snapshot.goal?.schemaVersion !== 11 || snapshot.goal.route !== 'coach') {
+      throw new Error('An explanation belongs to a Coach task.');
+    }
+    return this.commit(
+      this.appendMessage(snapshot, { role: 'assistant', kind: 'response', text: text.slice(0, 4_000) }, this.timestamp()),
+      { summary: 'An explanation step is ready.' },
+    );
   }
 
   updateCoachProgress(taskId: string, input: unknown): TaskSnapshot {

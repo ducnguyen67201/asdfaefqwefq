@@ -175,6 +175,16 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             "agent run tool snapshots",
             include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
         ),
+        migration(
+            34,
+            "class session broadcasts",
+            include_str!("../migrations/034_class_session_broadcasts.sql"),
+        ),
+        migration(
+            35,
+            "student classroom guidance",
+            include_str!("../migrations/035_student_classroom_guidance.sql"),
+        ),
     ]),
     ..Migrator::DEFAULT
 });
@@ -207,4 +217,14 @@ pub async fn ready(pool: &PgPool) -> bool {
         .fetch_one(pool)
         .await
         .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MIGRATOR;
+    #[test]
+    fn classroom_migrations_are_registered_in_order() {
+        let versions: Vec<_> = MIGRATOR.iter().map(|migration| migration.version).collect();
+        assert_eq!(versions, (1..=35).collect::<Vec<_>>());
+    }
 }

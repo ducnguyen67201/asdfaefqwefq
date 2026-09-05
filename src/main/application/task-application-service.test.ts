@@ -1,11 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
   ActivityContext,
   ClassroomSessionProjection,
+  LocalGuidanceStartJournal,
   TaskSnapshot,
 } from '../../shared/contracts';
 import { TaskRuntime } from '../agent/task-runtime';
+import { classroomFixture } from '../knowledge/classroom-broadcast.fixture';
 
 import { TaskApplicationService } from './task-application-service';
 
@@ -23,6 +27,7 @@ function localDependencies() {
     steer: vi.fn(),
   };
   const state = {
+    updateClassroomState: vi.fn(async () => undefined),
     create: vi.fn(async (ownerId: string, snapshot: TaskSnapshot) => {
       void ownerId;
       void snapshot;
@@ -92,6 +97,68 @@ function classroomDependencies() {
 }
 
 describe('TaskApplicationService', () => {
+  it('routes a verified teacher voice request to the SDK without forced initial observation', async () => {
+    const f = classroomFixture();
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const selectionId = randomUUID();
+    const resolve = vi.fn(async () => f.binding);
+    const service = new TaskApplicationService(new TaskRuntime(), {
+      coachRuntime,
+      currentOwnerId: async () => 'teacher',
+      localRuntime,
+      state: state as never,
+      fastCoachEnabled: true,
+      teacherClassroomContext: { resolve } as never,
+    });
+    const task = await service.submitAndStart({ text: 'Explain Assignment 1 to the class.', requestedMode: 'auto', screenContext: 'required', teacherClassroomSelectionId: selectionId });
+    expect(resolve).toHaveBeenCalledWith(selectionId);
+    expect(task.goal).toMatchObject({ route: 'agent', activity: null });
+    expect(coachRuntime.start).not.toHaveBeenCalled();
+    expect(localRuntime.start).toHaveBeenCalledWith(expect.objectContaining({ executionContext: expect.objectContaining({ teacherClassroom: f.binding }) }));
+    expect(localRuntime.start.mock.calls[0]?.[0]).not.toHaveProperty('requiredInitialTool');
+    expect(state.updateClassroomState).toHaveBeenCalled();
+  });
+
+  it('shares admission between ordinary tasks and student explanations without preemption', async () => {
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const service = new TaskApplicationService(new TaskRuntime(), { coachRuntime, currentOwnerId: async () => 'student', localRuntime, state: state as never });
+    const reservation = randomUUID();
+    service.reserveClassroomExplanation(reservation);
+    await expect(service.submitAndStart({ text: 'Open Chrome.' })).rejects.toThrow('starting');
+    service.releaseReservation(randomUUID());
+    expect(service.isDeviceBusy()).toBe(true);
+    service.releaseReservation(reservation);
+    const task = await service.submitAndStart({ text: 'Open Chrome.', requestedMode: 'agent' });
+    expect(() => service.reserveClassroomExplanation(randomUUID())).toThrow('Finish or stop');
+    expect(localRuntime.cancel).not.toHaveBeenCalled();
+    service.finish(task.taskId);
+    expect(service.isDeviceBusy()).toBe(false);
+  });
+
+  it('uses the claimed work session in Coach even with fast Coach disabled, without starting Help', async () => {
+    const f = classroomFixture();
+    const { coachRuntime, localRuntime, state } = localDependencies();
+    const classroom = classroomDependencies();
+    const reporter = { bind: vi.fn(), fail: vi.fn() };
+    const service = new TaskApplicationService(new TaskRuntime(), {
+      coachRuntime, localRuntime, state: state as never, currentOwnerId: async () => 'student', fastCoachEnabled: false,
+      activityContextService: classroom.activityContextService as never,
+      activityProgressReporter: reporter as never,
+    });
+    const taskId = randomUUID();
+    const request = { taskId, clientStartId: randomUUID(), clientInstanceId: randomUUID(), contextMode: 'text_only' as const };
+    const activity = { ...CLASSROOM_ACTIVITY, purpose: 'work' as const };
+    const claim = { ...request, id: randomUUID(), broadcastId: f.broadcast.id, sessionId: f.binding.sessionId, anchorAttemptId: f.session.attemptId, attemptId: activity.attemptId, activityVersionId: activity.activityVersionId, workSessionId: activity.workSessionId, status: 'accepted' as const, revision: 0, createdAt: new Date().toISOString(), ownedByThisRequest: true };
+    const journal: LocalGuidanceStartJournal = { ownerId: 'student', anchorAttemptId: f.session.attemptId, broadcastId: f.broadcast.id, request, claim, phase: 'dispatching', modelRequests: 0, observations: 0, startedAt: claim.createdAt, report: null };
+    service.reserveClassroomExplanation(taskId);
+    const task = await service.submitClassroomExplanation(activity, journal, { guidanceId: claim.id, broadcastId: f.broadcast.id, teacherInstruction: 'Explain the loop.', contextMode: 'text_only', language: 'vi', startedAt: claim.createdAt, expiresAt: new Date(Date.now() + 600_000).toISOString(), modelRequests: 0, observations: 0 });
+    expect(task.goal).toMatchObject({ route: 'coach', workspace: null, activity: { purpose: 'work', workSessionId: activity.workSessionId } });
+    expect(coachRuntime.start).toHaveBeenCalledWith(expect.objectContaining({ requiresObservation: false, activity }));
+    expect(localRuntime.start).not.toHaveBeenCalled();
+    expect(classroom.activityContextService.create).not.toHaveBeenCalled();
+    expect(reporter.bind).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the local Agents SDK runtime is not configured', async () => {
     const service = new TaskApplicationService(new TaskRuntime());
 

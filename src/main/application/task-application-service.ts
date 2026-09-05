@@ -7,6 +7,8 @@ import {
   StartTaskRequestSchema,
   SteerTaskRequestSchema,
   SubmitTaskRequestSchema,
+  type ActivityContext,
+  type LocalGuidanceStartJournal,
   type ClassroomSessionProjection,
   type TaskRoute,
   type TaskSnapshot,
@@ -16,10 +18,13 @@ import { shouldObserveInitialScreenContext } from '../agent/screen-context-polic
 import type { TaskRuntime } from '../agent/task-runtime';
 import type { AgentRuntimeAdapter } from '../agent-runtime/agent-runtime-adapter';
 import type { EncryptedAgentStateStore } from '../agent-runtime/encrypted-agent-state-store';
+import type { CoachRuntimeStart } from '../coach/coach-contracts';
 import type { CoachRuntime } from '../coach/coach-runtime';
 import type { ActivityContextService } from '../knowledge/activity-context-service';
 import type { ActivityProgressReporter } from '../knowledge/activity-progress-reporter';
+import type { ClassroomBroadcastDraftService } from '../knowledge/classroom-broadcast-draft-service';
 import type { ClassroomSessionService } from '../knowledge/classroom-session-service';
+import type { TeacherClassroomContextService } from '../knowledge/teacher-classroom-context-service';
 import type { WorkspaceSelectionService } from '../workspace/workspace-selection-service';
 
 import { routeTaskRequest } from './task-request-router';
@@ -33,6 +38,9 @@ const DEFAULT_LIMITS = {
 } as const;
 
 interface TaskApplicationServiceOptions {
+  onTaskCancelled?: (taskId: string) => void;
+  teacherClassroomContext?: TeacherClassroomContextService;
+  broadcastDrafts?: ClassroomBroadcastDraftService;
   activityContextService?: Pick<ActivityContextService, 'create' | 'inspect'>;
   activityProgressReporter?: Pick<ActivityProgressReporter, 'bind' | 'fail'>;
   classroomSessionService?: Pick<ClassroomSessionService, 'activeStudentAttemptId' | 'latestDirective' | 'onChange'>;
@@ -47,6 +55,7 @@ interface TaskApplicationServiceOptions {
 export class TaskApplicationService {
   private readonly executionContexts = new Map<string, TrustedToolExecutionContext>();
   private readonly inheritedClassroomTasks = new Set<string>();
+  private reservation: string | null = null;
   private readonly routes = new Map<string, TaskRoute>();
 
   constructor(
@@ -59,12 +68,53 @@ export class TaskApplicationService {
   }
 
   async submitAndStart(input: unknown): Promise<TaskSnapshot> {
+    const token = randomUUID();
+    if (this.reservation)
+      throw new Error('Another task is starting. Please try again.');
+    if (
+      [...this.routes.keys()].some(
+        (id) =>
+          !['completed', 'failed', 'cancelled', 'blocked'].includes(
+            this.runtime.getSnapshot(id).phase,
+          ),
+      )
+    )
+      throw new Error(
+        'Finish or stop the current task before starting another.',
+      );
+    this.reservation = token;
+    try {
+      return await this.submitOrdinary(input);
+    } finally {
+      this.releaseReservation(token);
+    }
+  }
+
+  private async submitOrdinary(input: unknown): Promise<TaskSnapshot> {
     const request = SubmitTaskRequestSchema.parse(input);
     if (!this.options.state || !this.options.currentOwnerId) {
       throw new Error('Local task persistence is not configured.');
     }
+    if (request.teacherClassroomSelectionId && request.activityAttemptId)
+      throw new Error(
+        'Teacher selection cannot be combined with a student Activity.',
+      );
+    const teacherClassroom =
+      request.teacherClassroomSelectionId && request.requestedMode === 'auto'
+        ? await this.options.teacherClassroomContext?.resolve(
+            request.teacherClassroomSelectionId,
+          )
+        : null;
+    if (
+      request.teacherClassroomSelectionId &&
+      request.requestedMode === 'auto' &&
+      !teacherClassroom
+    )
+      throw new Error('Teacher classroom tools are unavailable.');
     const joinedAttemptId = this.options.classroomSessionService?.activeStudentAttemptId() ?? null;
-    const activityAttemptId = request.activityAttemptId ?? joinedAttemptId;
+    const activityAttemptId = teacherClassroom
+      ? null
+      : (request.activityAttemptId ?? joinedAttemptId);
     if (!activityAttemptId && request.activityIntent !== 'work') {
       throw new Error('Join an active class before using Help or Check.');
     }
@@ -84,7 +134,9 @@ export class TaskApplicationService {
     if (executionProfile !== 'workspace' && workspace) {
       throw new Error('This Activity does not grant Workspace authority.');
     }
-    const routeDecision = this.fastCoachEnabled()
+    const routeDecision = teacherClassroom
+      ? { route: 'agent' as const, requiresObservation: false }
+      : this.fastCoachEnabled()
       ? routeTaskRequest({
           activityLaunchTarget: attempt?.definition.launchTarget ?? null,
           executionProfile,
@@ -116,7 +168,7 @@ export class TaskApplicationService {
           attempt.definition.launchTarget,
           request.activityIntent,
           joinedAttemptId === activityAttemptId
-            ? this.options.classroomSessionService?.latestDirective() ?? null
+            ? (this.options.classroomSessionService?.latestDirective() ?? null)
             : null,
         )
       : null;
@@ -133,7 +185,7 @@ export class TaskApplicationService {
       runtimeKind: routeDecision.route === 'coach' ? 'coach' : 'openai_agents_sdk',
       route: routeDecision.route,
       executionProfile: authorityExecutionProfile,
-      workspace: routeDecision.route === 'coach' ? null : workspace ?? null,
+      workspace: routeDecision.route === 'coach' ? null : (workspace ?? null),
       activity: activity ?? null,
       coachProgress: priorProgress,
       limits: DEFAULT_LIMITS,
@@ -144,8 +196,15 @@ export class TaskApplicationService {
         { authority, taskId },
       );
       await this.options.state.create(ownerId, snapshot);
+      if (teacherClassroom)
+        await this.options.state.updateClassroomState(
+          ownerId,
+          taskId,
+          (state) => ({ ...state, teacherClassroom }),
+        );
       const started = this.runtime.start({ taskId });
       const executionContext: TrustedToolExecutionContext = {
+        teacherClassroom,
         activity: authority.activity,
         executionProfile: authority.executionProfile,
         taskId,
@@ -169,8 +228,8 @@ export class TaskApplicationService {
           executionContext,
           maxTurns: authority.limits.maxModelSamples,
           request: request.text,
-          ...(
-            authority.executionProfile !== 'workspace' &&
+          ...(!teacherClassroom &&
+          authority.executionProfile !== 'workspace' &&
             (authority.activity?.activity.launchTarget === 'current_surface' ||
               shouldObserveInitialScreenContext(request.text, request.screenContext))
               ? {
@@ -215,6 +274,127 @@ export class TaskApplicationService {
     }
   }
 
+  reserveClassroomExplanation(taskId: string): void {
+    if (
+      this.reservation ||
+      [...this.routes.keys()].some(
+        (id) =>
+          !['completed', 'failed', 'cancelled', 'blocked'].includes(
+            this.runtime.getSnapshot(id).phase,
+          ),
+      )
+    )
+      throw new Error(
+        'Finish or stop the current task, then start the explanation.',
+      );
+    this.reservation = taskId;
+  }
+  isDeviceBusy(): boolean {
+    return (
+      Boolean(this.reservation) ||
+      [...this.routes.keys()].some(
+        (id) =>
+          !['completed', 'failed', 'cancelled', 'blocked'].includes(
+            this.runtime.getSnapshot(id).phase,
+          ),
+      )
+    );
+  }
+  releaseReservation(taskId: string): void {
+    if (this.reservation === taskId) this.reservation = null;
+  }
+  async submitClassroomExplanation(
+    activity: ActivityContext,
+    journal: LocalGuidanceStartJournal,
+    explanation: NonNullable<CoachRuntimeStart['explanation']>,
+  ): Promise<TaskSnapshot> {
+    const taskId = journal.request.taskId;
+    if (
+      this.reservation !== taskId ||
+      !journal.claim ||
+      journal.phase !== 'dispatching'
+    )
+      throw new Error('Explanation admission is unavailable.');
+    if (
+      !this.options.coachRuntime ||
+      !this.options.state ||
+      !this.options.currentOwnerId
+    )
+      throw new Error('Coach is unavailable.');
+    if ((await this.options.currentOwnerId()) !== journal.ownerId)
+      throw new Error('Account changed.');
+    const request = `Explain Assignment — ${activity.activity.title}`;
+    const priorProgress = await this.options.state.findLatestCoachProgress(
+      journal.ownerId,
+      activity.attemptId,
+      activity.activityVersionId,
+    );
+    const authority = AgentTaskContractV11Schema.parse({
+      schemaVersion: 11,
+      id: randomUUID(),
+      originalRequest: request,
+      runtimeKind: 'coach',
+      route: 'coach',
+      executionProfile: 'everyday',
+      workspace: null,
+      activity,
+      coachProgress: priorProgress,
+      limits: {
+        ...DEFAULT_LIMITS,
+        maxMinutes: 10,
+        maxModelSamples: 8,
+        maxImages: 16,
+        maxToolCalls: 1,
+      },
+    });
+    const snapshot = this.runtime.submit(
+      {
+        text: request,
+        requestedMode: 'coach',
+        executionProfile: 'everyday',
+        activityAttemptId: activity.attemptId,
+        activityIntent: 'work',
+        screenContext:
+          explanation.contextMode === 'text_only' ? 'disabled' : 'auto',
+      },
+      { authority, taskId },
+    );
+    await this.options.state.create(journal.ownerId, snapshot);
+    await this.options.state.updateClassroomState(
+      journal.ownerId,
+      taskId,
+      (current) => ({ ...current, studentGuidance: journal }),
+    );
+    this.executionContexts.set(taskId, {
+      activity,
+      executionProfile: 'everyday',
+      taskId,
+      workspace: null,
+    });
+    this.routes.set(taskId, 'coach');
+    const started = this.runtime.start({ taskId });
+    try {
+      await this.options.coachRuntime.start({
+        taskId,
+        request,
+        activity,
+        requiresObservation: explanation.contextMode === 'screen_if_permitted',
+        priorProgress,
+        explanation,
+      });
+      this.releaseReservation(taskId);
+      return started;
+    } catch (error) {
+      this.finish(taskId);
+      this.runtime.complete(taskId, {
+        status: 'failed',
+        finalOutput: null,
+        message: 'Could not start the explanation.',
+      });
+      throw error;
+    }
+  }
+
   start(input: unknown): TaskSnapshot {
     const request = StartTaskRequestSchema.parse(input);
     return this.runtime.getSnapshot(request.taskId);
@@ -222,6 +402,7 @@ export class TaskApplicationService {
 
   async cancel(input: unknown): Promise<TaskSnapshot> {
     const request = CancelTaskRequestSchema.parse(input);
+    await this.options.broadcastDrafts?.cancelTask(request.taskId);
     if (this.routes.get(request.taskId) === 'coach') {
       this.options.coachRuntime?.cancel(request.taskId);
     } else {
@@ -230,7 +411,9 @@ export class TaskApplicationService {
     this.executionContexts.delete(request.taskId);
     this.inheritedClassroomTasks.delete(request.taskId);
     this.routes.delete(request.taskId);
-    return this.runtime.cancel(request);
+    const cancelled = this.runtime.cancel(request);
+    this.options.onTaskCancelled?.(request.taskId);
+    return cancelled;
   }
 
   async cancelActiveTasks(): Promise<void> {
@@ -279,9 +462,17 @@ export class TaskApplicationService {
         taskId: state.snapshot.taskId,
         workspace: goal.workspace,
       };
+      executionContext.teacherClassroom = state.teacherClassroom;
       this.executionContexts.set(state.snapshot.taskId, executionContext);
       this.routes.set(state.snapshot.taskId, 'agent');
       try {
+        if (state.teacherClassroom) {
+          if (!this.options.teacherClassroomContext)
+            throw new Error('Teacher context cannot be restored.');
+          await this.options.teacherClassroomContext.verify(
+            state.teacherClassroom,
+          );
+        }
         await this.options.localRuntime.resume(state.snapshot.taskId, executionContext);
         restored += 1;
       } catch (error) {
@@ -295,13 +486,16 @@ export class TaskApplicationService {
   }
 
   finish(taskId: string): void {
+    this.releaseReservation(taskId);
     this.executionContexts.delete(taskId);
     this.inheritedClassroomTasks.delete(taskId);
     this.routes.delete(taskId);
   }
 
   private fastCoachEnabled(): boolean {
-    return this.options.fastCoachEnabled ?? process.env.TROCODE_FAST_COACH_ENABLED !== 'false';
+    return (
+      this.options.fastCoachEnabled ?? process.env.TROCODE_FAST_COACH_ENABLED !== 'false'
+    );
   }
 
   private cancelInvalidClassroomTasks(session: ClassroomSessionProjection | null): void {

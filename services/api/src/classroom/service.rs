@@ -45,7 +45,7 @@ impl ClassroomService {
             r#"SELECT runs.state,items.session_id
                FROM knowledge_activity_runs runs
                LEFT JOIN knowledge_class_session_activities items ON items.run_id=runs.id
-               WHERE runs.id=$1 AND runs.space_id=$2 FOR UPDATE OF runs"#,
+               WHERE runs.id=$1 AND runs.space_id=$2"#,
         )
         .bind(run_id)
         .bind(space_id)
@@ -54,15 +54,24 @@ impl ClassroomService {
         .ok_or(ApiError::not_found("run_not_found", "Run not found."))?;
         let session_id: Option<Uuid> = current.get("session_id");
         let current_state: String = if let Some(session_id) = session_id {
-            query_scalar(
+            let state = query_scalar(
                 "SELECT state FROM knowledge_class_sessions WHERE id=$1 AND space_id=$2 FOR UPDATE",
             )
             .bind(session_id)
             .bind(space_id)
             .fetch_one(&mut *transaction)
-            .await?
+            .await?;
+            query("SELECT runs.id FROM knowledge_activity_runs runs JOIN knowledge_class_session_activities items ON items.run_id=runs.id WHERE items.session_id=$1 ORDER BY runs.id FOR UPDATE OF runs")
+                .bind(session_id).fetch_all(&mut *transaction).await?;
+            state
         } else {
-            current.get("state")
+            query_scalar(
+                "SELECT state FROM knowledge_activity_runs WHERE id=$1 AND space_id=$2 FOR UPDATE",
+            )
+            .bind(run_id)
+            .bind(space_id)
+            .fetch_one(&mut *transaction)
+            .await?
         };
         if current_state == next_state {
             transaction.commit().await?;

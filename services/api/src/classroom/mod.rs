@@ -1,7 +1,9 @@
 mod assessment;
+mod broadcasts;
 mod contracts;
 mod dashboard;
 mod directives;
+mod guidance;
 mod policy;
 mod rooms;
 mod service;
@@ -9,3 +11,6 @@ mod service;
 pub use contracts::*;
 pub use policy::{deterministic_room_code, directive_delivery, room_code_digest, validated_origin};
 pub use service::ClassroomService;
+
+pub use broadcasts::CreateBroadcastRequest;
+pub use guidance::{GuidanceReport, GuidanceStartRequest};

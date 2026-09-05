@@ -32,6 +32,7 @@ const STATUS_ORDER = [
 ] as const;
 
 export function FacilitatorRunPage({
+  onRunStateChanged,
   allowedOrigins,
   appLanguage,
   criteria,
@@ -39,6 +40,7 @@ export function FacilitatorRunPage({
   runId,
   spaceId,
 }: {
+  onRunStateChanged?: (state: 'open' | 'closed') => Promise<void>;
   allowedOrigins: string[];
   appLanguage: AppLanguage;
   criteria: SaveKnowledgeActivityRequest['definition']['criteria'];
@@ -196,6 +198,7 @@ export function FacilitatorRunPage({
     try {
       await window.tro.setKnowledgeRunState({ spaceId, runId, state });
       setRunState(state);
+      await onRunStateChanged?.(state);
       await snapshot();
     } catch (cause) {
       setError(

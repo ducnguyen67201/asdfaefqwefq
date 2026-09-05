@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import { classroomDesktopApi } from './classroom-preload';
 import {
   ActivateMembershipRequestSchema,
   AgentActivityUpdateSchema,
@@ -135,6 +136,7 @@ import {
 } from './shared/desktop-api';
 
 const desktopApi: DesktopApi = {
+  ...classroomDesktopApi,
   async beginDictation(input) {
     const request = BeginDictationRequestSchema.parse(input);
     const response: unknown = await ipcRenderer.invoke(
