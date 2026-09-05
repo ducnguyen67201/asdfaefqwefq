@@ -26,6 +26,8 @@ database has already applied PR #63 with broadcasts at 034 and guidance at 035.
   rejected; claims do not change assignment completion or start work on the server.
 - Allow updated desktop clients to parse existing explanation notices without
   interpreting them as a new session broadcast or automatically executing them.
+  Render them as explanation requests in English and Vietnamese, addressing
+  review finding 3940031124 about the previous exercise-label fallback.
 
 There is no production SQLx-history rewrite, checksum bypass, data reset, or
 conversion of historical directives into new broadcasts. The previously rejected
