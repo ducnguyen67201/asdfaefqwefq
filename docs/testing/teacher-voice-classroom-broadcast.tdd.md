@@ -100,3 +100,18 @@ creates no provider request or budget reservation, and a fresh request succeeds
 after the limit clears. Client tests distinguish API rejections from uncertain
 provider outcomes, preserve pending questions/history and the model turn, and
 enforce the existing eight-request cap including rejected attempts.
+
+## Deployed migration compatibility
+
+The deployed API at commit `a6161ec` already uses migration 034 for Run explanation
+directives. That exact SQL and checksum are retained; the new session broadcast
+and guidance migrations are 035/036. There are now 36 registered migrations and
+61 domain tables. Earlier evidence above describes the pre-deployment numbering.
+
+The PostgreSQL compatibility suite installs the deployed SQLx history, verifies
+the pinned migration-034 checksum, upgrades twice, and checks that all previous
+history records and existing user data remain unchanged. A corrupted checksum is
+still rejected. The classroom HTTP suite also exercises the deployed legacy
+create/feed/claim protocol and duplicate-claim rejection alongside the new flow.
+The desktop client regression reads the legacy consent-required explanation feed
+without starting work or discarding its cursor.

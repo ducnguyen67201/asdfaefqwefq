@@ -1,6 +1,9 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{borrow::Cow, sync::LazyLock, time::Duration};
 
-use sqlx_core::raw_sql::raw_sql;
+use sqlx_core::{
+    migrate::{Migration, MigrationType, Migrator},
+    raw_sql::raw_sql,
+};
 use trocode_api::{Row as _, db, postgres::PgPoolOptions, query, query_scalar};
 use url::Url;
 
@@ -91,7 +94,7 @@ async fn rust_migrations_are_idempotent_on_an_empty_database() {
     .fetch_one(&pool)
     .await
     .expect("domain table count");
-    assert_eq!(sqlx_count, 35);
+    assert_eq!(sqlx_count, 36);
     assert_eq!(table_count, 62, "61 domain tables plus SQLx bookkeeping");
 }
 
@@ -129,5 +132,133 @@ async fn rust_migrations_adopt_a_legacy_initialized_database() {
         .fetch_one(&pool)
         .await
         .expect("SQLx bookkeeping count");
-    assert_eq!(sqlx_count, 35);
+    assert_eq!(sqlx_count, 36);
+}
+
+// Reproduce the SQLx history of deployed commit a6161ec (PR #61), rather
+// than starting every upgrade test from an empty or unversioned database.
+async fn apply_deployed_classroom_schema(pool: &trocode_api::PgPool) {
+    let sources = [
+        include_str!("../migrations/001_hosted_sessions.sql"),
+        include_str!("../migrations/002_access_codes.sql"),
+        include_str!("../migrations/003_model_usage_budgets.sql"),
+        include_str!("../migrations/004_audio_transcription_usage.sql"),
+        include_str!("../migrations/005_usage_plans_and_rate_limits.sql"),
+        include_str!("../migrations/006_agent_turns.sql"),
+        include_str!("../migrations/007_free_usage_plan.sql"),
+        include_str!("../migrations/008_knowledge_spaces.sql"),
+        include_str!("../migrations/009_knowledge_sources.sql"),
+        include_str!("../migrations/010_knowledge_activities.sql"),
+        include_str!("../migrations/011_admin_access_controls.sql"),
+        include_str!("../migrations/012_retrievable_access_codes.sql"),
+        include_str!("../migrations/013_access_code_lifecycle.sql"),
+        include_str!("../migrations/014_agent_runtime.sql"),
+        include_str!("../migrations/015_intent_authorization.sql"),
+        include_str!("../migrations/016_admin_code_grants.sql"),
+        include_str!("../migrations/017_free_plan_onboarding.sql"),
+        include_str!("../migrations/018_classroom_roles.sql"),
+        include_str!("../migrations/019_invite_idempotency.sql"),
+        include_str!("../migrations/020_live_classroom_room_flow.sql"),
+        include_str!("../migrations/021_organization_managed_access.sql"),
+        include_str!("../migrations/022_organization_profile_settings.sql"),
+        include_str!("../migrations/023_user_knowledge_spaces_access.sql"),
+        include_str!("../migrations/024_companion_image_generation.sql"),
+        include_str!("../migrations/025_agent_runtime_contract_v3.sql"),
+        include_str!("../migrations/026_organization_home_banners.sql"),
+        include_str!("../migrations/027_mcp_connectors.sql"),
+        include_str!("../migrations/028_class_sessions.sql"),
+        include_str!("../migrations/029_class_session_materials.sql"),
+        include_str!("../migrations/030_remove_agent_approval_policy.sql"),
+        include_str!("../migrations/031_agents_sdk_orchestrator.sql"),
+        include_str!("../migrations/032_orchestrator_public_protocol_digest.sql"),
+        include_str!("../migrations/033_agent_run_tool_snapshots.sql"),
+        include_str!("../migrations/034_classroom_explain_assignment_directive.sql"),
+    ];
+    let migrations: Vec<_> = sources
+        .iter()
+        .enumerate()
+        .map(|(index, sql)| {
+            Migration::new(
+                i64::try_from(index + 1).unwrap(),
+                Cow::Borrowed("deployed history"),
+                MigrationType::Simple,
+                Cow::Borrowed(*sql),
+                false,
+            )
+        })
+        .collect();
+    assert_eq!(
+        migrations
+            .last()
+            .unwrap()
+            .checksum
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        "1bdfe5cdfbec5480c7f942ab8c0e03a6e2e49b853530b0b449bdc8e206dc72651a49ce658f8fda167b563320c68d652b"
+    );
+    Migrator {
+        migrations: Cow::Owned(migrations),
+        ..Migrator::DEFAULT
+    }
+    .run(pool)
+    .await
+    .expect("install deployed PR #61 history");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn upgrades_deployed_classroom_history_without_rewriting_checksums() {
+    let _guard = DATABASE_TEST_LOCK.lock().await;
+    let pool = open_pool(&disposable_database_url()).await;
+    reset(&pool).await;
+    apply_deployed_classroom_schema(&pool).await;
+    query(
+        "INSERT INTO users(id,email,name)VALUES('upgrade-user','upgrade@example.test','Preserved')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let history_sql =
+        "SELECT jsonb_agg(to_jsonb(m) ORDER BY version) FROM _sqlx_migrations m WHERE version<=34";
+    let before: serde_json::Value = query_scalar(history_sql).fetch_one(&pool).await.unwrap();
+    db::migrate(&pool)
+        .await
+        .expect("upgrade from deployed PR #61");
+    db::migrate(&pool).await.expect("restart after upgrade");
+    let after: serde_json::Value = query_scalar(history_sql).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        after, before,
+        "existing SQLx checksums and history must remain unchanged"
+    );
+    let name: String = query_scalar("SELECT name FROM users WHERE id='upgrade-user'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Preserved");
+    let count: i64 = query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 36);
+    for table in [
+        "knowledge_class_session_broadcasts",
+        "knowledge_classroom_guidance_starts",
+    ] {
+        let exists: bool = query_scalar("SELECT to_regclass($1) IS NOT NULL")
+            .bind(table)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(exists, "new table missing: {table}");
+    }
+    let constraint: String = query_scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='knowledge_run_directives'::regclass AND conname='knowledge_run_directives_kind_check'").fetch_one(&pool).await.unwrap();
+    assert!(constraint.contains("explain_assignment"));
+
+    // Corruption must still fail closed; the upgrade does not bypass SQLx validation.
+    query("UPDATE _sqlx_migrations SET checksum=decode('0001','hex') WHERE version=34")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(db::migrate(&pool).await.is_err());
 }

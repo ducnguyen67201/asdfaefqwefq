@@ -169,7 +169,13 @@ cannot claim the same broadcast twice. Stop releases local presentation even if
 status reporting is offline. Teacher activity counts describe explanation
 lifecycle; they are not attention, delivery acknowledgements or learning results.
 
-Deploy migrations 034/035 and their API before the desktop build. Capabilities
+Migration 034 is the immutable, previously deployed Run explanation directive
+migration from PR #61. Session broadcasts and individual guidance use migrations
+035/036. The upgrade preserves the deployed Run create/feed/claim contract and
+its consent-required directives; updated desktops can read those existing notices
+without automatically starting an explanation from them.
+
+Deploy migrations 035/036 and their API before the desktop build. Capabilities
 `classroomBroadcasts` and `classroomGuidance` each use contractVersion 1;
 `knowledgeSpaces` remains version 2. Absent capabilities keep the existing manual
 classroom workflow available. Rollback should disable the capabilities and retain

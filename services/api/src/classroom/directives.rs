@@ -204,7 +204,9 @@ impl ClassroomService {
         let state: String = authority.get("state");
         let delivery: String = authority.get("delivery");
         let kind: String = authority.get("kind");
-        if state != "open" || delivery != "auto_eligible" || kind != "open_url" {
+        let claimable = (kind == "open_url" && delivery == "auto_eligible")
+            || (kind == "explain_assignment" && delivery == "consent_required");
+        if state != "open" || !claimable {
             transaction.commit().await?;
             return Ok(Some(DirectiveClaimResponse::Ignored { execute: false }));
         }
@@ -223,11 +225,18 @@ impl ClassroomService {
             return Ok(Some(DirectiveClaimResponse::Ignored { execute: false }));
         };
         let payload: Value = authority.get("payload");
-        let url = payload_string(&payload, "url")?;
-        let origin = payload_string(&payload, "origin")?;
+        let (url, origin) = if kind == "open_url" {
+            (
+                Some(payload_string(&payload, "url")?),
+                Some(payload_string(&payload, "origin")?),
+            )
+        } else {
+            (None, None)
+        };
         transaction.commit().await?;
         Ok(Some(DirectiveClaimResponse::Execute {
             execute: true,
+            kind,
             url,
             origin,
             claimed_at,
@@ -296,6 +305,14 @@ fn directive_payload(
             "criterionIds": criterion_ids,
             "url": decision.url,
             "origin": decision.origin,
+        }),
+        DirectiveInput::ExplainAssignment {
+            instruction,
+            criterion_ids,
+        } => json!({
+            "kind": "explain_assignment",
+            "instruction": instruction,
+            "criterionIds": criterion_ids,
         }),
     }
 }

@@ -249,7 +249,65 @@ async fn teacher_and_student_complete_a_live_classroom_over_http() {
     )
     .await;
     assert_eq!(first_claim.body["execute"], true);
+    assert_eq!(first_claim.body["kind"], "open_url");
     assert_eq!(second_claim.body, json!({"execute":false}));
+
+    // The deployed PR #61 clients must retain their consent-gated Run API
+    // while updated clients use the independent session broadcast feed.
+    let explanation = call(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{}/runs/{}/directives", fixture.space_id, fixture.run_id),
+        Some(&fixture.teacher_token),
+        Some(json!({"clientId":Uuid::new_v4(),"directive":{
+            "kind":"explain_assignment","instruction":"Explain the loops exercise.","criterionIds":["loop"]
+        }})),
+    ).await;
+    assert_eq!(explanation.status, StatusCode::CREATED);
+    assert_eq!(explanation.body["delivery"], "consent_required");
+    let explanation_id = explanation.body["id"].as_str().unwrap();
+    let feed = call(
+        &router,
+        Method::GET,
+        &format!("/v1/attempts/{attempt_id}/directives?sinceSequence=0"),
+        Some(&fixture.student_token),
+        None,
+    )
+    .await;
+    assert_eq!(feed.status, StatusCode::OK);
+    assert!(
+        feed.body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["kind"] == "explain_assignment")
+    );
+    for execute in [true, false] {
+        let claimed = call(
+            &router,
+            Method::POST,
+            &format!("/v1/attempts/{attempt_id}/directives/{explanation_id}/claim"),
+            Some(&fixture.student_token),
+            Some(json!({"clientId":Uuid::new_v4()})),
+        )
+        .await;
+        assert_eq!(claimed.status, StatusCode::OK);
+        assert_eq!(claimed.body["execute"], execute);
+        if execute {
+            assert_eq!(claimed.body["kind"], "explain_assignment");
+            assert!(claimed.body.get("url").is_none());
+            assert!(claimed.body.get("origin").is_none());
+        }
+    }
+    let unchanged = call(
+        &router,
+        Method::GET,
+        "/v1/live-rooms/current",
+        Some(&fixture.student_token),
+        None,
+    )
+    .await;
+    assert_eq!(unchanged.body["session"]["attemptState"], "in_progress");
 
     let help = call(
         &router,
