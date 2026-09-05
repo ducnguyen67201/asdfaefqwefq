@@ -6,6 +6,7 @@ import type {
 
 import { translate } from './app-language';
 import {
+  displayedClassroomRole,
   groupClassWorkspaces,
   hasAssignedClassroomRole,
 } from './class-workspace';
@@ -31,15 +32,16 @@ export function SidebarClassWorkspaceSwitcher({
 
   const t = (message: string) => translate(appLanguage, message);
   const groupedSpaces = groupClassWorkspaces(spaces);
+  const displayedRole = displayedClassroomRole(classroomRole, currentSpace);
 
   return (
     <div className="sidebar-class-workspace">
       <span
         aria-label={t('Your classroom role')}
-        className={`sidebar-class-workspace__role sidebar-class-workspace__role--${classroomRole}`}
+        className={`sidebar-class-workspace__role sidebar-class-workspace__role--${displayedRole}`}
       >
         <i aria-hidden="true" />
-        {t(classroomRole === 'teacher' ? 'Teacher' : 'Student')}
+        {t(displayedRole === 'teacher' ? 'Teacher' : 'Student')}
       </span>
       <details className="sidebar-class-workspace__picker">
         <summary aria-label={t('Switch class workspace')}>

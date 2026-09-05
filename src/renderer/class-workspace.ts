@@ -3,6 +3,16 @@ import type {
   KnowledgeSpaceSummary,
 } from '../shared/contracts';
 
+// Membership is authoritative within a class; account roles describe access
+// across classes (a Teacher account can still be a participant in a class).
+export function displayedClassroomRole(
+  accountRole: ClassroomAccountRole,
+  currentSpace: KnowledgeSpaceSummary | null,
+): ClassroomAccountRole {
+  if (!currentSpace) return accountRole;
+  return currentSpace.role === 'participant' ? 'student' : 'teacher';
+}
+
 export function hasAssignedClassroomRole(
   role: ClassroomAccountRole,
 ): role is Exclude<ClassroomAccountRole, 'unassigned'> {

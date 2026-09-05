@@ -69,6 +69,7 @@ import {
 import { PermissionOnboarding } from './PermissionOnboarding';
 import { SettingsPage } from './SettingsPage';
 import { SidebarClassWorkspaceSwitcher } from './SidebarClassWorkspaceSwitcher';
+import { SidebarPlanTitle } from './SidebarPlanTitle';
 import type { SpaceDetailTab } from './SpaceDetailPage';
 import {
   computerPermissionWaitPresentation,
@@ -2692,7 +2693,12 @@ export function App({
         <div className="brand">
           <BrandMark />
           <div className="brand-copy">
-            <strong>{planTitle(displayedPlan)}</strong>
+            <SidebarPlanTitle
+              appLanguage={appLanguageDraft}
+              classroomRole={classroomRole}
+              currentSpace={selectedClassSpace}
+              plan={displayedPlan}
+            />
             <span>
               {usagePercent === null
                 ? t('Desktop agent')

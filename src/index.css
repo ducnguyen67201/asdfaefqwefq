@@ -2937,6 +2937,19 @@ textarea:focus-visible {
   letter-spacing: 0;
 }
 
+.brand-plan-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 5px;
+}
+
+.brand-plan-role {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .sidebar-class-workspace {
   display: grid;
   gap: 7px;
