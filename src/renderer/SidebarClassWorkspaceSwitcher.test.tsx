@@ -101,4 +101,24 @@ describe('SidebarClassWorkspaceSwitcher', () => {
     expect(markup).toContain('Switch class workspace');
     expect(markup).toContain('All class workspaces');
   });
+
+  it('shows Student for a Teacher account learning in the selected class', () => {
+    const markup = renderToStaticMarkup(
+      <SidebarClassWorkspaceSwitcher
+        appLanguage="en"
+        classroomRole="teacher"
+        currentSpace={spaces[0] ?? null}
+        onManageMembers={vi.fn()}
+        onOpen={vi.fn()}
+        onOpenAll={vi.fn()}
+        spaces={spaces}
+      />,
+    );
+
+    expect(markup).toContain('sidebar-class-workspace__role--student');
+    expect(markup).toContain('Student</span>');
+    expect(markup).not.toContain('Teacher</span>');
+    expect(markup).toContain('Teaching');
+    expect(markup).toContain('Learning');
+  });
 });

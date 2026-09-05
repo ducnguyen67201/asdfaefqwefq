@@ -560,7 +560,7 @@ export function SpaceDetailPage({
                           member.role === 'participant'
                             ? 'Student'
                             : member.role === 'owner'
-                              ? 'Class owner'
+                              ? 'Teacher · Owner'
                               : 'Teacher',
                         )}
                       </span>
