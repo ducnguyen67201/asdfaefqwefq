@@ -525,6 +525,15 @@ and body "The desktop loop works".`
 
 ## Quality checks
 
+Finish implementation and source review before running the validation cycle in
+CI. Shared lint and typecheck run once per revision; renderer-only PRs skip native
+packaging. Backend, native, dependency, build, and unknown changes retain full
+verification. See [the CI workflow guide](docs/testing/ci-workflow.md) for the
+check matrix, migration safeguards, and required check names.
+
+These commands remain available for explicitly requested local validation or
+focused failure diagnosis; they are not a checklist to repeat before each commit:
+
 ```bash
 npm run check
 npm run test:coverage
@@ -533,8 +542,8 @@ npm run bazel:check
 ```
 
 `npm run bazel:check` builds, tests, formats, and lints the in-place Rust backend
-candidate, including the live-classroom route family. Run it for Rust or Bazel
-changes; it is intentionally not part of the Electron release workflow.
+candidate, including the live-classroom route family. CI runs it for full changes;
+it is intentionally not part of the Electron release workflow.
 
 `npm run make` generates a distributable for the current operating system.
 Development commands inject Doppler `dev`; package, make, and publish inject

@@ -87,6 +87,16 @@ function executeNpm(args: string[], cwd: string) {
   });
 }
 
+async function timePackagingStep(name: string, operation: () => Promise<void>): Promise<void> {
+  const startedAt = performance.now();
+  console.log(`[package] ${name}: started`);
+  try {
+    await operation();
+  } finally {
+    console.log(`[package] ${name}: ${((performance.now() - startedAt) / 1000).toFixed(1)}s elapsed`);
+  }
+}
+
 async function compileRustDesktopEngine(
   platform: ForgePlatform,
   arch: ForgeArch,
@@ -109,7 +119,11 @@ async function compileRustDesktopEngine(
 
 async function stageAgentRuntime(): Promise<void> {
   const packageRoot = path.resolve(__dirname, 'services/agent-runtime');
-  await executeNpm(['run', 'build'], packageRoot);
+  // The CI source gate checked the SDK already; emit its bundle without checking
+  // the same types again on both native build hosts. Other builds stay unchanged.
+  const checkedByCi = process.env.CI === 'true'
+    && process.env.TROCODE_CI_TYPECHECK_PASSED === 'true';
+  await executeNpm(checkedByCi ? ['run', 'build', '--', '--noCheck'] : ['run', 'build'], packageRoot);
   await rm(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true, force: true });
   await mkdir(AGENT_RUNTIME_STAGE_DIRECTORY, { recursive: true });
   await Promise.all([
@@ -260,8 +274,8 @@ const config: ForgeConfig = {
     },
     prePackage: async (_forgeConfig, platform, arch) => {
       await Promise.all([
-        compileRustDesktopEngine(platform, arch),
-        stageAgentRuntime(),
+        timePackagingStep('Rust release build', () => compileRustDesktopEngine(platform, arch)),
+        timePackagingStep('SDK build and staging', stageAgentRuntime),
       ]);
     },
     packageAfterCopy: async (_forgeConfig, buildPath, _version, platform, arch) => {

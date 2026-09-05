@@ -4,13 +4,64 @@ on:
   pull_request:
   push:
     branches: [main]
+  merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  # Cancel obsolete PR revisions, but let each main/merge-queue run finish.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  rust-backend:
+  preflight:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+      rust: ${{ steps.plan.outputs.rust }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test CI routing and migration safeguards
+        run: node --test scripts/ci-plan.test.mts
+      - name: Check migration history and select verification
+        id: plan
+        run: node scripts/ci-plan.mts
+
+  source:
+    needs: preflight
+    if: needs.preflight.outputs.source == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            services/agent-runtime/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix services/agent-runtime
+      - run: npm audit --omit=dev
+      - run: npm audit --prefix services/agent-runtime --omit=dev
+      - name: Shared lint, typecheck, and TypeScript tests
+        run: npm run check:source
+
+  rust-backend:
+    needs: preflight
+    if: needs.preflight.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -28,6 +79,15 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:trocode_test_password@127.0.0.1:5432/trocode_test
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: npm run api:fmt
+      - run: npm run api:audit
       - uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
@@ -56,37 +116,74 @@ jobs:
           --test_arg=--test-threads=1
           //services/api:http_compat_test
       - run: bazel build --config=ci //services/api:trocode_api
+      - name: Verify runtime versions and Rust-only script layout
+        run: |
+          bazel run --config=ci //services/api:trocode_api -- agent-runtime-versions --repository-root "$GITHUB_WORKSPACE"
+          bazel run --config=ci //services/api:trocode_api -- rust-only-check --repository-root "$GITHUB_WORKSPACE"
 
   verify:
+    # Preserve both existing required check names, including for docs/UI PRs.
+    # Explicitly propagate upstream failures: a skipped job alone is not a gate.
+    needs: [preflight, source, rust-backend]
+    if: always()
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Require all applicable upstream checks
+        shell: bash
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          SOURCE_RESULT: ${{ needs.source.result }}
+          RUST_RESULT: ${{ needs.rust-backend.result }}
+          SOURCE_REQUIRED: ${{ needs.preflight.outputs.source }}
+          RUST_REQUIRED: ${{ needs.preflight.outputs.rust }}
+          DESKTOP_REQUIRED: ${{ needs.preflight.outputs.desktop }}
+        run: |
+          test "$PREFLIGHT_RESULT" = success
+          case "$SOURCE_REQUIRED:$RUST_REQUIRED:$DESKTOP_REQUIRED" in
+            true:true:true|true:false:false|false:false:false) ;;
+            *) echo 'Missing or inconsistent check plan'; exit 1 ;;
+          esac
+          if [ "$SOURCE_REQUIRED" = true ]; then test "$SOURCE_RESULT" = success; fi
+          if [ "$RUST_REQUIRED" = true ]; then test "$RUST_RESULT" = success; fi
+      - name: Record why native packaging is unnecessary
+        if: needs.preflight.outputs.desktop != 'true'
+        shell: bash
+        run: echo 'Docs or renderer-only PR; applicable shared checks passed. Native packaging runs for native/build/backend changes and on main.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v4
+        if: needs.preflight.outputs.desktop == 'true'
       - uses: actions/setup-node@v4
+        if: needs.preflight.outputs.desktop == 'true'
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            services/agent-runtime/package-lock.json
       - uses: dtolnay/rust-toolchain@master
+        if: needs.preflight.outputs.desktop == 'true'
         with:
           toolchain: 1.97.1
-          components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
+        if: needs.preflight.outputs.desktop == 'true'
         with:
           workspaces: .
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit
       - uses: dopplerhq/cli-action@v4
+        if: needs.preflight.outputs.desktop == 'true'
       - run: npm ci
+        if: needs.preflight.outputs.desktop == 'true'
       - run: npm ci --prefix services/agent-runtime
-      - run: npm audit --omit=dev
-      - run: npm audit --prefix services/agent-runtime --omit=dev
-      - run: npm run check
-      - run: npm --prefix services/agent-runtime run build
-      - run: npm run api:build
-      - run: npm run package
+        if: needs.preflight.outputs.desktop == 'true'
+      - name: Native platform regression tests
+        if: needs.preflight.outputs.desktop == 'true'
+        run: npm run test:typescript && npm run api:test
+      - name: Build and package once for this platform
+        if: needs.preflight.outputs.desktop == 'true'
+        run: npm run package:ci
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          TROCODE_CI_TYPECHECK_PASSED: 'true'
