@@ -30,7 +30,12 @@ reference in `services/api/src/db.rs`. This is a static safeguard; it does not
 query a live database or prove that the new SQL is valid. The existing PostgreSQL
 upgrade/restart and HTTP integration tests run in the Rust job for full changes.
 
-`source` runs SDK checks, root lint, root typecheck, and TS tests on Linux. The
+`source` runs SDK checks, root lint, root typecheck, and TS tests on Linux. It also
+bundles both renderer entries with the actual webpack loaders to catch missing
+CSS/assets and unresolved imports, including on reduced renderer plans. A real
+missing-asset regression test verifies that the bundle gate fails correctly.
+This lightweight build omits minification, native packaging, and duplicate
+typechecking. The
 Rust job runs formatting, audit, Bazel lint/tests/build, PostgreSQL integration,
 runtime-version checks, and the Rust-only script-layout check. These two jobs
 run concurrently after preflight.

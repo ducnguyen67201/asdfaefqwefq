@@ -56,6 +56,8 @@ jobs:
       - run: npm audit --prefix services/agent-runtime --omit=dev
       - name: Shared lint, typecheck, and TypeScript tests
         run: npm run check:source
+      - name: Verify renderer bundle and missing-asset regression
+        run: npm run check:renderer
 
   rust-backend:
     needs: preflight

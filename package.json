@@ -53,7 +53,8 @@
     "check": "npm run agent-sdk:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test",
     "start:test": "doppler run --project tro-app --config stg -- node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-app.mts start",
     "package:test": "doppler run --project tro-app --config stg -- node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-app.mts package",
-    "check:source": "npm run agent-sdk:check && npm run lint && npm run typecheck && npm run test:typescript"
+    "check:source": "npm run agent-sdk:check && npm run lint && npm run typecheck && npm run test:typescript",
+    "check:renderer": "node --test scripts/check-renderer-bundle.test.mts && node scripts/check-renderer-bundle.mts"
   },
   "engines": {
     "node": ">=24.12.0"
