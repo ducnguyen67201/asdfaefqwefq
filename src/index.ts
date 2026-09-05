@@ -682,6 +682,7 @@ const appUpdateService = new AppUpdateService({
   prepareToInstall: prepareForUpdateInstall,
   repository: 'ducnguyen67201/TroCode',
   updater: autoUpdater,
+  updatesEnabled: !TROCODE_IS_TEST_APP,
 });
 const COMPANION_SIZE = { height: 112, width: 112 } as const;
 const COMPANION_WANDER_DURATION_MS = 3_200;

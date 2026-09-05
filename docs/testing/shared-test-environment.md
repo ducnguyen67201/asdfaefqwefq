@@ -76,7 +76,9 @@ run without Doppler on the receiving computer; build it natively for that
 computer's OS and CPU architecture. Server-side secrets are not compiled in.
 The test app uses the same isolated profile whether launched through Forge or
 as a package. Package creation validates configuration but does not require the
-API to be online. Signing and distribution requirements remain platform-specific.
+API to be online. Signing credentials are forwarded only to packaging.
+Production auto-updates are disabled for Tro Test; install a new test build
+manually. Signing and distribution requirements remain platform-specific.
 
 ## Operations
 
@@ -129,7 +131,7 @@ separate database, bucket, and session keys. No production data was copied.
 - The test bucket accepted an owned smoke object and returned its expected
   size via HEAD; the object was deleted afterward.
 - `npm run check`, `npm run package`, and `npm run package:test` passed.
-  Desktop coverage: 911 tests; Agents SDK: 24 tests; enabled Rust checks/tests
+  Desktop coverage: 914 tests; Agents SDK: 24 tests; enabled Rust checks/tests
   passed. Runtime npm audit found zero vulnerabilities; the full dependency
   tree retained three pre-existing moderate development-tool advisories.
 - Test package metadata uses `com.trocode.desktop.test`; its ASAR contains the

@@ -26,6 +26,7 @@ interface AppUpdateServiceOptions {
     repository: string;
   }): Promise<WindowsUpdateRelease | null>;
   updater: AutoUpdater;
+  updatesEnabled?: boolean;
 }
 
 type AppUpdateStatusListener = (status: AppUpdateStatus) => void;
@@ -33,9 +34,18 @@ type AppUpdateStatusListener = (status: AppUpdateStatus) => void;
 function initialStatus(
   options: Pick<
     AppUpdateServiceOptions,
-    'architecture' | 'currentVersion' | 'isPackaged' | 'platform'
+    'architecture' | 'currentVersion' | 'isPackaged' | 'platform' | 'updatesEnabled'
   >,
 ): AppUpdateStatus {
+  if (options.updatesEnabled === false) {
+    return AppUpdateStatusSchema.parse({
+      currentVersion: options.currentVersion,
+      message: 'Updates are disabled for this installation. Install a new test build manually.',
+      phase: 'unsupported',
+      targetVersion: null,
+    });
+  }
+
   if (!options.isPackaged) {
     return AppUpdateStatusSchema.parse({
       currentVersion: options.currentVersion,
