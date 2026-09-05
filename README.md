@@ -238,6 +238,14 @@ the Google desktop OAuth client metadata, PostHog project token, and
 application. Those secrets belong only in the hosted API's Railway runtime;
 Doppler `tro-app/prd` is their administrative source.
 
+### Shared test environment
+
+Run `npm run start:test` on both computers to connect the local desktop to the
+shared Railway test API using Doppler `tro-app/stg`. It starts **Tro Test** with
+separate login storage; no local API or Docker is required. See the
+[two-computer test guide](docs/testing/shared-test-environment.md) for initial
+setup, teacher/student roles, and `npm run package:test`.
+
 ### Hosted production API
 
 The production API runs at

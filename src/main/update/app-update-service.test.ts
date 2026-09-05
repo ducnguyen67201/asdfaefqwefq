@@ -52,6 +52,26 @@ function createService(
 }
 
 describe('AppUpdateService', () => {
+  it.each(['darwin', 'win32'] as const)('never contacts or installs production updates for a disabled %s test build', async (platform) => {
+    const resolveWindowsRelease = vi.fn();
+    const { autoUpdater, prepareToInstall, service } = createService({
+      architecture: 'x64',
+      platform,
+      updatesEnabled: false,
+      resolveWindowsRelease,
+    });
+    expect(service.start().phase).toBe('unsupported');
+    expect((await service.checkForUpdates()).phase).toBe('unsupported');
+    autoUpdater.emitter.emit('update-downloaded', {}, '', 'v99.0.0');
+    await expect(service.restartAndInstall()).rejects.toThrow('No downloaded update');
+    expect(service.getStatus().phase).toBe('unsupported');
+    expect(resolveWindowsRelease).not.toHaveBeenCalled();
+    expect(autoUpdater.setFeedURL).not.toHaveBeenCalled();
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(prepareToInstall).not.toHaveBeenCalled();
+  });
+
   it('configures a platform and architecture-scoped HTTPS feed', () => {
     const { autoUpdater, service } = createService();
 
