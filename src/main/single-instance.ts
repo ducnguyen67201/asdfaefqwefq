@@ -13,12 +13,12 @@ export interface SingleInstanceApp {
   requestSingleInstanceLock(): boolean;
 }
 
-export function isolateDevelopmentInstance(app: InstanceScopeApp): void {
-  if (app.isPackaged) return;
+export function isolateDevelopmentInstance(app: InstanceScopeApp, isTest = false): void {
+  if (app.isPackaged && !isTest) return;
 
   app.setPath(
     'userData',
-    path.join(app.getPath('appData'), `${app.getName()} Development`),
+    path.join(app.getPath('appData'), isTest ? 'Tro Test' : `${app.getName()} Development`),
   );
 }
 

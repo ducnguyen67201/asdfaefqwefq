@@ -27,6 +27,9 @@ export const mainConfig: Configuration = {
   plugins: [
     ...plugins,
     new DefinePlugin({
+      'process.env.TROCODE_APP_ENV': JSON.stringify(
+        process.env.TROCODE_APP_ENV ?? '',
+      ),
       'process.env.GOOGLE_OAUTH_CLIENT_ID': JSON.stringify(
         process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
       ),

@@ -33,6 +33,7 @@ import { LocalAgentRuntime } from './main/agent-runtime/agent-runtime-adapter';
 import { EncryptedAgentStateStore } from './main/agent-runtime/encrypted-agent-state-store';
 import { FileAnalyticsIdentityStore } from './main/analytics/analytics-identity-store';
 import { AnalyticsService } from './main/analytics/analytics-service';
+import { TROCODE_EXECUTABLE_NAME, TROCODE_IS_TEST_APP } from './main/app-identity';
 import { ApplicationSurfaceVerifier } from './main/application/application-surface-verifier';
 import { DesktopApplicationLauncher } from './main/application/desktop-application-launcher';
 import { TaskApplicationService } from './main/application/task-application-service';
@@ -193,7 +194,7 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
-app.setName('Tro');
+app.setName(TROCODE_EXECUTABLE_NAME);
 protocol.registerSchemesAsPrivileged([
   {
     privileges: {
@@ -213,7 +214,7 @@ protocol.registerSchemesAsPrivileged([
     scheme: TROCODE_COMPANION_SCHEME,
   },
 ]);
-isolateDevelopmentInstance(app);
+isolateDevelopmentInstance(app, TROCODE_IS_TEST_APP);
 
 const hasSingleInstanceLock = initializeSingleInstance(app, () => {
   if (isShuttingDown) return;
@@ -2371,7 +2372,7 @@ const createWindow = (): void => {
     minHeight: 680,
     minWidth: 960,
     show: false,
-    title: 'Tro',
+    title: TROCODE_EXECUTABLE_NAME,
     ...(process.platform === 'darwin'
       ? {
           titleBarStyle: 'hiddenInset' as const,
@@ -2397,6 +2398,9 @@ const createWindow = (): void => {
       webSecurity: true,
     },
   });
+  if (TROCODE_IS_TEST_APP) {
+    nextMainWindow.on('page-title-updated', (event) => event.preventDefault());
+  }
   mainWindow = nextMainWindow;
   configureMicrophonePermissions(nextMainWindow);
   removeMainWindowCloseBehavior?.();
@@ -2530,7 +2534,7 @@ const createWindow = (): void => {
 
   void nextMainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
-  if (!app.isPackaged) nextMainWindow.webContents.openDevTools({ mode: 'detach' });
+  if (!app.isPackaged && !TROCODE_IS_TEST_APP) nextMainWindow.webContents.openDevTools({ mode: 'detach' });
 };
 
 function publishCursorBuddySnapshot(snapshot: CursorBuddySnapshot): void {

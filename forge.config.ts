@@ -22,6 +22,7 @@ import {
   TROCODE_APP_BUNDLE_ID,
   TROCODE_EXECUTABLE_NAME,
   TROCODE_HELPER_BUNDLE_ID,
+  TROCODE_IS_TEST_APP,
 } from './src/main/app-identity';
 import { MACOS_VOICE_SHORTCUT_HELPER_NAME } from './src/main/voice/macos-voice-shortcut-watcher';
 import { mainConfig } from './webpack.main.config';
@@ -198,6 +199,7 @@ async function stageCuaRuntime(
 
 const config: ForgeConfig = {
   packagerConfig: {
+    name: TROCODE_EXECUTABLE_NAME,
     appBundleId: TROCODE_APP_BUNDLE_ID,
     executableName: TROCODE_EXECUTABLE_NAME,
     extraResource: [
@@ -239,8 +241,8 @@ const config: ForgeConfig = {
       unpackDir: CUA_RUNTIME_DIRECTORY,
     },
     extendInfo: {
-      CFBundleDisplayName: 'Tro',
-      CFBundleName: 'Tro',
+      CFBundleDisplayName: TROCODE_EXECUTABLE_NAME,
+      CFBundleName: TROCODE_EXECUTABLE_NAME,
       NSMicrophoneUsageDescription:
         'Tro uses the microphone only during a voice turn started with a voice shortcut.',
     },
@@ -334,9 +336,9 @@ const config: ForgeConfig = {
         "media-src 'self' trocode-audio:",
         "connect-src 'self' https://api.openai.com ws://localhost:* http://localhost:*",
       ].join('; '),
-      loggerPort: 9100,
+      loggerPort: TROCODE_IS_TEST_APP ? 9101 : 9100,
       mainConfig,
-      port: 3010,
+      port: TROCODE_IS_TEST_APP ? 3011 : 3010,
       renderer: {
         config: rendererConfig,
         entryPoints: [

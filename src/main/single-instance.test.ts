@@ -77,3 +77,16 @@ describe('isolateDevelopmentInstance', () => {
     expect(app.setPath).not.toHaveBeenCalled();
   });
 });
+
+describe('test instance storage', () => {
+  it.each([true, false])('isolates test credentials and locks when packaged=%s', (isPackaged) => {
+    const app = {
+      getName: () => 'Tro Test',
+      getPath: () => '/application-support',
+      isPackaged,
+      setPath: vi.fn(),
+    };
+    isolateDevelopmentInstance(app, true);
+    expect(app.setPath).toHaveBeenCalledWith('userData', path.join('/application-support', 'Tro Test'));
+  });
+});
