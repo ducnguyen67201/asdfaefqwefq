@@ -29,6 +29,7 @@
     "bazel:check": "bazel test --config=ci //:buildifier_test //services/api/... && bazel build --config=ci //services/api:clippy //services/agent-runtime:local_agent_runtime_sources",
     "cua:report": "npm run engine -- cua-report",
     "package": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge package",
+    "package:ci": "npm run admin:build && doppler run --project tro-app --config prd --preserve-env=CI,TROCODE_CI_TYPECHECK_PASSED -- npm exec -- electron-forge package",
     "package:dev": "npm run admin:build && doppler run --project tro-app --config dev -- npm exec -- electron-forge package",
     "make": "npm run admin:build && doppler run --project tro-app --config prd -- npm exec -- electron-forge make",
     "make:dev": "npm run admin:build && doppler run --project tro-app --config dev -- npm exec -- electron-forge make",
@@ -45,12 +46,15 @@
     "api:audit": "cargo audit --file Cargo.lock",
     "api:build": "npm run admin:build && cargo build --manifest-path services/api/Cargo.toml --release --locked",
     "test": "vitest run && npm run api:test",
+    "test:typescript": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:rust-engine": "npm run engine -- rust-only-check",
     "check": "npm run agent-sdk:check && npm run admin:build && npm run agent:runtime-versions && npm run check:rust-engine && npm run lint && npm run typecheck && npm run api:fmt && npm run api:lint && npm run api:audit && npm run test",
     "start:test": "doppler run --project tro-app --config stg -- node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-app.mts start",
-    "package:test": "doppler run --project tro-app --config stg -- node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-app.mts package"
+    "package:test": "doppler run --project tro-app --config stg -- node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-app.mts package",
+    "check:source": "npm run agent-sdk:check && npm run lint && npm run typecheck && npm run test:typescript",
+    "check:renderer": "node --test scripts/check-renderer-bundle.test.mts && node scripts/check-renderer-bundle.mts"
   },
   "engines": {
     "node": ">=24.12.0"

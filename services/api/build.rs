@@ -1,4 +1,5 @@
 fn main() {
     println!("cargo:rerun-if-changed=migrations");
-    println!("cargo:rerun-if-changed=public");
+    // Watching the removed `public` directory makes every Cargo invocation dirty.
+    println!("cargo:rerun-if-changed=admin-dist");
 }
