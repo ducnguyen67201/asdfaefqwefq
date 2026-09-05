@@ -127,7 +127,8 @@ jobs:
     # Preserve both existing required check names, including for docs/UI PRs.
     # Explicitly propagate upstream failures: a skipped job alone is not a gate.
     needs: [preflight, source, rust-backend]
-    if: always()
+    # Still propagate failures, but allow superseded runs to be cancelled.
+    if: ${{ !cancelled() }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
