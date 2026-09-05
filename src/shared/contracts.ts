@@ -138,6 +138,17 @@ const ClassroomPublicUrlSchema = z
   });
 
 export const ClassroomDirectiveSchema = z.discriminatedUnion('kind', [
+  // The deployed Run feed may contain these even when the teacher now uses
+  // session broadcasts. Reading a legacy notice grants no execution permission.
+  z.object({
+    id: z.string().uuid(),
+    sequence: z.number().int().nonnegative(),
+    kind: z.literal('explain_assignment'),
+    delivery: z.literal('consent_required'),
+    instruction: z.string().trim().min(1).max(4_000),
+    criterionIds: z.array(z.string().trim().min(1).max(80)).max(40),
+    createdAt: z.string().datetime(),
+  }),
   z.object({
     id: z.string().uuid(),
     sequence: z.number().int().nonnegative(),

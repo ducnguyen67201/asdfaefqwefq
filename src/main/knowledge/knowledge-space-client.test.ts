@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { KnowledgeSpaceClient } from './knowledge-space-client';
 
 describe('KnowledgeSpaceClient capabilities', () => {
+  it('reads deployed explanation directives without rejecting the classroom feed', async () => {
+    const directive = {
+      id: '11111111-1111-4111-8111-111111111111', sequence: 1,
+      kind: 'explain_assignment', delivery: 'consent_required',
+      instruction: 'Explain the loops exercise.', criterionIds: ['loop'],
+      createdAt: '2026-09-05T08:00:00.000Z',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      attemptState: 'in_progress', runState: 'open', items: [directive], maxSequence: 1,
+    }), { status: 200 }));
+    const client = new KnowledgeSpaceClient('https://api.example.test', async () => 'token', fetchImpl);
+    await expect(client.listDirectives('22222222-2222-4222-8222-222222222222', 0))
+      .resolves.toMatchObject({ items: [directive], maxSequence: 1 });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0]?.[1]?.method).toBe('GET');
+  });
+
   it('authenticates the per-user capability request', async () => {
     const accessTokenProvider = vi.fn(async () => 'tro_live_token');
     const fetchImpl = vi.fn<typeof fetch>(

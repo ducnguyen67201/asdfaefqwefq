@@ -1074,6 +1074,7 @@ const CLASSROOM_VIETNAMESE_TRANSLATIONS: Readonly<Record<string, string>> = {
   'Move forward without losing context': 'Tiếp tục mà không mất ngữ cảnh',
   'Needs help now': 'Cần trợ giúp ngay',
   'New exercise from your teacher': 'Bài tập mới từ giáo viên',
+  'Explanation request from your teacher': 'Yêu cầu giải thích từ giáo viên',
   'New link from your teacher': 'Liên kết mới từ giáo viên',
   'No shared material': 'Chưa có tài liệu được chia sẻ',
   'Nothing active right now': 'Hiện không có bài nào đang làm',

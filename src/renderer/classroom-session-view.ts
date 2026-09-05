@@ -113,6 +113,8 @@ export function classroomDirectiveMessage(
   if (notice.status === 'opened') return 'Opened in your browser';
   if (notice.status === 'open_failed') return 'Could not open this link';
   if (notice.status === 'dismissed') return 'Dismissed';
+  if (notice.directive.kind === 'explain_assignment')
+    return 'Explanation request from your teacher';
   return notice.directive.kind === 'open_url'
     ? 'New link from your teacher'
     : 'New exercise from your teacher';
