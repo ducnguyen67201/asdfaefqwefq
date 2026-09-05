@@ -101,7 +101,13 @@ import type { SystemAudioDuckingService } from '../voice/system-audio-ducking-se
 import type { VoiceService } from '../voice/voice-service';
 import type { WorkspaceSelectionService } from '../workspace/workspace-selection-service';
 
+import {
+  registerClassroomBroadcastIpc,
+  type ClassroomBroadcastFeatures,
+} from './register-classroom-broadcast-ipc';
+
 interface IpcServices {
+  classroomBroadcastFeatures?: ClassroomBroadcastFeatures;
   agentActivityService: AgentActivityService;
   appUpdateService: Pick<
     AppUpdateService,
@@ -415,6 +421,8 @@ export function registerIpcHandlers(
     const status = await services.authService.signOut();
     services.fileSelectionService?.clear();
     services.activityProgressReporter?.clear();
+    services.classroomBroadcastFeatures?.context.clear();
+    await services.classroomBroadcastFeatures?.guidance.invalidate();
     services.classroomSessionService.clear();
     await services.onAuthSignedOut?.();
     return status;
@@ -1221,6 +1229,11 @@ export function registerIpcHandlers(
     mainWindow.webContents.send(IPC_CHANNELS.agentActivity, activity);
   };
   services.agentActivityService.on('activity', forwardAgentActivity);
+  const stopClassroomBroadcastIpc = registerClassroomBroadcastIpc(
+    mainWindow,
+    services.classroomBroadcastFeatures,
+    (event) => assertMembershipAuthorizedSender(event, mainWindow, services),
+  );
   const stopForwardingClassroomSession =
     services.classroomSessionService.onChange((session) => {
       if (mainWindow.isDestroyed()) return;
@@ -1244,6 +1257,7 @@ export function registerIpcHandlers(
     });
 
   return () => {
+    stopClassroomBroadcastIpc();
     stopForwardingClassroomDirective();
     stopForwardingClassroomSession();
     stopForwardingAppUpdateStatus();

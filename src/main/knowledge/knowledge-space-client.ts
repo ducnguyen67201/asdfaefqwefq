@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
 import {
+  TeacherClassroomContextSchema,
+  ClassroomBroadcastReceiptSchema,
+  ClassroomBroadcastFeedSchema,
+  GuidanceClaimSchema,
+  GuidanceSummarySchema,
+  type ClassroomBroadcastPayload,
+  type GuidanceStartRequest,
+  type GuidanceReport,
+} from '../../shared/classroom-broadcast-contracts';
+import {
   AssignedActivityListSchema,
   CreateKnowledgeSpaceResponseSchema,
   HostedAttemptContextSchema,
@@ -571,6 +581,94 @@ export class KnowledgeSpaceClient {
       `/v1/spaces/${spaceId}/runs/${runId}/dashboard${sinceSequence === undefined ? '' : `?sinceSequence=${sinceSequence}`}`,
       { method: 'GET' },
       KnowledgeDashboardSchema,
+    );
+  }
+
+  teacherClassroomContext(spaceId: string, sessionId: string) {
+    return this.request(
+      `/v1/spaces/${spaceId}/sessions/${sessionId}/teacher-context`,
+      { method: 'GET' },
+      TeacherClassroomContextSchema,
+    );
+  }
+  commitClassroomBroadcast(
+    spaceId: string,
+    sessionId: string,
+    clientId: string,
+    payload: ClassroomBroadcastPayload,
+  ) {
+    return this.request(
+      `/v1/spaces/${spaceId}/sessions/${sessionId}/broadcasts`,
+      this.json('POST', { clientId, payload }),
+      ClassroomBroadcastReceiptSchema,
+    );
+  }
+  lookupClassroomBroadcast(
+    spaceId: string,
+    sessionId: string,
+    clientId: string,
+  ) {
+    return this.request(
+      `/v1/spaces/${spaceId}/sessions/${sessionId}/broadcasts/by-client/${clientId}`,
+      { method: 'GET' },
+      z
+        .object({ receipt: ClassroomBroadcastReceiptSchema.nullable() })
+        .strict(),
+    );
+  }
+  listClassroomBroadcasts(
+    anchor: string,
+    afterSequence?: number,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      `/v1/attempts/${anchor}/session-broadcasts${afterSequence === undefined ? '' : `?afterSequence=${afterSequence}`}`,
+      {
+        method: 'GET',
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
+          : undefined,
+      },
+      ClassroomBroadcastFeedSchema,
+    );
+  }
+  resolveBroadcastAssignment(anchor: string, broadcast: string) {
+    return this.request(
+      `/v1/attempts/${anchor}/session-broadcasts/${broadcast}/assignment`,
+      { method: 'GET' },
+      z.object({ attemptId: z.string().uuid() }).strict(),
+    );
+  }
+  claimClassroomGuidance(
+    anchor: string,
+    broadcast: string,
+    input: GuidanceStartRequest,
+  ) {
+    return this.request(
+      `/v1/attempts/${anchor}/session-broadcasts/${broadcast}/guidance-starts`,
+      this.json('POST', input),
+      GuidanceClaimSchema,
+    );
+  }
+  lookupClassroomGuidance(anchor: string, broadcast: string) {
+    return this.request(
+      `/v1/attempts/${anchor}/session-broadcasts/${broadcast}/guidance-start`,
+      { method: 'GET' },
+      z.object({ claim: GuidanceClaimSchema.nullable() }).strict(),
+    );
+  }
+  reportClassroomGuidance(workSessionId: string, input: GuidanceReport) {
+    return this.request(
+      `/v1/work-sessions/${workSessionId}/classroom-guidance`,
+      this.json('PATCH', input),
+      GuidanceClaimSchema,
+    );
+  }
+  classroomGuidanceSummary(space: string, session: string, broadcast: string) {
+    return this.request(
+      `/v1/spaces/${space}/sessions/${session}/broadcasts/${broadcast}/guidance-summary`,
+      { method: 'GET' },
+      GuidanceSummarySchema,
     );
   }
 

@@ -179,3 +179,61 @@ describe('SDK tool adapter', () => {
     expect(admission.rejected[0]?.message).toContain('rewrote model schema');
   });
 });
+
+it('accepts the two strict classroom schemas without adding a send tool', () => {
+  const prepare: LocalRuntimeToolSpec = {
+    toolId: 'classroom.broadcast',
+    modelName: 'prepare_classroom_broadcast',
+    description: 'Prepare a teacher-reviewed classroom draft.',
+    operations: ['prepare'],
+    driverCatalogDigest: null,
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', enum: ['assignment', 'exercise', 'open_url'] },
+        studentAction: {
+          type: ['string', 'null'],
+          enum: ['open', 'explain', null],
+        },
+        assignmentNumber: {
+          type: ['integer', 'null'],
+          minimum: 1,
+          maximum: 50,
+        },
+        assignmentTitle: { type: ['string', 'null'], maxLength: 240 },
+        assignmentRunId: { type: ['string', 'null'], format: 'uuid' },
+        instruction: { type: ['string', 'null'], maxLength: 4000 },
+        url: { type: ['string', 'null'], maxLength: 2000 },
+      },
+      required: [
+        'kind',
+        'studentAction',
+        'assignmentNumber',
+        'assignmentTitle',
+        'assignmentRunId',
+        'instruction',
+        'url',
+      ],
+    },
+  };
+  const list: LocalRuntimeToolSpec = {
+    toolId: 'classroom.assignments',
+    modelName: 'list_session_assignments',
+    description: 'Read the bound session playlist.',
+    operations: ['list'],
+    driverCatalogDigest: null,
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+  };
+  const admission = new ToolSurfaceFactory().inspect([list, prepare], digest);
+  expect(admission.rejected).toEqual([]);
+  expect(admission.acceptedModelNames).toEqual([
+    'list_session_assignments',
+    'prepare_classroom_broadcast',
+  ]);
+});

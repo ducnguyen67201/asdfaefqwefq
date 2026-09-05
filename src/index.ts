@@ -94,11 +94,20 @@ import { ActivityContextService } from './main/knowledge/activity-context-servic
 import { ActivityProgressReporter } from './main/knowledge/activity-progress-reporter';
 import { createActivityToolAdapters } from './main/knowledge/activity-tool-adapters';
 import { ActivityWorkspacePreparationService } from './main/knowledge/activity-workspace-preparation-service';
+import {
+  classroomToolDefinitions,
+  createClassroomToolAdapters,
+} from './main/knowledge/classroom-agent-tools';
+import { ClassroomBroadcastDraftService } from './main/knowledge/classroom-broadcast-draft-service';
+import { ClassroomBroadcastService } from './main/knowledge/classroom-broadcast-service';
 import { ClassroomDirectiveService } from './main/knowledge/classroom-directive-service';
+import { ClassroomGuidanceCoordinator } from './main/knowledge/classroom-guidance-coordinator';
+import { canObserveClassroomExplanation } from './main/knowledge/classroom-guidance-policy';
 import { ClassroomSessionService } from './main/knowledge/classroom-session-service';
 import { FileSelectionService } from './main/knowledge/file-selection-service';
 import { KnowledgeSpaceClient } from './main/knowledge/knowledge-space-client';
 import { KnowledgeUploadOrchestrator } from './main/knowledge/knowledge-upload-service';
+import { TeacherClassroomContextService } from './main/knowledge/teacher-classroom-context-service';
 import {
   MembershipService,
   membershipRequiredForBuild,
@@ -285,6 +294,16 @@ const connectorClient = new ConnectorClient(
   () => authService.getAccessToken(),
   (url) => shell.openExternal(url, { activate: true }),
 );
+const teacherClassroomContextService = new TeacherClassroomContextService(
+  knowledgeSpaceClient,
+  async () => (await authService.assertSignedIn()).id,
+);
+const classroomBroadcastDraftService = new ClassroomBroadcastDraftService({
+  state: localAgentStateStore,
+  context: teacherClassroomContextService,
+  client: knowledgeSpaceClient,
+  owner: async () => (await authService.assertSignedIn()).id,
+});
 const activityContextService = new ActivityContextService(knowledgeSpaceClient);
 const activityProgressReporter = new ActivityProgressReporter(knowledgeSpaceClient);
 const classroomSessionService = new ClassroomSessionService(knowledgeSpaceClient);
@@ -294,6 +313,12 @@ const classroomDirectiveService = new ClassroomDirectiveService({
   openExternal: async (url) => shell.openExternal(url, { activate: true }),
 });
 classroomDirectiveService.start();
+const classroomBroadcastService = new ClassroomBroadcastService({
+  client: knowledgeSpaceClient,
+  sessionService: classroomSessionService,
+  openExternal: async (url) => shell.openExternal(url, { activate: true }),
+});
+classroomBroadcastService.start();
 const reportActivityProgress = (value: unknown): void => {
   void activityProgressReporter.report(TaskUpdateSchema.parse(value));
 };
@@ -309,6 +334,7 @@ const cuaService = new CuaService({
 const dictationService = new DictationService({ cua: cuaService });
 const runtimeToolRegistry = new RuntimeToolRegistry([
   ...defaultRuntimeToolDefinitions(),
+  ...classroomToolDefinitions(),
   ...createCuaSemanticToolDefinitions({
     browserPrepareAvailable: () =>
       cuaService.semanticCapabilities().browserPrepare,
@@ -436,6 +462,10 @@ const cursorBuddyController = new CursorBuddyController({
 const executionCoordinator = new TaskExecutionCoordinator({
   additionalToolAdapters: [
     ...createActivityToolAdapters(knowledgeSpaceClient),
+    ...createClassroomToolAdapters(
+      teacherClassroomContextService,
+      classroomBroadcastDraftService,
+    ),
     ...createWorkspaceRuntimeToolAdapters(),
     {
       id: 'task.interaction',
@@ -477,7 +507,7 @@ const coachDecisionClient = createAuthenticatedCoachDecisionClient({
   },
   apiBaseUrl: trocodeApiBaseUrl,
 });
-const coachRuntime = new CoachRuntime({
+const coachRuntime: CoachRuntime = new CoachRuntime({
   ...coachDecisionClient,
   startObservationSession: (taskId, signal) =>
     cuaService.startTaskSession(taskId, signal),
@@ -487,15 +517,40 @@ const coachRuntime = new CoachRuntime({
     });
   },
   observe: observeForCoach,
+  explanation: {
+    screenPermitted: async () => {
+      const status = await cuaService.getStatus();
+      return canObserveClassroomExplanation(status);
+    },
+    beforeRound: (taskId, signal) =>
+      classroomGuidanceCoordinator.beforeRound(taskId, signal),
+    consume: (taskId, kind, requestId) =>
+      classroomGuidanceCoordinator.consume(taskId, kind, requestId),
+    awaitContinuation: (taskId, text, signal) =>
+      classroomGuidanceCoordinator.awaitContinuation(taskId, text, signal),
+    observe: async (taskId, signal) => {
+      const cleanup = await prepareDesktopObservation();
+      try {
+        return (
+          (await cuaService.observeCurrentSurface(taskId, {}, signal)) ??
+          (await cuaService.observe(taskId, signal))
+        );
+      } finally {
+        await cleanup();
+      }
+    },
+  },
   onProgress: (taskId, progress) => {
     taskRuntime.updateCoachProgress(taskId, progress);
   },
   onStatus: (taskId, phase, summary) => {
     taskRuntime.applyCoachStatus(taskId, phase, summary);
+    classroomGuidanceCoordinator.onStatus(taskId, phase, summary);
     agentActivityService.publish(taskId, { kind: 'status', summary });
   },
   onTerminal: (taskId, terminal) => {
     taskRuntime.complete(taskId, terminal);
+    void classroomGuidanceCoordinator.onTerminal(taskId, terminal);
     agentActivityService.publish(taskId, {
       kind: terminal.status === 'completed' ? 'run_completed' : 'run_failed',
       summary: terminal.finalOutput ?? terminal.message,
@@ -563,19 +618,39 @@ const localAgentRuntime = new LocalAgentRuntime({
     taskApplicationService.finish(terminal.threadId);
   },
 });
-const taskApplicationService = new TaskApplicationService(
+const taskApplicationService: TaskApplicationService = new TaskApplicationService(
   taskRuntime,
   {
     activityContextService,
     activityProgressReporter,
     classroomSessionService,
     coachRuntime,
+  teacherClassroomContext: teacherClassroomContextService,
+  broadcastDrafts: classroomBroadcastDraftService,
+  onTaskCancelled: (taskId) =>
+    classroomGuidanceCoordinator.onTaskCancelled(taskId),
     currentOwnerId: async () => (await authService.assertSignedIn()).id,
     localRuntime: localAgentRuntime,
     state: localAgentStateStore,
     workspaceSelectionService,
+  });
+const classroomGuidanceCoordinator: ClassroomGuidanceCoordinator = new ClassroomGuidanceCoordinator({
+  broadcasts: classroomBroadcastService,
+  client: knowledgeSpaceClient,
+  tasks: taskApplicationService,
+  activity: activityContextService,
+  store: localAgentStateStore,
+  owner: async () => (await authService.assertSignedIn()).id,
+  screenPermitted: async () => {
+    const status = await cuaService.getStatus();
+    return canObserveClassroomExplanation(status);
   },
-);
+  language: async () => (await appPreferencesService.get()).appLanguage,
+  onExplanationText: (taskId, text) => {
+    taskRuntime.appendCoachExplanation(taskId, text);
+  },
+});
+classroomGuidanceCoordinator.start();
 const computerPermissionCoordinator = new ComputerPermissionCoordinator({
   connectIfPermitted: () => cuaService.connectIfPermitted(),
   getStatus: () => cuaService.getStatus(),
@@ -1564,6 +1639,7 @@ async function prepareLocalAgentRuntime(): Promise<void> {
       cuaDriverToolsRegistered = true;
     }
   }
+  await classroomGuidanceCoordinator.restore().catch(() => undefined);
   await taskApplicationService.restoreLocalTasks().catch((error: unknown) => {
     console.error('[local-agent-runtime] active task restoration failed.', error);
     return 0;
@@ -1726,6 +1802,9 @@ function prepareApplicationShutdown(): Promise<void> {
   taskPetService.stop();
   companionHoverTracker.stop();
   classroomDirectiveService.stop();
+  classroomBroadcastService.stop();
+  const classroomGuidanceShutdown = classroomGuidanceCoordinator.shutdown();
+  teacherClassroomContextService.clear();
   classroomSessionService.clear();
 
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
@@ -1761,6 +1840,7 @@ function prepareApplicationShutdown(): Promise<void> {
   });
   shutdownPromise = Promise.allSettled([
     executionShutdown,
+    classroomGuidanceShutdown,
     analyticsShutdown,
     systemAudioShutdown,
   ]).then(() => undefined);
@@ -1842,7 +1922,7 @@ function coordinateTaskPresentation(value: unknown): void {
     }
     while (knownPresentationTaskIds.size > MAX_TRACKED_PRESENTATION_TASKS) {
       const oldestTaskId = knownPresentationTaskIds.values().next().value as
-        | string
+        string
         | undefined;
       if (!oldestTaskId) break;
       knownPresentationTaskIds.delete(oldestTaskId);
@@ -2340,6 +2420,13 @@ const createWindow = (): void => {
     cuaService,
     dictationService,
     connectorClient,
+    classroomBroadcastFeatures: {
+      context: teacherClassroomContextService,
+      drafts: classroomBroadcastDraftService,
+      broadcasts: classroomBroadcastService,
+      guidance: classroomGuidanceCoordinator,
+      client: knowledgeSpaceClient,
+    },
     classroomDirectiveService,
     classroomSessionService,
     cancelActiveTasks: () => taskApplicationService.cancelActiveTasks(),
@@ -2354,11 +2441,14 @@ const createWindow = (): void => {
     knowledgeSpaceClient,
     knowledgeUploadOrchestrator,
     onAuthSignedIn: async (user) => {
+      await classroomGuidanceCoordinator.restore();
       await companionCustomizationService.setCurrentOwner(user.id);
       await identifyAnalyticsUser(user);
       enableAuthenticatedAuxiliaryWindows();
     },
     onAuthSignedOut: async () => {
+      teacherClassroomContextService.clear();
+      await classroomGuidanceCoordinator.invalidate();
       await dictationService.shutdown();
       await companionCustomizationService.setCurrentOwner(null);
       disableAuthenticatedAuxiliaryWindows();

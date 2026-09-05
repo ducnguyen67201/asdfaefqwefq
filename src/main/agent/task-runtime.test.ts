@@ -61,6 +61,9 @@ describe('TaskRuntime local projection', () => {
       recap: null,
     });
     expect(updated.goal).toMatchObject({ coachProgress: { stepNumber: 1 } });
+    const explained = runtime.appendCoachExplanation(task.taskId, 'A loop repeats the instructions inside it.');
+    expect(explained.messages.at(-1)).toMatchObject({ role: 'assistant', kind: 'response', text: 'A loop repeats the instructions inside it.' });
+    expect(runtime.applyCoachStatus(task.taskId, 'waiting', 'Choose Next.').phase).toBe('awaiting_input');
   });
 
   it('requires the local authority contract to match the request', () => {

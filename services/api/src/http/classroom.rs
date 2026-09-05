@@ -9,7 +9,8 @@ use uuid::Uuid;
 use crate::{
     app::AppState,
     classroom::{
-        CreateDirectiveRequest, CreateRoomCodeRequest, CurrentSessionResponse, JoinRoomRequest,
+        CreateBroadcastRequest, CreateDirectiveRequest, CreateRoomCodeRequest,
+        CurrentSessionResponse, GuidanceReport, GuidanceStartRequest, JoinRoomRequest,
         MutationRequest, ReviewAttemptRequest,
     },
     error::{ApiError, ApiResult},
@@ -30,6 +31,156 @@ pub async fn route(
 ) -> ApiResult<Option<Response>> {
     let path = uri.path();
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+
+    if parts.len() >= 6 && parts[0] == "v1" && parts[1] == "spaces" && parts[3] == "sessions" {
+        let space = parse_uuid(parts[2])?;
+        let session = parse_uuid(parts[4])?;
+        if parts.len() == 6 && parts[5] == "teacher-context" && method == Method::GET {
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .teacher_context(user_id, space, session)
+                    .await?,
+            );
+        }
+        if parts.len() == 6 && parts[5] == "broadcasts" && method == Method::POST {
+            let result = state
+                .classroom
+                .create_broadcast(
+                    user_id,
+                    space,
+                    session,
+                    read_body::<CreateBroadcastRequest>(headers, body)?,
+                )
+                .await?;
+            let status = if result["newlyCreated"] == true {
+                StatusCode::CREATED
+            } else {
+                StatusCode::OK
+            };
+            return response(status, result);
+        }
+        if parts.len() == 8
+            && parts[5] == "broadcasts"
+            && parts[6] == "by-client"
+            && method == Method::GET
+        {
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .broadcast_receipt(user_id, space, session, parse_uuid(parts[7])?)
+                    .await?,
+            );
+        }
+    }
+    if parts.len() >= 4
+        && parts[0] == "v1"
+        && parts[1] == "attempts"
+        && parts[3] == "session-broadcasts"
+    {
+        let anchor = parse_uuid(parts[2])?;
+        if parts.len() == 4 && method == Method::GET {
+            let after = url::form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes())
+                .find(|(key, _)| key == "afterSequence")
+                .map(|(_, value)| {
+                    value
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|n| (0..=9_007_199_254_740_991).contains(n))
+                        .ok_or_else(crate::classroom::invalid_request)
+                })
+                .transpose()?;
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .list_broadcasts(user_id, anchor, after)
+                    .await?,
+            );
+        }
+        if parts.len() == 6 && parts[5] == "assignment" && method == Method::GET {
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .broadcast_assignment(user_id, anchor, parse_uuid(parts[4])?)
+                    .await?,
+            );
+        }
+    }
+
+    if parts.len() == 6
+        && parts[0] == "v1"
+        && parts[1] == "attempts"
+        && parts[3] == "session-broadcasts"
+    {
+        let anchor = parse_uuid(parts[2])?;
+        let broadcast = parse_uuid(parts[4])?;
+        if method == Method::POST && parts[5] == "guidance-starts" {
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .claim_guidance(
+                        user_id,
+                        anchor,
+                        broadcast,
+                        read_body::<GuidanceStartRequest>(headers, body)?,
+                    )
+                    .await?,
+            );
+        }
+        if method == Method::GET && parts[5] == "guidance-start" {
+            return response(
+                StatusCode::OK,
+                state
+                    .classroom
+                    .lookup_guidance(user_id, anchor, broadcast)
+                    .await?,
+            );
+        }
+    }
+    if parts.len() == 4
+        && parts[0] == "v1"
+        && parts[1] == "work-sessions"
+        && parts[3] == "classroom-guidance"
+        && method == Method::PATCH
+    {
+        return response(
+            StatusCode::OK,
+            state
+                .classroom
+                .report_guidance(
+                    user_id,
+                    parse_uuid(parts[2])?,
+                    read_body::<GuidanceReport>(headers, body)?,
+                )
+                .await?,
+        );
+    }
+    if parts.len() == 8
+        && parts[0] == "v1"
+        && parts[1] == "spaces"
+        && parts[3] == "sessions"
+        && parts[5] == "broadcasts"
+        && parts[7] == "guidance-summary"
+        && method == Method::GET
+    {
+        return response(
+            StatusCode::OK,
+            state
+                .classroom
+                .guidance_summary(
+                    user_id,
+                    parse_uuid(parts[2])?,
+                    parse_uuid(parts[4])?,
+                    parse_uuid(parts[6])?,
+                )
+                .await?,
+        );
+    }
 
     if method == Method::POST && path == "/v1/live-rooms/join" {
         let mut input: JoinRoomRequest = read_body(headers, body)?;

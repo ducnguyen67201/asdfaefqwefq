@@ -1,3 +1,4 @@
+export * from './classroom-broadcast-contracts';
 import { z } from 'zod';
 
 import {
@@ -625,6 +626,7 @@ export const SubmitTaskRequestSchema = z
     workspaceSelectionId: z.string().uuid().nullable().default(null),
     activityAttemptId: z.string().uuid().nullable().default(null),
     activityIntent: z.enum(['work', 'help', 'check']).default('work'),
+    teacherClassroomSelectionId: z.string().uuid().nullable().optional(),
   })
   .superRefine((request, context) => {
     if (
@@ -640,6 +642,8 @@ export const SubmitTaskRequestSchema = z
   });
 
 export const KnowledgeCapabilitiesSchema = z.object({
+  classroomBroadcasts: z.object({ contractVersion: z.literal(1) }).optional(),
+  classroomGuidance: z.object({ contractVersion: z.literal(1) }).optional(),
   knowledgeSpaces: z.object({
     enabled: z.boolean(),
     contractVersion: z.literal(2),

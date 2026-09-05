@@ -2,11 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { GuidanceClaim, GuidanceContinue } from '../../shared/contracts';
 import type { DesktopObservation } from '../agent/execution-contracts';
+import { ActivityContextService } from '../knowledge/activity-context-service';
+import { classroomFixture } from '../knowledge/classroom-broadcast.fixture';
+import type { KnowledgeSpaceClient } from '../knowledge/knowledge-space-client';
 
-import { CoachDecisionSchema } from './coach-contracts';
+import { CoachDecisionSchema, type CoachRuntimeStart } from './coach-contracts';
 import {
   CoachRuntime,
+  coachResponseRequest,
   createAuthenticatedCoachDecisionClient,
   type CoachRuntimeDependencies,
 } from './coach-runtime';
@@ -379,5 +384,390 @@ describe('authenticated Coach decision client', () => {
     expect(stepProperties?.reason?.maxLength).toBe(46);
     expect(stepProperties).toHaveProperty('point');
     expect(stepProperties).not.toHaveProperty('region');
+  });
+});
+
+describe('individual classroom explanations', () => {
+  function textExplanation(): CoachRuntimeStart {
+    return {
+      taskId: randomUUID(),
+      request: 'Explain this assignment',
+      activity: null,
+      requiresObservation: false,
+      priorProgress: null,
+      explanation: {
+        guidanceId: randomUUID(),
+        broadcastId: randomUUID(),
+        teacherInstruction: 'Explain assignment 1',
+        language: 'en',
+        contextMode: 'text_only',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        startedAt: new Date().toISOString(),
+        modelRequests: 0,
+        observations: 0,
+      },
+    };
+  }
+
+  it('carries displayed text into Next requests without changing prior request history', async () => {
+    const f = setup(async () => ({ kind: 'answer', text: 'A loop repeats an instruction.', language: 'en' }));
+    const input = textExplanation();
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined),
+      consume: vi.fn(async () => undefined),
+      observe: f.observe,
+      awaitContinuation: vi.fn(async () => ({
+        guidanceId: input.explanation!.guidanceId,
+        stepRevision: 1,
+        action: 'next' as const,
+        text: null,
+      })),
+    };
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    const calls = vi.mocked(f.dependencies.decide).mock.calls;
+    expect(calls).toHaveLength(8);
+    expect(calls[0]![0].presentedSteps).toEqual([]);
+    expect(calls[1]![0].presentedSteps).toEqual(['A loop repeats an instruction.']);
+    expect(calls[7]![0].presentedSteps).toHaveLength(7);
+    const body = coachResponseRequest(calls[1]![0], 'model') as {
+      input: Array<{ content: Array<{ text: string }> }>;
+    };
+    expect(JSON.parse(body.input[1]!.content[0]!.text).explanation).toMatchObject({
+      question: null,
+      presentedSteps: ['A loop repeats an instruction.'],
+    });
+    expect(f.observe).not.toHaveBeenCalled();
+  });
+
+  it('waits for Next after a known API rate limit and preserves the pending question and model turn', async () => {
+    const answer = () => new Response(JSON.stringify({ output_text: JSON.stringify({
+      kind: 'answer', text: 'A loop repeats an instruction.', language: 'en',
+      observationId: null, observationFingerprint: null, steps: null, recap: null,
+    }) }));
+    const agentTurnId = randomUUID();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: agentTurnId }), { status: 201 }))
+      .mockResolvedValueOnce(answer())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'rate_limited', retryable: true }), {
+        status: 429, headers: { 'retry-after': '1' },
+      }))
+      .mockResolvedValueOnce(answer());
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    const input = textExplanation();
+    let next!: (value: GuidanceContinue) => void;
+    const wait = vi.fn<NonNullable<CoachRuntimeDependencies['explanation']>['awaitContinuation']>(
+      () => new Promise<GuidanceContinue>((resolve) => (next = resolve)),
+    );
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: wait,
+    };
+    const continuation = (action: GuidanceContinue['action'], text: string | null = null): GuidanceContinue => ({
+      guidanceId: input.explanation!.guidanceId, stepRevision: 1, action, text,
+    });
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledOnce());
+    next(continuation('question', 'Which instruction repeats?'));
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(2));
+    expect(wait.mock.calls[1]?.[1]).toContain('Next');
+    expect(f.terminal).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    next(continuation('next'));
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(3));
+    const calls = vi.mocked(f.dependencies.decide).mock.calls;
+    expect(calls[2]![0]).toMatchObject({
+      question: 'Which instruction repeats?', presentedSteps: ['A loop repeats an instruction.'],
+    });
+    expect(new Set(calls.map(([call]) => call.requestId)).size).toBe(3);
+    expect(f.dependencies.explanation.consume).toHaveBeenCalledTimes(3);
+    expect(f.dependencies.explanation.beforeRound).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[3]?.[1]?.headers['x-trocode-agent-turn-id']).toBe(agentTurnId);
+    next(continuation('finish'));
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1].status).toBe('completed');
+  });
+
+  it.each([
+    { status: 429, body: { error: { code: 'rate_limit_exceeded' } }, retryHeader: true },
+    { status: 429, body: { code: 'rate_limited', retryable: true }, retryHeader: false },
+    { status: 429, body: { code: 'rate_limited', retryable: false }, retryHeader: true },
+    { status: 503, body: { code: 'rate_limited', retryable: true }, retryHeader: true },
+  ])('does not offer replay for an unverified model outcome ($status, $body)', async ({ status, body, retryHeader }) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: randomUUID() }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(body), {
+        status, headers: retryHeader ? { 'retry-after': '1' } : {},
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: vi.fn(),
+    };
+    await f.runtime.start(textExplanation());
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1]).toMatchObject({ status: 'failed', outcomeUnknown: true });
+    expect(f.dependencies.explanation.awaitContinuation).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps rejected requests inside the durable eight-request allowance', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: randomUUID() }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'rate_limited', retryable: true }), {
+        status: 429, headers: { 'retry-after': '1' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = createAuthenticatedCoachDecisionClient({
+      accessTokenProvider: async () => 'token', apiBaseUrl: 'https://api.example.test',
+    });
+    const f = setup(client.decide);
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined), consume: vi.fn(async () => undefined),
+      observe: f.observe, awaitContinuation: vi.fn(),
+    };
+    const input = textExplanation();
+    input.explanation!.modelRequests = 7;
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+    expect(f.terminal.mock.calls[0]![1]).toMatchObject({
+      status: 'failed', message: expect.stringContaining('request limit reached'),
+    });
+    expect(f.dependencies.explanation.consume).toHaveBeenCalledOnce();
+    expect(f.dependencies.explanation.awaitContinuation).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('observes again only after continuation and sends the actual assignment context', async () => {
+    const { attempt, broadcast } = classroomFixture();
+    const claim = {
+      id: randomUUID(),
+      attemptId: attempt.attemptId,
+      activityVersionId: attempt.activityVersionId,
+      workSessionId: randomUUID(),
+    } as GuidanceClaim;
+    const activity = new ActivityContextService(
+      {} as KnowledgeSpaceClient,
+    ).createForClassroomGuidance(attempt, claim);
+    const f = setup(async () => ({
+      kind: 'answer',
+      text: 'A loop repeats the same instruction.',
+      language: 'en',
+    }));
+    let next!: (value: GuidanceContinue) => void;
+    const wait = vi.fn(
+      () => new Promise<GuidanceContinue>((resolve) => (next = resolve)),
+    );
+    f.dependencies.explanation = {
+      beforeRound: vi.fn(async () => undefined),
+      consume: vi.fn(async () => undefined),
+      observe: f.observe,
+      awaitContinuation: wait,
+    };
+    const taskId = randomUUID();
+    const guidanceId = randomUUID();
+    await f.runtime.start({
+      taskId,
+      request: 'Explain this assignment',
+      activity,
+      requiresObservation: true,
+      priorProgress: null,
+      explanation: {
+        guidanceId,
+        broadcastId: broadcast.id,
+        teacherInstruction: 'Explain assignment 1',
+        language: 'vi',
+        contextMode: 'screen_if_permitted',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        startedAt: new Date().toISOString(),
+        modelRequests: 0,
+        observations: 0,
+      },
+    });
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledOnce());
+    expect(f.observe).toHaveBeenCalledOnce();
+    expect(f.terminal).not.toHaveBeenCalled();
+    next({
+      guidanceId,
+      stepRevision: 1,
+      action: 'question',
+      text: 'What repeats?',
+    });
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(2));
+    expect(f.observe).toHaveBeenCalledTimes(2);
+    const call = vi.mocked(f.dependencies.decide).mock.calls[1]![0];
+    expect(f.dependencies.explanation.consume).toHaveBeenCalledWith(taskId, 'model', call.requestId);
+    expect(call.requestId).not.toBe(vi.mocked(f.dependencies.decide).mock.calls[0]![0].requestId);
+    const request = JSON.stringify(coachResponseRequest(call, 'model'));
+    expect(request).toContain(attempt.definition.instructions);
+    expect(request).toContain('What repeats?');
+    expect(request).toContain('guidancePolicy');
+    expect(request).toContain('vi');
+    expect(request).toContain('"tools":[]');
+    next({ guidanceId, stepRevision: 2, action: 'finish', text: null });
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalledOnce());
+  });
+  it('discards delayed targets when the screen changes and rejects multiple visual steps', async () => {
+    const f = setup(
+      async ({ observation: current }) => ({
+        ...sequenceFor(current!),
+        steps: sequenceFor(current!).steps.slice(0, 1),
+      }),
+      { outcome: 'presented' },
+    );
+    f.observe
+      .mockResolvedValueOnce(f.current)
+      .mockResolvedValue({ ...f.current, fingerprint: 'b'.repeat(64) });
+    const continuation = vi.fn<NonNullable<CoachRuntimeDependencies['explanation']>['awaitContinuation']>(async () => ({
+      guidanceId: randomUUID(),
+      stepRevision: 1,
+      action: 'finish' as const,
+      text: null,
+    }));
+    f.dependencies.explanation = {
+      beforeRound: async () => undefined,
+      consume: async () => undefined,
+      observe: f.observe,
+      awaitContinuation: continuation,
+    };
+    const input = {
+      taskId: randomUUID(),
+      request: 'Explain assignment 1',
+      activity: null,
+      requiresObservation: true,
+      priorProgress: null,
+      explanation: {
+        guidanceId: randomUUID(),
+        broadcastId: randomUUID(),
+        teacherInstruction: 'Explain',
+        language: 'en' as const,
+        contextMode: 'screen_if_permitted' as const,
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        startedAt: new Date().toISOString(),
+        modelRequests: 0,
+        observations: 0,
+      },
+    };
+    await f.runtime.start(input);
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalled());
+    expect(f.presentSequence).not.toHaveBeenCalled();
+    expect(continuation.mock.calls[0]?.[1]).toContain('screen changed');
+    const invalid = setup(
+      async ({ observation: current }) => sequenceFor(current!),
+      { outcome: 'presented' },
+    );
+    invalid.dependencies.explanation = {
+      ...f.dependencies.explanation,
+      observe: invalid.observe,
+    };
+    await invalid.runtime.start({ ...input, taskId: randomUUID() });
+    await vi.waitFor(() => expect(invalid.terminal).toHaveBeenCalled());
+    expect(invalid.terminal.mock.calls[0]![1].status).toBe('failed');
+    expect(invalid.presentSequence).not.toHaveBeenCalled();
+  });
+  it('falls back to assignment text when screen capture is unavailable without replaying a model request', async () => {
+    const f = setup(async (input) => {
+      expect(input.observation).toBeNull();
+      expect(input.explanation?.contextMode).toBe('text_only');
+      return { kind: 'answer', language: 'en', text: 'The assignment asks you to write a loop.' };
+    });
+    f.observe.mockRejectedValue(new Error('Screen unavailable'));
+    f.dependencies.explanation = {
+      beforeRound: async () => undefined,
+      consume: async () => undefined,
+      observe: f.observe,
+      awaitContinuation: async () => ({ guidanceId: randomUUID(), stepRevision: 1, action: 'finish', text: null }),
+    };
+    await f.runtime.start({ taskId: randomUUID(), request: 'Explain assignment 1', activity: null, requiresObservation: true, priorProgress: null,
+      explanation: { guidanceId: randomUUID(), broadcastId: randomUUID(), teacherInstruction: 'Explain', language: 'en', contextMode: 'screen_if_permitted', expiresAt: new Date(Date.now() + 600_000).toISOString(), startedAt: new Date().toISOString(), modelRequests: 0, observations: 0 } });
+    await vi.waitFor(() => expect(f.terminal).toHaveBeenCalled());
+    expect(f.terminal.mock.calls[0]![1].status).toBe('completed');
+    expect(f.dependencies.decide).toHaveBeenCalledOnce();
+    expect(f.presentSequence).not.toHaveBeenCalled();
+  });
+  it('isolates 200 mocked student model inputs, screens, progress, and cancellation owners', async () => {
+    const runs = Array.from({ length: 200 }, (_, index) => {
+      const { attempt, broadcast } = classroomFixture();
+      attempt.definition.instructions = `Student ${index} assignment instructions`;
+      const activity = new ActivityContextService(
+        {} as KnowledgeSpaceClient,
+      ).createForClassroomGuidance(attempt, {
+        attemptId: attempt.attemptId,
+        activityVersionId: attempt.activityVersionId,
+        workSessionId: randomUUID(),
+      } as GuidanceClaim);
+      const f = setup(async (input) => ({
+        kind: 'answer',
+        text: `Explanation ${input.observation?.text}`,
+        language: 'en',
+      }));
+      const taskId = randomUUID();
+      f.observe.mockResolvedValue({
+        ...f.current,
+        taskId,
+        text: `Private screen ${index}`,
+      });
+      f.dependencies.explanation = {
+        beforeRound: async () => undefined,
+        consume: async () => undefined,
+        observe: f.observe,
+        awaitContinuation: async () => ({
+          guidanceId: randomUUID(),
+          stepRevision: 1,
+          action: 'finish',
+          text: null,
+        }),
+      };
+      return {
+        f,
+        index,
+        input: {
+          taskId,
+          request: 'Explain assignment 1',
+          activity,
+          requiresObservation: index % 3 !== 2,
+          priorProgress: null,
+          explanation: {
+            guidanceId: randomUUID(),
+            broadcastId: broadcast.id,
+            teacherInstruction: 'Explain assignment 1',
+            language: index % 2 ? ('vi' as const) : ('en' as const),
+            contextMode:
+              index % 3 === 2
+                ? ('text_only' as const)
+                : ('screen_if_permitted' as const),
+            expiresAt: new Date(Date.now() + 600_000).toISOString(),
+            startedAt: new Date().toISOString(),
+            modelRequests: 0,
+            observations: 0,
+          },
+        },
+      };
+    });
+    await Promise.all(runs.map(({ f, input }) => f.runtime.start(input)));
+    await vi.waitFor(() =>
+      expect(runs.every(({ f }) => f.terminal.mock.calls.length === 1)).toBe(
+        true,
+      ),
+    );
+    for (const { f, index, input } of runs) {
+      expect(f.dependencies.decide).toHaveBeenCalledOnce();
+      const decisionInput = vi.mocked(f.dependencies.decide).mock.calls[0]![0];
+      expect(decisionInput.activity?.attemptId).toBe(input.activity.attemptId);
+      expect(decisionInput.observation?.text ?? null).toBe(
+        index % 3 === 2 ? null : `Private screen ${index}`,
+      );
+      expect(decisionInput.presentedSteps).toEqual([]);
+      expect(f.releaseObservationSession).toHaveBeenCalledWith(input.taskId);
+    }
   });
 });

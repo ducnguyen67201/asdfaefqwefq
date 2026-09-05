@@ -137,3 +137,40 @@ disposable PostgreSQL database and exercises the desktop-facing flow through
 Axum: room creation, lobby join, Run start, directive delivery and one-time
 claim, Help and resolution, Ready and review, Leave, authentication rejection,
 and the exact 200-participant capacity boundary.
+
+## Teacher voice broadcasts and individual explanations
+
+Open a live teacher session, then use the existing **Task** microphone gesture or
+ordinary task composer: “Send Assignment 1” or “Explain Assignment 1 to the
+class.” Dictation still inserts text. The assistant has two classroom tools:
+`list_session_assignments` and `prepare_classroom_broadcast`. Preparation saves an
+encrypted preview on the teacher's device. **Broadcast to class** is the explicit
+send action. The card shows the exact session, published assignment and audience.
+
+The session broadcast feed includes students who joined that session, including
+later joiners while it remains open. Updated teacher and student clients are
+required. The legacy Run directive feed remains separate. “Broadcast saved” means
+the server persisted it; it does not mean every student displayed it. A save with
+an unknown outcome is reconciled by receipt lookup, never automatically resent.
+
+**Open assignment** resolves the student's existing Attempt for the selected
+published Run. It does not start work. **Start explanation** uses that student's
+own Tro account allowance and assignment context. **Explain without screen** is
+available. Screen guidance uses existing screen permissions, refreshes on Next or
+a question, and shows one grounded pointer at a time. It never clicks, types,
+submits, grades, or treats a presented step as successful work. Each explanation
+is limited to eight model requests, sixteen observations and ten minutes.
+
+Students may opt into automatic explanation starts for the current session on
+that device. Consent starts off, resets on leave/logout/restart, only applies to
+new live notices while the device is idle, and never starts a reconnect backlog.
+A busy device retains a manual notice. Two devices belonging to one student
+cannot claim the same broadcast twice. Stop releases local presentation even if
+status reporting is offline. Teacher activity counts describe explanation
+lifecycle; they are not attention, delivery acknowledgements or learning results.
+
+Deploy migrations 034/035 and their API before the desktop build. Capabilities
+`classroomBroadcasts` and `classroomGuidance` each use contractVersion 1;
+`knowledgeSpaces` remains version 2. Absent capabilities keep the existing manual
+classroom workflow available. Rollback should disable the capabilities and retain
+broadcast/start data, never drop tables or reinterpret guided work as Help.

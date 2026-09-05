@@ -46,6 +46,7 @@ jobs:
           --test_arg=--test-threads=1
           //services/api:postgres_compat_test
           //services/api:provider_budget_compat_test
+          //services/api:classroom_e2e_test
       - name: Run Rust HTTP compatibility test with Bazel
         run: >-
           bazel test --config=ci

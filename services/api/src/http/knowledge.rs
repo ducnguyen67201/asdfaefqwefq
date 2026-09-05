@@ -57,7 +57,7 @@ pub async fn handle(
     if reads_capabilities {
         return Ok(Some(json_response(
             StatusCode::OK,
-            json!({"knowledgeSpaces":{"enabled":knowledge_spaces_enabled,"contractVersion":2}}),
+            json!({"knowledgeSpaces":{"enabled":knowledge_spaces_enabled,"contractVersion":2},"classroomBroadcasts":{"contractVersion":1},"classroomGuidance":{"contractVersion":1}}),
         )?));
     }
     if !knowledge_spaces_enabled {

@@ -8,6 +8,7 @@ import {
 } from 'react';
 
 import type {
+  TeacherClassroomSelection,
   AgentActivityUpdate,
   AppLanguage,
   AppPreferences,
@@ -37,6 +38,8 @@ import type {
 } from '../shared/contracts';
 import { VOICE_TRANSCRIPTION_MODEL } from '../shared/contracts';
 
+import './classroom-broadcast.css';
+
 import { acceptAgentActivity } from './agent-activity-projection';
 import { appLanguageLabel, translate } from './app-language';
 import {
@@ -47,6 +50,9 @@ import {
 import { AppUpdateButton } from './AppUpdateButton';
 import { BrandMark } from './BrandMark';
 import { hasAssignedClassroomRole } from './class-workspace';
+import { sameClassroomVoiceDestination } from './classroom-voice-binding';
+import { ClassroomBroadcastPreview } from './ClassroomBroadcastPreview';
+import { ClassroomExplanationPanel } from './ClassroomExplanationPanel';
 import { ClassroomSessionBar } from './ClassroomSessionBar';
 import type { CompanionCustomizationBusy } from './CompanionCustomizationCard';
 import { HistoryPage } from './HistoryPage';
@@ -717,6 +723,95 @@ export function App({
   const [classSpacesError, setClassSpacesError] = useState<string | null>(null);
   const [selectedClassSpace, setSelectedClassSpace] =
     useState<KnowledgeSpaceSummary | null>(null);
+  const [teacherSelection, setTeacherSelection] =
+    useState<TeacherClassroomSelection | null>(null);
+  const [teacherSelectionPending, setTeacherSelectionPending] = useState(false);
+  const teacherSelectionRef = useRef<TeacherClassroomSelection | null>(null);
+  const teacherSelectionPendingRef = useRef(false);
+  const teacherSelectionGenerationRef = useRef(0);
+  const teacherTaskBindingsRef = useRef(new Map<string, string | null>());
+  const teacherVoiceBindingsRef = useRef(
+    new Map<
+      string,
+      {
+        selectionId: string | null;
+        taskId: string | null;
+        interactionId: string | null;
+      }
+    >(),
+  );
+  useEffect(() => {
+    if (!window.tro.onTeacherClassroomChanged) return;
+    let active = true;
+    let changed = false;
+    const apply = (next: TeacherClassroomSelection | null) => {
+      if (active) {
+        teacherSelectionRef.current = next;
+        setTeacherSelection(next);
+      }
+    };
+    const stop = window.tro.onTeacherClassroomChanged((next) => {
+      changed = true;
+      apply(next);
+    });
+    void window.tro
+      .getTeacherClassroom()
+      .then((next) => {
+        if (!changed) apply(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      stop();
+    };
+  }, []);
+  useEffect(() => {
+    ++teacherSelectionGenerationRef.current;
+    const selected = teacherSelectionRef.current;
+    if (selected && selected.binding.spaceId !== selectedClassSpace?.id) {
+      teacherSelectionRef.current = null;
+      setTeacherSelection(null);
+      void window.tro
+        .clearTeacherClassroom({ selectionId: selected.selectionId })
+        .catch(() => undefined);
+    }
+  }, [selectedClassSpace?.id]);
+  const selectTeacherSession = useCallback(
+    async (spaceId: string, sessionId: string | null) => {
+      if (!window.tro.selectTeacherClassroom) return;
+      if (!sessionId) {
+        const selected = teacherSelectionRef.current;
+        teacherSelectionRef.current = null;
+        setTeacherSelection(null);
+        if (selected)
+          await window.tro.clearTeacherClassroom({
+            selectionId: selected.selectionId,
+          });
+        return;
+      }
+      const generation = teacherSelectionGenerationRef.current;
+      teacherSelectionPendingRef.current = true;
+      setTeacherSelectionPending(true);
+      try {
+        const selected = await window.tro.selectTeacherClassroom({
+          spaceId,
+          sessionId,
+        });
+        if (generation !== teacherSelectionGenerationRef.current) {
+          await window.tro.clearTeacherClassroom({
+            selectionId: selected.selectionId,
+          });
+          return;
+        }
+        teacherSelectionRef.current = selected;
+        setTeacherSelection(selected);
+      } finally {
+        teacherSelectionPendingRef.current = false;
+        setTeacherSelectionPending(false);
+      }
+    },
+    [],
+  );
   const [selectedClassSpaceTab, setSelectedClassSpaceTab] =
     useState<SpaceDetailTab>('library');
   const [classroomAttemptFocus, setClassroomAttemptFocus] = useState<
@@ -1696,7 +1791,9 @@ export function App({
   const sendInput = useCallback(
     async (
       requestText = input,
-      options: { screenContext?: 'auto' | 'required' | 'disabled' } = {},
+      options: { screenContext?: 'auto' | 'required' | 'disabled';
+        teacherClassroomSelectionId?: string | null;
+      } = {},
     ): Promise<boolean> => {
       const normalizedRequest = requestText.trim();
       const minimumLength = pendingClarification || isSteering ? 1 : 2;
@@ -1713,15 +1810,34 @@ export function App({
       setIsSubmitting(true);
 
       try {
+        if (teacherSelectionPendingRef.current)
+          throw new Error('Wait for the teacher session selection to finish.');
+        const teacherToken =
+          options.teacherClassroomSelectionId === undefined
+            ? (teacherSelectionRef.current?.selectionId ?? null)
+            : options.teacherClassroomSelectionId;
+        if (teacherToken !== (teacherSelectionRef.current?.selectionId ?? null))
+          throw new Error(
+            'The selected class changed. Your transcript is still in the composer.',
+          );
+        if (teacherToken) {
+          const verified = await window.tro.getTeacherClassroom();
+          if (verified?.selectionId !== teacherToken)
+            throw new Error('Select the live class again before sending.');
+        }
+        const sameDestination =
+          (snapshot
+            ? (teacherTaskBindingsRef.current.get(snapshot.taskId) ?? null)
+            : null) === teacherToken;
         let nextSnapshot: TaskSnapshot;
-        if (pendingClarification && snapshot) {
+        if (pendingClarification && snapshot && sameDestination) {
           nextSnapshot = await window.tro.respondToInteraction({
             taskId: snapshot.taskId,
             interactionId: pendingClarification.id,
             kind: 'answer',
             text: normalizedRequest,
           });
-        } else if (isSteering && snapshot) {
+        } else if (isSteering && snapshot && sameDestination) {
           nextSnapshot = await window.tro.steerTask({
             taskId: snapshot.taskId,
             instruction: normalizedRequest,
@@ -1737,6 +1853,7 @@ export function App({
           setStreamingDraft('');
           recordSnapshot(null);
           nextSnapshot = await window.tro.submitTask({
+            teacherClassroomSelectionId: teacherToken,
             activityAttemptId: null,
             activityIntent: 'work',
             executionProfile,
@@ -1750,6 +1867,7 @@ export function App({
           });
         }
 
+        teacherTaskBindingsRef.current.set(nextSnapshot.taskId, teacherToken);
         activeTaskIdRef.current = nextSnapshot.taskId;
         recordSnapshot(nextSnapshot);
         setInput('');
@@ -1923,6 +2041,19 @@ export function App({
 
       const route = voiceTurnRoute(context);
       if (route === 'task') {
+        if (teacherSelectionPendingRef.current) {
+          reportError('Wait for the class session to finish loading.');
+          return {
+            accepted: false,
+            destination: { kind: 'task', label: t('Tro task') },
+          };
+        }
+        const current = latestSnapshotRef.current;
+        teacherVoiceBindingsRef.current.set(context.turnId, {
+          selectionId: teacherSelectionRef.current?.selectionId ?? null,
+          taskId: current?.taskId ?? null,
+          interactionId: current?.pendingInteraction?.id ?? null,
+        });
         const destination = { kind: 'task' as const, label: t('Tro task') };
         voiceDestinationsRef.current.set(context.turnId, destination);
         setVoiceDestination(destination);
@@ -2043,8 +2174,23 @@ export function App({
         voiceDestinationsRef.current.get(context.turnId) ?? voiceDestination;
       const route = voiceTurnRoute(context);
       if (route === 'task') {
+        const frozen = teacherVoiceBindingsRef.current.get(context.turnId);
+        const current = latestSnapshotRef.current;
+        if (
+          !sameClassroomVoiceDestination(frozen, {
+            selectionId: teacherSelectionRef.current?.selectionId ?? null,
+            taskId: current?.taskId ?? null,
+            interactionId: current?.pendingInteraction?.id ?? null,
+          })
+        ) {
+          setInput(transcript);
+          throw new Error(
+            'The task or class changed while you were speaking. Review the transcript and send again.',
+          );
+        }
         if (!(await sendInput(transcript, {
-          screenContext: voiceTaskScreenContext(context),
+            teacherClassroomSelectionId: frozen!.selectionId,
+            screenContext: voiceTaskScreenContext(context),
         }))) {
           throw new Error('The task could not accept that voice input.');
         }
@@ -2197,6 +2343,7 @@ export function App({
       }
 
       const destination = voiceDestinationsRef.current.get(context.turnId);
+      teacherVoiceBindingsRef.current.delete(context.turnId);
       voiceDestinationsRef.current.delete(context.turnId);
       if (
         destination &&
@@ -2915,9 +3062,38 @@ export function App({
           />
         )}
 
+        {teacherSelectionPending && (
+          <p role="status">
+            {appLanguageDraft === 'vi'
+              ? 'Đang xác minh phiên học…'
+              : 'Verifying classroom session…'}
+          </p>
+        )}
+        {teacherSelection && (
+          <p className="eyebrow">
+            {teacherSelection.binding.spaceName} ·{' '}
+            {teacherSelection.binding.sessionTitle}
+          </p>
+        )}
+        <ClassroomBroadcastPreview
+          appLanguage={appLanguageDraft}
+          taskId={snapshot?.taskId ?? null}
+        />
+        {classroomAccessAvailable && (
+          <ClassroomExplanationPanel
+            appLanguage={appLanguageDraft}
+            onOpenClasswork={(attemptId) => {
+              setClassroomAttemptFocus(attemptId);
+              setActiveView('assigned');
+            }}
+          />
+        )}
+
         {classroomAccessAvailable &&
         (activeView === 'spaces' || activeView === 'assigned') ? (
           <KnowledgeHubPage
+            onTeacherSessionSelect={selectTeacherSession}
+            teacherSessionId={teacherSelection?.binding.sessionId ?? null}
             appLanguage={appLanguageDraft}
             classroomError={classSpacesError}
             classroomLoading={classSpacesLoading}

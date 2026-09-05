@@ -12,12 +12,19 @@ import { translate } from './app-language';
 import { FacilitatorRunPage } from './FacilitatorRunPage';
 
 export function ClassSessionsPanel({
+  onTeacherSessionSelect,
+  teacherSessionId,
   appLanguage,
   canFacilitate,
   onJoined,
   refreshToken,
   spaceId,
 }: {
+  onTeacherSessionSelect?: (
+    spaceId: string,
+    sessionId: string | null,
+  ) => Promise<void>;
+  teacherSessionId?: string | null;
   appLanguage: AppLanguage;
   canFacilitate: boolean;
   onJoined?: (attemptId: string) => void;
@@ -28,8 +35,9 @@ export function ClassSessionsPanel({
     [],
   );
   const [sessions, setSessions] = useState<KnowledgeClassSession[]>([]);
-  const [activeSession, setActiveSession] =
+  const [openedSession, setActiveSession] =
     useState<KnowledgeClassSession | null>(null);
+  const activeSession=openedSession??sessions.find(session=>session.id===teacherSessionId)??null;
   const [initialRoomCode, setInitialRoomCode] = useState<Awaited<
     ReturnType<typeof window.tro.createKnowledgeRoomCode>
   > | null>(null);
@@ -147,6 +155,8 @@ export function ClassSessionsPanel({
             });
       setInitialRoomCode(code);
       setActiveSession(session);
+      if (session.state === 'open')
+        await onTeacherSessionSelect?.(spaceId, session.id);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -240,9 +250,11 @@ export function ClassSessionsPanel({
     const primary = activeSession.activities[0];
     return (
       <div className="class-session-live">
+        {error && <p role="alert">{error}</p>}
         <button
           className="back-link"
           onClick={() => {
+            void onTeacherSessionSelect?.(spaceId, null);
             setActiveSession(null);
             setInitialRoomCode(null);
             void load();
@@ -264,6 +276,12 @@ export function ClassSessionsPanel({
         </header>
         {primary && (
           <FacilitatorRunPage
+            onRunStateChanged={async (state) =>
+              onTeacherSessionSelect?.(
+                spaceId,
+                state === 'open' ? activeSession.id : null,
+              )
+            }
             allowedOrigins={primary.allowedOrigins}
             appLanguage={appLanguage}
             criteria={primary.criteria}

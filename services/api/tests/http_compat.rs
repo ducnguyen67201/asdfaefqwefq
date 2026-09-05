@@ -1601,19 +1601,20 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     );
     let provider_request_id = Uuid::new_v4().to_string();
     let task_id_header = task_id.to_string();
+    let response_body = json!({
+        "input":[{"content":[{"text":"hello","type":"input_text"}],"role":"user"}],
+        "max_output_tokens":128,
+        "model":"gpt-5.6-luna",
+        "parallel_tool_calls":false,
+        "store":false,
+        "tools":[]
+    });
     let responses = send_with_headers(
         &router,
         Method::POST,
         "/v1/openai/responses",
         Some(&owner_token),
-        Some(&json!({
-            "input":[{"content":[{"text":"hello","type":"input_text"}],"role":"user"}],
-            "max_output_tokens":128,
-            "model":"gpt-5.6-luna",
-            "parallel_tool_calls":false,
-            "store":false,
-            "tools":[]
-        })),
+        Some(&response_body),
         &[
             ("x-trocode-agent-turn-id", &agent_turn_id),
             ("x-trocode-request-id", &provider_request_id),
@@ -1641,6 +1642,78 @@ async fn rust_router_preserves_backend_contracts_across_major_route_families() {
     )
     .await;
     assert_status(&compact, StatusCode::OK);
+
+    // Saturate this and the next minute so crossing a window cannot flake the test.
+    query(
+        "INSERT INTO api_rate_limit_buckets(scope,identity_digest,window_started_at,request_count) \
+         SELECT DISTINCT scope,identity_digest,date_trunc('minute',NOW())+offset_seconds*INTERVAL '1 second',10000 \
+         FROM api_rate_limit_buckets CROSS JOIN (VALUES (0),(60)) AS windows(offset_seconds) \
+         WHERE scope='responses.minute' \
+         ON CONFLICT(scope,identity_digest,window_started_at) DO UPDATE SET request_count=10000",
+    )
+    .execute(&state.pool)
+    .await
+    .unwrap();
+    let provider_calls_before_limit = provider.received_requests().await.unwrap().len();
+    let rejected_request_id = Uuid::new_v4();
+    let limited = send_with_headers(
+        &router,
+        Method::POST,
+        "/v1/openai/responses",
+        Some(&owner_token),
+        Some(&response_body),
+        &[
+            ("x-trocode-agent-turn-id", &agent_turn_id),
+            ("x-trocode-request-id", &rejected_request_id.to_string()),
+            ("x-trocode-task-id", &task_id_header),
+        ],
+    )
+    .await;
+    assert_status(&limited, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(limited.json()["code"], "rate_limited");
+    assert_eq!(limited.json()["retryable"], true);
+    assert!(
+        limited.headers["retry-after"]
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        provider.received_requests().await.unwrap().len(),
+        provider_calls_before_limit
+    );
+    let rejected_reservations: i64 =
+        query_scalar("SELECT COUNT(*) FROM model_budget_reservations WHERE request_id=$1")
+            .bind(rejected_request_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(rejected_reservations, 0);
+    query("DELETE FROM api_rate_limit_buckets WHERE scope='responses.minute'")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let retried = send_with_headers(
+        &router,
+        Method::POST,
+        "/v1/openai/responses",
+        Some(&owner_token),
+        Some(&response_body),
+        &[
+            ("x-trocode-agent-turn-id", &agent_turn_id),
+            ("x-trocode-request-id", &Uuid::new_v4().to_string()),
+            ("x-trocode-task-id", &task_id_header),
+        ],
+    )
+    .await;
+    assert_status(&retried, StatusCode::OK);
+    assert_eq!(
+        provider.received_requests().await.unwrap().len(),
+        provider_calls_before_limit + 1
+    );
+
     let transcription_request_id = Uuid::new_v4().to_string();
     let transcription = send_with_headers(
         &router,

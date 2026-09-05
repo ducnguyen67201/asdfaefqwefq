@@ -1,3 +1,7 @@
+import {
+  CLASSROOM_BROADCAST_CHANNELS,
+  type ClassroomDesktopApi,
+} from './classroom-desktop-api';
 import type {
   ActivateMembershipRequest,
   AgentActivityUpdate,
@@ -122,6 +126,7 @@ import type {
 } from './contracts';
 
 export const IPC_CHANNELS = {
+  ...CLASSROOM_BROADCAST_CHANNELS,
   activateMembership: 'membership:activate',
   continueWithFree: 'membership:continue-free',
   agentActivity: 'agent:activity',
@@ -237,7 +242,7 @@ export const IPC_CHANNELS = {
   resolveKnowledgeAttemptHelp: 'classroom:attempt:help-resolve',
 } as const;
 
-export interface DesktopApi {
+export interface DesktopApi extends ClassroomDesktopApi {
   beginDictation(request: BeginDictationRequest): Promise<BeginDictationResult>;
   activateMembership(
     request: ActivateMembershipRequest,

@@ -779,3 +779,318 @@ async fn create_load_users(pool: &PgPool, space_id: Uuid, count: usize) -> Vec<(
     .unwrap();
     users
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable local PostgreSQL 17 TEST_DATABASE_URL"]
+async fn session_broadcasts_resolve_owned_attempts_and_claim_one_explanation() {
+    let url = disposable_database_url();
+    reset_database(&url).await;
+    let state = AppState::compose(test_config(url)).await.unwrap();
+    let pool = state.pool.clone();
+    let f = Fixture::create(&pool).await;
+    let session = Uuid::new_v4();
+    query("INSERT INTO knowledge_class_sessions(id,client_id,space_id,title,state,created_by) VALUES($1,$1,$2,'Broadcast lesson','draft',$3)")
+        .bind(session).bind(f.space_id).bind(&f.teacher_id).execute(&pool).await.unwrap();
+    query("INSERT INTO knowledge_class_session_activities(session_id,position,activity_version_id,run_id) VALUES($1,0,$2,$3)")
+        .bind(session).bind(f.activity_version_id).bind(f.run_id).execute(&pool).await.unwrap();
+    let second_version = Uuid::new_v4();
+    let second_run = Uuid::new_v4();
+    query("INSERT INTO knowledge_activity_versions(id,activity_id,version_number,definition,content_hash,published_by) SELECT $1,activity_id,2,jsonb_set(jsonb_set(definition,'{title}','\"Second assignment\"'),'{launchTarget}','\"workspace\"'),$2,published_by FROM knowledge_activity_versions WHERE id=$3")
+        .bind(second_version).bind("c".repeat(64)).bind(f.activity_version_id).execute(&pool).await.unwrap();
+    query("INSERT INTO knowledge_activity_runs(id,client_id,space_id,activity_version_id,mode,state,target_kind,insight_policy,created_by) VALUES($1,$1,$2,$3,'live','draft','room','explicit_and_operational',$4)")
+        .bind(second_run).bind(f.space_id).bind(second_version).bind(&f.teacher_id).execute(&pool).await.unwrap();
+    query("INSERT INTO knowledge_class_session_activities(session_id,position,activity_version_id,run_id) VALUES($1,1,$2,$3)")
+        .bind(session).bind(second_version).bind(second_run).execute(&pool).await.unwrap();
+    query("INSERT INTO knowledge_space_members(space_id,user_id,role) VALUES($1,$2,'participant')")
+        .bind(f.space_id)
+        .bind(&f.student_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let router = trocode_api::http::router(state.clone());
+    let room = call(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{}/runs/{}/room-code", f.space_id, f.run_id),
+        Some(&f.teacher_token),
+        Some(json!({"clientId":Uuid::new_v4(),"maxUses":200,"expiresAt":null})),
+    )
+    .await;
+    assert_eq!(room.status, StatusCode::CREATED, "{}", room.body);
+    let joined = call(
+        &router,
+        Method::POST,
+        "/v1/live-rooms/join",
+        Some(&f.student_token),
+        Some(json!({"clientId":Uuid::new_v4(),"code":room.body["code"]})),
+    )
+    .await;
+    assert_eq!(joined.status, StatusCode::OK, "{}", joined.body);
+    let anchor = joined.body["attemptId"].as_str().unwrap();
+    let opened = call(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{}/runs/{}/open", f.space_id, f.run_id),
+        Some(&f.teacher_token),
+        None,
+    )
+    .await;
+    assert_eq!(opened.status, StatusCode::OK);
+    let base = format!("/v1/spaces/{}/sessions/{session}", f.space_id);
+    let context = call(
+        &router,
+        Method::GET,
+        &format!("{base}/teacher-context"),
+        Some(&f.teacher_token),
+        None,
+    )
+    .await;
+    assert_eq!(context.status, StatusCode::OK, "{}", context.body);
+    assert_eq!(context.body["assignments"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        call(
+            &router,
+            Method::GET,
+            &format!("{base}/teacher-context"),
+            Some(&f.student_token),
+            None
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    let client = Uuid::new_v4();
+    let payload = json!({"kind":"assignment","instruction":"Explain assignment 2.","targetRunId":second_run,"activityVersionId":second_version,"title":"Second assignment","number":2,"studentAction":"explain"});
+    let body = json!({"clientId":client,"payload":payload});
+    let broadcast_path = format!("{base}/broadcasts");
+    let (first, second) = tokio::join!(
+        call(
+            &router,
+            Method::POST,
+            &broadcast_path,
+            Some(&f.teacher_token),
+            Some(body.clone())
+        ),
+        call(
+            &router,
+            Method::POST,
+            &broadcast_path,
+            Some(&f.teacher_token),
+            Some(body.clone())
+        )
+    );
+    assert!(
+        matches!(first.status, StatusCode::OK | StatusCode::CREATED),
+        "{}",
+        first.body
+    );
+    assert!(
+        matches!(second.status, StatusCode::OK | StatusCode::CREATED),
+        "{}",
+        second.body
+    );
+    assert_eq!(
+        first.body["broadcast"]["id"],
+        second.body["broadcast"]["id"]
+    );
+    let broadcast = first.body["broadcast"]["id"].as_str().unwrap();
+    let changed = call(
+        &router,
+        Method::POST,
+        &format!("{base}/broadcasts"),
+        Some(&f.teacher_token),
+        Some(json!({"clientId":client,"payload":{"kind":"exercise","instruction":"Different"}})),
+    )
+    .await;
+    assert_eq!(changed.status, StatusCode::CONFLICT);
+    let feed = format!("/v1/attempts/{anchor}/session-broadcasts");
+    let received = call(&router, Method::GET, &feed, Some(&f.student_token), None).await;
+    assert_eq!(received.status, StatusCode::OK, "{}", received.body);
+    assert_eq!(received.body["items"][0]["id"], broadcast);
+    let target = call(
+        &router,
+        Method::GET,
+        &format!("{feed}/{broadcast}/assignment"),
+        Some(&f.student_token),
+        None,
+    )
+    .await;
+    assert_eq!(target.status, StatusCode::OK, "{}", target.body);
+    assert_ne!(target.body["attemptId"], anchor);
+    let target_id = Uuid::parse_str(target.body["attemptId"].as_str().unwrap()).unwrap();
+    let count = query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM knowledge_activity_work_sessions WHERE attempt_id=$1",
+    )
+    .bind(target_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    let start_id = Uuid::new_v4();
+    let task_id = Uuid::new_v4();
+    let start = json!({"clientStartId":start_id,"taskId":task_id,"clientInstanceId":Uuid::new_v4(),"contextMode":"text_only"});
+    let start_path = format!("{feed}/{broadcast}/guidance-starts");
+    let claim = call(
+        &router,
+        Method::POST,
+        &start_path,
+        Some(&f.student_token),
+        Some(start.clone()),
+    )
+    .await;
+    assert_eq!(claim.status, StatusCode::OK, "{}", claim.body);
+    assert_eq!(claim.body["ownedByThisRequest"], true);
+    let other=call(&router,Method::POST,&start_path,Some(&f.student_token),Some(json!({"clientStartId":Uuid::new_v4(),"taskId":Uuid::new_v4(),"clientInstanceId":Uuid::new_v4(),"contextMode":"screen_if_permitted"}))).await;
+    assert_eq!(other.status, StatusCode::OK);
+    assert_eq!(other.body["ownedByThisRequest"], false);
+    assert_eq!(other.body["id"], claim.body["id"]);
+    let repeated = call(
+        &router,
+        Method::POST,
+        &start_path,
+        Some(&f.student_token),
+        Some(start),
+    )
+    .await;
+    assert_eq!(repeated.body["id"], claim.body["id"]);
+    assert_eq!(
+        query_scalar::<_, String>("SELECT state FROM knowledge_activity_attempts WHERE id=$1")
+            .bind(target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "assigned"
+    );
+    let work = claim.body["workSessionId"].as_str().unwrap();
+    let report_path = format!("/v1/work-sessions/{work}/classroom-guidance");
+    query("UPDATE knowledge_class_session_broadcasts SET created_at=NOW()-INTERVAL '11 minutes' WHERE id=$1")
+        .bind(Uuid::parse_str(broadcast).unwrap()).execute(&pool).await.unwrap();
+    let expired = call(
+        &router,
+        Method::PATCH,
+        &report_path,
+        Some(&f.student_token),
+        Some(json!({"status":"active","revision":1,"reason":null})),
+    )
+    .await;
+    assert_eq!(expired.status, StatusCode::CONFLICT, "{}", expired.body);
+    assert_eq!(
+        query_scalar::<_, String>("SELECT state FROM knowledge_activity_attempts WHERE id=$1")
+            .bind(target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "assigned"
+    );
+    query("UPDATE knowledge_class_session_broadcasts SET created_at=NOW() WHERE id=$1")
+        .bind(Uuid::parse_str(broadcast).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let active = call(
+        &router,
+        Method::PATCH,
+        &report_path,
+        Some(&f.student_token),
+        Some(json!({"status":"active","revision":1,"reason":null})),
+    )
+    .await;
+    assert_eq!(active.status, StatusCode::OK, "{}", active.body);
+    assert_eq!(
+        query_scalar::<_, String>("SELECT state FROM knowledge_activity_attempts WHERE id=$1")
+            .bind(target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "in_progress"
+    );
+    let finished = call(
+        &router,
+        Method::PATCH,
+        &report_path,
+        Some(&f.student_token),
+        Some(json!({"status":"finished","revision":2,"reason":null})),
+    )
+    .await;
+    assert_eq!(finished.status, StatusCode::OK);
+    assert_eq!(
+        query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM knowledge_attempt_help_requests WHERE attempt_id=$1"
+        )
+        .bind(target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        query_scalar::<_, String>("SELECT state FROM knowledge_activity_attempts WHERE id=$1")
+            .bind(target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "in_progress"
+    );
+    let summary = call(
+        &router,
+        Method::GET,
+        &format!("{base}/broadcasts/{broadcast}/guidance-summary"),
+        Some(&f.teacher_token),
+        None,
+    )
+    .await;
+    assert_eq!(summary.body["counts"]["finished"], 1);
+    assert!(summary.body.get("screens").is_none());
+    query("UPDATE knowledge_space_members SET removed_at=NOW() WHERE space_id=$1 AND user_id=$2")
+        .bind(f.space_id)
+        .bind(&f.student_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&router, Method::GET, &feed, Some(&f.student_token), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let closed = call(
+        &router,
+        Method::POST,
+        &format!("/v1/spaces/{}/runs/{second_run}/close", f.space_id),
+        Some(&f.teacher_token),
+        None,
+    )
+    .await;
+    assert_eq!(closed.status, StatusCode::OK);
+    let replay = call(
+        &router,
+        Method::POST,
+        &format!("{base}/broadcasts"),
+        Some(&f.teacher_token),
+        Some(body),
+    )
+    .await;
+    assert_eq!(replay.status, StatusCode::OK);
+    let lookup = call(
+        &router,
+        Method::GET,
+        &format!("{base}/broadcasts/by-client/{client}"),
+        Some(&f.teacher_token),
+        None,
+    )
+    .await;
+    assert_eq!(lookup.body["receipt"]["broadcast"]["id"], broadcast);
+    let new_closed = call(
+        &router,
+        Method::POST,
+        &format!("{base}/broadcasts"),
+        Some(&f.teacher_token),
+        Some(
+            json!({"clientId":Uuid::new_v4(),"payload":{"kind":"exercise","instruction":"Read."}}),
+        ),
+    )
+    .await;
+    assert_eq!(new_closed.status, StatusCode::CONFLICT);
+    state.shutdown.cancel();
+    pool.close().await;
+}

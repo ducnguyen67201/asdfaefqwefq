@@ -5,6 +5,7 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   rename,
   stat,
   truncate,
@@ -15,6 +16,8 @@ import path from 'node:path';
 import type { ZodType } from 'zod';
 
 import {
+  LocalGuidanceStartJournalSchema,
+  type LocalGuidanceStartJournal,
   TaskHistorySchema,
   TaskUpdateSchema,
   type CoachProgress,
@@ -215,6 +218,95 @@ export class EncryptedAgentStateStore implements TaskHistoryStore {
       ) return goal.coachProgress;
     }
     return null;
+  }
+
+  async readOwnedThread(
+    ownerId: string,
+    threadId: string,
+  ): Promise<LocalThreadState> {
+    await this.queue;
+    const state = await this.readThread(threadId);
+    if (state.ownerId !== ownerId)
+      throw new Error('Local thread owner mismatch.');
+    return state;
+  }
+
+  async updateClassroomState(
+    ownerId: string,
+    threadId: string,
+    mutate: (state: LocalThreadState) => LocalThreadState,
+  ): Promise<LocalThreadState> {
+    return this.serialValue(async () => {
+      const state = await this.readThread(threadId);
+      if (state.ownerId !== ownerId)
+        throw new Error('Local thread owner mismatch.');
+      const next = LocalThreadStateSchema.parse(mutate(state));
+      if (
+        JSON.stringify(next.broadcastDrafts) !==
+        JSON.stringify(state.broadcastDrafts)
+      )
+        next.broadcastRevision = state.broadcastRevision + 1;
+      if (next.ownerId !== ownerId || next.snapshot.taskId !== threadId)
+        throw new Error('Local thread owner mismatch.');
+      await this.writeEncrypted(
+        this.snapshotPath(threadId),
+        next,
+        LocalThreadStateSchema,
+      );
+      return next;
+    });
+  }
+
+  async writeGuidanceJournal(input: LocalGuidanceStartJournal): Promise<void> {
+    const value = LocalGuidanceStartJournalSchema.parse(input);
+    await this.serial(async () => {
+      await this.writeEncrypted(
+        this.guidancePath(value.ownerId, value.broadcastId),
+        value,
+        LocalGuidanceStartJournalSchema,
+      );
+    });
+  }
+  async readGuidanceJournal(
+    ownerId: string,
+    broadcastId: string,
+  ): Promise<LocalGuidanceStartJournal | null> {
+    await this.queue;
+    const file = this.guidancePath(ownerId, broadcastId);
+    if (!(await exists(file))) return null;
+    const value = await this.readEncrypted(
+      file,
+      LocalGuidanceStartJournalSchema,
+    );
+    if (value.ownerId !== ownerId || value.broadcastId !== broadcastId)
+      throw new Error('Guidance owner mismatch.');
+    return value;
+  }
+  async listGuidanceJournals(
+    ownerId: string,
+  ): Promise<LocalGuidanceStartJournal[]> {
+    await this.queue;
+    const prefix = `guidance-${createHash('sha256').update(ownerId).digest('hex')}-`;
+    const files = (await readdir(this.baseDirectory)).filter(
+      (file) => file.startsWith(prefix) && file.endsWith('.enc'),
+    );
+    const journals = await Promise.all(
+      files.map((file) =>
+        this.readEncrypted(
+          path.join(this.baseDirectory, file),
+          LocalGuidanceStartJournalSchema,
+        ),
+      ),
+    );
+    if (journals.some((journal) => journal.ownerId !== ownerId))
+      throw new Error('Guidance journal owner mismatch.');
+    return journals;
+  }
+  private guidancePath(ownerId: string, broadcastId: string): string {
+    const digest = createHash('sha256').update(ownerId).digest('hex');
+    const id =
+      LocalGuidanceStartJournalSchema.shape.broadcastId.parse(broadcastId);
+    return path.join(this.baseDirectory, `guidance-${digest}-${id}.enc`);
   }
 
   async readThread(threadId: string): Promise<LocalThreadState> {

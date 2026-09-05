@@ -13,6 +13,8 @@ import { SpaceDetailPage, type SpaceDetailTab } from './SpaceDetailPage';
 import { SpacesPage } from './SpacesPage';
 
 export function KnowledgeHubPage({
+  onTeacherSessionSelect,
+  teacherSessionId,
   appLanguage,
   classroomError,
   classroomLoading,
@@ -27,6 +29,11 @@ export function KnowledgeHubPage({
   space,
   spaceInitialTab = 'library',
 }: {
+  onTeacherSessionSelect?: (
+    spaceId: string,
+    sessionId: string | null,
+  ) => Promise<void>;
+  teacherSessionId?: string | null;
   appLanguage: AppLanguage;
   classroomError: string | null;
   classroomLoading: boolean;
@@ -70,6 +77,8 @@ export function KnowledgeHubPage({
   if (space) {
     return (
       <SpaceDetailPage
+        onTeacherSessionSelect={onTeacherSessionSelect}
+        teacherSessionId={teacherSessionId}
         appLanguage={appLanguage}
         initialTab={spaceInitialTab}
         key={`${space.id}:${spaceInitialTab}`}

@@ -23,12 +23,19 @@ import { SpaceLibrary } from './SpaceLibrary';
 export type SpaceDetailTab = 'library' | 'activities' | 'sessions' | 'people';
 
 export function SpaceDetailPage({
+  onTeacherSessionSelect,
+  teacherSessionId,
   appLanguage,
   initialTab = 'library',
   onJoined,
   onBack,
   space,
 }: {
+  onTeacherSessionSelect?: (
+    spaceId: string,
+    sessionId: string | null,
+  ) => Promise<void>;
+  teacherSessionId?: string | null;
   appLanguage: AppLanguage;
   initialTab?: SpaceDetailTab;
   onJoined?: (attemptId: string) => void;
@@ -304,6 +311,8 @@ export function SpaceDetailPage({
           tabIndex={0}
         >
           <ClassSessionsPanel
+            onTeacherSessionSelect={onTeacherSessionSelect}
+            teacherSessionId={teacherSessionId}
             appLanguage={appLanguage}
             canFacilitate={canFacilitate}
             onJoined={onJoined}
