@@ -71,9 +71,14 @@ Production access codes and room codes do not apply here.
 npm run package:test
 ```
 
-This produces a `Tro Test` app under `out/` with the test URL compiled in. It can
-run without Doppler on the receiving computer; build it natively for that
-computer's OS and CPU architecture. Server-side secrets are not compiled in.
+This produces a `Tro Test` app under `out/` with the test URL compiled in; build
+it natively for the receiving computer's OS and CPU architecture. Server-side
+secrets are not compiled in. **Use `npm run start:test` for the two-computer
+test.** The current Rust desktop OAuth exchange reads
+`GOOGLE_OAUTH_CLIENT_SECRET` from its process environment. A standalone package
+launched from Finder does not receive Doppler configuration, and Google sign-in
+failed in that launch mode. Standalone OAuth configuration needs a separate fix;
+packaging verification below covers building the artifact, not completed sign-in.
 The test app uses the same isolated profile whether launched through Forge or
 as a package. Package creation validates configuration but does not require the
 API to be online. Signing credentials are forwarded only to packaging.
