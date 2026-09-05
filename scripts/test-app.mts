@@ -1,13 +1,13 @@
 import { spawnSync } from 'node:child_process';
 
-import { testAppEnvironment } from './test-app-config.mts';
+import { TEST_API_BASE_URL, testAppEnvironment } from './test-app-config.mts';
 
 const command = process.argv[2];
 if (command !== 'start' && command !== 'package') {
   throw new Error('Use npm run start:test or npm run package:test.');
 }
 const env = testAppEnvironment(process.env);
-console.log(`Tro Test → ${env.TROCODE_API_BASE_URL} (Doppler tro-app/stg)`);
+console.log(`Tro Test → ${TEST_API_BASE_URL} (Doppler tro-app/stg)`);
 if (command === 'start') {
   const response = await fetch(`${env.TROCODE_API_BASE_URL}/readyz`, {
     signal: AbortSignal.timeout(15_000),
